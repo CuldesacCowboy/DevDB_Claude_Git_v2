@@ -18,6 +18,7 @@ from .s0500_takedown_engine import takedown_engine
 from .s0600_demand_generator import demand_generator
 from .s0900_builder_assignment import builder_assignment
 from kernel import plan, FrozenInput
+from kernel.frozen_input_builder import build_frozen_input
 from .s1000_demand_derived_date_writer import demand_derived_date_writer
 from .s1100_persistence_writer import persistence_writer
 from .s1200_ledger_aggregator import ledger_aggregator
@@ -248,30 +249,8 @@ def run_starts_pipeline(conn: DBConnection, projection_group_id: int,
         demand_series = []
 
     # S-07 through S-0820: kernel planning pass
-    phase_capacity = _load_phase_capacity(conn, projection_group_id)
-    lot_type_pg_map = _build_lot_type_pg_map(conn, phase_capacity)
-
-    building_group_memberships = {
-        int(row['lot_id']): row['building_group_id']
-        for _, row in snapshot.iterrows()
-        if pd.notna(row.get('building_group_id'))
-    }
-    tda_hold_lot_ids = set(
-        snapshot.loc[
-            snapshot['date_td_hold'].notna() & snapshot['date_td'].isna(),
-            'lot_id'
-        ]
-    )
-
-    frozen = FrozenInput(
-        lot_snapshot=snapshot,
-        demand_series=demand_series,
-        phase_capacity=phase_capacity,
-        lot_type_pg_map=lot_type_pg_map,
-        building_group_memberships=building_group_memberships,
-        tda_hold_lot_ids=tda_hold_lot_ids,
-        sim_run_id=sim_run_id,
-        projection_group_id=projection_group_id,
+    frozen = build_frozen_input(
+        conn, projection_group_id, snapshot, demand_series, sim_run_id
     )
 
     proposal = plan(frozen)
