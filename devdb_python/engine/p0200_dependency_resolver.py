@@ -1,0 +1,78 @@
+# p02_dependency_resolver.py
+# P-02: Topologically sort the delivery event queue. Produce initial eligible pool.
+#
+# Owns:     Reading sim_delivery_event_predecessors. Sorting by dependency order.
+#           Identifying events with no unresolved predecessors. Removing locked events.
+# Not Own:  Setting any dates. Ranking events. Any table modification.
+# Inputs:   conn, ent_group_id, locked_event_ids from P-01.
+# Outputs:  Topologically sorted event queue, initial eligible event pool.
+# Failure:  Dependency cycle: hard error. Surface to user. Do not break cycle.
+
+from collections import defaultdict
+from .connection import DBConnection
+
+
+def dependency_resolver(conn: DBConnection, ent_group_id: int,
+                        locked_event_ids: list) -> tuple:
+    """
+    Topologically sort delivery events for this entitlement group.
+    Remove locked events from queue.
+    Return (sorted_queue, eligible_pool) where:
+      sorted_queue: list of delivery_event_id in dependency order
+      eligible_pool: list of delivery_event_id with no unresolved predecessors
+
+    Read-only module -- no table writes.
+    """
+    all_events_df = conn.read_df(f"""
+        SELECT delivery_event_id
+        FROM sim_delivery_events
+        WHERE ent_group_id = {ent_group_id}
+    """)
+    all_event_ids = set(int(r) for r in all_events_df["delivery_event_id"])
+    locked_set = set(locked_event_ids)
+    queue = all_event_ids - locked_set
+
+    if not queue:
+        print(f"P-02: No unresolved events for ent_group_id={ent_group_id}.")
+        return [], []
+
+    queue_list_str = ", ".join(str(e) for e in queue)
+    predecessors_df = conn.read_df(f"""
+        SELECT event_id, predecessor_event_id
+        FROM sim_delivery_event_predecessors
+        WHERE event_id IN ({queue_list_str})
+    """)
+
+    unresolved_preds = defaultdict(set)
+    for _, row in predecessors_df.iterrows():
+        pred = int(row["predecessor_event_id"])
+        if pred not in locked_set:
+            unresolved_preds[int(row["event_id"])].add(pred)
+
+    sorted_queue = []
+    no_preds = [e for e in queue if len(unresolved_preds[e]) == 0]
+    eligible_pool = list(no_preds)
+    remaining = queue - set(no_preds)
+
+    process = list(no_preds)
+
+    while process:
+        current = process.pop(0)
+        sorted_queue.append(current)
+        for event_id in list(remaining):
+            unresolved_preds[event_id].discard(current)
+            if len(unresolved_preds[event_id]) == 0:
+                process.append(event_id)
+                remaining.discard(event_id)
+
+    if remaining:
+        raise ValueError(
+            f"P-02: Dependency cycle detected in delivery events for "
+            f"ent_group_id={ent_group_id}. "
+            f"Unresolvable events: {remaining}. "
+            f"Project configuration is invalid."
+        )
+
+    print(f"P-02: {len(sorted_queue)} events in queue, "
+          f"{len(eligible_pool)} initially eligible.")
+    return sorted_queue, eligible_pool

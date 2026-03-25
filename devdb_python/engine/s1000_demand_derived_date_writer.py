@@ -1,0 +1,48 @@
+# s10_demand_derived_date_writer.py
+# S-10: Compute MIN(date_str) per phase from temp lots and write to sim_dev_phases.
+#
+# Owns:     Writing sim_dev_phases.date_dev_demand_derived.
+# Not Own:  Any other field on sim_dev_phases. Any lot table modification.
+# Inputs:   Temp lot records (list of dicts), conn.
+# Outputs:  date_dev_demand_derived updated on sim_dev_phases rows.
+# Failure:  Empty temp lots -> no-op. Null date_str in lot -> skip.
+#           Never writes null. Never overwrites with a null.
+
+from collections import defaultdict
+from .connection import DBConnection
+
+
+def demand_derived_date_writer(conn: DBConnection, temp_lots: list) -> None:
+    """
+    Compute MIN(date_str) per phase_id from temp lots.
+    Write result to sim_dev_phases.date_dev_demand_derived.
+    Only writes where result is non-null.
+    Writer module: writes sim_dev_phases.date_dev_demand_derived.
+    """
+    if not temp_lots:
+        return
+
+    phase_min: dict = defaultdict(lambda: None)
+    for lot in temp_lots:
+        phase_id = lot.get("phase_id")
+        date_str = lot.get("date_str")
+        if phase_id is None or date_str is None:
+            continue
+        if phase_min[phase_id] is None or date_str < phase_min[phase_id]:
+            phase_min[phase_id] = date_str
+
+    if not phase_min:
+        return
+
+    for phase_id, derived_date in phase_min.items():
+        if derived_date is None:
+            continue
+        conn.execute(f"""
+            UPDATE sim_dev_phases
+            SET date_dev_demand_derived = '{derived_date}'
+            WHERE phase_id = {phase_id}
+              AND (date_dev_demand_derived IS NULL
+                   OR date_dev_demand_derived != '{derived_date}')
+        """)
+
+    print(f"S-10: Wrote date_dev_demand_derived for {len(phase_min)} phase(s).")

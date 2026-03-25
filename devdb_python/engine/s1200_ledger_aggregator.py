@@ -1,0 +1,106 @@
+# s12_ledger_aggregator.py
+# S-12: Aggregate lot-level dates into the monthly ledger view.
+#
+# Owns:     Creating v_sim_ledger_monthly and month_spine views.
+# Not Own:  Any modification to sim_lots or any other table.
+# Inputs:   conn (reads sim_lots via the view definition).
+# Outputs:  v_sim_ledger_monthly and month_spine views recreated in Databricks.
+# Failure:  Read-only view definition. If CREATE fails, surface error.
+#           Never return partial or misleading counts.
+# Bucket logic per D-006: highest reached milestone determines status.
+# Buckets are mutually exclusive. P_end requires all milestone dates null/future.
+
+from .connection import DBConnection
+
+
+def ledger_aggregator(conn: DBConnection) -> None:
+    """
+    Create or replace v_sim_ledger_monthly and month_spine views.
+    month_spine: dynamic view from earliest date_ent in sim_lots, 30 years forward.
+    v_sim_ledger_monthly: COUNT-based aggregation per projection_group_id,
+    builder_id, and calendar month.
+    Read-only -- does not modify any table.
+    """
+    conn.execute("""
+        CREATE OR REPLACE VIEW month_spine AS
+        WITH bounds AS (
+            SELECT GREATEST(
+                '2020-01-01'::DATE,
+                COALESCE(
+                    MIN(LEAST(date_str, date_cmp, date_cls, date_dev)),
+                    '2020-01-01'::DATE
+                )
+            ) AS spine_start
+            FROM sim_lots
+            WHERE lot_source = 'real'
+        )
+        SELECT generate_series(
+            DATE_TRUNC('MONTH', spine_start)::DATE,
+            '2046-01-01'::DATE,
+            INTERVAL '1 month'
+        )::DATE AS calendar_month
+        FROM bounds
+    """)
+
+    conn.execute("""
+        CREATE OR REPLACE VIEW v_sim_ledger_monthly AS
+        SELECT
+            l.projection_group_id,
+            l.builder_id,
+            m.calendar_month,
+
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_ent) = m.calendar_month
+                       THEN 1 END) AS ENT_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_dev) = m.calendar_month
+                       THEN 1 END) AS DEV_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_td)  = m.calendar_month
+                       THEN 1 END) AS TD_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_str) = m.calendar_month
+                       THEN 1 END) AS STR_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_cmp) = m.calendar_month
+                       THEN 1 END) AS CMP_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_cls) = m.calendar_month
+                       THEN 1 END) AS CLS_plan,
+
+            COUNT(CASE WHEN l.date_ent      IS NULL
+                            AND l.date_dev  IS NULL
+                            AND l.date_td      IS NULL
+                            AND l.date_td_hold IS NULL
+                            AND l.date_str  IS NULL
+                            AND l.date_cmp  IS NULL
+                            AND l.date_cls  IS NULL
+                       THEN 1 END) AS P_end,
+            COUNT(CASE WHEN l.date_ent <= m.calendar_month
+                            AND (l.date_dev IS NULL OR l.date_dev > m.calendar_month)
+                       THEN 1 END) AS E_end,
+            COUNT(CASE WHEN l.date_dev <= m.calendar_month
+                            AND (l.date_td IS NULL OR l.date_td > m.calendar_month)
+                            AND (l.date_td_hold IS NULL OR l.date_td_hold > m.calendar_month)
+                       THEN 1 END) AS D_end,
+            COUNT(CASE WHEN l.date_td_hold <= m.calendar_month
+                            AND l.date_td IS NULL
+                            AND (l.date_str IS NULL OR l.date_str > m.calendar_month)
+                       THEN 1 END) AS H_end,
+            COUNT(CASE WHEN l.date_td <= m.calendar_month
+                            AND (l.date_str IS NULL OR l.date_str > m.calendar_month)
+                       THEN 1 END) AS U_end,
+            COUNT(CASE WHEN l.date_str <= m.calendar_month
+                            AND (l.date_cmp IS NULL OR l.date_cmp > m.calendar_month)
+                       THEN 1 END) AS UC_end,
+            COUNT(CASE WHEN l.date_cmp <= m.calendar_month
+                            AND (l.date_cls IS NULL OR l.date_cls > m.calendar_month)
+                       THEN 1 END) AS C_end,
+
+            SUM(COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_cls) = m.calendar_month
+                           THEN 1 END))
+                OVER (PARTITION BY l.projection_group_id, l.builder_id
+                      ORDER BY m.calendar_month
+                      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+                AS closed_cumulative
+
+        FROM sim_lots l
+        CROSS JOIN month_spine m
+        GROUP BY l.projection_group_id, l.builder_id, m.calendar_month
+    """)
+
+    print("S-12: v_sim_ledger_monthly and month_spine views created.")
