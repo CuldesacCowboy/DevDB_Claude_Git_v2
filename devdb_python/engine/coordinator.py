@@ -16,11 +16,8 @@ from .s0300_gap_fill_engine import gap_fill_engine
 from .s0400_chronology_validator import chronology_validator
 from .s0500_takedown_engine import takedown_engine
 from .s0600_demand_generator import demand_generator
-from .s0700_demand_allocator import demand_allocator
-from .s0800_temp_lot_generator import temp_lot_generator
-from .s0810_building_group_enforcer import building_group_enforcer
-from .s0820_post_generation_chronology_guard import post_generation_chronology_guard
 from .s0900_builder_assignment import builder_assignment
+from kernel import plan, FrozenInput
 from .s1000_demand_derived_date_writer import demand_derived_date_writer
 from .s1100_persistence_writer import persistence_writer
 from .s1200_ledger_aggregator import ledger_aggregator
@@ -250,23 +247,40 @@ def run_starts_pipeline(conn: DBConnection, projection_group_id: int,
         print(f"  WARNING: PG {projection_group_id} has no sim_projection_params. No demand generated.")
         demand_series = []
 
-    # S-07
-    allocated_df, unmet = demand_allocator(snapshot, demand_series)
-
-    # S-08
+    # S-07 through S-0820: kernel planning pass
     phase_capacity = _load_phase_capacity(conn, projection_group_id)
     lot_type_pg_map = _build_lot_type_pg_map(conn, phase_capacity)
-    temp_lots = temp_lot_generator(unmet, phase_capacity, lot_type_pg_map, sim_run_id,
-                                   projection_group_id)
 
-    # S-0810
-    temp_lots = building_group_enforcer(temp_lots)
+    building_group_memberships = {
+        int(row['lot_id']): row['building_group_id']
+        for _, row in snapshot.iterrows()
+        if pd.notna(row.get('building_group_id'))
+    }
+    tda_hold_lot_ids = set(
+        snapshot.loc[
+            snapshot['date_td_hold'].notna() & snapshot['date_td'].isna(),
+            'lot_id'
+        ]
+    )
 
-    # S-0820
-    temp_lots, discarded, warnings = post_generation_chronology_guard(temp_lots)
-    if warnings:
-        for w in warnings:
+    frozen = FrozenInput(
+        lot_snapshot=snapshot,
+        demand_series=demand_series,
+        phase_capacity=phase_capacity,
+        lot_type_pg_map=lot_type_pg_map,
+        building_group_memberships=building_group_memberships,
+        tda_hold_lot_ids=tda_hold_lot_ids,
+        sim_run_id=sim_run_id,
+        projection_group_id=projection_group_id,
+    )
+
+    proposal = plan(frozen)
+    if proposal.warnings:
+        for w in proposal.warnings:
             print(f"  {w}")
+
+    # Resume shell — S-0900 receives proposal.temp_lots
+    temp_lots = proposal.temp_lots
 
     # S-09
     temp_lots = builder_assignment(temp_lots, builder_splits)
