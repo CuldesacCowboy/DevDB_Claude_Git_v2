@@ -103,21 +103,33 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         from_phase_id = lot["phase_id"]
 
         if from_phase_id is not None:
+            # Check both phases are in the same entitlement group
             cur.execute(
-                "SELECT phase_id, dev_id, phase_name FROM sim_dev_phases WHERE phase_id = %s",
+                "SELECT dev_id FROM sim_dev_phases WHERE phase_id = %s",
                 (from_phase_id,),
             )
-            current_phase = cur.fetchone()
+            from_phase_row = cur.fetchone()
+            from_dev_id = from_phase_row["dev_id"] if from_phase_row else None
 
-            if target_phase["dev_id"] != current_phase["dev_id"]:
+            all_dev_ids = list({target_phase["dev_id"], from_dev_id} - {None})
+            cur.execute(
+                """
+                SELECT dev_id, ent_group_id
+                FROM sim_ent_group_developments
+                WHERE dev_id = ANY(%s)
+                """,
+                (all_dev_ids,),
+            )
+            ent_map = {r["dev_id"]: r["ent_group_id"] for r in cur.fetchall()}
+            from_ent = ent_map.get(from_dev_id)
+            target_ent = ent_map.get(target_phase["dev_id"])
+
+            if from_ent != target_ent or from_ent is None:
                 conn.rollback()
                 return _fail(
-                    "cross_development_move",
-                    f"Phase {target_phase_id} is in development "
-                    f"dev {target_phase['dev_id']}. "
-                    f"Lot {lot['lot_number']} is in development "
-                    f"dev {current_phase['dev_id']}. "
-                    "Lots cannot be moved across developments.",
+                    "cross_entitlement_group_move",
+                    f"Phase {target_phase_id} is not in the same entitlement group "
+                    f"as lot {lot['lot_number']}.",
                 )
 
         if from_phase_id == target_phase_id:

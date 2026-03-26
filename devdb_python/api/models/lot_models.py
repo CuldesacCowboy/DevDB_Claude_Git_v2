@@ -79,8 +79,19 @@ class PhaseDetail(BaseModel):
     phase_id: int
     phase_name: str
     sequence_number: int
+    dev_id: int = 0
+    instrument_id: int | None = None
     by_lot_type: list[LotTypeCount]
     lots: list[LotDetail]
+
+
+class InstrumentDetail(BaseModel):
+    instrument_id: int
+    instrument_name: str
+    instrument_type: str
+    dev_id: int
+    dev_name: str
+    phases: list[PhaseDetail]
 
 
 class DevLotPhaseViewResponse(BaseModel):
@@ -88,3 +99,11 @@ class DevLotPhaseViewResponse(BaseModel):
     dev_name: str
     unassigned: list[LotDetail]
     phases: list[PhaseDetail]
+
+
+class EntGroupLotPhaseViewResponse(BaseModel):
+    ent_group_id: int
+    ent_group_name: str
+    unassigned: list[LotDetail]
+    instruments: list[InstrumentDetail]
+    unassigned_phases: list[PhaseDetail]

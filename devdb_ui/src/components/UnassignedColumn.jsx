@@ -6,7 +6,7 @@ import LotCard from './LotCard'
 export default function UnassignedColumn({ lots, pendingLotId }) {
   const { isOver, setNodeRef } = useDroppable({
     id: 'unassigned',
-    data: { isUnassigned: true },
+    data: { type: 'unassigned' },
   })
 
   return (

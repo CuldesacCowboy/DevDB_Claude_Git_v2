@@ -38,7 +38,7 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
         # Load phases ordered by sequence_number, phase_id
         cur.execute(
             """
-            SELECT phase_id, phase_name, sequence_number
+            SELECT phase_id, phase_name, sequence_number, instrument_id
             FROM sim_dev_phases
             WHERE dev_id = %s
             ORDER BY sequence_number ASC, phase_id ASC
@@ -166,6 +166,8 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
                     "phase_id": pid,
                     "phase_name": p["phase_name"],
                     "sequence_number": p["sequence_number"],
+                    "dev_id": dev_id,
+                    "instrument_id": p["instrument_id"],
                     "by_lot_type": splits_by_phase.get(pid, []),
                     "lots": lots_by_phase.get(pid, []),
                 }

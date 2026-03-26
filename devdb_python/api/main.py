@@ -8,7 +8,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import developments, lots
+from api.routers import developments, entitlement_groups, lots, phases
 
 app = FastAPI(title="DevDB API", version="0.1.0")
 
@@ -20,4 +20,6 @@ app.add_middleware(
 )
 
 app.include_router(lots.router)
+app.include_router(phases.router)
 app.include_router(developments.router)
+app.include_router(entitlement_groups.router)

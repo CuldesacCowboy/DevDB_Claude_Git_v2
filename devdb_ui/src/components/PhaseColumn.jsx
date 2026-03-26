@@ -1,34 +1,60 @@
-import { useDroppable } from '@dnd-kit/core'
+import { useDraggable, useDroppable } from '@dnd-kit/core'
 import LotCard from './LotCard'
 
-export default function PhaseColumn({ phase, pendingLotId, dragSourceDevId, devId }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `phase-${phase.phase_id}`,
-    data: { phase, devId },
+export default function PhaseColumn({ phase, pendingLotId, pendingPhaseId, isOverlay }) {
+  // Draggable: phase header → instrument container (phase moves)
+  const {
+    attributes: dragAttrs,
+    listeners: dragListeners,
+    setNodeRef: setDragRef,
+    isDragging,
+  } = useDraggable({
+    id: `phase-header-${phase.phase_id}`,
+    data: { type: 'phase', phase },
+    disabled: !!isOverlay || pendingPhaseId === phase.phase_id,
   })
 
-  // Cross-dev drop would be invalid (not applicable in single-dev spike,
-  // but wire it for completeness using dragSourceDevId when provided)
-  const isInvalidDrop = isOver && dragSourceDevId !== null && dragSourceDevId !== devId
+  // Droppable: column body → receives lot cards
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id: `phase-${phase.phase_id}`,
+    data: { type: 'lot-target', phase },
+    disabled: !!isOverlay,
+  })
 
-  const borderClass = isOver
-    ? isInvalidDrop
-      ? 'border-red-400 bg-red-50'
-      : 'border-blue-400 bg-blue-50'
-    : 'border-gray-200 bg-white'
+  const isPending = pendingPhaseId === phase.phase_id
 
   return (
     <div
-      ref={setNodeRef}
+      ref={setDropRef}
       className={`
         flex flex-col rounded-lg border-2 transition-colors duration-100
         min-w-[180px] max-w-[220px] w-full flex-shrink-0
-        ${borderClass}
+        ${isDragging ? 'opacity-30' : ''}
+        ${isOver ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}
       `}
     >
-      {/* Header */}
-      <div className="px-3 py-2 border-b border-gray-200">
-        <p className="font-bold text-sm text-gray-800 leading-tight">{phase.phase_name}</p>
+      {/* Header — drag handle for phase-to-instrument moves */}
+      <div
+        ref={setDragRef}
+        {...dragAttrs}
+        {...dragListeners}
+        className={`
+          px-3 py-2 border-b border-gray-200 select-none
+          ${isOverlay || isPending ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}
+        `}
+      >
+        <div className="flex items-center gap-1.5">
+          {/* 6-dot drag handle icon */}
+          <span className="text-gray-300 text-[10px] leading-none flex-shrink-0" aria-hidden>
+            ⠿
+          </span>
+          <p className="font-bold text-sm text-gray-800 leading-tight flex-1 min-w-0 truncate">
+            {phase.phase_name}
+          </p>
+          {isPending && (
+            <span className="text-[10px] text-gray-400 italic flex-shrink-0">moving…</span>
+          )}
+        </div>
       </div>
 
       {/* Capacity counts */}
@@ -45,13 +71,6 @@ export default function PhaseColumn({ phase, pendingLotId, dragSourceDevId, devI
           <p className="text-[11px] text-gray-400 italic">no splits configured</p>
         )}
       </div>
-
-      {/* Invalid drop message */}
-      {isInvalidDrop && (
-        <div className="px-3 py-1 text-[11px] text-red-600 font-medium">
-          Cannot drop here
-        </div>
-      )}
 
       {/* Lot cards */}
       <div className="flex flex-col gap-1 p-2 flex-1 min-h-[60px]">
