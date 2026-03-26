@@ -15,6 +15,7 @@ import UnassignedColumn from '../components/UnassignedColumn'
 import PhaseColumn from '../components/PhaseColumn'
 import LotCard from '../components/LotCard'
 import Toast from '../components/Toast'
+import CommunityDevelopmentsView from './CommunityDevelopmentsView'
 
 // TODO: re-enable when simulation run trigger is wired up
 const hideOutdatedWarning = true
@@ -57,6 +58,9 @@ export default function LotPhaseView() {
 
   // Needs-rerun banner
   const [needsRerun, setNeedsRerun] = useState(false)
+
+  // Active tab — default 'developments' (active build area)
+  const [activeTab, setActiveTab] = useState('developments')
 
   // Collapse state — tracks which phase_ids are collapsed
   const [collapsedPhaseIds, setCollapsedPhaseIds] = useState(new Set())
@@ -680,8 +684,33 @@ export default function LotPhaseView() {
       </div>
 
       {/* ---------------------------------------------------------------- */}
-      {/* DndContext wraps unassigned panel + main area                    */}
+      {/* Tab shell — tab bar + conditional content                       */}
       {/* ---------------------------------------------------------------- */}
+      <div className="flex flex-col flex-1 overflow-hidden">
+
+        {/* Tab bar */}
+        <div className="flex-shrink-0 flex items-end gap-0 border-b border-gray-200 bg-white px-4">
+          {[
+            { id: 'developments', label: 'Developments' },
+            { id: 'lot-phase', label: 'Lot & Phase View' },
+          ].map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors select-none ${
+                activeTab === id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'developments' ? (
+          <CommunityDevelopmentsView entGroupId={entGroupId} />
+        ) : (
       <DndContext
         sensors={sensors}
         collisionDetection={customCollision}
@@ -812,8 +841,10 @@ export default function LotPhaseView() {
           )}
         </DragOverlay>
       </DndContext>
+        )}
+      </div>
 
-      {/* Toast stack */}
+      {/* Toast stack — lot-phase tab only */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">
         {toasts.map((t) => (
           <Toast
