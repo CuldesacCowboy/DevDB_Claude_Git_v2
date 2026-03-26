@@ -1,12 +1,17 @@
 # routers/entitlement_groups.py
-# Entitlement-group level read endpoints.
+# Entitlement-group level read and write endpoints.
 
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from api.deps import get_db_conn
 from api.models.lot_models import EntGroupLotPhaseViewResponse
+
+
+class EntGroupCreateRequest(BaseModel):
+    ent_group_name: str
 
 router = APIRouter(prefix="/entitlement-groups", tags=["entitlement-groups"])
 
@@ -20,6 +25,29 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
             "SELECT ent_group_id, ent_group_name FROM sim_entitlement_groups ORDER BY ent_group_name"
         )
         return [{"ent_group_id": r["ent_group_id"], "ent_group_name": r["ent_group_name"]} for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+
+@router.post("", response_model=dict, status_code=201)
+def create_entitlement_group(body: EntGroupCreateRequest, conn=Depends(get_db_conn)):
+    import psycopg2.extras
+    name = (body.ent_group_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="ent_group_name is required")
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT COALESCE(MAX(ent_group_id), 0) + 1 AS new_id FROM sim_entitlement_groups")
+        new_id = int(cur.fetchone()["new_id"])
+        cur.execute(
+            "INSERT INTO sim_entitlement_groups (ent_group_id, ent_group_name) VALUES (%s, %s)",
+            (new_id, name),
+        )
+        conn.commit()
+        return {"ent_group_id": new_id, "ent_group_name": name}
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         cur.close()
 
