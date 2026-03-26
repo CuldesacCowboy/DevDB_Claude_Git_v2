@@ -159,18 +159,24 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         # ----------------------------------------------------------------
         # Soft warning (checked after validation passes, before writes)
         # ----------------------------------------------------------------
+        # Warn only when the lot is operationally active mid-lifecycle:
+        #   UC = date_str set, date_cmp null, date_cls null
+        #   C  = date_cmp set, date_cls null
+        # OUT lots (date_cls set) are fully closed — warning adds no value.
+        # U / H / D lots have no downstream actuals yet — no warning needed.
         warnings = []
-        has_actual_dates = any(
-            lot[f] is not None for f in ("date_str", "date_cmp", "date_cls")
+        has_actual_dates = (
+            (lot["date_str"] is not None or lot["date_cmp"] is not None)
+            and lot["date_cls"] is None
         )
         if has_actual_dates:
             warnings.append(
                 {
                     "code": "actual_dates_present",
                     "message": (
-                        f"Lot {lot['lot_number']} has recorded MARKsystems dates. "
-                        "Moving it changes its projected delivery context but does not "
-                        "affect its recorded actuals."
+                        f"Lot {lot['lot_number']} is under construction or complete "
+                        "with recorded MARKsystems dates. Moving it changes its "
+                        "projected delivery context but does not affect its recorded actuals."
                     ),
                 }
             )

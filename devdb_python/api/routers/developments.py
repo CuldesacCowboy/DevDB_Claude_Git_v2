@@ -63,8 +63,10 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
                 lot_source,
                 phase_id,
                 {_STATUS_SQL} AS status,
-                (date_str IS NOT NULL OR date_cmp IS NOT NULL OR date_cls IS NOT NULL)
-                    AS has_actual_dates
+                (
+                    (date_str IS NOT NULL OR date_cmp IS NOT NULL)
+                    AND date_cls IS NULL
+                ) AS has_actual_dates
             FROM sim_lots
             WHERE phase_id = ANY(%s) AND lot_source = 'real'
             ORDER BY lot_number ASC NULLS LAST
