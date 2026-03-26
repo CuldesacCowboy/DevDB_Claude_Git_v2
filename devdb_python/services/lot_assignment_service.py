@@ -101,22 +101,24 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             return _fail("phase_not_found", f"Phase {target_phase_id} not found.")
 
         from_phase_id = lot["phase_id"]
-        cur.execute(
-            "SELECT phase_id, dev_id, phase_name FROM sim_dev_phases WHERE phase_id = %s",
-            (from_phase_id,),
-        )
-        current_phase = cur.fetchone()
 
-        if target_phase["dev_id"] != current_phase["dev_id"]:
-            conn.rollback()
-            return _fail(
-                "cross_development_move",
-                f"Phase {target_phase_id} is in development "
-                f"dev {target_phase['dev_id']}. "
-                f"Lot {lot['lot_number']} is in development "
-                f"dev {current_phase['dev_id']}. "
-                "Lots cannot be moved across developments.",
+        if from_phase_id is not None:
+            cur.execute(
+                "SELECT phase_id, dev_id, phase_name FROM sim_dev_phases WHERE phase_id = %s",
+                (from_phase_id,),
             )
+            current_phase = cur.fetchone()
+
+            if target_phase["dev_id"] != current_phase["dev_id"]:
+                conn.rollback()
+                return _fail(
+                    "cross_development_move",
+                    f"Phase {target_phase_id} is in development "
+                    f"dev {target_phase['dev_id']}. "
+                    f"Lot {lot['lot_number']} is in development "
+                    f"dev {current_phase['dev_id']}. "
+                    "Lots cannot be moved across developments.",
+                )
 
         if from_phase_id == target_phase_id:
             conn.rollback()
@@ -164,13 +166,14 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         # Query after lot update so the moved lot (now in target_phase) is included.
         # Covers the edge case where from_phase has no remaining lots:
         # the moved lot's PG is captured via target_phase_id.
+        phase_filter = [p for p in [from_phase_id, target_phase_id] if p is not None]
         cur.execute(
             """
             SELECT DISTINCT projection_group_id
             FROM sim_lots
             WHERE phase_id = ANY(%s)
             """,
-            ([from_phase_id, target_phase_id],),
+            (phase_filter,),
         )
         affected_pg_ids = [int(r["projection_group_id"]) for r in cur.fetchall()]
 
@@ -204,7 +207,7 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
                 "lot_phase_reassignment",
                 "lot",
                 lot_id,
-                from_phase_id,
+                from_phase_id if from_phase_id is not None else 0,
                 target_phase_id,
                 changed_by,
                 psycopg2.extras.Json(metadata),
@@ -244,11 +247,16 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             }
 
         lot_type_id = lot["lot_type_id"]
-        phase_counts = {
-            "from_phase": {
+        from_phase_detail = (
+            {
                 "phase_id": from_phase_id,
                 "by_lot_type": [_phase_count(from_phase_id, lot_type_id)],
-            },
+            }
+            if from_phase_id is not None
+            else {"phase_id": 0, "by_lot_type": []}
+        )
+        phase_counts = {
+            "from_phase": from_phase_detail,
             "to_phase": {
                 "phase_id": target_phase_id,
                 "by_lot_type": [_phase_count(target_phase_id, lot_type_id)],
@@ -261,12 +269,222 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
                 "action": "lot_phase_reassignment",
                 "lot_id": lot_id,
                 "lot_number": lot["lot_number"],
-                "from_phase_id": from_phase_id,
+                "from_phase_id": from_phase_id if from_phase_id is not None else 0,
                 "to_phase_id": target_phase_id,
             },
             needs_rerun=affected_pg_ids,
             warnings=warnings,
             phase_counts=phase_counts,
+        )
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# Unassign lot from phase (phase_id -> NULL)
+# ---------------------------------------------------------------------------
+
+def unassign_lot_from_phase(
+    conn,
+    lot_id: int,
+    changed_by: str,
+) -> ReassignmentResult:
+    """
+    Remove a real lot from its current phase (set phase_id = NULL).
+    conn must be a raw psycopg2 connection (not PGConnection wrapper).
+    """
+    try:
+        return _execute_unassign(conn, lot_id, changed_by)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return ReassignmentResult(
+            success=False,
+            error={"code": "internal_error", "message": str(exc)},
+        )
+
+
+def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # ----------------------------------------------------------------
+        # Step 1 — Validate
+        # ----------------------------------------------------------------
+        cur.execute(
+            """
+            SELECT lot_id, phase_id, lot_source, lot_number, lot_type_id,
+                   date_str, date_cmp, date_cls
+            FROM sim_lots
+            WHERE lot_id = %s
+            """,
+            (lot_id,),
+        )
+        lot = cur.fetchone()
+        if lot is None:
+            conn.rollback()
+            return _fail("lot_not_found", f"Lot {lot_id} not found.")
+
+        if lot["lot_source"] != "real":
+            conn.rollback()
+            return _fail(
+                "lot_source_not_real",
+                f"Lot {lot_id} is a sim lot and cannot be manually unassigned.",
+            )
+
+        from_phase_id = lot["phase_id"]
+        if from_phase_id is None:
+            conn.rollback()
+            return _fail(
+                "lot_already_unassigned",
+                f"Lot {lot['lot_number']} is not assigned to any phase.",
+            )
+
+        # ----------------------------------------------------------------
+        # Soft warning (UC or C only — same condition as reassignment)
+        # ----------------------------------------------------------------
+        warnings = []
+        has_actual_dates = (
+            (lot["date_str"] is not None or lot["date_cmp"] is not None)
+            and lot["date_cls"] is None
+        )
+        if has_actual_dates:
+            warnings.append(
+                {
+                    "code": "actual_dates_present",
+                    "message": (
+                        f"Lot {lot['lot_number']} is under construction or complete "
+                        "with recorded MARKsystems dates. Moving it changes its "
+                        "projected delivery context but does not affect its recorded actuals."
+                    ),
+                }
+            )
+
+        # ----------------------------------------------------------------
+        # Step 2 — Unassign lot
+        # ----------------------------------------------------------------
+        cur.execute(
+            "UPDATE sim_lots SET phase_id = NULL WHERE lot_id = %s",
+            (lot_id,),
+        )
+
+        # ----------------------------------------------------------------
+        # Step 3 — Set needs_rerun
+        # Lot is now unassigned; query remaining lots in from_phase.
+        # The moved lot's PG is preserved via projection_group_id on lot itself.
+        # ----------------------------------------------------------------
+        cur.execute(
+            """
+            SELECT DISTINCT projection_group_id
+            FROM sim_lots
+            WHERE phase_id = %s
+            """,
+            (from_phase_id,),
+        )
+        affected_pg_ids = [int(r["projection_group_id"]) for r in cur.fetchall()]
+
+        # Also include the unassigned lot's own PG (it may be the last lot in the phase)
+        cur.execute(
+            "SELECT projection_group_id FROM sim_lots WHERE lot_id = %s",
+            (lot_id,),
+        )
+        own_pg_row = cur.fetchone()
+        if own_pg_row and own_pg_row["projection_group_id"] is not None:
+            own_pg = int(own_pg_row["projection_group_id"])
+            if own_pg not in affected_pg_ids:
+                affected_pg_ids.append(own_pg)
+
+        if affected_pg_ids:
+            cur.execute(
+                """
+                UPDATE dim_projection_groups
+                SET needs_rerun = true
+                WHERE projection_group_id = ANY(%s)
+                """,
+                (affected_pg_ids,),
+            )
+
+        # ----------------------------------------------------------------
+        # Step 4 — Audit log
+        # ----------------------------------------------------------------
+        metadata = {
+            "lot_number": lot["lot_number"],
+            "lot_type_id": lot["lot_type_id"],
+            "had_actual_dates": has_actual_dates,
+        }
+        cur.execute(
+            """
+            INSERT INTO sim_assignment_log
+                (action, resource_type, resource_id,
+                 from_owner_id, to_owner_id,
+                 changed_by, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                "lot_phase_unassignment",
+                "lot",
+                lot_id,
+                from_phase_id,
+                0,          # NULL represented as 0 per spec
+                changed_by,
+                psycopg2.extras.Json(metadata),
+            ),
+        )
+
+        conn.commit()
+
+        # ----------------------------------------------------------------
+        # Post-commit: build from_phase_counts
+        # ----------------------------------------------------------------
+        cur.execute(
+            """
+            SELECT COUNT(*) AS actual
+            FROM sim_lots
+            WHERE phase_id = %s AND lot_type_id = %s AND lot_source = 'real'
+            """,
+            (from_phase_id, lot["lot_type_id"]),
+        )
+        actual = int(cur.fetchone()["actual"])
+        cur.execute(
+            """
+            SELECT lot_count
+            FROM sim_phase_product_splits
+            WHERE phase_id = %s AND lot_type_id = %s
+            """,
+            (from_phase_id, lot["lot_type_id"]),
+        )
+        split_row = cur.fetchone()
+        projected = int(split_row["lot_count"]) if split_row else 0
+
+        from_phase_counts = {
+            "phase_id": from_phase_id,
+            "by_lot_type": [
+                {
+                    "lot_type_id": lot["lot_type_id"],
+                    "actual": actual,
+                    "projected": projected,
+                    "total": max(actual, projected),
+                }
+            ],
+        }
+
+        return ReassignmentResult(
+            success=True,
+            transaction={
+                "action": "lot_phase_unassignment",
+                "lot_id": lot_id,
+                "lot_number": lot["lot_number"],
+                "from_phase_id": from_phase_id,
+                "to_phase_id": 0,
+            },
+            needs_rerun=affected_pg_ids,
+            warnings=warnings,
+            phase_counts=from_phase_counts,   # reuse phase_counts field to carry from_phase_counts
         )
 
     except Exception:

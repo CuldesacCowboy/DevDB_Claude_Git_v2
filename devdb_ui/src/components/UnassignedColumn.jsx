@@ -1,14 +1,23 @@
+import { useDroppable } from '@dnd-kit/core'
 import LotCard from './LotCard'
 
-// The Unassigned column is a drag SOURCE only — not a drop target.
+// The Unassigned column is both a drag source and a drop target.
 // Lots here have phase_id: null in local state.
 export default function UnassignedColumn({ lots, pendingLotId }) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: 'unassigned',
+    data: { isUnassigned: true },
+  })
+
   return (
     <div
+      ref={setNodeRef}
       className={`
-        flex flex-col rounded-lg border-2 border-amber-200 bg-amber-50
+        flex flex-col rounded-lg border-2 bg-amber-50
         min-w-[180px] max-w-[220px] w-full flex-shrink-0
         sticky left-0 z-10
+        transition-colors
+        ${isOver ? 'border-blue-400 border-dashed' : 'border-amber-200'}
       `}
       style={{ alignSelf: 'flex-start' }}
     >
@@ -32,7 +41,7 @@ export default function UnassignedColumn({ lots, pendingLotId }) {
           ))
         ) : (
           <p className="text-[11px] text-amber-600 italic text-center mt-2">
-            All lots assigned
+            {isOver ? 'Drop to unassign' : 'All lots assigned'}
           </p>
         )}
       </div>

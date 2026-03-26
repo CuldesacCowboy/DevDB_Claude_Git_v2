@@ -92,85 +92,133 @@ export default function LotPhaseView() {
     if (!over) return
 
     const lot = active.data.current?.lot
+    if (!lot) return
+
+    const droppedOnUnassigned = over.data.current?.isUnassigned === true
     const targetPhase = over.data.current?.phase
 
-    // Must drop on a phase column (not Unassigned — it has no useDroppable)
-    if (!lot || !targetPhase) return
+    if (!droppedOnUnassigned && !targetPhase) return
+
+    // Already unassigned and dropped on Unassigned — no-op
+    if (droppedOnUnassigned && lot.phase_id === null) return
 
     // Same-phase drop — no-op
-    if (lot.phase_id === targetPhase.phase_id) return
+    if (targetPhase && lot.phase_id === targetPhase.phase_id) return
 
     setPendingLotId(lot.lot_id)
 
     try {
-      const res = await fetch(`/api/lots/${lot.lot_id}/phase`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          target_phase_id: targetPhase.phase_id,
-          changed_by: 'user',
-        }),
-      })
+      if (droppedOnUnassigned) {
+        // ---- Unassign: DELETE /lots/{lot_id}/phase ----
+        const res = await fetch(
+          `/api/lots/${lot.lot_id}/phase?changed_by=user`,
+          { method: 'DELETE' }
+        )
+        const data = await res.json()
 
-      const data = await res.json()
+        if (res.ok) {
+          const { transaction, from_phase_counts, needs_rerun, warnings } = data
 
-      if (res.ok) {
-        const { transaction, phase_counts, needs_rerun, warnings } = data
-        const fromUnassigned = lot.phase_id === null
-
-        if (fromUnassigned) {
-          // Remove from unassigned pool
-          setUnassigned((prev) => prev.filter((l) => l.lot_id !== lot.lot_id))
-          // Add to target phase
-          setPhases((prev) =>
-            prev.map((phase) => {
-              if (phase.phase_id === transaction.to_phase_id) {
-                const updatedLots = [
-                  ...phase.lots,
-                  { ...lot, phase_id: transaction.to_phase_id },
-                ].sort((a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? ''))
-                const toCounts = phase_counts.to_phase.by_lot_type
-                return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, toCounts) }
-              }
-              return phase
-            })
-          )
-        } else {
-          // Phase-to-phase move — update both sides
+          // Remove from its phase; add to unassigned
           setPhases((prev) =>
             prev.map((phase) => {
               if (phase.phase_id === transaction.from_phase_id) {
                 const updatedLots = phase.lots.filter((l) => l.lot_id !== lot.lot_id)
-                const fromCounts = phase_counts.from_phase.by_lot_type
+                const fromCounts = from_phase_counts.by_lot_type
                 return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, fromCounts) }
-              }
-              if (phase.phase_id === transaction.to_phase_id) {
-                const updatedLots = [
-                  ...phase.lots,
-                  { ...lot, phase_id: transaction.to_phase_id },
-                ].sort((a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? ''))
-                const toCounts = phase_counts.to_phase.by_lot_type
-                return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, toCounts) }
               }
               return phase
             })
           )
-        }
+          setUnassigned((prev) =>
+            [...prev, { ...lot, phase_id: null }].sort(
+              (a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? '')
+            )
+          )
 
-        if (needs_rerun?.length > 0) setNeedsRerun(true)
+          if (needs_rerun?.length > 0) setNeedsRerun(true)
 
-        const toPhase = phases.find((p) => p.phase_id === transaction.to_phase_id)
-        addToast(
-          'success',
-          `Lot ${transaction.lot_number} moved to ${toPhase?.phase_name ?? `phase ${transaction.to_phase_id}`}`
-        )
+          const fromPhase = phases.find((p) => p.phase_id === transaction.from_phase_id)
+          addToast(
+            'success',
+            `Lot ${transaction.lot_number} unassigned from ${fromPhase?.phase_name ?? `phase ${transaction.from_phase_id}`}`
+          )
 
-        if (warnings?.length > 0) {
-          warnings.forEach((w) => addToast('warning', w.message))
+          if (warnings?.length > 0) {
+            warnings.forEach((w) => addToast('warning', w.message))
+          }
+        } else {
+          const errMsg = data?.detail?.message ?? data?.detail ?? 'Unassign failed'
+          addToast('error', errMsg)
         }
       } else {
-        const errMsg = data?.detail?.message ?? data?.detail ?? 'Move failed'
-        addToast('error', errMsg)
+        // ---- Reassign: PATCH /lots/{lot_id}/phase ----
+        const res = await fetch(`/api/lots/${lot.lot_id}/phase`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_phase_id: targetPhase.phase_id,
+            changed_by: 'user',
+          }),
+        })
+
+        const data = await res.json()
+
+        if (res.ok) {
+          const { transaction, phase_counts, needs_rerun, warnings } = data
+          const fromUnassigned = lot.phase_id === null
+
+          if (fromUnassigned) {
+            setUnassigned((prev) => prev.filter((l) => l.lot_id !== lot.lot_id))
+            setPhases((prev) =>
+              prev.map((phase) => {
+                if (phase.phase_id === transaction.to_phase_id) {
+                  const updatedLots = [
+                    ...phase.lots,
+                    { ...lot, phase_id: transaction.to_phase_id },
+                  ].sort((a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? ''))
+                  const toCounts = phase_counts.to_phase.by_lot_type
+                  return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, toCounts) }
+                }
+                return phase
+              })
+            )
+          } else {
+            setPhases((prev) =>
+              prev.map((phase) => {
+                if (phase.phase_id === transaction.from_phase_id) {
+                  const updatedLots = phase.lots.filter((l) => l.lot_id !== lot.lot_id)
+                  const fromCounts = phase_counts.from_phase.by_lot_type
+                  return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, fromCounts) }
+                }
+                if (phase.phase_id === transaction.to_phase_id) {
+                  const updatedLots = [
+                    ...phase.lots,
+                    { ...lot, phase_id: transaction.to_phase_id },
+                  ].sort((a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? ''))
+                  const toCounts = phase_counts.to_phase.by_lot_type
+                  return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, toCounts) }
+                }
+                return phase
+              })
+            )
+          }
+
+          if (needs_rerun?.length > 0) setNeedsRerun(true)
+
+          const toPhase = phases.find((p) => p.phase_id === transaction.to_phase_id)
+          addToast(
+            'success',
+            `Lot ${transaction.lot_number} moved to ${toPhase?.phase_name ?? `phase ${transaction.to_phase_id}`}`
+          )
+
+          if (warnings?.length > 0) {
+            warnings.forEach((w) => addToast('warning', w.message))
+          }
+        } else {
+          const errMsg = data?.detail?.message ?? data?.detail ?? 'Move failed'
+          addToast('error', errMsg)
+        }
       }
     } catch (err) {
       addToast('error', `Network error: ${err.message}`)
@@ -206,7 +254,7 @@ export default function LotPhaseView() {
           Lot → Phase Assignment &nbsp;|&nbsp; dev {DEV_ID}
         </h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Drag a lot card onto a phase column to reassign it.
+          Drag a lot card onto a phase column to reassign it, or onto Unassigned to remove it from its phase.
         </p>
       </div>
 

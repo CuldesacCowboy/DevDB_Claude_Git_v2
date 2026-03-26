@@ -48,6 +48,13 @@ class LotPhaseReassignResponse(BaseModel):
     phase_counts: PhaseCounts
 
 
+class LotUnassignResponse(BaseModel):
+    transaction: TransactionDetail
+    needs_rerun: list[int]
+    warnings: list[Warning]
+    from_phase_counts: PhaseCountDetail
+
+
 class ErrorResponse(BaseModel):
     error: str
     message: str
