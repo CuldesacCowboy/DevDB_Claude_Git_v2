@@ -392,41 +392,39 @@ export default function LotPhaseView() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        {/* Main layout — no horizontal overflow */}
-        <div className="flex gap-3 pb-4 items-start overflow-hidden">
-          {/* Unassigned lots — fixed width, pinned left */}
-          <div className="w-36 flex-shrink-0">
+        {/* Main layout — Unassigned pinned left, instruments wrap */}
+        <div className="flex gap-3 pb-4 items-start flex-wrap">
+          {/* Unassigned lots — fixed 160px, never wraps */}
+          <div style={{ flex: '0 0 160px', width: 160 }}>
             <UnassignedColumn lots={unassigned} pendingLotId={pendingLotId} />
           </div>
 
-          {/* Instrument containers — flex row fills remaining width */}
-          <div className="flex flex-1 min-w-0 gap-3 overflow-hidden">
-            {instruments.map((instr) => (
-              <InstrumentContainer
-                key={instr.instrument_id}
-                instrument={instr}
-                phases={instr.phases}
-                tint={devColorMap[instr.dev_id]}
-                pendingLotId={pendingLotId}
-                pendingPhaseId={pendingPhaseId}
-                activeDragType={activeDragType}
-                collapsedPhaseIds={collapsedPhaseIds}
-                onToggleCollapse={togglePhaseCollapse}
-              />
-            ))}
-
-            {/* "No instrument" container — always visible */}
+          {/* Instrument containers — each sizes to fit-content, wrap to new rows */}
+          {instruments.map((instr) => (
             <InstrumentContainer
-              instrument={null}
-              phases={unassignedPhases}
-              tint={null}
+              key={instr.instrument_id}
+              instrument={instr}
+              phases={instr.phases}
+              tint={devColorMap[instr.dev_id]}
               pendingLotId={pendingLotId}
               pendingPhaseId={pendingPhaseId}
               activeDragType={activeDragType}
               collapsedPhaseIds={collapsedPhaseIds}
               onToggleCollapse={togglePhaseCollapse}
             />
-          </div>
+          ))}
+
+          {/* "No instrument" container — always visible */}
+          <InstrumentContainer
+            instrument={null}
+            phases={unassignedPhases}
+            tint={null}
+            pendingLotId={pendingLotId}
+            pendingPhaseId={pendingPhaseId}
+            activeDragType={activeDragType}
+            collapsedPhaseIds={collapsedPhaseIds}
+            onToggleCollapse={togglePhaseCollapse}
+          />
         </div>
 
         <DragOverlay dropAnimation={null}>

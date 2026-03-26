@@ -54,29 +54,29 @@ export default function InstrumentContainer({
       ref={setNodeRef}
       className={`
         flex flex-col rounded-xl border-2 transition-colors duration-100
-        flex-1 min-w-0 overflow-hidden
         ${containerTint.bg}
         ${showPhaseDropHighlight ? 'border-blue-400 border-dashed' : containerTint.border}
         ${isNoInstrument ? 'border-dashed' : ''}
       `}
+      style={{ flex: '0 0 auto', width: 'fit-content', maxWidth: '100%' }}
     >
       {/* Container header */}
-      <div className={`px-3 py-2 rounded-t-xl border-b ${containerTint.border} ${containerTint.header} overflow-hidden`}>
+      <div className={`px-3 py-2 rounded-t-xl border-b ${containerTint.border} ${containerTint.header}`}>
         {isNoInstrument ? (
-          <p className="font-semibold text-sm text-gray-500 italic truncate">No instrument assigned</p>
+          <p className="font-semibold text-sm text-gray-500 italic whitespace-nowrap">No instrument assigned</p>
         ) : (
-          <div className="flex items-center gap-2 min-w-0">
-            <p className={`font-bold text-sm ${containerTint.text} truncate`}>{instrument.instrument_name}</p>
+          <div className="flex items-center gap-2">
+            <p className={`font-bold text-sm ${containerTint.text} whitespace-nowrap`}>{instrument.instrument_name}</p>
             <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${containerTint.header} border ${containerTint.border} ${containerTint.text}`}>
               {instrument.instrument_type}
             </span>
-            <span className="text-[11px] text-gray-400 flex-shrink-0 ml-auto">{instrument.dev_name}</span>
+            <span className="text-[11px] text-gray-400 flex-shrink-0 ml-2">{instrument.dev_name}</span>
           </div>
         )}
       </div>
 
-      {/* Phase columns row — fills container width, no overflow */}
-      <div className="flex gap-2 p-2 overflow-hidden">
+      {/* Phase columns — wrap to new rows when phases don't fit */}
+      <div className="flex flex-wrap gap-2 p-2 items-start">
         {phasesData.length > 0 ? (
           phasesData.map((phase) => (
             <PhaseColumn
@@ -89,7 +89,7 @@ export default function InstrumentContainer({
             />
           ))
         ) : (
-          <div className="flex items-center justify-center min-h-[80px] w-full">
+          <div className="flex items-center justify-center min-h-[80px]" style={{ width: 160 }}>
             <p className="text-[11px] text-gray-400 italic">
               {showPhaseDropHighlight ? 'Drop phase here' : 'No phases'}
             </p>

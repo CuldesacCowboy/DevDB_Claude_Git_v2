@@ -35,11 +35,11 @@ export default function PhaseColumn({
     <div
       ref={setDropRef}
       className={`
-        flex flex-col rounded-lg border-2 transition-colors duration-100
-        flex-1 min-w-0 overflow-hidden
+        flex flex-col rounded-lg border-2 transition-colors duration-100 overflow-hidden
         ${isDragging ? 'opacity-30' : ''}
         ${isOver && !isCollapsed ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}
       `}
+      style={{ flex: '0 0 auto', width: 160, minWidth: 140, maxWidth: 220 }}
     >
       {/* Header — drag handle + collapse toggle */}
       <div
@@ -56,8 +56,11 @@ export default function PhaseColumn({
           <span className="text-gray-300 text-[10px] leading-none flex-shrink-0" aria-hidden>
             ⠿
           </span>
-          {/* Phase name */}
-          <p className="font-bold text-xs text-gray-800 leading-tight flex-1 min-w-0 truncate">
+          {/* Phase name — truncates, full name in hover tooltip */}
+          <p
+            className="font-bold text-xs text-gray-800 leading-tight flex-1 min-w-0 truncate"
+            title={phase.phase_name}
+          >
             {phase.phase_name}
           </p>
           {/* Collapse toggle — stops drag propagation on pointer down */}
@@ -77,17 +80,25 @@ export default function PhaseColumn({
         </div>
       </div>
 
-      {/* Capacity counts — always visible */}
+      {/* Capacity counts — always visible, full text in tooltip */}
       <div className="px-2 py-1 border-b border-gray-100">
-        {phase.by_lot_type.map((lt) => (
-          <p key={lt.lot_type_id} className="text-[11px] text-gray-500 leading-snug truncate">
-            <span className="font-medium text-gray-700">{lt.actual}</span>r{' '}
-            /<span className="font-medium text-gray-700"> {lt.projected}</span>p{' '}
-            /<span className="font-medium text-gray-700"> {lt.total}</span>t
-          </p>
-        ))}
+        {phase.by_lot_type.map((lt) => {
+          const full = `${lt.actual} real / ${lt.projected} proj / ${lt.total} total (lt ${lt.lot_type_id})`
+          const compact = `${lt.actual}/${lt.projected}/${lt.total}`
+          return (
+            <p
+              key={lt.lot_type_id}
+              className="text-[11px] text-gray-500 leading-snug whitespace-nowrap"
+              title={full}
+            >
+              <span className="font-medium text-gray-700">{lt.actual}</span>r{' '}
+              /<span className="font-medium text-gray-700"> {lt.projected}</span>p{' '}
+              /<span className="font-medium text-gray-700"> {lt.total}</span>t
+            </p>
+          )
+        })}
         {phase.by_lot_type.length === 0 && (
-          <p className="text-[11px] text-gray-400 italic truncate">no splits</p>
+          <p className="text-[11px] text-gray-400 italic">no splits</p>
         )}
         {/* Collapsed lot count */}
         {isCollapsed && (

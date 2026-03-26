@@ -14,8 +14,8 @@ export default function UnassignedColumn({ lots, pendingLotId }) {
     <div
       ref={setNodeRef}
       className={`
-        flex flex-col rounded-lg border-2 bg-amber-50 w-full overflow-hidden
-        transition-colors
+        flex flex-col rounded-lg border-2 bg-amber-50 overflow-hidden
+        transition-colors w-full
         ${isOver ? 'border-blue-400 border-dashed' : 'border-amber-200'}
       `}
       style={{ alignSelf: 'flex-start' }}
