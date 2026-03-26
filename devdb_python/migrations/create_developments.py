@@ -27,7 +27,7 @@ _DDL = """
 CREATE TABLE IF NOT EXISTS developments (
     dev_id          SERIAL PRIMARY KEY,
     dev_name        TEXT NOT NULL,
-    marks_code      CHAR(2),
+    marks_code      CHAR(2) UNIQUE,
     in_marks        BOOLEAN NOT NULL DEFAULT false,
     county_id       BIGINT REFERENCES dim_county(county_id),
     state_id        BIGINT REFERENCES dim_state(state_id),
