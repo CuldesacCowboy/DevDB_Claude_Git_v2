@@ -8,6 +8,7 @@ import {
   closestCenter,
 } from '@dnd-kit/core'
 import PhaseColumn from '../components/PhaseColumn'
+import UnassignedColumn from '../components/UnassignedColumn'
 import LotCard from '../components/LotCard'
 import Toast from '../components/Toast'
 
@@ -15,13 +16,13 @@ const DEV_ID = 48
 
 export default function LotPhaseView() {
   const [phases, setPhases] = useState([])
+  const [unassigned, setUnassigned] = useState([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(null)
 
   // Drag state
   const [activeLot, setActiveLot] = useState(null)         // lot being dragged
   const [pendingLotId, setPendingLotId] = useState(null)   // lot mid-API call
-  const [dragDisabled, setDragDisabled] = useState(false)
 
   // Toasts
   const [toasts, setToasts] = useState([])
@@ -50,6 +51,8 @@ export default function LotPhaseView() {
           lots: p.lots.map((l) => ({ ...l, phase_id: p.phase_id })),
         }))
         setPhases(phases)
+        // Unassigned lots have phase_id: null
+        setUnassigned((data.unassigned ?? []).map((l) => ({ ...l, phase_id: null })))
         setLoading(false)
       })
       .catch((err) => {
@@ -91,11 +94,12 @@ export default function LotPhaseView() {
     const lot = active.data.current?.lot
     const targetPhase = over.data.current?.phase
 
+    // Must drop on a phase column (not Unassigned — it has no useDroppable)
     if (!lot || !targetPhase) return
-    if (lot.phase_id === targetPhase.phase_id) return  // dropped on same column
 
-    // Prevent further drags while API call is in flight
-    setDragDisabled(true)
+    // Same-phase drop — no-op
+    if (lot.phase_id === targetPhase.phase_id) return
+
     setPendingLotId(lot.lot_id)
 
     try {
@@ -111,39 +115,60 @@ export default function LotPhaseView() {
       const data = await res.json()
 
       if (res.ok) {
-        // Update local state from response
         const { transaction, phase_counts, needs_rerun, warnings } = data
+        const fromUnassigned = lot.phase_id === null
 
-        setPhases((prev) => {
-          const updated = prev.map((phase) => {
-            // Move lot from from_phase to to_phase
-            if (phase.phase_id === transaction.from_phase_id) {
-              const updatedLots = phase.lots.filter((l) => l.lot_id !== lot.lot_id)
-              const fromCounts = phase_counts.from_phase.by_lot_type
-              return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, fromCounts) }
-            }
-            if (phase.phase_id === transaction.to_phase_id) {
-              const updatedLots = [...phase.lots, { ...lot, phase_id: transaction.to_phase_id }].sort(
-                (a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? '')
-              )
-              const toCounts = phase_counts.to_phase.by_lot_type
-              return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, toCounts) }
-            }
-            return phase
-          })
-          return updated
-        })
+        if (fromUnassigned) {
+          // Remove from unassigned pool
+          setUnassigned((prev) => prev.filter((l) => l.lot_id !== lot.lot_id))
+          // Add to target phase
+          setPhases((prev) =>
+            prev.map((phase) => {
+              if (phase.phase_id === transaction.to_phase_id) {
+                const updatedLots = [
+                  ...phase.lots,
+                  { ...lot, phase_id: transaction.to_phase_id },
+                ].sort((a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? ''))
+                const toCounts = phase_counts.to_phase.by_lot_type
+                return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, toCounts) }
+              }
+              return phase
+            })
+          )
+        } else {
+          // Phase-to-phase move — update both sides
+          setPhases((prev) =>
+            prev.map((phase) => {
+              if (phase.phase_id === transaction.from_phase_id) {
+                const updatedLots = phase.lots.filter((l) => l.lot_id !== lot.lot_id)
+                const fromCounts = phase_counts.from_phase.by_lot_type
+                return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, fromCounts) }
+              }
+              if (phase.phase_id === transaction.to_phase_id) {
+                const updatedLots = [
+                  ...phase.lots,
+                  { ...lot, phase_id: transaction.to_phase_id },
+                ].sort((a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? ''))
+                const toCounts = phase_counts.to_phase.by_lot_type
+                return { ...phase, lots: updatedLots, by_lot_type: mergedCounts(phase.by_lot_type, toCounts) }
+              }
+              return phase
+            })
+          )
+        }
 
         if (needs_rerun?.length > 0) setNeedsRerun(true)
 
         const toPhase = phases.find((p) => p.phase_id === transaction.to_phase_id)
-        addToast('success', `Lot ${transaction.lot_number} moved to ${toPhase?.phase_name ?? `phase ${transaction.to_phase_id}`}`)
+        addToast(
+          'success',
+          `Lot ${transaction.lot_number} moved to ${toPhase?.phase_name ?? `phase ${transaction.to_phase_id}`}`
+        )
 
         if (warnings?.length > 0) {
           warnings.forEach((w) => addToast('warning', w.message))
         }
       } else {
-        // 422 or other error — snap back (lot already stayed in place, nothing to undo in local state)
         const errMsg = data?.detail?.message ?? data?.detail ?? 'Move failed'
         addToast('error', errMsg)
       }
@@ -151,7 +176,6 @@ export default function LotPhaseView() {
       addToast('error', `Network error: ${err.message}`)
     } finally {
       setPendingLotId(null)
-      setDragDisabled(false)
     }
   }
 
@@ -193,7 +217,7 @@ export default function LotPhaseView() {
         </div>
       )}
 
-      {/* Phase columns */}
+      {/* Column layout — Unassigned pinned left, phases scroll right */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -202,6 +226,13 @@ export default function LotPhaseView() {
         onDragCancel={handleDragCancel}
       >
         <div className="flex gap-3 overflow-x-auto pb-4">
+          {/* Pinned unassigned column */}
+          <UnassignedColumn
+            lots={unassigned}
+            pendingLotId={pendingLotId}
+          />
+
+          {/* Phase columns */}
           {phases.map((phase) => (
             <PhaseColumn
               key={phase.phase_id}

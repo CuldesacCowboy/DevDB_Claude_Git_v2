@@ -1,0 +1,41 @@
+import LotCard from './LotCard'
+
+// The Unassigned column is a drag SOURCE only — not a drop target.
+// Lots here have phase_id: null in local state.
+export default function UnassignedColumn({ lots, pendingLotId }) {
+  return (
+    <div
+      className={`
+        flex flex-col rounded-lg border-2 border-amber-200 bg-amber-50
+        min-w-[180px] max-w-[220px] w-full flex-shrink-0
+        sticky left-0 z-10
+      `}
+      style={{ alignSelf: 'flex-start' }}
+    >
+      {/* Header */}
+      <div className="px-3 py-2 border-b border-amber-200 bg-amber-100 rounded-t-md">
+        <p className="font-bold text-sm text-amber-900">Unassigned</p>
+        <p className="text-[11px] text-amber-700 mt-0.5">
+          {lots.length > 0 ? `${lots.length} lot${lots.length === 1 ? '' : 's'}` : 'empty'}
+        </p>
+      </div>
+
+      {/* Lot cards or placeholder */}
+      <div className="flex flex-col gap-1 p-2 min-h-[60px]">
+        {lots.length > 0 ? (
+          lots.map((lot) => (
+            <LotCard
+              key={lot.lot_id}
+              lot={lot}
+              isPending={pendingLotId === lot.lot_id}
+            />
+          ))
+        ) : (
+          <p className="text-[11px] text-amber-600 italic text-center mt-2">
+            All lots assigned
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}

@@ -50,8 +50,46 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
 
         if not phase_ids:
             return DevLotPhaseViewResponse(
-                dev_id=dev_id, dev_name=f"dev {dev_id}", phases=[]
+                dev_id=dev_id, dev_name=f"dev {dev_id}", unassigned=[], phases=[]
             )
+
+        # Load unassigned real lots (phase_id IS NULL, belonging to this dev via PG)
+        cur.execute(
+            f"""
+            SELECT
+                lot_id,
+                lot_number,
+                lot_type_id,
+                lot_source,
+                {_STATUS_SQL} AS status,
+                (
+                    (date_str IS NOT NULL OR date_cmp IS NOT NULL)
+                    AND date_cls IS NULL
+                ) AS has_actual_dates
+            FROM sim_lots
+            WHERE lot_source = 'real'
+              AND phase_id IS NULL
+              AND projection_group_id IN (
+                  SELECT projection_group_id
+                  FROM dim_projection_groups
+                  WHERE dev_id = %s
+              )
+            ORDER BY lot_number ASC NULLS LAST
+            """,
+            (dev_id,),
+        )
+        unassigned_raw = list(cur.fetchall())
+        unassigned_out = [
+            {
+                "lot_id": r["lot_id"],
+                "lot_number": r["lot_number"],
+                "lot_type_id": r["lot_type_id"],
+                "lot_source": r["lot_source"],
+                "status": r["status"],
+                "has_actual_dates": bool(r["has_actual_dates"]),
+            }
+            for r in unassigned_raw
+        ]
 
         # Load lots (real only) with derived status
         cur.execute(
@@ -136,6 +174,7 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
         return DevLotPhaseViewResponse(
             dev_id=dev_id,
             dev_name=f"dev {dev_id}",
+            unassigned=unassigned_out,
             phases=phases_out,
         )
 

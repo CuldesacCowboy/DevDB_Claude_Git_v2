@@ -79,4 +79,5 @@ class PhaseDetail(BaseModel):
 class DevLotPhaseViewResponse(BaseModel):
     dev_id: int
     dev_name: str
+    unassigned: list[LotDetail]
     phases: list[PhaseDetail]
