@@ -21,10 +21,32 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
     import psycopg2.extras
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        # lot_count: COUNT of real sim_lots linked to this community via
+        #   sim_ent_group_developments → dim_projection_groups → sim_lots.
+        # TODO: once developments.community_id is fully populated, switch to
+        #   the direct join path: developments → dim_projection_groups.dev_id.
         cur.execute(
-            "SELECT ent_group_id, ent_group_name FROM sim_entitlement_groups ORDER BY ent_group_name"
+            """
+            SELECT
+                eg.ent_group_id,
+                eg.ent_group_name,
+                COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'real') AS lot_count
+            FROM sim_entitlement_groups eg
+            LEFT JOIN sim_ent_group_developments egd ON egd.ent_group_id = eg.ent_group_id
+            LEFT JOIN dim_projection_groups dpg ON dpg.dev_id = egd.dev_id
+            LEFT JOIN sim_lots sl ON sl.projection_group_id = dpg.projection_group_id
+            GROUP BY eg.ent_group_id, eg.ent_group_name
+            ORDER BY eg.ent_group_name
+            """
         )
-        return [{"ent_group_id": r["ent_group_id"], "ent_group_name": r["ent_group_name"]} for r in cur.fetchall()]
+        return [
+            {
+                "ent_group_id": r["ent_group_id"],
+                "ent_group_name": r["ent_group_name"],
+                "lot_count": int(r["lot_count"]),
+            }
+            for r in cur.fetchall()
+        ]
     finally:
         cur.close()
 
