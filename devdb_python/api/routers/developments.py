@@ -175,8 +175,9 @@ def patch_development(dev_id: int, body: DevelopmentPatchRequest, conn=Depends(g
         updatable["state_id"] = body.state_id
     if body.municipality_id is not None:
         updatable["municipality_id"] = body.municipality_id
-    if body.community_id is not None:
-        updatable["community_id"] = body.community_id
+    # community_id uses model_fields_set so an explicit null (unassign) is honoured.
+    if "community_id" in body.model_fields_set:
+        updatable["community_id"] = body.community_id  # may be None → SQL NULL
 
     if not updatable:
         raise HTTPException(status_code=422, detail="No fields provided to update")
