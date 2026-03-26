@@ -6,20 +6,30 @@ import {
   useSensor,
   useSensors,
   closestCenter,
+  pointerWithin,
 } from '@dnd-kit/core'
+import { arrayMove } from '@dnd-kit/sortable'
 import InstrumentContainer, { buildDevColorMap } from '../components/InstrumentContainer'
 import UnassignedColumn from '../components/UnassignedColumn'
 import PhaseColumn from '../components/PhaseColumn'
 import LotCard from '../components/LotCard'
 import Toast from '../components/Toast'
 
-const ENT_GROUP_ID = 9002
-
 export default function LotPhaseView() {
+  // -----------------------------------------------------------------------
+  // Sidebar + community selection
+  // -----------------------------------------------------------------------
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [communities, setCommunities] = useState([])
+  const [entGroupId, setEntGroupId] = useState(9002)
+
+  // -----------------------------------------------------------------------
+  // Lot-phase view data
+  // -----------------------------------------------------------------------
   const [entGroup, setEntGroup] = useState(null)
-  const [instruments, setInstruments] = useState([])    // [{ instrument_id, phases: [...] }]
+  const [instruments, setInstruments] = useState([])
   const [unassignedPhases, setUnassignedPhases] = useState([])
-  const [unassigned, setUnassigned] = useState([])      // lots with phase_id=null
+  const [unassigned, setUnassigned] = useState([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState(null)
   const [devColorMap, setDevColorMap] = useState({})
@@ -46,10 +56,30 @@ export default function LotPhaseView() {
   )
 
   // -----------------------------------------------------------------------
-  // Load initial data
+  // Fetch communities list (once on mount)
   // -----------------------------------------------------------------------
   useEffect(() => {
-    fetch(`/api/entitlement-groups/${ENT_GROUP_ID}/lot-phase-view`)
+    fetch('/api/entitlement-groups')
+      .then((r) => r.json())
+      .then((data) => setCommunities(data))
+      .catch(() => {})
+  }, [])
+
+  // -----------------------------------------------------------------------
+  // Fetch lot-phase view whenever entGroupId changes
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    setLoading(true)
+    setFetchError(null)
+    setEntGroup(null)
+    setInstruments([])
+    setUnassignedPhases([])
+    setUnassigned([])
+    setNeedsRerun(false)
+    setCollapsedPhaseIds(new Set())
+    setToasts([])
+
+    fetch(`/api/entitlement-groups/${entGroupId}/lot-phase-view`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -68,7 +98,6 @@ export default function LotPhaseView() {
           lots: p.lots.map((l) => ({ ...l, phase_id: p.phase_id })),
         }))
 
-        // Build color map from unique dev_ids
         const allDevIds = instruments.map((i) => i.dev_id)
         setDevColorMap(buildDevColorMap(allDevIds))
 
@@ -82,7 +111,7 @@ export default function LotPhaseView() {
         setFetchError(err.message)
         setLoading(false)
       })
-  }, [])
+  }, [entGroupId])
 
   // -----------------------------------------------------------------------
   // Toast helpers
@@ -121,13 +150,34 @@ export default function LotPhaseView() {
     setActivePhase(null)
     setActiveDragType(null)
 
-    if (!over) return
+    if (!over || active.id === over.id) return
 
     const dragType = active.data.current?.type
     if (dragType === 'lot') {
       await handleLotDrop(active, over)
     } else if (dragType === 'phase') {
-      await handlePhaseDrop(active, over)
+      const overType = over.data.current?.type
+      const activeInstrumentId = active.data.current?.instrumentId ?? null
+
+      if (overType === 'instrument-target') {
+        await handlePhaseReassign(
+          active,
+          over.data.current.instrumentId,
+          over.data.current.instrumentName ?? 'No instrument',
+        )
+      } else if (overType === 'phase') {
+        const overInstrumentId = over.data.current?.instrumentId ?? null
+        if (activeInstrumentId === overInstrumentId) {
+          await handlePhaseReorder(active, over)
+        } else {
+          const targetInstr = instruments.find((i) => i.instrument_id === overInstrumentId)
+          await handlePhaseReassign(
+            active,
+            overInstrumentId,
+            targetInstr?.instrument_name ?? 'No instrument',
+          )
+        }
+      }
     }
   }
 
@@ -218,18 +268,13 @@ export default function LotPhaseView() {
   }
 
   // -----------------------------------------------------------------------
-  // Phase drop — move phase between instrument containers
+  // Phase reassign — move phase to a different instrument container
   // -----------------------------------------------------------------------
-  async function handlePhaseDrop(active, over) {
+  async function handlePhaseReassign(active, targetInstrumentId, targetInstrumentName) {
     const phase = active.data.current?.phase
     if (!phase) return
 
-    if (over.data.current?.type !== 'instrument-target') return
-
-    const targetInstrumentId = over.data.current?.instrumentId  // null = "No instrument"
     const currentInstrumentId = phase.instrument_id ?? null
-
-    // Same instrument — no-op
     if (currentInstrumentId === targetInstrumentId) return
 
     setPendingPhaseId(phase.phase_id)
@@ -243,10 +288,9 @@ export default function LotPhaseView() {
       const data = await res.json()
 
       if (res.ok) {
-        const { transaction, needs_rerun } = data
+        const { needs_rerun } = data
         const updatedPhase = { ...phase, instrument_id: targetInstrumentId }
 
-        // Remove from old location
         if (currentInstrumentId === null) {
           setUnassignedPhases((prev) => prev.filter((p) => p.phase_id !== phase.phase_id))
         } else {
@@ -259,7 +303,6 @@ export default function LotPhaseView() {
           )
         }
 
-        // Add to new location
         if (targetInstrumentId === null) {
           setUnassignedPhases((prev) => [...prev, updatedPhase])
         } else {
@@ -274,8 +317,8 @@ export default function LotPhaseView() {
 
         if (needs_rerun?.length > 0) setNeedsRerun(true)
 
-        const targetName = over.data.current?.instrumentName ?? 'No instrument'
-        const verb = targetInstrumentId === null ? 'removed from instrument' : `moved to ${targetName}`
+        const verb =
+          targetInstrumentId === null ? 'removed from instrument' : `moved to ${targetInstrumentName}`
         addToast('success', `Phase ${phase.phase_name} ${verb}`)
       } else {
         addToast('error', data?.detail?.message ?? data?.detail ?? 'Phase move failed')
@@ -284,6 +327,82 @@ export default function LotPhaseView() {
       addToast('error', `Network error: ${err.message}`)
     } finally {
       setPendingPhaseId(null)
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase reorder — drag to new position within same instrument
+  // display_order is updated; sequence_number is never touched.
+  // -----------------------------------------------------------------------
+  async function handlePhaseReorder(active, over) {
+    const instrumentId = active.data.current?.instrumentId ?? null
+    if (instrumentId === null) return
+
+    const instr = instruments.find((i) => i.instrument_id === instrumentId)
+    if (!instr) return
+
+    const activePhaseId = active.data.current?.phase?.phase_id
+    const overPhaseId = over.data.current?.phase?.phase_id
+
+    const oldIndex = instr.phases.findIndex((p) => p.phase_id === activePhaseId)
+    const newIndex = instr.phases.findIndex((p) => p.phase_id === overPhaseId)
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+
+    const previousPhases = instr.phases
+    const reordered = arrayMove(instr.phases, oldIndex, newIndex)
+
+    setInstruments((prev) =>
+      prev.map((i) => (i.instrument_id === instrumentId ? { ...i, phases: reordered } : i))
+    )
+
+    const phaseIds = reordered.map((p) => p.phase_id)
+
+    try {
+      const res = await fetch(`/api/instruments/${instrumentId}/phase-order`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phase_ids: phaseIds, changed_by: 'user' }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setInstruments((prev) =>
+          prev.map((i) => (i.instrument_id === instrumentId ? { ...i, phases: previousPhases } : i))
+        )
+        addToast('error', data?.detail ?? 'Reorder failed')
+      }
+    } catch (err) {
+      setInstruments((prev) =>
+        prev.map((i) => (i.instrument_id === instrumentId ? { ...i, phases: previousPhases } : i))
+      )
+      addToast('error', `Network error: ${err.message}`)
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Auto-sort — sort phases in an instrument via backend auto-sort endpoint
+  // -----------------------------------------------------------------------
+  async function handleAutoSort(instrumentId) {
+    try {
+      const res = await fetch(`/api/instruments/${instrumentId}/phase-order/auto-sort`, {
+        method: 'POST',
+      })
+      const data = await res.json()
+      if (res.ok) {
+        const orderedIds = data.phase_order
+        setInstruments((prev) =>
+          prev.map((instr) => {
+            if (instr.instrument_id !== instrumentId) return instr
+            const phaseMap = Object.fromEntries(instr.phases.map((p) => [p.phase_id, p]))
+            const reordered = orderedIds.map((id) => phaseMap[id]).filter(Boolean)
+            return { ...instr, phases: reordered }
+          })
+        )
+        addToast('success', 'Phases sorted')
+      } else {
+        addToast('error', data?.detail ?? 'Auto-sort failed')
+      }
+    } catch (err) {
+      addToast('error', `Network error: ${err.message}`)
     }
   }
 
@@ -336,102 +455,167 @@ export default function LotPhaseView() {
   // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen text-gray-500">Loading…</div>
-    )
-  }
-
-  if (fetchError) {
-    return (
-      <div className="flex items-center justify-center min-h-screen text-red-600">
-        Failed to load: {fetchError}
-      </div>
-    )
-  }
+  const activeEntGroupName = entGroup?.ent_group_name
+    ?? communities.find((c) => c.ent_group_id === entGroupId)?.ent_group_name
+    ?? `Group ${entGroupId}`
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 font-sans">
-      {/* Header */}
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-gray-900 truncate">
-            Lot → Phase &nbsp;|&nbsp; {entGroup?.ent_group_name ?? `Group ${ENT_GROUP_ID}`}
-          </h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Drag lot cards to reassign. Drag phase headers (⠿) to reassign instrument.
-          </p>
-        </div>
-        <div className="flex gap-2 flex-shrink-0">
-          <button
-            onClick={collapseAll}
-            className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
-          >
-            Collapse all
-          </button>
-          <button
-            onClick={expandAll}
-            className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
-          >
-            Expand all
-          </button>
+    <div className="flex min-h-screen font-sans">
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Toggle button — fixed top-left, always visible                   */}
+      {/* ---------------------------------------------------------------- */}
+      <button
+        onClick={() => setSidebarOpen((v) => !v)}
+        className="fixed top-2 left-2 z-50 flex items-center justify-center w-7 h-7 rounded bg-white border border-gray-200 shadow-sm text-gray-500 hover:text-gray-800 hover:bg-gray-50 text-base leading-none select-none"
+        title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+      >
+        {sidebarOpen ? '☰' : '›'}
+      </button>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Sidebar                                                          */}
+      {/* ---------------------------------------------------------------- */}
+      <div
+        style={{
+          width: sidebarOpen ? 220 : 12,
+          transition: 'width 0.2s ease',
+          flexShrink: 0,
+          cursor: sidebarOpen ? 'default' : 'pointer',
+        }}
+        className="bg-white border-r border-gray-200 overflow-hidden"
+        onClick={!sidebarOpen ? () => setSidebarOpen(true) : undefined}
+      >
+        {/* Inner content always 220px wide — overflow is clipped by parent */}
+        <div style={{ width: 220, pointerEvents: sidebarOpen ? 'auto' : 'none' }}>
+          <div className="pt-10 px-3 pb-4">
+            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-2">
+              Communities
+            </p>
+            {communities.length === 0 ? (
+              <p className="text-[11px] text-gray-400 italic px-2">Loading…</p>
+            ) : (
+              communities.map((c) => (
+                <button
+                  key={c.ent_group_id}
+                  onClick={(e) => { e.stopPropagation(); setEntGroupId(c.ent_group_id) }}
+                  className={`block w-full text-left text-sm px-2 py-1.5 rounded mb-0.5 transition-colors ${
+                    c.ent_group_id === entGroupId
+                      ? 'font-medium text-gray-900 bg-gray-100'
+                      : 'font-normal text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {c.ent_group_name}
+                </button>
+              ))
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Needs-rerun banner */}
-      {needsRerun && (
-        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 font-medium">
-          ⚠ Simulation results are outdated. Run simulation to update.
-        </div>
-      )}
+      {/* ---------------------------------------------------------------- */}
+      {/* Main content                                                     */}
+      {/* ---------------------------------------------------------------- */}
+      <div className="flex-1 min-w-0 bg-slate-50 p-4 overflow-auto">
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
-        {/* Main layout — Unassigned pinned left, instruments wrap */}
-        <div className="flex gap-3 pb-4 items-start flex-wrap">
-          {/* Unassigned lots — fixed 160px, never wraps */}
-          <div style={{ flex: '0 0 160px', width: 160 }}>
-            <UnassignedColumn lots={unassigned} pendingLotId={pendingLotId} />
+        {loading && (
+          <div className="flex items-center justify-center min-h-[calc(100vh-2rem)] text-gray-500">
+            Loading…
           </div>
+        )}
 
-          {/* Instrument containers — each sizes to fit-content, wrap to new rows */}
-          {instruments.map((instr) => (
-            <InstrumentContainer
-              key={instr.instrument_id}
-              instrument={instr}
-              phases={instr.phases}
-              tint={devColorMap[instr.dev_id]}
-              pendingLotId={pendingLotId}
-              pendingPhaseId={pendingPhaseId}
-              activeDragType={activeDragType}
-              collapsedPhaseIds={collapsedPhaseIds}
-              onToggleCollapse={togglePhaseCollapse}
-            />
-          ))}
+        {fetchError && (
+          <div className="flex items-center justify-center min-h-[calc(100vh-2rem)] text-red-600">
+            Failed to load: {fetchError}
+          </div>
+        )}
 
-          {/* "No instrument" container — always visible */}
-          <InstrumentContainer
-            instrument={null}
-            phases={unassignedPhases}
-            tint={null}
-            pendingLotId={pendingLotId}
-            pendingPhaseId={pendingPhaseId}
-            activeDragType={activeDragType}
-            collapsedPhaseIds={collapsedPhaseIds}
-            onToggleCollapse={togglePhaseCollapse}
-          />
-        </div>
+        {!loading && !fetchError && (
+          <>
+            {/* Header */}
+            <div className="mb-4 flex items-start justify-between gap-4 pl-8">
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold text-gray-900 truncate">
+                  Lot → Phase &nbsp;|&nbsp; {activeEntGroupName}
+                </h1>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Drag lot cards to reassign. Drag phase headers (⠿) to reassign instrument.
+                </p>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  onClick={collapseAll}
+                  className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                >
+                  Collapse all
+                </button>
+                <button
+                  onClick={expandAll}
+                  className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                >
+                  Expand all
+                </button>
+              </div>
+            </div>
 
-        <DragOverlay dropAnimation={null}>
-          {activeLot && <LotCard lot={activeLot} isOverlay />}
-          {activePhase && <PhaseColumn phase={activePhase} isOverlay />}
-        </DragOverlay>
-      </DndContext>
+            {/* Needs-rerun banner */}
+            {needsRerun && (
+              <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 font-medium">
+                ⚠ Simulation results are outdated. Run simulation to update.
+              </div>
+            )}
+
+            <DndContext
+              sensors={sensors}
+              collisionDetection={customCollision}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              {/* Main layout — Unassigned pinned left, instruments wrap */}
+              <div className="flex gap-3 pb-4 items-start flex-wrap">
+                {/* Unassigned lots — fixed 160px, never wraps */}
+                <div style={{ flex: '0 0 160px', width: 160 }}>
+                  <UnassignedColumn lots={unassigned} pendingLotId={pendingLotId} />
+                </div>
+
+                {/* Instrument containers */}
+                {instruments.map((instr) => (
+                  <InstrumentContainer
+                    key={instr.instrument_id}
+                    instrument={instr}
+                    phases={instr.phases}
+                    tint={devColorMap[instr.dev_id]}
+                    pendingLotId={pendingLotId}
+                    pendingPhaseId={pendingPhaseId}
+                    activeDragType={activeDragType}
+                    collapsedPhaseIds={collapsedPhaseIds}
+                    onToggleCollapse={togglePhaseCollapse}
+                    onAutoSort={handleAutoSort}
+                  />
+                ))}
+
+                {/* "No instrument" container — always visible */}
+                <InstrumentContainer
+                  instrument={null}
+                  phases={unassignedPhases}
+                  tint={null}
+                  pendingLotId={pendingLotId}
+                  pendingPhaseId={pendingPhaseId}
+                  activeDragType={activeDragType}
+                  collapsedPhaseIds={collapsedPhaseIds}
+                  onToggleCollapse={togglePhaseCollapse}
+                />
+              </div>
+
+              <DragOverlay dropAnimation={null}>
+                {activeLot && <LotCard lot={activeLot} isOverlay />}
+                {activePhase && <PhaseColumn phase={activePhase} isOverlay />}
+              </DragOverlay>
+            </DndContext>
+          </>
+        )}
+      </div>
 
       {/* Toast stack */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">
@@ -450,8 +634,38 @@ export default function LotPhaseView() {
   )
 }
 
-// Replace phase counts for matching lot_type_ids; keep others unchanged
+// Phase drags: pointerWithin first so hovering anywhere inside a container or
+// phase column registers correctly. Falls back to closestCenter when the pointer
+// is in empty space (no droppable under it), preventing "lost" drops.
+// Lot drags: filter to only lot-target and unassigned droppables so sortable
+// phase-header-* items (type='phase') never win the collision and silently swallow the drop.
+function customCollision(args) {
+  const activeType = args.active?.data?.current?.type
+  if (activeType === 'phase') {
+    const result = pointerWithin(args)
+    return result.length > 0 ? result : closestCenter(args)
+  }
+  if (activeType === 'lot') {
+    const lotArgs = {
+      ...args,
+      droppableContainers: args.droppableContainers.filter(
+        (c) => c.data?.current?.type === 'lot-target' || c.data?.current?.type === 'unassigned'
+      ),
+    }
+    const result = pointerWithin(lotArgs)
+    return result.length > 0 ? result : closestCenter(lotArgs)
+  }
+  return closestCenter(args)
+}
+
+// Replace phase counts for matching lot_type_ids; keep others unchanged.
+// Appends entries from updates whose lot_type_id is not yet in existing.
+// Removes entries where both actual and projected dropped to 0 (cleanup on lot removal).
 function mergedCounts(existing, updates) {
+  if (!updates?.length) return existing
   const updateMap = Object.fromEntries(updates.map((u) => [u.lot_type_id, u]))
-  return existing.map((e) => updateMap[e.lot_type_id] ?? e)
+  const existingIds = new Set(existing.map((e) => e.lot_type_id))
+  const merged = existing.map((e) => updateMap[e.lot_type_id] ?? e)
+  const added = updates.filter((u) => !existingIds.has(u.lot_type_id))
+  return [...merged, ...added].filter((e) => e.actual > 0 || e.projected > 0)
 }
