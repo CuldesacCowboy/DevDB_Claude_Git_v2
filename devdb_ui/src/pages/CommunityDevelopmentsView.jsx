@@ -118,7 +118,7 @@ function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef }) 
       ref={setRef}
       className="rounded-xl border-2 transition-colors duration-100 overflow-hidden"
       style={{
-        width: 220,
+        width: '100%',
         breakInside: 'avoid',
         borderColor: isSelected ? '#3b82f6' : isOver ? '#93c5fd' : '#e5e7eb',
         background: isSelected ? '#eff6ff' : isOver ? '#f0f9ff' : 'white',
@@ -473,11 +473,14 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
             >
               <div
                 style={{
-                  columnWidth: 240,
+                  columnWidth: 280,
                   columnFill: 'auto',
                   columnGap: 4,
                   height: '100%',
-                  padding: 16,
+                  paddingTop: 8,
+                  paddingBottom: 8,
+                  paddingLeft: 0,
+                  paddingRight: 0,
                 }}
               >
                 {sortedCommunities.map((c) => (
