@@ -21,20 +21,38 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
     import psycopg2.extras
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        # lot_count: COUNT of real sim_lots linked to this community via
-        #   sim_ent_group_developments → dim_projection_groups → sim_lots.
-        # TODO: once developments.community_id is fully populated, switch to
-        #   the direct join path: developments → dim_projection_groups.dev_id.
+        # r/p/t rollup per community using developments.community_id as source of truth.
+        # Join path: developments → dim_development (bridge for legacy dev_id) →
+        #   sim_legal_instruments → sim_dev_phases → sim_lots / sim_phase_product_splits.
+        # total = SUM of GREATEST(real_count, projected_count) per phase.
         cur.execute(
             """
             SELECT
                 eg.ent_group_id,
                 eg.ent_group_name,
-                COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'real') AS lot_count
+                COALESCE(SUM(pt.real_count), 0)::int          AS real_count,
+                COALESCE(SUM(pt.projected_count), 0)::int     AS projected_count,
+                COALESCE(SUM(
+                    GREATEST(pt.real_count, pt.projected_count)
+                ), 0)::int                                     AS total_count
             FROM sim_entitlement_groups eg
-            LEFT JOIN sim_ent_group_developments egd ON egd.ent_group_id = eg.ent_group_id
-            LEFT JOIN dim_projection_groups dpg ON dpg.dev_id = egd.dev_id
-            LEFT JOIN sim_lots sl ON sl.projection_group_id = dpg.projection_group_id
+            LEFT JOIN (
+                SELECT
+                    d.community_id,
+                    sdp.phase_id,
+                    COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'real') AS real_count,
+                    COALESCE(SUM(spps.lot_count), 0)                        AS projected_count
+                FROM developments d
+                JOIN dim_development dd ON dd.dev_code2 = d.marks_code
+                JOIN sim_legal_instruments li ON li.dev_id = dd.development_id
+                JOIN sim_dev_phases sdp ON sdp.instrument_id = li.instrument_id
+                LEFT JOIN sim_lots sl
+                       ON sl.phase_id = sdp.phase_id AND sl.lot_source = 'real'
+                LEFT JOIN sim_phase_product_splits spps ON spps.phase_id = sdp.phase_id
+                WHERE d.community_id IS NOT NULL
+                  AND d.marks_code IS NOT NULL
+                GROUP BY d.community_id, sdp.phase_id
+            ) pt ON pt.community_id = eg.ent_group_id
             GROUP BY eg.ent_group_id, eg.ent_group_name
             ORDER BY eg.ent_group_name
             """
@@ -43,7 +61,9 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
             {
                 "ent_group_id": r["ent_group_id"],
                 "ent_group_name": r["ent_group_name"],
-                "lot_count": int(r["lot_count"]),
+                "real_count": int(r["real_count"]),
+                "projected_count": int(r["projected_count"]),
+                "total_count": int(r["total_count"]),
             }
             for r in cur.fetchall()
         ]
@@ -127,12 +147,23 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
         if ent_group is None:
             raise HTTPException(status_code=404, detail=f"Entitlement group {ent_group_id} not found.")
 
-        # Get all dev_ids in the group
+        # Get legacy dev_ids and dev_name via developments.community_id.
+        # Bridge: developments.marks_code = dim_development.dev_code2
+        # dim_development.development_id is the legacy dev_id used in sim_legal_instruments
+        # and sim_dev_phases.
         cur.execute(
-            "SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s",
+            """
+            SELECT dd.development_id AS dev_id, d.dev_name
+            FROM developments d
+            JOIN dim_development dd ON dd.dev_code2 = d.marks_code
+            WHERE d.community_id = %s
+              AND d.marks_code IS NOT NULL
+            """,
             (ent_group_id,),
         )
-        dev_ids = [r["dev_id"] for r in cur.fetchall()]
+        dev_rows = cur.fetchall()
+        dev_ids = [r["dev_id"] for r in dev_rows]
+        dev_name_map = {r["dev_id"]: r["dev_name"] for r in dev_rows}
 
         if not dev_ids:
             return EntGroupLotPhaseViewResponse(
@@ -177,7 +208,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
                     "instrument_name": i["instrument_name"],
                     "instrument_type": i["instrument_type"],
                     "dev_id": i["dev_id"],
-                    "dev_name": f"dev {i['dev_id']}",
+                    "dev_name": dev_name_map.get(i["dev_id"], f"dev {i['dev_id']}"),
                     "phases": [],
                 }
                 for i in instruments_raw
@@ -308,14 +339,14 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
         for iid in phases_by_instrument:
             phases_by_instrument[iid] = _sort_phases_for_display(phases_by_instrument[iid])
 
-        # Assemble instruments output
+        # Assemble instruments output — dev_name from developments table
         instruments_out = [
             {
                 "instrument_id": i["instrument_id"],
                 "instrument_name": i["instrument_name"],
                 "instrument_type": i["instrument_type"],
                 "dev_id": i["dev_id"],
-                "dev_name": f"dev {i['dev_id']}",
+                "dev_name": dev_name_map.get(i["dev_id"], f"dev {i['dev_id']}"),
                 "phases": phases_by_instrument.get(i["instrument_id"], []),
             }
             for i in instruments_raw
