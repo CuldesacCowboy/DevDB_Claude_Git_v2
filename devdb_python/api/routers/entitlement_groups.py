@@ -1,12 +1,53 @@
 # routers/entitlement_groups.py
 # Entitlement-group level read endpoints.
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.deps import get_db_conn
 from api.models.lot_models import EntGroupLotPhaseViewResponse
 
 router = APIRouter(prefix="/entitlement-groups", tags=["entitlement-groups"])
+
+
+@router.get("", response_model=list[dict])
+def list_entitlement_groups(conn=Depends(get_db_conn)):
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "SELECT ent_group_id, ent_group_name FROM sim_entitlement_groups ORDER BY ent_group_name"
+        )
+        return [{"ent_group_id": r["ent_group_id"], "ent_group_name": r["ent_group_name"]} for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+
+def _sort_phases_for_display(phases: list) -> list:
+    """
+    Sort an instrument's phase list for UI display.
+    Phases with display_order set come first (ascending).
+    Phases with display_order NULL fall back to auto-sort:
+      alphabetical by prefix, then numeric by ph. N.
+    display_order is a UI preference only -- never touches sequence_number.
+    """
+    def _auto_key(p):
+        name = (p.get("phase_name") or "").strip()
+        m = re.search(r'\s+ph\.\s*(\d+)\s*$', name)
+        prefix = name[: m.start()].strip() if m else name
+        ph_num = int(m.group(1)) if m else 0
+        return (prefix.lower(), ph_num)
+
+    with_order = sorted(
+        [p for p in phases if p.get("display_order") is not None],
+        key=lambda p: p["display_order"],
+    )
+    without_order = sorted(
+        [p for p in phases if p.get("display_order") is None],
+        key=_auto_key,
+    )
+    return with_order + without_order
 
 _STATUS_SQL = """\
     CASE
@@ -64,13 +105,15 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
         )
         instruments_raw = list(cur.fetchall())
 
-        # Load all phases for those devs
+        # Load all phases for those devs.
+        # display_order is a UI preference; sequence_number is the engine's ordering.
+        # Python applies _sort_phases_for_display() after grouping by instrument.
         cur.execute(
             """
-            SELECT phase_id, phase_name, sequence_number, dev_id, instrument_id
+            SELECT phase_id, phase_name, sequence_number, dev_id,
+                   instrument_id, display_order
             FROM sim_dev_phases
             WHERE dev_id = ANY(%s)
-            ORDER BY sequence_number ASC, phase_id ASC
             """,
             (dev_ids,),
         )
@@ -114,6 +157,10 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
             (phase_ids,),
         )
         lots_raw = list(cur.fetchall())
+
+        # Load lot type short names
+        cur.execute("SELECT lot_type_id, lot_type_short FROM ref_lot_types")
+        lot_type_shorts = {r["lot_type_id"]: r["lot_type_short"] for r in cur.fetchall()}
 
         # Load splits (projected capacities)
         cur.execute(
@@ -179,6 +226,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
             splits_by_phase[pid].append(
                 {
                     "lot_type_id": lt,
+                    "lot_type_short": lot_type_shorts.get(lt),
                     "actual": actual,
                     "projected": projected,
                     "total": max(actual, projected),
@@ -193,6 +241,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
                 "sequence_number": p["sequence_number"],
                 "dev_id": p["dev_id"],
                 "instrument_id": p["instrument_id"],
+                "display_order": p.get("display_order"),  # UI pref only
                 "by_lot_type": splits_by_phase.get(pid, []),
                 "lots": lots_by_phase.get(pid, []),
             }
@@ -204,6 +253,10 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
             if iid not in phases_by_instrument:
                 phases_by_instrument[iid] = []
             phases_by_instrument[iid].append(_build_phase(p))
+
+        # Sort each instrument's phases for display (display_order → auto-sort fallback)
+        for iid in phases_by_instrument:
+            phases_by_instrument[iid] = _sort_phases_for_display(phases_by_instrument[iid])
 
         # Assemble instruments output
         instruments_out = [
