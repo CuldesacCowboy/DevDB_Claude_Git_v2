@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from kernel.frozen_input import FrozenInput
 from kernel.planning_kernel import plan
+from kernel.proposal_validator import ProposalValidator
 from engine.s0810_building_group_enforcer import building_group_enforcer
 from engine.s0800_temp_lot_generator import (
     _DEFAULT_LAG_CMP_FROM_STR,
@@ -304,6 +305,56 @@ def test_building_group_coupling():
 
 
 # ─────────────────────────────────────────────────────────────
+# TEST 5: Validator catches chronology violation
+# ─────────────────────────────────────────────────────────────
+
+def test_validator_catches_chronology_violation():
+    """
+    ProposalValidator._check_chronology: date_td > date_str is a blocking failure.
+    Build a minimal proposal with one temp lot where date_td > date_str and
+    confirm validate() returns passed=False with a 'chronology' failure message.
+    """
+    from kernel.proposal import Proposal
+    from kernel.frozen_input import FrozenInput
+    import pandas as pd
+
+    bad_lot = {
+        "lot_id": None,
+        "projection_group_id": 998,
+        "phase_id": 1,
+        "lot_type_id": 101,
+        "date_td":  date(2026, 6, 1),   # AFTER date_str — violation
+        "date_str": date(2026, 3, 1),
+        "date_dev": date(2025, 6, 1),
+    }
+
+    proposal = Proposal(
+        allocations_df=pd.DataFrame(columns=["lot_id", "assigned_year", "assigned_month"]),
+        temp_lots=[bad_lot],
+        discarded_lots=[],
+        warnings=[],
+    )
+
+    frozen = _make_frozen_input(
+        lot_snapshot=pd.DataFrame([_uc_lot(1)]),
+        demand_series=_demand_df(1),
+        phase_capacity=_one_phase(5),
+    )
+
+    result = ProposalValidator().validate(proposal, frozen)
+
+    assert result.passed is False, (
+        f"Expected validation to fail (chronology violation), but passed=True"
+    )
+    assert len(result.failures) >= 1, (
+        f"Expected at least 1 failure, got {result.failures}"
+    )
+    assert "chronology" in result.failures[0].lower(), (
+        f"Expected 'chronology' in failure message, got: {result.failures[0]!r}"
+    )
+
+
+# ─────────────────────────────────────────────────────────────
 # Standalone runner
 # ─────────────────────────────────────────────────────────────
 
@@ -313,6 +364,7 @@ def run_all():
         ("Test 2: Pull order — U before H before D",     test_pull_order_u_before_h_before_d),
         ("Test 3: Phase capacity hard stop",             test_phase_capacity_hard_stop),
         ("Test 4: Building group coupling (direct)",     test_building_group_coupling),
+        ("Test 5: Validator catches chronology violation", test_validator_catches_chronology_violation),
     ]
 
     print("=" * 60)

@@ -11,6 +11,7 @@
 
 from .frozen_input import FrozenInput
 from .proposal import Proposal
+from .proposal_validator import ProposalValidator, ProposalValidationError
 from engine.s0700_demand_allocator import demand_allocator
 from engine.s0800_temp_lot_generator import temp_lot_generator
 from engine.s0810_building_group_enforcer import building_group_enforcer
@@ -46,13 +47,20 @@ def plan(frozen_input: FrozenInput) -> Proposal:
         temp_lots_enforced
     )
 
-    print(f"  Kernel PG {frozen_input.projection_group_id}: "
-          f"allocations={len(allocated_df)}, temp_lots={len(clean_lots)}, "
-          f"discarded={len(discarded_lots)}, warnings={len(guard_warnings)}")
-
-    return Proposal(
+    proposal = Proposal(
         allocations_df=allocated_df,
         temp_lots=clean_lots,
         discarded_lots=discarded_lots,
         warnings=guard_warnings,
     )
+
+    result = ProposalValidator().validate(proposal, frozen_input)
+    if not result.passed:
+        raise ProposalValidationError(result.failures)
+    proposal.warnings = proposal.warnings + result.warnings
+
+    print(f"  Kernel PG {frozen_input.projection_group_id}: "
+          f"allocations={len(allocated_df)}, temp_lots={len(clean_lots)}, "
+          f"discarded={len(discarded_lots)}, warnings={len(proposal.warnings)}")
+
+    return proposal
