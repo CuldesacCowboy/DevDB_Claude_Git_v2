@@ -30,6 +30,9 @@ export default function LotPhaseView() {
   const [addingCommunity, setAddingCommunity] = useState(false)
   const [newCommunityName, setNewCommunityName] = useState('')
   const [addCommunityError, setAddCommunityError] = useState('')
+  const [renamingId, setRenamingId] = useState(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [renameError, setRenameError] = useState('')
 
   // -----------------------------------------------------------------------
   // Lot-phase view data
@@ -161,6 +164,44 @@ export default function LotPhaseView() {
     setAddingCommunity(false)
     setNewCommunityName('')
     setAddCommunityError('')
+  }
+
+  function startRename(c, e) {
+    e.stopPropagation()
+    setRenamingId(c.ent_group_id)
+    setRenameValue(c.ent_group_name)
+    setRenameError('')
+  }
+
+  function cancelRename() {
+    setRenamingId(null)
+    setRenameValue('')
+    setRenameError('')
+  }
+
+  async function confirmRename(id) {
+    const name = renameValue.trim()
+    if (!name) return
+    try {
+      const res = await fetch(`/api/entitlement-groups/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ent_group_name: name }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setCommunities((prev) =>
+          prev.map((c) => (c.ent_group_id === id ? { ...c, ent_group_name: name } : c))
+        )
+        setRenamingId(null)
+        setRenameValue('')
+        setRenameError('')
+      } else {
+        setRenameError(data?.detail ?? 'Rename failed')
+      }
+    } catch {
+      setRenameError('Network error')
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -624,17 +665,39 @@ export default function LotPhaseView() {
               <p className="text-[11px] text-gray-400 italic px-2">Loading…</p>
             ) : (
               communities.map((c) => (
-                <button
-                  key={c.ent_group_id}
-                  onClick={(e) => { e.stopPropagation(); setEntGroupId(c.ent_group_id) }}
-                  className={`block w-full text-left text-sm px-2 py-1.5 rounded mb-0.5 transition-colors ${
-                    c.ent_group_id === entGroupId
-                      ? 'font-medium text-gray-900 bg-gray-100'
-                      : 'font-normal text-gray-600 hover:bg-gray-50'
-                  }`}
-                >
-                  {c.ent_group_name}
-                </button>
+                <div key={c.ent_group_id} className="mb-0.5">
+                  {renamingId === c.ent_group_id ? (
+                    <div className="px-1">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') confirmRename(c.ent_group_id)
+                          if (e.key === 'Escape') cancelRename()
+                        }}
+                        onBlur={() => cancelRename()}
+                        className="w-full text-sm border border-blue-400 rounded px-2 py-1 focus:outline-none"
+                      />
+                      {renameError && (
+                        <p className="text-[11px] text-red-600 mt-0.5 px-1">{renameError}</p>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setEntGroupId(c.ent_group_id) }}
+                      onDoubleClick={(e) => startRename(c, e)}
+                      className={`block w-full text-left text-sm px-2 py-1.5 rounded transition-colors ${
+                        c.ent_group_id === entGroupId
+                          ? 'font-medium text-gray-900 bg-gray-100'
+                          : 'font-normal text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {c.ent_group_name}
+                    </button>
+                  )}
+                </div>
               ))
             )}
 

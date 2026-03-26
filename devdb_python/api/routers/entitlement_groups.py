@@ -13,6 +13,10 @@ from api.models.lot_models import EntGroupLotPhaseViewResponse
 class EntGroupCreateRequest(BaseModel):
     ent_group_name: str
 
+
+class EntGroupPatchRequest(BaseModel):
+    ent_group_name: str
+
 router = APIRouter(prefix="/entitlement-groups", tags=["entitlement-groups"])
 
 
@@ -87,6 +91,32 @@ def create_entitlement_group(body: EntGroupCreateRequest, conn=Depends(get_db_co
         )
         conn.commit()
         return {"ent_group_id": new_id, "ent_group_name": name}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+@router.patch("/{ent_group_id}", response_model=dict)
+def patch_entitlement_group(ent_group_id: int, body: EntGroupPatchRequest, conn=Depends(get_db_conn)):
+    import psycopg2.extras
+    name = (body.ent_group_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="ent_group_name cannot be empty")
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "UPDATE sim_entitlement_groups SET ent_group_name = %s WHERE ent_group_id = %s",
+            (name, ent_group_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=f"Entitlement group {ent_group_id} not found.")
+        conn.commit()
+        return {"ent_group_id": ent_group_id, "ent_group_name": name}
+    except HTTPException:
+        raise
     except Exception:
         conn.rollback()
         raise
