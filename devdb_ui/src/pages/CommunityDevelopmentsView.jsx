@@ -135,7 +135,7 @@ function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef }) 
           {community.ent_group_name}
         </p>
         <p className="text-[11px] text-gray-400 mt-0.5">
-          {community.lot_count ?? 0} lot{(community.lot_count ?? 0) !== 1 ? 's' : ''}
+          {community.real_count ?? 0}r / {community.projected_count ?? 0}p / {community.total_count ?? 0}t
           {devs.length > 0 && ` · ${devs.length} dev${devs.length !== 1 ? 's' : ''}`}
         </p>
       </div>
