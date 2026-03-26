@@ -635,6 +635,17 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                   paddingRight: 0,
                 }}
               >
+                <div style={{ breakInside: 'avoid', marginBottom: 4, display: 'inline-block', width: '100%' }}>
+                  <NewCommunityDropZone
+                    pendingNewComm={pendingNewComm}
+                    newCommName={newCommName}
+                    newCommCreating={newCommCreating}
+                    newCommError={newCommError}
+                    onNameChange={setNewCommName}
+                    onCreate={handleCreateCommunity}
+                    onCancel={handleCancelNewComm}
+                  />
+                </div>
                 {sortedCommunities.map((c) => (
                   <div
                     key={c.ent_group_id}
@@ -652,17 +663,6 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                     />
                   </div>
                 ))}
-                <div style={{ breakInside: 'avoid', marginBottom: 4, display: 'inline-block', width: '100%' }}>
-                  <NewCommunityDropZone
-                    pendingNewComm={pendingNewComm}
-                    newCommName={newCommName}
-                    newCommCreating={newCommCreating}
-                    newCommError={newCommError}
-                    onNameChange={setNewCommName}
-                    onCreate={handleCreateCommunity}
-                    onCancel={handleCancelNewComm}
-                  />
-                </div>
               </div>
             </div>
           )}
