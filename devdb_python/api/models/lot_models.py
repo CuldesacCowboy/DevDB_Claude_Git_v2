@@ -53,3 +53,30 @@ class ErrorResponse(BaseModel):
     message: str
     lot_id: int | None = None
     target_phase_id: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Lot-phase view (read endpoint for spike screen)
+# ---------------------------------------------------------------------------
+
+class LotDetail(BaseModel):
+    lot_id: int
+    lot_number: str | None
+    lot_type_id: int
+    lot_source: str
+    status: str
+    has_actual_dates: bool
+
+
+class PhaseDetail(BaseModel):
+    phase_id: int
+    phase_name: str
+    sequence_number: int
+    by_lot_type: list[LotTypeCount]
+    lots: list[LotDetail]
+
+
+class DevLotPhaseViewResponse(BaseModel):
+    dev_id: int
+    dev_name: str
+    phases: list[PhaseDetail]
