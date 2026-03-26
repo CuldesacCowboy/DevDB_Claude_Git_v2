@@ -268,7 +268,8 @@ def run_starts_pipeline(conn: DBConnection, projection_group_id: int,
     demand_derived_date_writer(conn, temp_lots)
 
     # S-11
-    persistence_writer(conn, temp_lots, projection_group_id, sim_run_id)
+    persistence_writer(conn, temp_lots, projection_group_id, sim_run_id,
+                       _proposal=proposal)
 
     # S-12
     ledger_aggregator(conn)

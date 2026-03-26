@@ -12,10 +12,12 @@
 
 import pandas as pd
 from .connection import DBConnection
+from kernel.proposal import Proposal
 
 
 def persistence_writer(conn: DBConnection, temp_lots: list,
-                       projection_group_id: int, sim_run_id: int) -> None:
+                       projection_group_id: int, sim_run_id: int,
+                       _proposal: Proposal = None) -> None:
     """
     Step 1: Delete all lot_source='sim' rows for this projection_group_id.
     Step 2: Insert new temp lot records tagged with sim_run_id.
@@ -23,6 +25,12 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
 
     Never modifies real lots (lot_source='real').
     """
+    if _proposal is None:
+        raise TypeError(
+            "persistence_writer requires a validated Proposal. "
+            "Raw temp_lots are no longer accepted. "
+            "Call plan() and pass the returned Proposal."
+        )
     try:
         # Step 1: Delete previous sim lots for this projection group (idempotency guard D-086)
         conn.execute(f"""

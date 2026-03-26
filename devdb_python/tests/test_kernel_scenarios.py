@@ -20,6 +20,7 @@ from kernel.frozen_input import FrozenInput
 from kernel.planning_kernel import plan
 from kernel.proposal_validator import ProposalValidator
 from engine.s0810_building_group_enforcer import building_group_enforcer
+from engine.s1100_persistence_writer import persistence_writer
 from engine.s0800_temp_lot_generator import (
     _DEFAULT_LAG_CMP_FROM_STR,
     _DEFAULT_LAG_CLS_FROM_CMP,
@@ -355,6 +356,24 @@ def test_validator_catches_chronology_violation():
 
 
 # ─────────────────────────────────────────────────────────────
+# TEST 6: persistence_writer rejects raw temp_lots
+# ─────────────────────────────────────────────────────────────
+
+def test_persistence_writer_rejects_raw_temp_lots():
+    """
+    persistence_writer must raise TypeError when called without _proposal.
+    Guards against callers bypassing plan() and passing raw temp_lots directly.
+    """
+    try:
+        persistence_writer(conn=None, temp_lots=[], projection_group_id=1, sim_run_id=1)
+        assert False, "Expected TypeError was not raised"
+    except TypeError as e:
+        assert "validated Proposal" in str(e), (
+            f"Expected 'validated Proposal' in TypeError message, got: {e!r}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────
 # Standalone runner
 # ─────────────────────────────────────────────────────────────
 
@@ -365,6 +384,7 @@ def run_all():
         ("Test 3: Phase capacity hard stop",             test_phase_capacity_hard_stop),
         ("Test 4: Building group coupling (direct)",     test_building_group_coupling),
         ("Test 5: Validator catches chronology violation", test_validator_catches_chronology_violation),
+        ("Test 6: persistence_writer rejects raw temp_lots", test_persistence_writer_rejects_raw_temp_lots),
     ]
 
     print("=" * 60)
