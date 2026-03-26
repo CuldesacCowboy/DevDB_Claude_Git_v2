@@ -475,7 +475,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                 style={{
                   columnWidth: 240,
                   columnFill: 'auto',
-                  columnGap: 12,
+                  columnGap: 4,
                   height: '100%',
                   padding: 16,
                 }}
@@ -483,7 +483,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                 {sortedCommunities.map((c) => (
                   <div
                     key={c.ent_group_id}
-                    style={{ breakInside: 'avoid', marginBottom: 12, display: 'inline-block', width: '100%' }}
+                    style={{ breakInside: 'avoid', marginBottom: 4, display: 'inline-block', width: '100%' }}
                   >
                     <CommunityPill
                       community={c}
