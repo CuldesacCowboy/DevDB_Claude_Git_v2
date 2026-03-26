@@ -116,9 +116,10 @@ function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef }) 
   return (
     <div
       ref={setRef}
-      className="flex flex-col flex-shrink-0 rounded-xl border-2 transition-colors duration-100 overflow-hidden"
+      className="rounded-xl border-2 transition-colors duration-100 overflow-hidden"
       style={{
         width: 220,
+        breakInside: 'avoid',
         borderColor: isSelected ? '#3b82f6' : isOver ? '#93c5fd' : '#e5e7eb',
         background: isSelected ? '#eff6ff' : isOver ? '#f0f9ff' : 'white',
       }}
@@ -140,8 +141,8 @@ function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef }) 
         </p>
       </div>
 
-      {/* Dev cards — scrollable */}
-      <div className="flex-1 overflow-y-auto flex flex-col gap-1 p-2 min-h-0">
+      {/* Dev cards — content height */}
+      <div className="flex flex-col gap-1 p-2">
         {devs.length > 0 ? (
           devs.map((dev) => (
             <DevCard key={dev.dev_id} dev={dev} isPending={pendingDevId === dev.dev_id} />
@@ -455,7 +456,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
             <span className="text-xs text-gray-400 font-mono select-none w-3 text-center">Z</span>
           </div>
 
-          {/* Pills scroll container — horizontal only */}
+          {/* Pills scroll container — multi-column vertical flow, horizontal scroll */}
           {loading ? (
             <div className="flex items-center justify-center flex-1 text-gray-500 text-sm">
               Loading…
@@ -470,20 +471,31 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
               className="flex-1 overflow-x-auto overflow-y-hidden"
               onScroll={handleContainerScroll}
             >
-              {/* items-stretch: pills grow to fill container height */}
-              <div className="flex flex-nowrap items-stretch gap-3 p-4 h-full">
+              <div
+                style={{
+                  columnWidth: 240,
+                  columnFill: 'auto',
+                  columnGap: 12,
+                  height: '100%',
+                  padding: 16,
+                }}
+              >
                 {sortedCommunities.map((c) => (
-                  <CommunityPill
+                  <div
                     key={c.ent_group_id}
-                    community={c}
-                    devs={devsByComm[c.ent_group_id] ?? []}
-                    isSelected={c.ent_group_id === entGroupId}
-                    pendingDevId={pendingDevId}
-                    innerRef={(el) => {
-                      if (el) pillRefs.current[c.ent_group_id] = el
-                      else delete pillRefs.current[c.ent_group_id]
-                    }}
-                  />
+                    style={{ breakInside: 'avoid', marginBottom: 12, display: 'inline-block', width: '100%' }}
+                  >
+                    <CommunityPill
+                      community={c}
+                      devs={devsByComm[c.ent_group_id] ?? []}
+                      isSelected={c.ent_group_id === entGroupId}
+                      pendingDevId={pendingDevId}
+                      innerRef={(el) => {
+                        if (el) pillRefs.current[c.ent_group_id] = el
+                        else delete pillRefs.current[c.ent_group_id]
+                      }}
+                    />
+                  </div>
                 ))}
               </div>
             </div>
