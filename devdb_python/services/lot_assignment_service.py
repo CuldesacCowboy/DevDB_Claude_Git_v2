@@ -125,37 +125,6 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
                 f"Lot {lot['lot_number']} is already assigned to phase {target_phase_id}.",
             )
 
-        cur.execute(
-            """
-            SELECT lot_count
-            FROM sim_phase_product_splits
-            WHERE phase_id = %s AND lot_type_id = %s
-            """,
-            (target_phase_id, lot["lot_type_id"]),
-        )
-        target_split = cur.fetchone()
-
-        if target_split is None or target_split["lot_count"] < 1:
-            cur.execute(
-                """
-                SELECT COUNT(*) AS actual
-                FROM sim_lots
-                WHERE phase_id = %s AND lot_type_id = %s AND lot_source = 'real'
-                """,
-                (target_phase_id, lot["lot_type_id"]),
-            )
-            actual_row = cur.fetchone()
-            actual = int(actual_row["actual"]) if actual_row else 0
-            projected = int(target_split["lot_count"]) if target_split else 0
-            total = actual + projected
-            conn.rollback()
-            return _fail(
-                "projected_would_go_negative",
-                f"Phase {target_phase['phase_name']} has no remaining projected capacity "
-                f"for lot type {lot['lot_type_id']}. All {total} slots are occupied by "
-                "real lots. Increase lot count in Setup Tools before moving additional lots here.",
-            )
-
         # ----------------------------------------------------------------
         # Soft warning (checked after validation passes, before writes)
         # ----------------------------------------------------------------
@@ -190,31 +159,7 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         )
 
         # ----------------------------------------------------------------
-        # Step 3 — Adjust FROM side projected (add back 1)
-        # ----------------------------------------------------------------
-        cur.execute(
-            """
-            UPDATE sim_phase_product_splits
-            SET lot_count = lot_count + 1
-            WHERE phase_id = %s AND lot_type_id = %s
-            """,
-            (from_phase_id, lot["lot_type_id"]),
-        )
-
-        # ----------------------------------------------------------------
-        # Step 4 — Adjust TO side projected (subtract 1)
-        # ----------------------------------------------------------------
-        cur.execute(
-            """
-            UPDATE sim_phase_product_splits
-            SET lot_count = lot_count - 1
-            WHERE phase_id = %s AND lot_type_id = %s
-            """,
-            (target_phase_id, lot["lot_type_id"]),
-        )
-
-        # ----------------------------------------------------------------
-        # Step 5 — Set needs_rerun
+        # Step 3 — Set needs_rerun
         # ----------------------------------------------------------------
         # Query after lot update so the moved lot (now in target_phase) is included.
         # Covers the edge case where from_phase has no remaining lots:
@@ -295,7 +240,7 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
                 "lot_type_id": lot_type_id,
                 "actual": actual,
                 "projected": projected,
-                "total": actual + projected,
+                "total": max(actual, projected),
             }
 
         lot_type_id = lot["lot_type_id"]

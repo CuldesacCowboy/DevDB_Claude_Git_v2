@@ -154,7 +154,7 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
                     "lot_type_id": lt,
                     "actual": actual,
                     "projected": projected,
-                    "total": actual + projected,
+                    "total": max(actual, projected),
                 }
             )
 
