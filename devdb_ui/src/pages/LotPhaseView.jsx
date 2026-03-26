@@ -61,6 +61,7 @@ export default function LotPhaseView() {
 
   // Active tab — default 'developments' (active build area)
   const [activeTab, setActiveTab] = useState('developments')
+  const [tabSwitchKey, setTabSwitchKey] = useState(0)
 
   // Collapse state — tracks which phase_ids are collapsed
   const [collapsedPhaseIds, setCollapsedPhaseIds] = useState(new Set())
@@ -696,7 +697,7 @@ export default function LotPhaseView() {
           ].map(({ id, label }) => (
             <button
               key={id}
-              onClick={() => setActiveTab(id)}
+              onClick={() => { setActiveTab(id); setTabSwitchKey((k) => k + 1) }}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors select-none ${
                 activeTab === id
                   ? 'border-blue-500 text-blue-600'
@@ -709,9 +710,9 @@ export default function LotPhaseView() {
         </div>
 
         {activeTab === 'developments' ? (
-          <CommunityDevelopmentsView entGroupId={entGroupId} />
+          <CommunityDevelopmentsView key={tabSwitchKey} entGroupId={entGroupId} />
         ) : (
-      <DndContext
+      <DndContext key={tabSwitchKey}
         sensors={sensors}
         collisionDetection={customCollision}
         onDragStart={handleDragStart}
