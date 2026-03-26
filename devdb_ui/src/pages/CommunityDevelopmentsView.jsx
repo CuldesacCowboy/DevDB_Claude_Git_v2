@@ -357,10 +357,6 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
     )
 
     try {
-      // TODO: PATCH ignores community_id: null — backend uses None as "field not provided"
-      // sentinel and cannot distinguish from an explicit null. Assigning to a community
-      // persists correctly. Unassigning (null) updates local state only until the
-      // DevelopmentPatchRequest is updated to support explicit null (e.g. via Optional wrapper).
       const res = await fetch(`/api/developments/${dev.dev_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -369,14 +365,20 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
       const data = await res.json()
 
       if (res.ok) {
-        if (newCommunityId === null) {
-          addToast('warning', `${dev.dev_name} unassigned (local only — null persist not yet supported)`)
-        } else {
-          const commName =
-            communities.find((c) => c.ent_group_id === newCommunityId)?.ent_group_name ??
-            `community ${newCommunityId}`
-          addToast('success', `${dev.dev_name} → ${commName}`)
-        }
+        // Reload both endpoints so pill totals and dev cards reflect the new state
+        const [comms, devs] = await Promise.all([
+          fetch('/api/entitlement-groups').then((r) => r.json()),
+          fetch('/api/developments').then((r) => r.json()),
+        ])
+        setCommunities(comms)
+        setDevelopments(devs)
+
+        const commName =
+          newCommunityId === null
+            ? 'Unassigned'
+            : (comms.find((c) => c.ent_group_id === newCommunityId)?.ent_group_name ??
+               `community ${newCommunityId}`)
+        addToast('success', `${dev.dev_name} → ${commName}`)
       } else {
         // Revert optimistic update
         setDevelopments((prev) =>
