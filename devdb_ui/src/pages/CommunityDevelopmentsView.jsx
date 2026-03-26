@@ -158,6 +158,88 @@ function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef }) 
 }
 
 // ---------------------------------------------------------------------------
+// NewCommunityDropZone — droppable zone always shown at end of pill list
+// ---------------------------------------------------------------------------
+function NewCommunityDropZone({ pendingNewComm, newCommName, newCommCreating, newCommError, onNameChange, onCreate, onCancel }) {
+  const { isOver, setNodeRef } = useDroppable({
+    id: 'new-community',
+    data: { type: 'new-community' },
+    disabled: !!pendingNewComm,
+  })
+
+  if (pendingNewComm) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          border: '2px dashed #3b82f6',
+          borderRadius: 12,
+          background: '#eff6ff',
+          padding: '8px 10px',
+        }}
+      >
+        <p className="text-xs font-semibold text-blue-700 mb-1 truncate">
+          New community for {pendingNewComm.dev.dev_name}
+        </p>
+        <input
+          autoFocus
+          type="text"
+          value={newCommName}
+          onChange={(e) => onNameChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onCreate()
+            if (e.key === 'Escape') onCancel()
+          }}
+          disabled={newCommCreating}
+          className="w-full text-xs border border-blue-300 rounded px-2 py-1 mb-1 focus:outline-none focus:border-blue-500"
+        />
+        {newCommError && (
+          <p className="text-[11px] text-red-600 mb-1">{newCommError}</p>
+        )}
+        <div className="flex gap-1">
+          <button
+            onClick={onCreate}
+            disabled={!newCommName.trim() || newCommCreating}
+            className="flex-1 text-xs bg-blue-500 text-white rounded px-2 py-1 hover:bg-blue-600 disabled:opacity-40"
+          >
+            {newCommCreating ? 'Creating…' : 'Create'}
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={newCommCreating}
+            className="text-xs text-gray-500 rounded px-2 py-1 hover:bg-blue-100"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        width: '100%',
+        border: `2px dashed ${isOver ? '#3b82f6' : '#d1d5db'}`,
+        borderRadius: 12,
+        background: isOver ? '#eff6ff' : 'transparent',
+        padding: '8px 10px',
+        minHeight: 48,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'border-color 0.1s, background 0.1s',
+      }}
+    >
+      <p className={`text-xs italic ${isOver ? 'text-blue-600' : 'text-gray-400'}`}>
+        Drop to create community
+      </p>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // CommunityDevelopmentsView — main export
 // ---------------------------------------------------------------------------
 export default function CommunityDevelopmentsView({ entGroupId }) {
@@ -168,6 +250,10 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
   const [activeDev, setActiveDev] = useState(null)
   const [pendingDevId, setPendingDevId] = useState(null)
   const [sliderValue, setSliderValue] = useState(0)
+  const [pendingNewComm, setPendingNewComm] = useState(null) // { dev, proposedName }
+  const [newCommName, setNewCommName] = useState('')
+  const [newCommCreating, setNewCommCreating] = useState(false)
+  const [newCommError, setNewCommError] = useState('')
   const [toasts, setToasts] = useState([])
   const toastCounter = useRef(0)
 
@@ -339,6 +425,15 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
     const dev = active.data.current?.dev
     const overType = over.data.current?.type
 
+    if (overType === 'new-community') {
+      if (!pendingNewComm) {
+        setPendingNewComm({ dev })
+        setNewCommName(dev.dev_name)
+        setNewCommError('')
+      }
+      return
+    }
+
     let newCommunityId
     if (overType === 'community-target') {
       newCommunityId = over.data.current?.communityId
@@ -398,6 +493,62 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
   }
 
   // -----------------------------------------------------------------------
+  // New-community drop zone handlers
+  // -----------------------------------------------------------------------
+  function handleCancelNewComm() {
+    setPendingNewComm(null)
+    setNewCommName('')
+    setNewCommError('')
+  }
+
+  async function handleCreateCommunity() {
+    const name = newCommName.trim()
+    if (!name) return
+    setNewCommCreating(true)
+    setNewCommError('')
+    try {
+      const res1 = await fetch('/api/entitlement-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ent_group_name: name }),
+      })
+      const comm = await res1.json()
+      if (!res1.ok) {
+        setNewCommError(comm?.detail ?? 'Failed to create community')
+        setNewCommCreating(false)
+        return
+      }
+
+      const res2 = await fetch(`/api/developments/${pendingNewComm.dev.dev_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ community_id: comm.ent_group_id }),
+      })
+      if (!res2.ok) {
+        const e = await res2.json()
+        setNewCommError(e?.detail ?? 'Community created but failed to assign dev')
+        setNewCommCreating(false)
+        return
+      }
+
+      const [comms, devs] = await Promise.all([
+        fetch('/api/entitlement-groups').then((r) => r.json()),
+        fetch('/api/developments').then((r) => r.json()),
+      ])
+      setCommunities(comms)
+      setDevelopments(devs)
+      addToast('success', `${pendingNewComm.dev.dev_name} → ${name} (new)`)
+      setPendingNewComm(null)
+      setNewCommName('')
+      setNewCommError('')
+    } catch (err) {
+      setNewCommError(`Network error: ${err.message}`)
+    } finally {
+      setNewCommCreating(false)
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Collision detection — filter to community and unassigned-devs droppables
   // -----------------------------------------------------------------------
   function devCustomCollision(args) {
@@ -407,7 +558,8 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
         droppableContainers: args.droppableContainers.filter(
           (c) =>
             c.data?.current?.type === 'community-target' ||
-            c.data?.current?.type === 'unassigned-devs',
+            c.data?.current?.type === 'unassigned-devs' ||
+            c.data?.current?.type === 'new-community',
         ),
       }
       const result = pointerWithin(filtered)
@@ -500,6 +652,17 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                     />
                   </div>
                 ))}
+                <div style={{ breakInside: 'avoid', marginBottom: 4, display: 'inline-block', width: '100%' }}>
+                  <NewCommunityDropZone
+                    pendingNewComm={pendingNewComm}
+                    newCommName={newCommName}
+                    newCommCreating={newCommCreating}
+                    newCommError={newCommError}
+                    onNameChange={setNewCommName}
+                    onCreate={handleCreateCommunity}
+                    onCancel={handleCancelNewComm}
+                  />
+                </div>
               </div>
             </div>
           )}
