@@ -38,6 +38,9 @@ export default function LotPhaseView() {
   // Needs-rerun banner
   const [needsRerun, setNeedsRerun] = useState(false)
 
+  // Collapse state — tracks which phase_ids are collapsed
+  const [collapsedPhaseIds, setCollapsedPhaseIds] = useState(new Set())
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
@@ -297,6 +300,30 @@ export default function LotPhaseView() {
     setUnassignedPhases((prev) => prev.map((p) => (p.phase_id === phase_id ? updater(p) : p)))
   }
 
+  // -----------------------------------------------------------------------
+  // Collapse helpers
+  // -----------------------------------------------------------------------
+  function togglePhaseCollapse(phaseId) {
+    setCollapsedPhaseIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(phaseId)) next.delete(phaseId)
+      else next.add(phaseId)
+      return next
+    })
+  }
+
+  function collapseAll() {
+    const ids = [
+      ...instruments.flatMap((i) => i.phases.map((p) => p.phase_id)),
+      ...unassignedPhases.map((p) => p.phase_id),
+    ]
+    setCollapsedPhaseIds(new Set(ids))
+  }
+
+  function expandAll() {
+    setCollapsedPhaseIds(new Set())
+  }
+
   function findPhaseName(phase_id) {
     for (const instr of instruments) {
       const p = instr.phases.find((p) => p.phase_id === phase_id)
@@ -326,14 +353,29 @@ export default function LotPhaseView() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 font-sans">
       {/* Header */}
-      <div className="mb-4">
-        <h1 className="text-xl font-bold text-gray-900">
-          Lot → Phase Assignment &nbsp;|&nbsp; {entGroup?.ent_group_name ?? `Group ${ENT_GROUP_ID}`}
-        </h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Drag a lot card onto a phase column to reassign it, or onto Unassigned to remove it from its phase.
-          Drag a phase header (⠿) into an instrument container to reassign the phase.
-        </p>
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-gray-900 truncate">
+            Lot → Phase &nbsp;|&nbsp; {entGroup?.ent_group_name ?? `Group ${ENT_GROUP_ID}`}
+          </h1>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Drag lot cards to reassign. Drag phase headers (⠿) to reassign instrument.
+          </p>
+        </div>
+        <div className="flex gap-2 flex-shrink-0">
+          <button
+            onClick={collapseAll}
+            className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+          >
+            Collapse all
+          </button>
+          <button
+            onClick={expandAll}
+            className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+          >
+            Expand all
+          </button>
+        </div>
       </div>
 
       {/* Needs-rerun banner */}
@@ -350,34 +392,41 @@ export default function LotPhaseView() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        {/* Horizontal scroll wrapper */}
-        <div className="flex gap-3 overflow-x-auto pb-4 items-start">
-          {/* Pinned unassigned lots column */}
-          <UnassignedColumn lots={unassigned} pendingLotId={pendingLotId} />
+        {/* Main layout — no horizontal overflow */}
+        <div className="flex gap-3 pb-4 items-start overflow-hidden">
+          {/* Unassigned lots — fixed width, pinned left */}
+          <div className="w-36 flex-shrink-0">
+            <UnassignedColumn lots={unassigned} pendingLotId={pendingLotId} />
+          </div>
 
-          {/* Instrument containers */}
-          {instruments.map((instr) => (
+          {/* Instrument containers — flex row fills remaining width */}
+          <div className="flex flex-1 min-w-0 gap-3 overflow-hidden">
+            {instruments.map((instr) => (
+              <InstrumentContainer
+                key={instr.instrument_id}
+                instrument={instr}
+                phases={instr.phases}
+                tint={devColorMap[instr.dev_id]}
+                pendingLotId={pendingLotId}
+                pendingPhaseId={pendingPhaseId}
+                activeDragType={activeDragType}
+                collapsedPhaseIds={collapsedPhaseIds}
+                onToggleCollapse={togglePhaseCollapse}
+              />
+            ))}
+
+            {/* "No instrument" container — always visible */}
             <InstrumentContainer
-              key={instr.instrument_id}
-              instrument={instr}
-              phases={instr.phases}
-              tint={devColorMap[instr.dev_id]}
+              instrument={null}
+              phases={unassignedPhases}
+              tint={null}
               pendingLotId={pendingLotId}
               pendingPhaseId={pendingPhaseId}
               activeDragType={activeDragType}
+              collapsedPhaseIds={collapsedPhaseIds}
+              onToggleCollapse={togglePhaseCollapse}
             />
-          ))}
-
-          {/* "No instrument" container — always visible */}
-          <InstrumentContainer
-            key="no-instrument"
-            instrument={null}
-            phases={unassignedPhases}
-            tint={null}
-            pendingLotId={pendingLotId}
-            pendingPhaseId={pendingPhaseId}
-            activeDragType={activeDragType}
-          />
+          </div>
         </div>
 
         <DragOverlay dropAnimation={null}>

@@ -3,6 +3,7 @@ import LotCard from './LotCard'
 
 // The Unassigned column is both a drag source and a drop target.
 // Lots here have phase_id: null in local state.
+// Width is controlled by the parent — no min-width enforced here.
 export default function UnassignedColumn({ lots, pendingLotId }) {
   const { isOver, setNodeRef } = useDroppable({
     id: 'unassigned',
@@ -13,17 +14,15 @@ export default function UnassignedColumn({ lots, pendingLotId }) {
     <div
       ref={setNodeRef}
       className={`
-        flex flex-col rounded-lg border-2 bg-amber-50
-        min-w-[180px] max-w-[220px] w-full flex-shrink-0
-        sticky left-0 z-10
+        flex flex-col rounded-lg border-2 bg-amber-50 w-full overflow-hidden
         transition-colors
         ${isOver ? 'border-blue-400 border-dashed' : 'border-amber-200'}
       `}
       style={{ alignSelf: 'flex-start' }}
     >
       {/* Header */}
-      <div className="px-3 py-2 border-b border-amber-200 bg-amber-100 rounded-t-md">
-        <p className="font-bold text-sm text-amber-900">Unassigned</p>
+      <div className="px-2 py-2 border-b border-amber-200 bg-amber-100 rounded-t-md">
+        <p className="font-bold text-sm text-amber-900 truncate">Unassigned</p>
         <p className="text-[11px] text-amber-700 mt-0.5">
           {lots.length > 0 ? `${lots.length} lot${lots.length === 1 ? '' : 's'}` : 'empty'}
         </p>

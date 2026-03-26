@@ -15,7 +15,7 @@ const STATUS_STYLES = {
 export default function LotCard({ lot, isPending, isOverlay = false }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `lot-${lot.lot_id}`,
-    data: { lot },
+    data: { type: 'lot', lot },
     disabled: isPending,
   })
 
