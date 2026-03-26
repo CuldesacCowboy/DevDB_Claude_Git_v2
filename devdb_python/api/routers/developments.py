@@ -1,12 +1,211 @@
 # routers/developments.py
-# Development-level read endpoints.
+# Development-level CRUD endpoints plus lot-phase-view sub-resource.
+
+from __future__ import annotations
+
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from api.deps import get_db_conn
 from api.models.lot_models import DevLotPhaseViewResponse
 
 router = APIRouter(prefix="/developments", tags=["developments"])
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models
+# ---------------------------------------------------------------------------
+
+class DevelopmentCreateRequest(BaseModel):
+    dev_name: str
+    marks_code: str | None = None
+    in_marks: bool = False
+    county_id: int | None = None
+    state_id: int | None = None
+    municipality_id: int | None = None
+    community_id: int | None = None
+
+
+class DevelopmentPatchRequest(BaseModel):
+    dev_name: str | None = None
+    marks_code: str | None = None
+    in_marks: bool | None = None
+    county_id: int | None = None
+    state_id: int | None = None
+    municipality_id: int | None = None
+    community_id: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Shared SQL helpers
+# ---------------------------------------------------------------------------
+
+_SELECT_SQL = """
+    SELECT
+        d.dev_id,
+        d.dev_name,
+        d.marks_code,
+        d.in_marks,
+        d.county_id,
+        c.county_name,
+        d.state_id,
+        d.municipality_id,
+        d.community_id,
+        eg.ent_group_name AS community_name
+    FROM developments d
+    LEFT JOIN dim_county c ON c.county_id = d.county_id
+    LEFT JOIN sim_entitlement_groups eg ON eg.ent_group_id = d.community_id
+"""
+
+
+def _row_to_dict(r) -> dict:
+    return {
+        "dev_id": r["dev_id"],
+        "dev_name": r["dev_name"],
+        "marks_code": r["marks_code"],
+        "in_marks": r["in_marks"],
+        "county_id": r["county_id"],
+        "county_name": r["county_name"],
+        "state_id": r["state_id"],
+        "municipality_id": r["municipality_id"],
+        "community_id": r["community_id"],
+        "community_name": r["community_name"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /developments  — list all
+# ---------------------------------------------------------------------------
+
+@router.get("", response_model=list[dict])
+def list_developments(conn=Depends(get_db_conn)):
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(_SELECT_SQL + " ORDER BY d.dev_name ASC")
+        return [_row_to_dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# POST /developments  — create
+# ---------------------------------------------------------------------------
+
+@router.post("", response_model=dict, status_code=201)
+def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)):
+    import psycopg2.extras
+    name = (body.dev_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="dev_name is required")
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """
+            INSERT INTO developments
+                (dev_name, marks_code, in_marks, county_id, state_id, municipality_id, community_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING dev_id
+            """,
+            (
+                name,
+                body.marks_code or None,
+                body.in_marks,
+                body.county_id,
+                body.state_id,
+                body.municipality_id,
+                body.community_id,
+            ),
+        )
+        new_id = cur.fetchone()["dev_id"]
+        conn.commit()
+
+        cur.execute(_SELECT_SQL + " WHERE d.dev_id = %s", (new_id,))
+        row = cur.fetchone()
+        return _row_to_dict(row)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /developments/{dev_id}  — single development
+# ---------------------------------------------------------------------------
+
+@router.get("/{dev_id}", response_model=dict)
+def get_development(dev_id: int, conn=Depends(get_db_conn)):
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(_SELECT_SQL + " WHERE d.dev_id = %s", (dev_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"Development {dev_id} not found.")
+        return _row_to_dict(row)
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# PATCH /developments/{dev_id}  — partial update
+# ---------------------------------------------------------------------------
+
+@router.patch("/{dev_id}", response_model=dict)
+def patch_development(dev_id: int, body: DevelopmentPatchRequest, conn=Depends(get_db_conn)):
+    import psycopg2.extras
+
+    # Build SET clause from non-None fields only
+    updatable: dict[str, Any] = {}
+    if body.dev_name is not None:
+        name = body.dev_name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="dev_name cannot be empty")
+        updatable["dev_name"] = name
+    if body.marks_code is not None:
+        updatable["marks_code"] = body.marks_code or None
+    if body.in_marks is not None:
+        updatable["in_marks"] = body.in_marks
+    if body.county_id is not None:
+        updatable["county_id"] = body.county_id
+    if body.state_id is not None:
+        updatable["state_id"] = body.state_id
+    if body.municipality_id is not None:
+        updatable["municipality_id"] = body.municipality_id
+    if body.community_id is not None:
+        updatable["community_id"] = body.community_id
+
+    if not updatable:
+        raise HTTPException(status_code=422, detail="No fields provided to update")
+
+    set_clause = ", ".join(f"{col} = %s" for col in updatable)
+    values = list(updatable.values()) + [dev_id]
+
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(f"UPDATE developments SET {set_clause}, updated_at = NOW() WHERE dev_id = %s", values)
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=f"Development {dev_id} not found.")
+        conn.commit()
+
+        cur.execute(_SELECT_SQL + " WHERE d.dev_id = %s", (dev_id,))
+        return _row_to_dict(cur.fetchone())
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# GET /developments/{dev_id}/lot-phase-view  (pre-existing endpoint)
+# ---------------------------------------------------------------------------
 
 _STATUS_SQL = """
     CASE
