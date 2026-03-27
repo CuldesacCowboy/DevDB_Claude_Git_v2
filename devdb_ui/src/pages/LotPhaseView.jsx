@@ -375,16 +375,27 @@ export default function LotPhaseView() {
 
     const droppedOnUnassigned = over.data.current?.type === 'unassigned'
     const overLotTarget = over.data.current?.type === 'lot-target'
-    const targetPhase = over.data.current?.phase
 
     if (!droppedOnUnassigned && !overLotTarget) return
     if (droppedOnUnassigned && lot.phase_id === null) return
-    if (overLotTarget && lot.phase_id === targetPhase.phase_id) return
+
+    // Parse target: lot-type-* zones carry lotTypeId; phase-* zones do not.
+    const targetPhase = over.data.current?.phase
+    const targetPhaseId = targetPhase?.phase_id ?? null
+    const targetLotTypeId = over.data.current?.lotTypeId ?? null  // null for phase-level zones
+
+    // No-op: same phase AND (no specific type target OR same type as lot)
+    if (
+      overLotTarget &&
+      targetPhaseId === lot.phase_id &&
+      (targetLotTypeId === null || targetLotTypeId === lot.lot_type_id)
+    ) return
 
     setPendingLotId(lot.lot_id)
 
     try {
       if (droppedOnUnassigned) {
+        // Unassign lot from phase
         const res = await fetch(`/api/lots/${lot.lot_id}/phase?changed_by=user`, { method: 'DELETE' })
         const data = await res.json()
 
@@ -408,41 +419,120 @@ export default function LotPhaseView() {
           addToast('error', data?.detail?.message ?? data?.detail ?? 'Unassign failed')
         }
       } else {
-        const res = await fetch(`/api/lots/${lot.lot_id}/phase`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target_phase_id: targetPhase.phase_id, changed_by: 'user' }),
-        })
-        const data = await res.json()
+        const diffType = targetLotTypeId !== null && targetLotTypeId !== lot.lot_type_id
+        const diffPhase = targetPhaseId !== lot.phase_id
+        const fromUnassigned = lot.phase_id === null
 
-        if (res.ok) {
-          console.log('[drag] lot PATCH response:', JSON.stringify(data, null, 2))
-          const { transaction, phase_counts, needs_rerun, warnings } = data
-          const fromUnassigned = lot.phase_id === null
+        if (diffType) {
+          // Case B — different lot type: change type first, then optionally move phase
 
+          const r1 = await fetch(`/api/lots/${lot.lot_id}/lot-type`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lot_type_id: targetLotTypeId, changed_by: 'user' }),
+          })
+          const d1 = await r1.json()
+          if (!r1.ok) {
+            addToast('error', d1?.detail?.message ?? d1?.detail ?? 'Type change failed')
+            return
+          }
+
+          // Apply lot-type change: update lot's type in current location
           if (fromUnassigned) {
-            setUnassigned((prev) => prev.filter((l) => l.lot_id !== lot.lot_id))
+            setUnassigned((prev) =>
+              prev.map((l) => l.lot_id === lot.lot_id ? { ...l, lot_type_id: targetLotTypeId } : l)
+            )
           } else {
-            updatePhaseInBothStates(transaction.from_phase_id, (p) => ({
+            updatePhaseInBothStates(lot.phase_id, (p) => ({
               ...p,
-              lots: p.lots.filter((l) => l.lot_id !== lot.lot_id),
-              by_lot_type: phase_counts.from_phase.by_lot_type,
+              lots: p.lots.map((l) =>
+                l.lot_id === lot.lot_id ? { ...l, lot_type_id: targetLotTypeId } : l
+              ),
+              by_lot_type: d1.phase_counts.phase.by_lot_type,
             }))
           }
-          updatePhaseInBothStates(transaction.to_phase_id, (p) => ({
-            ...p,
-            lots: [...p.lots, { ...lot, phase_id: transaction.to_phase_id }].sort(
-              (a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? '')
-            ),
-            by_lot_type: phase_counts.to_phase.by_lot_type,
-          }))
 
-          if (needs_rerun?.length > 0) setNeedsRerun(true)
-          const toPhaseName = findPhaseName(transaction.to_phase_id)
-          addToast('success', `Lot ${transaction.lot_number} moved to ${toPhaseName}`)
-          warnings?.forEach((w) => addToast('warning', w.message))
+          const updatedLot = { ...lot, lot_type_id: targetLotTypeId }
+          const newTypeShort = d1.phase_counts.phase.by_lot_type.find(
+            (lt) => lt.lot_type_id === targetLotTypeId
+          )?.lot_type_short ?? String(targetLotTypeId)
+
+          if (diffPhase) {
+            // Also move to target phase
+            const r2 = await fetch(`/api/lots/${lot.lot_id}/phase`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'user' }),
+            })
+            const d2 = await r2.json()
+            if (!r2.ok) {
+              addToast('error', d2?.detail?.message ?? d2?.detail ?? 'Move failed')
+              return
+            }
+
+            const { transaction: t2, phase_counts: pc2, needs_rerun: nr2, warnings: w2 } = d2
+
+            if (fromUnassigned) {
+              setUnassigned((prev) => prev.filter((l) => l.lot_id !== lot.lot_id))
+            } else {
+              updatePhaseInBothStates(t2.from_phase_id, (p) => ({
+                ...p,
+                lots: p.lots.filter((l) => l.lot_id !== lot.lot_id),
+                by_lot_type: pc2.from_phase.by_lot_type,
+              }))
+            }
+            updatePhaseInBothStates(t2.to_phase_id, (p) => ({
+              ...p,
+              lots: [...p.lots, { ...updatedLot, phase_id: targetPhaseId }].sort(
+                (a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? '')
+              ),
+              by_lot_type: pc2.to_phase.by_lot_type,
+            }))
+
+            if (nr2?.length > 0) setNeedsRerun(true)
+            const toPhaseName = findPhaseName(targetPhaseId)
+            addToast('success', `Lot ${lot.lot_number} → ${newTypeShort} and moved to ${toPhaseName}`)
+            w2?.forEach((w) => addToast('warning', w.message))
+          } else {
+            // Same phase, type changed only
+            addToast('success', `Lot ${lot.lot_number} → ${newTypeShort}`)
+          }
         } else {
-          addToast('error', data?.detail?.message ?? data?.detail ?? 'Move failed')
+          // Case A or C — same type (or no specific type): just move phase
+          const res = await fetch(`/api/lots/${lot.lot_id}/phase`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'user' }),
+          })
+          const data = await res.json()
+
+          if (res.ok) {
+            const { transaction, phase_counts, needs_rerun, warnings } = data
+
+            if (fromUnassigned) {
+              setUnassigned((prev) => prev.filter((l) => l.lot_id !== lot.lot_id))
+            } else {
+              updatePhaseInBothStates(transaction.from_phase_id, (p) => ({
+                ...p,
+                lots: p.lots.filter((l) => l.lot_id !== lot.lot_id),
+                by_lot_type: phase_counts.from_phase.by_lot_type,
+              }))
+            }
+            updatePhaseInBothStates(transaction.to_phase_id, (p) => ({
+              ...p,
+              lots: [...p.lots, { ...lot, phase_id: transaction.to_phase_id }].sort(
+                (a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? '')
+              ),
+              by_lot_type: phase_counts.to_phase.by_lot_type,
+            }))
+
+            if (needs_rerun?.length > 0) setNeedsRerun(true)
+            const toPhaseName = findPhaseName(transaction.to_phase_id)
+            addToast('success', `Lot ${transaction.lot_number} moved to ${toPhaseName}`)
+            warnings?.forEach((w) => addToast('warning', w.message))
+          } else {
+            addToast('error', data?.detail?.message ?? data?.detail ?? 'Move failed')
+          }
         }
       }
     } catch (err) {
