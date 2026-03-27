@@ -62,6 +62,70 @@ def _fail(code: str, message: str) -> ReassignmentResult:
     return ReassignmentResult(success=False, error={"code": code, "message": message})
 
 
+def _maintain_splits(cur, phase_id: int) -> None:
+    """Insert splits rows for lot_type_ids with actual > 0 but no row; delete rows where actual = 0 AND lot_count = 0."""
+    cur.execute(
+        """
+        INSERT INTO sim_phase_product_splits (phase_id, lot_type_id, lot_count)
+        SELECT %s, actual.lot_type_id, 0
+        FROM (
+            SELECT lot_type_id
+            FROM sim_lots
+            WHERE phase_id = %s
+            GROUP BY lot_type_id
+            HAVING COUNT(*) > 0
+        ) actual
+        WHERE NOT EXISTS (
+            SELECT 1 FROM sim_phase_product_splits sps
+            WHERE sps.phase_id = %s AND sps.lot_type_id = actual.lot_type_id
+        )
+        """,
+        (phase_id, phase_id, phase_id),
+    )
+    cur.execute(
+        """
+        DELETE FROM sim_phase_product_splits
+        WHERE phase_id = %s
+          AND lot_count = 0
+          AND NOT EXISTS (
+              SELECT 1 FROM sim_lots sl
+              WHERE sl.phase_id = %s AND sl.lot_type_id = sim_phase_product_splits.lot_type_id
+          )
+        """,
+        (phase_id, phase_id),
+    )
+
+
+def _build_by_lot_type(cur, phase_id: int) -> list:
+    """Return full by_lot_type list for a phase by joining splits with actual lot counts."""
+    cur.execute(
+        """
+        SELECT sps.lot_type_id,
+               COALESCE(actual.cnt, 0) AS actual,
+               sps.lot_count AS projected,
+               GREATEST(COALESCE(actual.cnt, 0), sps.lot_count) AS total
+        FROM sim_phase_product_splits sps
+        LEFT JOIN (
+            SELECT lot_type_id, COUNT(*) AS cnt
+            FROM sim_lots
+            WHERE phase_id = %s
+            GROUP BY lot_type_id
+        ) actual ON actual.lot_type_id = sps.lot_type_id
+        WHERE sps.phase_id = %s
+        """,
+        (phase_id, phase_id),
+    )
+    return [
+        {
+            "lot_type_id": int(r["lot_type_id"]),
+            "actual": int(r["actual"]),
+            "projected": int(r["projected"]),
+            "total": int(r["total"]),
+        }
+        for r in cur.fetchall()
+    ]
+
+
 def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> ReassignmentResult:
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
@@ -173,6 +237,12 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         )
 
         # ----------------------------------------------------------------
+        # Step 2b — Maintain sim_phase_product_splits
+        # ----------------------------------------------------------------
+        for pid in [p for p in [from_phase_id, target_phase_id] if p is not None]:
+            _maintain_splits(cur, pid)
+
+        # ----------------------------------------------------------------
         # Step 3 — Set needs_rerun
         # ----------------------------------------------------------------
         # Query after lot update so the moved lot (now in target_phase) is included.
@@ -231,38 +301,10 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         # ----------------------------------------------------------------
         # Post-commit: build phase_counts
         # ----------------------------------------------------------------
-        def _phase_count(phase_id: int, lot_type_id: int) -> dict:
-            cur.execute(
-                """
-                SELECT COUNT(*) AS actual
-                FROM sim_lots
-                WHERE phase_id = %s AND lot_type_id = %s AND lot_source = 'real'
-                """,
-                (phase_id, lot_type_id),
-            )
-            actual = int(cur.fetchone()["actual"])
-            cur.execute(
-                """
-                SELECT lot_count
-                FROM sim_phase_product_splits
-                WHERE phase_id = %s AND lot_type_id = %s
-                """,
-                (phase_id, lot_type_id),
-            )
-            split_row = cur.fetchone()
-            projected = int(split_row["lot_count"]) if split_row else 0
-            return {
-                "lot_type_id": lot_type_id,
-                "actual": actual,
-                "projected": projected,
-                "total": max(actual, projected),
-            }
-
-        lot_type_id = lot["lot_type_id"]
         from_phase_detail = (
             {
                 "phase_id": from_phase_id,
-                "by_lot_type": [_phase_count(from_phase_id, lot_type_id)],
+                "by_lot_type": _build_by_lot_type(cur, from_phase_id),
             }
             if from_phase_id is not None
             else {"phase_id": 0, "by_lot_type": []}
@@ -271,7 +313,7 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             "from_phase": from_phase_detail,
             "to_phase": {
                 "phase_id": target_phase_id,
-                "by_lot_type": [_phase_count(target_phase_id, lot_type_id)],
+                "by_lot_type": _build_by_lot_type(cur, target_phase_id),
             },
         }
 
