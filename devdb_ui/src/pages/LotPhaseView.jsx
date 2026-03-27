@@ -819,6 +819,14 @@ export default function LotPhaseView() {
     communities.find((c) => c.ent_group_id === entGroupId)?.ent_group_name ??
     `Group ${entGroupId}`
 
+  const allByLotType = pgGroups
+    .flatMap((pg) => pg.instruments ?? [])
+    .flatMap((i) => i.phases ?? [])
+    .flatMap((p) => p.by_lot_type ?? [])
+  const communityR = allByLotType.reduce((s, lt) => s + (lt.actual    || 0), 0)
+  const communityP = allByLotType.reduce((s, lt) => s + (lt.projected || 0), 0)
+  const communityT = allByLotType.reduce((s, lt) => s + (lt.total     || 0), 0)
+
   return (
     <div className="flex h-screen overflow-hidden font-sans">
 
@@ -1029,8 +1037,16 @@ export default function LotPhaseView() {
                 {/* Header */}
                 <div className="mb-4 flex items-start justify-between gap-4 pl-2">
                   <div className="min-w-0">
-                    <h1 className="text-xl font-bold text-gray-900 truncate">
-                      Lot → Phase &nbsp;|&nbsp; {activeEntGroupName}
+                    <h1 className="text-xl font-bold text-gray-900">
+                      Legal Instruments
+                      <span className="font-normal text-gray-400"> &nbsp;|&nbsp; </span>
+                      <span className="font-bold">{activeEntGroupName}</span>
+                      <span className="font-normal text-gray-400"> &nbsp;|&nbsp; </span>
+                      <span className="text-sm text-gray-500 font-normal">
+                        <span className="font-medium text-gray-700">{communityR}</span>r{' / '}
+                        <span className="font-medium text-gray-700">{communityP}</span>p{' / '}
+                        <span className="font-medium text-gray-700">{communityT}</span>t
+                      </span>
                     </h1>
                     <p className="text-sm text-gray-500 mt-0.5">
                       Drag lot cards to reassign. Drag phase headers (⠿) to reassign instrument.
