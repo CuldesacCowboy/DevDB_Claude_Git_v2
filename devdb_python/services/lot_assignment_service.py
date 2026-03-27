@@ -71,7 +71,7 @@ def _maintain_splits(cur, phase_id: int) -> None:
         FROM (
             SELECT lot_type_id
             FROM sim_lots
-            WHERE phase_id = %s
+            WHERE phase_id = %s AND lot_source = 'real'
             GROUP BY lot_type_id
             HAVING COUNT(*) > 0
         ) actual
@@ -90,6 +90,7 @@ def _maintain_splits(cur, phase_id: int) -> None:
           AND NOT EXISTS (
               SELECT 1 FROM sim_lots sl
               WHERE sl.phase_id = %s AND sl.lot_type_id = sim_phase_product_splits.lot_type_id
+                AND sl.lot_source = 'real'
           )
         """,
         (phase_id, phase_id),
@@ -110,7 +111,7 @@ def _build_by_lot_type(cur, phase_id: int) -> list:
         LEFT JOIN (
             SELECT lot_type_id, COUNT(*) AS cnt
             FROM sim_lots
-            WHERE phase_id = %s
+            WHERE phase_id = %s AND lot_source = 'real'
             GROUP BY lot_type_id
         ) actual ON actual.lot_type_id = sps.lot_type_id
         WHERE sps.phase_id = %s
