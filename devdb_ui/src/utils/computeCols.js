@@ -87,8 +87,8 @@ export function computePhaseDimensions(phases, cols, instrWidth, gap = 8, paddin
   function naturalH(lotCount, isCollapsed) {
     if (isCollapsed || lotCount === 0) return 138
     const lotRows = Math.ceil(lotCount / 3)
-    // +24 accounts for the lot-count label line rendered above the grid
-    return 64 + lotRows * 21 + (lotRows - 1) * 4 + 16 + 24
+    // +22 accounts for the lot-count label line rendered above the grid (calibrated to DOM: 223px for 14 lots)
+    return 64 + lotRows * 21 + (lotRows - 1) * 4 + 16 + 22
   }
 
   const phaseCount = phases.length
