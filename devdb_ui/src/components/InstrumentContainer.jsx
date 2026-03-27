@@ -6,7 +6,7 @@ import PhaseColumn from './PhaseColumn'
 
 // Color tints cycle by dev_id across the ent_group.
 const DEV_TINTS = [
-  { border: 'border-blue-200',   bg: 'bg-blue-50',   header: 'bg-blue-100',   text: 'text-blue-800' },
+  { border: 'border-blue-300',   bg: 'bg-blue-100',  header: 'bg-blue-200',   text: 'text-blue-800' },
   { border: 'border-teal-200',   bg: 'bg-teal-50',   header: 'bg-teal-100',   text: 'text-teal-800' },
   { border: 'border-violet-200', bg: 'bg-violet-50', header: 'bg-violet-100', text: 'text-violet-800' },
   { border: 'border-green-200',  bg: 'bg-green-50',  header: 'bg-green-100',  text: 'text-green-800' },
