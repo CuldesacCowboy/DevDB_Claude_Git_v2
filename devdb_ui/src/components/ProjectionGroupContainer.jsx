@@ -2,6 +2,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import InstrumentContainer from './InstrumentContainer'
+import { computeInstrumentLayout, computeDevLayout } from '../utils/layoutEngine'
 
 // Groups all legal instruments belonging to one dev_id (projection group).
 // The container itself is sortable (type='projection-group') so PGs can be reordered.
@@ -17,6 +18,7 @@ export default function ProjectionGroupContainer({
   collapsedPhaseIds,
   onToggleCollapse,
   onAutoSort,
+  availableWidth,
 }) {
   // PG-level sortable — drag handle on the PG header to reorder among all PGs
   const {
@@ -44,6 +46,20 @@ export default function ProjectionGroupContainer({
 
   const showInstrDropHighlight = isOver && activeDragType === 'instrument'
 
+  // Compute dev container layout from instrument band layouts
+  const aw = availableWidth ?? (typeof window !== 'undefined' ? window.innerWidth - 340 : 1200)
+  const instrumentLayouts = instruments.map((instr) =>
+    computeInstrumentLayout(
+      (instr.phases ?? []).map((p) => ({
+        phaseId: p.phase_id,
+        lotCount: p.lots?.length ?? 0,
+        expanded: !(collapsedPhaseIds?.has(p.phase_id) ?? false),
+      })),
+      aw
+    )
+  )
+  const devLayout = computeDevLayout(instrumentLayouts, aw)
+
   // SortableContext items for intra-PG instrument reorder
   const instrSortableIds = instruments.map((i) => `instrument-sortable-${i.instrument_id}`)
 
@@ -55,8 +71,7 @@ export default function ProjectionGroupContainer({
         transition,
         flex: '0 0 auto',
         opacity: isDragging ? 0.4 : 1,
-        width: 'fit-content',
-        maxWidth: 'calc(100vw - 340px)',
+        width: devLayout.width,
       }}
       className={`
         flex flex-col rounded-xl border-2 transition-colors duration-100
@@ -94,6 +109,7 @@ export default function ProjectionGroupContainer({
               collapsedPhaseIds={collapsedPhaseIds}
               onToggleCollapse={onToggleCollapse}
               onAutoSort={onAutoSort}
+              availableWidth={aw}
             />
           ))}
           {instruments.length === 0 && (

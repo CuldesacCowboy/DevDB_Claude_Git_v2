@@ -16,6 +16,7 @@ import PhaseColumn from '../components/PhaseColumn'
 import LotCard from '../components/LotCard'
 import Toast from '../components/Toast'
 import CommunityDevelopmentsView from './CommunityDevelopmentsView'
+import { LEFT_PANELS_WIDTH } from '../utils/layoutEngine'
 
 // TODO: re-enable when simulation run trigger is wired up
 const hideOutdatedWarning = true
@@ -79,6 +80,25 @@ export default function LotPhaseView() {
 
   // Collapse state — tracks which phase_ids are collapsed
   const [collapsedPhaseIds, setCollapsedPhaseIds] = useState(new Set())
+
+  // Available width for layout engine — recomputed on window resize (debounced 100ms)
+  const [availableWidth, setAvailableWidth] = useState(
+    () => window.innerWidth - LEFT_PANELS_WIDTH
+  )
+  useEffect(() => {
+    let timer
+    function handleResize() {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        setAvailableWidth(window.innerWidth - LEFT_PANELS_WIDTH)
+      }, 100)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      clearTimeout(timer)
+    }
+  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -938,6 +958,7 @@ export default function LotPhaseView() {
                         collapsedPhaseIds={collapsedPhaseIds}
                         onToggleCollapse={togglePhaseCollapse}
                         onAutoSort={handleAutoSort}
+                        availableWidth={availableWidth}
                       />
                     ))}
 

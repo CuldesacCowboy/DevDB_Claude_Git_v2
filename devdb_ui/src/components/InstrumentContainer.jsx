@@ -3,6 +3,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import PhaseColumn from './PhaseColumn'
+import { computeInstrumentLayout } from '../utils/layoutEngine'
 
 // Color tints cycle by dev_id across the ent_group.
 const DEV_TINTS = [
@@ -33,6 +34,7 @@ export default function InstrumentContainer({
   collapsedPhaseIds,
   onToggleCollapse,
   onAutoSort,       // (instrumentId: number) => void — called by auto-sort button
+  availableWidth,   // px — passed from LotPhaseView via ProjectionGroupContainer
 }) {
   const [countsExpanded, setCountsExpanded] = useState(false)
 
@@ -59,6 +61,18 @@ export default function InstrumentContainer({
   const instrTotalActual    = instrLotTypeTotals.reduce((s, lt) => s + lt.actual, 0)
   const instrTotalProjected = instrLotTypeTotals.reduce((s, lt) => s + lt.projected, 0)
   const instrTotalTotal     = instrLotTypeTotals.reduce((s, lt) => s + lt.total, 0)
+
+  // Compute optimal layout for this instrument band (real instruments only)
+  const instrLayout = !isNoInstrument && availableWidth
+    ? computeInstrumentLayout(
+        phasesData.map((p) => ({
+          phaseId: p.phase_id,
+          lotCount: p.lots?.length ?? 0,
+          expanded: !(collapsedPhaseIds?.has(p.phase_id) ?? false),
+        })),
+        availableWidth
+      )
+    : null
 
   // Droppable: instrument container body → receives phase cards
   const { isOver, setNodeRef: setDropRef } = useDroppable({
@@ -128,8 +142,8 @@ export default function InstrumentContainer({
       `}
       style={{
         flex: '0 0 auto',
-        width: 'fit-content',
-        maxWidth: 506,
+        width: instrLayout ? instrLayout.width : 'fit-content',
+        maxWidth: instrLayout ? instrLayout.width : 506,
         transform: CSS.Transform.toString(instrTransform),
         transition: instrTransition,
       }}
