@@ -1049,7 +1049,7 @@ export default function LotPhaseView() {
                       </span>
                     </h1>
                     <p className="text-sm text-gray-500 mt-0.5">
-                      Drag lot cards to reassign. Drag phase headers (⠿) to reassign instrument.
+                      Drag lot cards between lot type and phase containers. Drag phase headers (⠿) to reassign instrument.
                     </p>
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
