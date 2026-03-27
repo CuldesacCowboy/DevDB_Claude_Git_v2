@@ -628,7 +628,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                 style={{
                   columnWidth: 280,
                   columnFill: 'auto',
-                  columnGap: 12,
+                  columnGap: 15,
                   height: '100%',
                   paddingTop: 8,
                   paddingBottom: 8,
@@ -636,7 +636,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                   paddingRight: 0,
                 }}
               >
-                <div style={{ breakInside: 'avoid', marginBottom: 12, display: 'inline-block', width: '100%' }}>
+                <div style={{ breakInside: 'avoid', marginBottom: 15, display: 'inline-block', width: '100%' }}>
                   <NewCommunityDropZone
                     pendingNewComm={pendingNewComm}
                     newCommName={newCommName}
@@ -650,7 +650,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                 {sortedCommunities.map((c) => (
                   <div
                     key={c.ent_group_id}
-                    style={{ breakInside: 'avoid', marginBottom: 12, display: 'inline-block', width: '100%' }}
+                    style={{ breakInside: 'avoid', marginBottom: 15, display: 'inline-block', width: '100%' }}
                   >
                     <CommunityPill
                       community={c}
