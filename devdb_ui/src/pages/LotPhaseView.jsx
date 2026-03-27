@@ -718,45 +718,6 @@ export default function LotPhaseView() {
       if (newSoloIds.size === prev.size && [...newSoloIds].every(id => prev.has(id))) return prev
       return newSoloIds
     })
-
-    // Phase pill column equalization via double-rAF.
-    // After row heights are set, reset phase pill heights then re-measure
-    // to equalize columns within each instrument band using actual DOM heights.
-    const pgWrapperEl = pgWrapperRef.current
-    if (pgWrapperEl) {
-      requestAnimationFrame(() => {
-        // First rAF: reset all phase pill heights so natural sizes are visible
-        Array.from(pgWrapperEl.children).forEach(pgEl => {
-          pgEl.querySelectorAll('.rounded-xl').forEach(band => {
-            band.querySelectorAll('.rounded-lg.border-2').forEach(pill => {
-              pill.style.height = ''
-            })
-          })
-        })
-        requestAnimationFrame(() => {
-          // Second rAF: measure natural heights and equalize by column within each band
-          Array.from(pgWrapperEl.children).forEach(pgEl => {
-            pgEl.querySelectorAll('.rounded-xl').forEach(band => {
-              const pills = Array.from(band.querySelectorAll('.rounded-lg.border-2'))
-              if (pills.length === 0) return
-              // Group pills by left position (column), 4px tolerance for sub-pixel variation
-              const cols = []
-              pills.forEach(pill => {
-                const left = pill.getBoundingClientRect().left
-                const col = cols.find(c => Math.abs(c.left - left) < 4)
-                if (col) col.pills.push(pill)
-                else cols.push({ left, pills: [pill] })
-              })
-              // Equalize each column to the tallest pill in that column
-              cols.forEach(col => {
-                const maxH = Math.max(...col.pills.map(p => p.getBoundingClientRect().height))
-                col.pills.forEach(p => { p.style.height = maxH + 'px' })
-              })
-            })
-          })
-        })
-      })
-    }
   }, [pgGroups, availableWidth, collapsedPhaseIds])
 
   // -----------------------------------------------------------------------

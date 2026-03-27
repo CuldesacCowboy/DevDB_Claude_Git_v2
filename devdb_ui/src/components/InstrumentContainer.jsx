@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import PhaseColumn from './PhaseColumn'
-import { computeCols, computePhaseDimensions } from '../utils/computeCols'
+import { computeCols } from '../utils/computeCols'
 
 // Color tints cycle by dev_id across the ent_group.
 const DEV_TINTS = [
@@ -80,22 +80,6 @@ export default function InstrumentContainer({
   const instrCols = _colResult?.cols ?? null
   const instrWidth = _colResult?.width ?? null
 
-  // Compute per-phase equalized dimensions (orphan expansion + column height equalization).
-  const phaseDims =
-    !isNoInstrument && instrCols != null && instrWidth != null
-      ? computePhaseDimensions(
-          phasesData.map((p) => ({
-            phase_id: p.phase_id,
-            lotCount: p.lots?.length ?? 0,
-            isCollapsed: collapsedPhaseIds?.has(p.phase_id) ?? false,
-          })),
-          instrCols,
-          instrWidth,
-          8,
-          16
-        )
-      : null
-
   // Droppable: instrument container body → receives phase cards
   const { isOver, setNodeRef: setDropRef } = useDroppable({
     id: droppableId,
@@ -141,21 +125,16 @@ export default function InstrumentContainer({
     ? []
     : phasesData.map((p) => `phase-header-${p.phase_id}`)
 
-  const phaseColumns = phasesData.map((phase, i) => {
-    const dims = phaseDims?.[i]
-    return (
-      <PhaseColumn
-        key={phase.phase_id}
-        phase={phase}
-        pendingLotId={pendingLotId}
-        pendingPhaseId={pendingPhaseId}
-        isCollapsed={collapsedPhaseIds?.has(phase.phase_id) ?? false}
-        onToggleCollapse={() => onToggleCollapse?.(phase.phase_id)}
-        forcedWidth={dims?.width}
-        forcedHeight={dims?.height}
-      />
-    )
-  })
+  const phaseColumns = phasesData.map((phase) => (
+    <PhaseColumn
+      key={phase.phase_id}
+      phase={phase}
+      pendingLotId={pendingLotId}
+      pendingPhaseId={pendingPhaseId}
+      isCollapsed={collapsedPhaseIds?.has(phase.phase_id) ?? false}
+      onToggleCollapse={() => onToggleCollapse?.(phase.phase_id)}
+    />
+  ))
 
   return (
     <div
@@ -262,14 +241,10 @@ export default function InstrumentContainer({
             {phaseColumns}
           </div>
         ) : (
-          // Real instrument: explicit row divs, each flex:1, pills stretch within row
-          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, padding: 8, gap: 8 }}>
+          // Real instrument: CSS grid — grid-auto-rows:1fr equalizes all cells automatically
+          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${instrCols}, 1fr)`, gridAutoRows: '1fr', gap: 8, padding: 8 }}>
             <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
-              {Array.from({ length: Math.ceil(phasesData.length / instrCols) }, (_, r) => (
-                <div key={r} style={{ display: 'flex', flex: 1, gap: 8 }}>
-                  {phaseColumns.slice(r * instrCols, (r + 1) * instrCols)}
-                </div>
-              ))}
+              {phaseColumns}
             </SortableContext>
           </div>
         )

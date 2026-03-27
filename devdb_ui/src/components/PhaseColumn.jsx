@@ -129,12 +129,7 @@ export default function PhaseColumn({
         ${isOver && !isCollapsed ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}
       `}
       style={{
-        flex: '0 0 auto',
-        width:    forcedWidth  != null ? forcedWidth  + 'px' : 176,
-        minWidth: forcedWidth  != null ? forcedWidth  + 'px' : 176,
-        maxWidth: forcedWidth  != null ? forcedWidth  + 'px' : 220,
-        height:    forcedHeight != null ? forcedHeight + 'px' : undefined,
-        alignSelf: forcedWidth  != null ? 'stretch'          : undefined,
+        height: '100%',
         transform: CSS.Transform.toString(transform),
         transition,
       }}
