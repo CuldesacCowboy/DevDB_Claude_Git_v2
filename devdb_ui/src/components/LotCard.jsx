@@ -2,12 +2,13 @@ import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 
 const STATUS_BG = {
-  OUT: 'bg-gray-200 text-gray-500',
+  OUT: 'bg-white border border-gray-300 text-gray-400',
   C:   'bg-green-100 text-green-700',
   UC:  'bg-yellow-100 text-yellow-700',
   U:   'bg-blue-100 text-blue-700',
   D:   'bg-purple-100 text-purple-700',
 }
+const DEFAULT_PILL_BG = 'bg-white border border-gray-200 text-gray-600'
 
 // listView=true  → tall card (white bg, lot# bold, status muted below) — used in Unassigned Lots panel
 // listView=false → compact 50px pill (status as bg color, code left / number right) — used in phase grid
@@ -54,8 +55,7 @@ export default function LotCard({ lot, isPending, isOverlay = false, listView = 
     )
   }
 
-  const pillBg = STATUS_BG[lot.status] ?? ''
-  const needsBorder = !STATUS_BG[lot.status]
+  const pillBg = STATUS_BG[lot.status] ?? DEFAULT_PILL_BG
 
   return (
     <div
@@ -69,8 +69,6 @@ export default function LotCard({ lot, isPending, isOverlay = false, listView = 
         padding: '1px 4px',
         fontSize: 11,
         borderRadius: 4,
-        border: needsBorder ? '1px solid #e5e7eb' : undefined,
-        background: needsBorder ? 'white' : undefined,
         flexShrink: 0,
       }}
       {...listeners}

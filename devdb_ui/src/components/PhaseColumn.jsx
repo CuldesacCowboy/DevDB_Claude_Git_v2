@@ -107,8 +107,8 @@ export default function PhaseColumn({
       `}
       style={{
         flex: '0 0 auto',
-        width:    forcedWidth  != null ? forcedWidth  + 'px' : 160,
-        minWidth: forcedWidth  != null ? forcedWidth  + 'px' : 140,
+        width:    forcedWidth  != null ? forcedWidth  + 'px' : 176,
+        minWidth: forcedWidth  != null ? forcedWidth  + 'px' : 176,
         maxWidth: forcedWidth  != null ? forcedWidth  + 'px' : 220,
         height:    forcedHeight != null ? forcedHeight + 'px' : undefined,
         alignSelf: forcedWidth  != null ? 'stretch'          : undefined,
