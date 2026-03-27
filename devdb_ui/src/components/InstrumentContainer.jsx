@@ -33,8 +33,9 @@ export default function InstrumentContainer({
   activeDragType,
   collapsedPhaseIds,
   onToggleCollapse,
-  onAutoSort,       // (instrumentId: number) => void — called by auto-sort button
-  availableWidth,   // px — passed from LotPhaseView via ProjectionGroupContainer
+  onAutoSort,         // (instrumentId: number) => void — called by auto-sort button
+  availableWidth,     // px — passed from LotPhaseView via ProjectionGroupContainer
+  precomputedLayout,  // optional — if provided by parent (computeDevLayout), use it directly
 }) {
   const [countsExpanded, setCountsExpanded] = useState(false)
 
@@ -62,17 +63,20 @@ export default function InstrumentContainer({
   const instrTotalProjected = instrLotTypeTotals.reduce((s, lt) => s + lt.projected, 0)
   const instrTotalTotal     = instrLotTypeTotals.reduce((s, lt) => s + lt.total, 0)
 
-  // Compute optimal layout for this instrument band (real instruments only)
-  const instrLayout = !isNoInstrument && availableWidth
-    ? computeInstrumentLayout(
-        phasesData.map((p) => ({
-          phaseId: p.phase_id,
-          lotCount: p.lots?.length ?? 0,
-          expanded: !(collapsedPhaseIds?.has(p.phase_id) ?? false),
-        })),
-        availableWidth
-      )
-    : null
+  // Use pre-computed layout from parent (computeDevLayout) if available;
+  // fall back to local computation for standalone use (e.g. storybook/tests).
+  const instrLayout = precomputedLayout ?? (
+    !isNoInstrument && availableWidth
+      ? computeInstrumentLayout(
+          phasesData.map((p) => ({
+            phaseId: p.phase_id,
+            lotCount: p.lots?.length ?? 0,
+            expanded: !(collapsedPhaseIds?.has(p.phase_id) ?? false),
+          })),
+          availableWidth
+        )
+      : null
+  )
 
   // Droppable: instrument container body → receives phase cards
   const { isOver, setNodeRef: setDropRef } = useDroppable({
