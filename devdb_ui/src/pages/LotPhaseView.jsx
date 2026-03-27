@@ -66,6 +66,17 @@ export default function LotPhaseView() {
   const [activeTab, setActiveTab] = useState('developments')
   const [tabSwitchKey, setTabSwitchKey] = useState(0)
 
+  // Lot-phase view refresh key — increment to re-fetch without tab remount
+  const [lotPhaseKey, setLotPhaseKey] = useState(0)
+
+  // Add instrument modal
+  const [showAddInstrument, setShowAddInstrument] = useState(false)
+  const [newInstrName, setNewInstrName] = useState('')
+  const [newInstrType, setNewInstrType] = useState('Plat')
+  const [newInstrDevId, setNewInstrDevId] = useState(null)
+  const [addInstrError, setAddInstrError] = useState('')
+  const [addInstrCreating, setAddInstrCreating] = useState(false)
+
   // Collapse state — tracks which phase_ids are collapsed
   const [collapsedPhaseIds, setCollapsedPhaseIds] = useState(new Set())
 
@@ -130,7 +141,7 @@ export default function LotPhaseView() {
         setFetchError(err.message)
         setLoading(false)
       })
-  }, [entGroupId])
+  }, [entGroupId, lotPhaseKey])
 
   // -----------------------------------------------------------------------
   // Add community handlers
@@ -164,6 +175,40 @@ export default function LotPhaseView() {
     setAddingCommunity(false)
     setNewCommunityName('')
     setAddCommunityError('')
+  }
+
+  function openAddInstrument() {
+    setNewInstrName('')
+    setNewInstrType('Plat')
+    setNewInstrDevId(pgGroups[0]?.devId ?? null)
+    setAddInstrError('')
+    setShowAddInstrument(true)
+  }
+
+  async function handleCreateInstrument() {
+    const name = newInstrName.trim()
+    if (!name) { setAddInstrError('Instrument name is required'); return }
+    if (!newInstrDevId) { setAddInstrError('Select a development'); return }
+    setAddInstrCreating(true)
+    setAddInstrError('')
+    try {
+      const res = await fetch('/api/instruments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instrument_name: name, instrument_type: newInstrType, dev_id: newInstrDevId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setShowAddInstrument(false)
+        setLotPhaseKey((k) => k + 1)
+      } else {
+        setAddInstrError(data?.detail ?? 'Create failed')
+      }
+    } catch (err) {
+      setAddInstrError(`Network error: ${err.message}`)
+    } finally {
+      setAddInstrCreating(false)
+    }
   }
 
   function startRename(c, e) {
@@ -833,6 +878,12 @@ export default function LotPhaseView() {
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
                     <button
+                      onClick={openAddInstrument}
+                      className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                    >
+                      + Add instrument
+                    </button>
+                    <button
                       onClick={collapseAll}
                       className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
                     >
@@ -915,6 +966,77 @@ export default function LotPhaseView() {
       </DndContext>
         )}
       </div>
+
+      {/* Add instrument modal */}
+      {showAddInstrument && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowAddInstrument(false)}
+        >
+          <div
+            style={{ background: 'white', borderRadius: 10, padding: '24px', width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold text-gray-800 mb-4">Add instrument</h2>
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Instrument name</label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={newInstrName}
+                  onChange={(e) => setNewInstrName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreateInstrument(); if (e.key === 'Escape') setShowAddInstrument(false) }}
+                  className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                  placeholder="e.g. Waterton North Plat"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Instrument type</label>
+                <select
+                  value={newInstrType}
+                  onChange={(e) => setNewInstrType(e.target.value)}
+                  className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                >
+                  {['Plat', 'Site Condo', 'Condo Declaration', 'Other'].map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Development</label>
+                <select
+                  value={newInstrDevId ?? ''}
+                  onChange={(e) => setNewInstrDevId(Number(e.target.value))}
+                  className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
+                >
+                  {pgGroups.map((g) => (
+                    <option key={g.devId} value={g.devId}>{g.devName}</option>
+                  ))}
+                </select>
+              </div>
+              {addInstrError && (
+                <p className="text-xs text-red-600">{addInstrError}</p>
+              )}
+              <div className="flex gap-2 justify-end mt-1">
+                <button
+                  onClick={() => setShowAddInstrument(false)}
+                  className="rounded border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCreateInstrument}
+                  disabled={addInstrCreating}
+                  className="rounded bg-blue-500 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-600 disabled:opacity-40"
+                >
+                  {addInstrCreating ? 'Creating…' : 'Create'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast stack — lot-phase tab only */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">
