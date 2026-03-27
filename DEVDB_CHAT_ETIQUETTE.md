@@ -33,3 +33,17 @@ Only after the map is reviewed and confirmed does new code get written.
 - `DevDB_PlanningKernel_BoundarySpec.docx` — kernel boundary reference
 - `DevDB_Scenario_Pack` — truth cases / regression suite
 - This file — workflow conventions
+
+## Copy button placement rule
+
+Every CC message iframe must have a copy button in BOTH the top-right corner
+AND the bottom-right corner of the frame. The top copy button stays visible
+without scrolling. The bottom copy button is for long messages where the user
+has scrolled to the end.
+
+Both buttons must capture the full message content in one click.
+
+The iframe structure is:
+  topbar div (copy button top-right)
+  content div (the message)
+  bottombar div (copy button bottom-right, mirrors topbar)
