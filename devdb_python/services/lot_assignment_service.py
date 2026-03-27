@@ -75,12 +75,9 @@ def _maintain_splits(cur, phase_id: int) -> None:
             GROUP BY lot_type_id
             HAVING COUNT(*) > 0
         ) actual
-        WHERE NOT EXISTS (
-            SELECT 1 FROM sim_phase_product_splits sps
-            WHERE sps.phase_id = %s AND sps.lot_type_id = actual.lot_type_id
-        )
+        ON CONFLICT (phase_id, lot_type_id) DO NOTHING
         """,
-        (phase_id, phase_id, phase_id),
+        (phase_id, phase_id),
     )
     cur.execute(
         """
