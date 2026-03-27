@@ -856,7 +856,7 @@ export default function LotPhaseView() {
         <div className="flex-shrink-0 flex items-end gap-0 border-b border-gray-200 bg-white px-4">
           {[
             { id: 'developments', label: 'Developments' },
-            { id: 'lot-phase', label: 'Lot & Phase View' },
+            { id: 'lot-phase', label: 'Legal Instruments' },
           ].map(({ id, label }) => (
             <button
               key={id}
