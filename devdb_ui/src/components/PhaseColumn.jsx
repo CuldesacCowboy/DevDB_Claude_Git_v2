@@ -284,7 +284,20 @@ export default function PhaseColumn({
               isPending={pendingLotId === lot.lot_id}
             />
           ))}
-          {lotCount === 0 && !isOver && (
+          {Array.from({ length: Math.max(0, displayProjected - lotCount) }).map((_, i) => (
+            <div
+              key={`temp-${i}`}
+              style={{
+                width: 50,
+                height: 23,
+                borderRadius: 4,
+                border: '1.5px dashed #d1d5db',
+                background: 'transparent',
+                flexShrink: 0,
+              }}
+            />
+          ))}
+          {lotCount === 0 && displayProjected === 0 && !isOver && (
             <p className="text-[11px] text-gray-400 italic text-center mt-1" style={{ gridColumn: '1 / -1' }}>empty</p>
           )}
         </div>
