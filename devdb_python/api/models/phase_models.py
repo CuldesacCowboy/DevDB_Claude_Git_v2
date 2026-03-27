@@ -3,7 +3,13 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import BaseModel
+
+
+class PhaseUpdateRequest(BaseModel):
+    projected_count: Optional[int] = None
 
 
 class PhaseInstrumentReassignRequest(BaseModel):
