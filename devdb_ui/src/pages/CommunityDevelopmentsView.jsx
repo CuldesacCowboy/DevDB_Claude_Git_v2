@@ -133,7 +133,7 @@ function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef }) 
           borderRadius: '6px 6px 0 0',
         }}
       >
-        <p className="font-bold text-sm text-gray-800 leading-snug truncate">
+        <p className="font-bold text-gray-800 leading-snug truncate" style={{ fontSize: 15 }}>
           {community.ent_group_name}
         </p>
         <p className="text-[11px] text-gray-400 mt-0.5">
@@ -628,7 +628,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                 style={{
                   columnWidth: 280,
                   columnFill: 'auto',
-                  columnGap: 4,
+                  columnGap: 12,
                   height: '100%',
                   paddingTop: 8,
                   paddingBottom: 8,
@@ -636,7 +636,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                   paddingRight: 0,
                 }}
               >
-                <div style={{ breakInside: 'avoid', marginBottom: 4, display: 'inline-block', width: '100%' }}>
+                <div style={{ breakInside: 'avoid', marginBottom: 12, display: 'inline-block', width: '100%' }}>
                   <NewCommunityDropZone
                     pendingNewComm={pendingNewComm}
                     newCommName={newCommName}
@@ -650,7 +650,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                 {sortedCommunities.map((c) => (
                   <div
                     key={c.ent_group_id}
-                    style={{ breakInside: 'avoid', marginBottom: 4, display: 'inline-block', width: '100%' }}
+                    style={{ breakInside: 'avoid', marginBottom: 12, display: 'inline-block', width: '100%' }}
                   >
                     <CommunityPill
                       community={c}
