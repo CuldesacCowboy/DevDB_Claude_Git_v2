@@ -16,7 +16,7 @@ import PhaseColumn from '../components/PhaseColumn'
 import LotCard from '../components/LotCard'
 import Toast from '../components/Toast'
 import CommunityDevelopmentsView from './CommunityDevelopmentsView'
-import { LEFT_PANELS_WIDTH } from '../utils/layoutEngine'
+const LEFT_PANELS_WIDTH = 340 // sidebar + unassigned panel
 
 // TODO: re-enable when simulation run trigger is wired up
 const hideOutdatedWarning = true
@@ -944,7 +944,7 @@ export default function LotPhaseView() {
                   items={pgOrder.map((id) => `pg-${id}`)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 16, paddingBottom: 16 }}>
+                  <div className="flex flex-wrap gap-4 p-4 items-start">
                     {pgGroups.map((group) => (
                       <ProjectionGroupContainer
                         key={group.devId}

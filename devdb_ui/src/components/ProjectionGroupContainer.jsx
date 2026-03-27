@@ -2,7 +2,6 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import InstrumentContainer from './InstrumentContainer'
-import { computeDevLayout } from '../utils/layoutEngine'
 
 // Groups all legal instruments belonging to one dev_id (projection group).
 // The container itself is sortable (type='projection-group') so PGs can be reordered.
@@ -46,16 +45,7 @@ export default function ProjectionGroupContainer({
 
   const showInstrDropHighlight = isOver && activeDragType === 'instrument'
 
-  // Build raw phase sets then compute dev + per-instrument layouts together
   const aw = availableWidth ?? (typeof window !== 'undefined' ? window.innerWidth - 340 : 1200)
-  const instrumentPhaseSets = instruments.map((instr) =>
-    (instr.phases ?? []).map((p) => ({
-      phaseId: p.phase_id,
-      lotCount: p.lots?.length ?? 0,
-      expanded: !(collapsedPhaseIds?.has(p.phase_id) ?? false),
-    }))
-  )
-  const devLayout = computeDevLayout(instrumentPhaseSets, aw)
 
   // SortableContext items for intra-PG instrument reorder
   const instrSortableIds = instruments.map((i) => `instrument-sortable-${i.instrument_id}`)
@@ -68,7 +58,7 @@ export default function ProjectionGroupContainer({
         transition,
         flex: '0 0 auto',
         opacity: isDragging ? 0.4 : 1,
-        width: devLayout.width,
+        width: 'fit-content',
       }}
       className={`
         flex flex-col rounded-xl border-2 transition-colors duration-100
@@ -94,8 +84,8 @@ export default function ProjectionGroupContainer({
 
       {/* Instruments — sortable within this PG */}
       <SortableContext items={instrSortableIds} strategy={rectSortingStrategy}>
-        <div className="flex flex-row flex-wrap items-start gap-2 p-2">
-          {instruments.map((instr, idx) => (
+        <div className="flex flex-wrap gap-2 p-2 items-start" style={{ width: 'fit-content' }}>
+          {instruments.map((instr) => (
             <InstrumentContainer
               key={instr.instrument_id}
               instrument={instr}
@@ -107,7 +97,6 @@ export default function ProjectionGroupContainer({
               onToggleCollapse={onToggleCollapse}
               onAutoSort={onAutoSort}
               availableWidth={aw}
-              precomputedLayout={devLayout.instrumentLayouts[idx]}
             />
           ))}
           {instruments.length === 0 && (
