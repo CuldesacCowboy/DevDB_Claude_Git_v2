@@ -90,7 +90,7 @@ export default function PhaseColumn({
       if (totalPills === 0) return
       const rows = Math.ceil(totalPills / lotGridCols)
       const availH = phaseH - headerH - padV
-      const pillH = Math.max(20, Math.floor((availH - (rows - 1) * GAP) / rows))
+      const pillH = Math.max(20, Math.min(80, Math.floor((availH - (rows - 1) * GAP) / rows)))
       setLotPillH(pillH)
     })
   }, [lotCount, tempCount, lotGridCols, resizeTick])
@@ -138,7 +138,6 @@ export default function PhaseColumn({
         ${isOver && !isCollapsed ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}
       `}
       style={{
-        height: '100%',
         transform: CSS.Transform.toString(transform),
         transition,
       }}

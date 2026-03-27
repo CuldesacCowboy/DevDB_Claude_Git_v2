@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useLayoutEffect } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -79,6 +79,23 @@ export default function InstrumentContainer({
       : null
   const instrCols = _colResult?.cols ?? null
   const instrWidth = _colResult?.width ?? null
+
+  const gridRef = useRef(null)
+  useLayoutEffect(() => {
+    if (!gridRef.current || !instrCols) return
+    const cells = Array.from(gridRef.current.children)
+    // Reset heights so natural content sizes drive measurement
+    cells.forEach((c) => { c.style.height = '' })
+    requestAnimationFrame(() => {
+      if (!gridRef.current) return
+      for (let col = 0; col < instrCols; col++) {
+        const colCells = cells.filter((_, i) => i % instrCols === col)
+        if (colCells.length === 0) continue
+        const maxH = Math.max(...colCells.map((c) => c.getBoundingClientRect().height))
+        colCells.forEach((c) => { c.style.height = maxH + 'px' })
+      }
+    })
+  }, [instrCols, phasesData.length, collapsedPhaseIds])
 
   // Droppable: instrument container body → receives phase cards
   const { isOver, setNodeRef: setDropRef } = useDroppable({
@@ -241,8 +258,8 @@ export default function InstrumentContainer({
             {phaseColumns}
           </div>
         ) : (
-          // Real instrument: CSS grid — grid-auto-rows:1fr equalizes all cells automatically
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${instrCols}, 1fr)`, gridAutoRows: '1fr', gap: 8, padding: 8 }}>
+          // Real instrument: CSS grid — columns equal-width, rows auto-sized to content
+          <div ref={gridRef} style={{ display: 'grid', gridTemplateColumns: `repeat(${instrCols}, 1fr)`, gridAutoRows: 'auto', gap: 8, padding: 8 }}>
             <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
               {phaseColumns}
             </SortableContext>
