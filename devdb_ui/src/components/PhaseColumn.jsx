@@ -271,24 +271,34 @@ export default function PhaseColumn({
         )}
       </div>
 
-      {/* Lot cards — 3-wide grid of 50px pills, hidden when collapsed */}
-      {!isCollapsed && (
+      {/* Lot cards — N-wide grid of lot pills, hidden when collapsed.
+          Orphan phases (forcedWidth > 176) expand lot columns to fill available width. */}
+      {!isCollapsed && (() => {
+        const isOrphan = forcedWidth != null && forcedWidth > 176
+        const lotGridCols = isOrphan
+          ? Math.floor((forcedWidth - 10 + 4) / 54)
+          : 3
+        const lotPillW = isOrphan
+          ? (forcedWidth - 10 - (lotGridCols - 1) * 4) / lotGridCols
+          : 50
+        return (
         <div
           className="flex-1 min-h-[40px]"
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 50px)', gap: 4, padding: 4, width: 'fit-content', margin: '0 auto' }}
+          style={{ display: 'grid', gridTemplateColumns: `repeat(${lotGridCols}, ${lotPillW}px)`, gap: 4, padding: 4, width: 'fit-content', margin: '0 auto' }}
         >
           {phase.lots.map((lot) => (
             <LotCard
               key={lot.lot_id}
               lot={lot}
               isPending={pendingLotId === lot.lot_id}
+              pillWidth={lotPillW}
             />
           ))}
           {Array.from({ length: Math.max(0, displayProjected - lotCount) }).map((_, i) => (
             <div
               key={`temp-${i}`}
               style={{
-                width: 50,
+                width: lotPillW,
                 height: 23,
                 borderRadius: 4,
                 border: '1.5px dashed #d1d5db',
@@ -301,7 +311,8 @@ export default function PhaseColumn({
             <p className="text-[11px] text-gray-400 italic text-center mt-1" style={{ gridColumn: '1 / -1' }}>empty</p>
           )}
         </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
