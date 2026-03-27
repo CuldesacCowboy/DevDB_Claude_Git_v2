@@ -21,7 +21,6 @@ app.add_middleware(
 
 app.include_router(lots.router)
 app.include_router(phases.router)
-app.include_router(phases.instrument_router)   # /instruments/{id}/phase-order
 app.include_router(instruments.router)
 app.include_router(developments.router)
 app.include_router(entitlement_groups.router)
