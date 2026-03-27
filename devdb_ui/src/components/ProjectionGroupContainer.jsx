@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -46,6 +47,32 @@ export default function ProjectionGroupContainer({
 
   const showInstrDropHighlight = isOver && activeDragType === 'instrument'
 
+  const [devCountsExpanded, setDevCountsExpanded] = useState(false)
+
+  // Aggregate by_lot_type across all phases in all instruments of this dev
+  const devLotTypeTotals = (() => {
+    const byTypeMap = {}
+    instruments
+      .flatMap((i) => i.phases ?? [])
+      .flatMap((p) => p.by_lot_type ?? [])
+      .forEach((lt) => {
+        if (!byTypeMap[lt.lot_type_id]) {
+          byTypeMap[lt.lot_type_id] = {
+            lot_type_id: lt.lot_type_id,
+            lot_type_short: lt.lot_type_short,
+            actual: 0, projected: 0, total: 0,
+          }
+        }
+        byTypeMap[lt.lot_type_id].actual    += lt.actual    || 0
+        byTypeMap[lt.lot_type_id].projected += lt.projected || 0
+        byTypeMap[lt.lot_type_id].total     += lt.total     || 0
+      })
+    return Object.values(byTypeMap)
+  })()
+  const devR = devLotTypeTotals.reduce((s, lt) => s + lt.actual,    0)
+  const devP = devLotTypeTotals.reduce((s, lt) => s + lt.projected, 0)
+  const devT = devLotTypeTotals.reduce((s, lt) => s + lt.total,     0)
+
   const aw = availableWidth ?? (typeof window !== 'undefined' ? window.innerWidth - 340 : 1200)
 
   // SortableContext items for intra-PG instrument reorder
@@ -83,18 +110,31 @@ export default function ProjectionGroupContainer({
             <span className="absolute left-0 text-gray-400 text-[10px] leading-none flex-shrink-0 cursor-grab active:cursor-grabbing select-none" aria-hidden>⠿</span>
             <p className={`font-bold text-sm ${tint?.text ?? 'text-gray-700'} whitespace-nowrap`}>{devName}</p>
           </div>
-          {(() => {
-            const devR = instruments.flatMap((i) => i.phases ?? []).flatMap((p) => p.by_lot_type ?? []).reduce((s, lt) => s + (lt.actual    || 0), 0)
-            const devP = instruments.flatMap((i) => i.phases ?? []).flatMap((p) => p.by_lot_type ?? []).reduce((s, lt) => s + (lt.projected || 0), 0)
-            const devT = instruments.flatMap((i) => i.phases ?? []).flatMap((p) => p.by_lot_type ?? []).reduce((s, lt) => s + (lt.total     || 0), 0)
-            return (
-              <div className="text-[11px] text-gray-500 text-center leading-snug whitespace-nowrap">
-                <span className="font-medium text-gray-700">{devR}</span>r{' '}
-                /<span className="font-medium text-gray-700"> {devP}</span>p{' '}
-                /<span className="font-medium text-gray-700"> {devT}</span>t
+          <div>
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); setDevCountsExpanded((v) => !v) }}
+              className="w-full text-[11px] text-gray-500 text-center leading-snug whitespace-nowrap hover:text-gray-700"
+              title={devCountsExpanded ? 'Hide by type' : 'Show by type'}
+            >
+              <span className="font-medium text-gray-700">{devR}</span>r{' '}
+              /<span className="font-medium text-gray-700"> {devP}</span>p{' '}
+              /<span className="font-medium text-gray-700"> {devT}</span>t
+              {' '}<span className="text-gray-400">{devCountsExpanded ? '▴' : '▾'}</span>
+            </button>
+            {devCountsExpanded && (
+              <div className="mt-1 space-y-0.5">
+                {devLotTypeTotals.map((lt) => (
+                  <p key={lt.lot_type_id} className="text-[10px] text-gray-400 text-center leading-snug whitespace-nowrap">
+                    <span className="text-gray-500 mr-1">{lt.lot_type_short ?? `t${lt.lot_type_id}`}</span>
+                    <span className="font-medium text-gray-600">{lt.actual}</span>r{' '}
+                    /<span className="font-medium text-gray-600"> {lt.projected}</span>p{' '}
+                    /<span className="font-medium text-gray-600"> {lt.total}</span>t
+                  </p>
+                ))}
               </div>
-            )
-          })()}
+            )}
+          </div>
         </div>
       </div>
 
