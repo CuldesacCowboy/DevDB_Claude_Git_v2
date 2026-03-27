@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useLayoutEffect } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -47,6 +47,7 @@ export default function PhaseColumn({
   function setOuterRef(el) {
     setSortRef(el)
     setDropRef(el)
+    phaseRef.current = el
   }
 
   const [countsExpanded, setCountsExpanded] = useState(false)
@@ -57,6 +58,9 @@ export default function PhaseColumn({
   const [projectedFlash,   setProjectedFlash]   = useState(false)
   const [localProjected,   setLocalProjected]   = useState(null)
   const cancelProjectedRef = useRef(false)
+
+  const phaseRef = useRef(null)
+  const [lotPillH, setLotPillH] = useState(23)
 
   const isPending = pendingPhaseId === phase.phase_id
   const lotCount  = phase.lots.length
@@ -70,6 +74,25 @@ export default function PhaseColumn({
   const displayTotal     = localProjected != null
     ? totalTotal - totalProjected + localProjected
     : totalTotal
+
+  const tempCount = isCollapsed ? 0 : Math.max(0, displayProjected - lotCount)
+
+  useLayoutEffect(() => {
+    if (!phaseRef.current || isCollapsed) return
+    const phaseH = phaseRef.current.clientHeight
+    const headerEl = phaseRef.current.firstElementChild
+    const headerH = headerEl?.clientHeight || 64
+    const padV = 8
+    const GAP = 4
+    const isOrphan = forcedWidth != null && forcedWidth > 176
+    const lotGridCols = isOrphan ? Math.floor((forcedWidth - 10 + 4) / 54) : 3
+    const totalPills = lotCount + tempCount
+    const rows = Math.ceil(totalPills / lotGridCols)
+    if (rows === 0) return
+    const availH = phaseH - headerH - padV
+    const pillH = Math.max(23, Math.floor((availH - (rows - 1) * GAP) / rows))
+    setLotPillH(pillH)
+  }, [forcedHeight, lotCount, tempCount, forcedWidth, isCollapsed])
 
   async function confirmProjectedEdit() {
     if (cancelProjectedRef.current) {
@@ -284,7 +307,7 @@ export default function PhaseColumn({
         return (
         <div
           className="flex-1 min-h-[40px]"
-          style={{ display: 'grid', gridTemplateColumns: `repeat(${lotGridCols}, ${lotPillW}px)`, gap: 4, padding: 4, width: 'fit-content', margin: '0 auto' }}
+          style={{ display: 'grid', gridTemplateColumns: `repeat(${lotGridCols}, ${lotPillW}px)`, gridAutoRows: `${lotPillH}px`, gap: 4, padding: 4, width: 'fit-content', margin: '0 auto' }}
         >
           {phase.lots.map((lot) => (
             <LotCard
@@ -292,6 +315,7 @@ export default function PhaseColumn({
               lot={lot}
               isPending={pendingLotId === lot.lot_id}
               pillWidth={lotPillW}
+              pillHeight={lotPillH}
             />
           ))}
           {Array.from({ length: Math.max(0, displayProjected - lotCount) }).map((_, i) => (
@@ -299,7 +323,7 @@ export default function PhaseColumn({
               key={`temp-${i}`}
               style={{
                 width: lotPillW,
-                height: 23,
+                height: lotPillH,
                 borderRadius: 4,
                 border: '1.5px dashed #d1d5db',
                 background: 'transparent',
