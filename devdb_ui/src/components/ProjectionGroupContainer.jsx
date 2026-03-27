@@ -2,7 +2,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import InstrumentContainer from './InstrumentContainer'
-import { computeDevLayout, DEV_INSTR_GAP, DEV_PADDING } from '../utils/layoutEngine'
+import { computeDevLayout } from '../utils/layoutEngine'
 
 // Groups all legal instruments belonging to one dev_id (projection group).
 // The container itself is sortable (type='projection-group') so PGs can be reordered.
@@ -94,7 +94,7 @@ export default function ProjectionGroupContainer({
 
       {/* Instruments — sortable within this PG */}
       <SortableContext items={instrSortableIds} strategy={rectSortingStrategy}>
-        <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: DEV_INSTR_GAP, padding: DEV_PADDING }}>
+        <div className="flex flex-row flex-wrap items-start gap-2 p-2">
           {instruments.map((instr, idx) => (
             <InstrumentContainer
               key={instr.instrument_id}
