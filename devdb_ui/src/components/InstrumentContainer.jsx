@@ -177,10 +177,12 @@ export default function InstrumentContainer({
       {/* Container header */}
       <div className={`px-3 py-2 rounded-t-xl border-b ${containerTint.border} ${containerTint.header}`}>
         {isNoInstrument ? (
-          <p className="font-bold text-sm text-gray-700">No Instrument</p>
-          <p className="text-[11px] text-gray-400 mt-0.5">
-            {phasesData.length} phase{phasesData.length !== 1 ? 's' : ''}
-          </p>
+          <>
+            <p className="font-bold text-sm text-gray-700">No Instrument</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">
+              {phasesData.length} phase{phasesData.length !== 1 ? 's' : ''}
+            </p>
+          </>
         ) : (
           <div className="flex flex-col gap-0.5">
             <div className="relative flex items-center justify-center gap-2">
