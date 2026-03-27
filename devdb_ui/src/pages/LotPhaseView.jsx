@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -99,6 +99,30 @@ export default function LotPhaseView() {
       clearTimeout(timer)
     }
   }, [])
+
+  // Per-row dev container height equalization.
+  // After render, group containers by their top position and set all containers
+  // in the same row to the tallest one's height.
+  const pgWrapperRef = useRef(null)
+  useLayoutEffect(() => {
+    if (!pgWrapperRef.current) return
+    const containers = Array.from(pgWrapperRef.current.children)
+    // Reset all heights first so natural sizes drive row grouping
+    containers.forEach(el => { el.style.height = '' })
+    // Group by top position (within 10px tolerance for sub-pixel variation)
+    const rows = []
+    containers.forEach(el => {
+      const top = el.getBoundingClientRect().top
+      const row = rows.find(r => Math.abs(r.top - top) < 10)
+      if (row) row.els.push(el)
+      else rows.push({ top, els: [el] })
+    })
+    // Apply max height of each row to all containers in that row
+    rows.forEach(row => {
+      const maxH = Math.max(...row.els.map(el => el.getBoundingClientRect().height))
+      row.els.forEach(el => { el.style.height = maxH + 'px' })
+    })
+  }, [pgGroups, availableWidth, collapsedPhaseIds])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -944,7 +968,7 @@ export default function LotPhaseView() {
                   items={pgOrder.map((id) => `pg-${id}`)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="flex flex-wrap gap-4 p-4 items-start">
+                  <div ref={pgWrapperRef} className="flex flex-wrap gap-4 p-4 items-start">
                     {pgGroups.map((group) => (
                       <ProjectionGroupContainer
                         key={group.devId}

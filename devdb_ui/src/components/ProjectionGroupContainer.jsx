@@ -84,7 +84,7 @@ export default function ProjectionGroupContainer({
 
       {/* Instruments — sortable within this PG */}
       <SortableContext items={instrSortableIds} strategy={rectSortingStrategy}>
-        <div className="flex flex-wrap gap-2 p-2 items-stretch" style={{ width: 'fit-content' }}>
+        <div className="flex flex-wrap gap-2 p-2 items-stretch" style={{ width: 'fit-content', height: '100%' }}>
           {instruments.map((instr) => (
             <InstrumentContainer
               key={instr.instrument_id}
