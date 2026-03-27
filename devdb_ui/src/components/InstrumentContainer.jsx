@@ -247,24 +247,32 @@ export default function InstrumentContainer({
         )}
       </div>
 
-      {/* Phase columns — wrap to new rows when phases don't fit */}
-      <div className="flex flex-wrap gap-2 p-2 items-start">
-        {phasesData.length > 0 ? (
-          isNoInstrument ? (
-            phaseColumns
-          ) : (
-            <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
-              {phaseColumns}
-            </SortableContext>
-          )
-        ) : (
-          <div className="flex items-center justify-center min-h-[80px]" style={{ width: 160 }}>
-            <p className="text-[11px] text-gray-400 italic">
-              {showPhaseDropHighlight ? 'Drop phase here' : 'No phases'}
-            </p>
+      {/* Phase columns — explicit rows so CSS flex:1 distributes instrument height evenly */}
+      {phasesData.length > 0 ? (
+        isNoInstrument || instrCols == null ? (
+          // No-instrument or fallback: plain flex-wrap
+          <div className="flex flex-wrap gap-2 p-2 items-start">
+            {phaseColumns}
           </div>
-        )}
-      </div>
+        ) : (
+          // Real instrument: explicit row divs, each flex:1, pills stretch within row
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, padding: 8, gap: 8 }}>
+            <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
+              {Array.from({ length: Math.ceil(phasesData.length / instrCols) }, (_, r) => (
+                <div key={r} style={{ display: 'flex', flex: 1, gap: 8 }}>
+                  {phaseColumns.slice(r * instrCols, (r + 1) * instrCols)}
+                </div>
+              ))}
+            </SortableContext>
+          </div>
+        )
+      ) : (
+        <div className="flex items-center justify-center min-h-[80px]" style={{ width: 160 }}>
+          <p className="text-[11px] text-gray-400 italic">
+            {showPhaseDropHighlight ? 'Drop phase here' : 'No phases'}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

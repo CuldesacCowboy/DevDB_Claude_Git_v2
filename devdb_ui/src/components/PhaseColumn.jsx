@@ -69,7 +69,8 @@ export default function PhaseColumn({
         width: forcedWidth != null ? forcedWidth + 'px' : 160,
         minWidth: forcedWidth != null ? forcedWidth + 'px' : 140,
         maxWidth: forcedWidth != null ? forcedWidth + 'px' : 220,
-        minHeight: forcedHeight != null ? forcedHeight + 'px' : undefined,
+        height: forcedHeight != null ? forcedHeight + 'px' : undefined,
+        alignSelf: forcedWidth != null ? 'stretch' : undefined,
         transform: CSS.Transform.toString(transform),
         transition,
       }}

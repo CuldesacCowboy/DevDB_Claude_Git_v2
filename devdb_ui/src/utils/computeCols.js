@@ -81,9 +81,10 @@ export function computePhaseDimensions(phases, cols, instrWidth, gap = 8, paddin
   const PILL_W = 160
 
   function naturalH(lotCount, isCollapsed) {
-    return !isCollapsed && lotCount > 0
-      ? 64 + Math.ceil(lotCount / 3) * 21 + (Math.ceil(lotCount / 3) - 1) * 4 + 16
-      : 138
+    if (isCollapsed || lotCount === 0) return 138
+    const lotRows = Math.ceil(lotCount / 3)
+    // +24 accounts for the lot-count label line rendered above the grid
+    return 64 + lotRows * 21 + (lotRows - 1) * 4 + 16 + 24
   }
 
   const phaseCount = phases.length
@@ -138,23 +139,14 @@ export function computePhaseDimensions(phases, cols, instrWidth, gap = 8, paddin
     }
   }
 
-  // Single-orphan vertical equalization: stretch orphan to match col0's adjusted total
-  if (isOrphanRow && lastRowCount === 1) {
-    const orphanIdx = phaseCount - 1
-    const col0Indices = colPhaseIndices[0]
-    const col0TotalH =
-      col0Indices.length === 0
-        ? 0
-        : col0Indices.reduce((sum, idx) => sum + adjustedHeights[idx], 0) +
-          (col0Indices.length - 1) * gap
-    if (col0TotalH > naturalHeights[orphanIdx]) {
-      adjustedHeights[orphanIdx] = col0TotalH
-    }
-  }
+  // Orphan pills are exempt from vertical equalization — they keep their natural height.
+  // (Lateral expansion was already handled in Pass 1.)
 
   return phases.map((phase, i) => ({
     phaseId: phase.phase_id,
     width: widths[i],
-    height: adjustedHeights[i],
+    // Only return an explicit height when equalization raised the pill above its natural height.
+    // Pills at natural height get null so CSS alignSelf:stretch handles distribution instead.
+    height: adjustedHeights[i] > naturalHeights[i] + 0.01 ? adjustedHeights[i] : null,
   }))
 }
