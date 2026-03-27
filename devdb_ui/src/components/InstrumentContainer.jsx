@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -37,6 +37,8 @@ export default function InstrumentContainer({
   availableWidth, // px — passed from LotPhaseView via ProjectionGroupContainer
 }) {
   const [countsExpanded, setCountsExpanded] = useState(false)
+  const phaseRowRef = useRef(null)
+  const outerRef = useRef(null)
 
   const isNoInstrument = instrument === null
   const droppableId = isNoInstrument ? 'instrument-null' : `instrument-${instrument.instrument_id}`
@@ -76,6 +78,21 @@ export default function InstrumentContainer({
         ).width
       : null
 
+  // After render, measure the actual phase row width and snap the band to it.
+  // This corrects for sub-pixel border/gap rendering that formula-based widths miss.
+  useEffect(() => {
+    if (!phaseRowRef.current || !outerRef.current) return
+    outerRef.current.style.width = 'fit-content'
+    requestAnimationFrame(() => {
+      if (!phaseRowRef.current || !outerRef.current) return
+      const naturalW = phaseRowRef.current.scrollWidth
+      const bandStyle = window.getComputedStyle(outerRef.current)
+      const borderW = parseFloat(bandStyle.borderLeftWidth) +
+                      parseFloat(bandStyle.borderRightWidth)
+      outerRef.current.style.width = (naturalW + borderW) + 'px'
+    })
+  }, [instrWidth, phasesData.length])
+
   // Droppable: instrument container body → receives phase cards
   const { isOver, setNodeRef: setDropRef } = useDroppable({
     id: droppableId,
@@ -105,6 +122,7 @@ export default function InstrumentContainer({
   })
 
   function setOuterRef(el) {
+    outerRef.current = el
     setInstrSortRef(el)
     setDropRef(el)
   }
@@ -225,7 +243,7 @@ export default function InstrumentContainer({
       </div>
 
       {/* Phase columns — wrap to new rows when phases don't fit */}
-      <div className="flex flex-wrap gap-2 p-2 items-start">
+      <div ref={phaseRowRef} className="flex flex-wrap gap-2 p-2 items-start">
         {phasesData.length > 0 ? (
           isNoInstrument ? (
             phaseColumns
