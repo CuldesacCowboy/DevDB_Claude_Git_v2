@@ -46,7 +46,6 @@ export function computeInstrumentLayout(phases, availableWidth) {
   }
 
   let bestLayout = null
-  let bestScore = Infinity
 
   for (let cols = 1; cols <= phaseCount; cols++) {
     const bandWidth =
@@ -54,27 +53,22 @@ export function computeInstrumentLayout(phases, availableWidth) {
     if (bandWidth > maxWidth) break
 
     const rows = Math.ceil(phaseCount / cols)
-    let totalH = INSTR_HEADER_HEIGHT + INSTR_PADDING * 2
+    let contentH = 0
 
     for (let r = 0; r < rows; r++) {
       const rowPhases = phases.slice(r * cols, (r + 1) * cols)
       const rowH = Math.max(...rowPhases.map((p) => phasePillHeight(p.lotCount, p.expanded)))
-      totalH += rowH
-      if (r < rows - 1) totalH += INSTR_PHASE_GAP
+      contentH += rowH
+      if (r < rows - 1) contentH += INSTR_PHASE_GAP
     }
 
-    const bandArea = bandWidth * totalH
-    const usedArea =
-      phases.reduce(
-        (sum, p) => sum + PHASE_PILL_WIDTH * phasePillHeight(p.lotCount, p.expanded),
-        0
-      ) +
-      INSTR_HEADER_HEIGHT * bandWidth
-    const wasted = bandArea - usedArea
+    const totalH = INSTR_HEADER_HEIGHT + contentH + INSTR_PADDING * 2
 
-    if (wasted < bestScore) {
-      bestScore = wasted
-      bestLayout = { cols, rows, width: bandWidth, height: totalH, fillRatio: usedArea / bandArea }
+    // Minimize height first, then width as tiebreaker
+    const score = totalH * 100000 + bandWidth
+
+    if (!bestLayout || score < bestLayout.score) {
+      bestLayout = { cols, rows, width: bandWidth, height: totalH, score }
     }
   }
 
@@ -82,25 +76,13 @@ export function computeInstrumentLayout(phases, availableWidth) {
   if (!bestLayout) {
     const bandWidth = PHASE_PILL_WIDTH + INSTR_PADDING * 2
     const rows = phaseCount
-    let totalH = INSTR_HEADER_HEIGHT + INSTR_PADDING * 2
+    let contentH = 0
     for (let r = 0; r < rows; r++) {
-      totalH += phasePillHeight(phases[r].lotCount, phases[r].expanded)
-      if (r < rows - 1) totalH += INSTR_PHASE_GAP
+      contentH += phasePillHeight(phases[r].lotCount, phases[r].expanded)
+      if (r < rows - 1) contentH += INSTR_PHASE_GAP
     }
-    const bandArea = bandWidth * totalH
-    const usedArea =
-      phases.reduce(
-        (sum, p) => sum + PHASE_PILL_WIDTH * phasePillHeight(p.lotCount, p.expanded),
-        0
-      ) +
-      INSTR_HEADER_HEIGHT * bandWidth
-    bestLayout = {
-      cols: 1,
-      rows,
-      width: bandWidth,
-      height: totalH,
-      fillRatio: usedArea / bandArea,
-    }
+    const totalH = INSTR_HEADER_HEIGHT + contentH + INSTR_PADDING * 2
+    bestLayout = { cols: 1, rows, width: bandWidth, height: totalH, score: totalH * 100000 + bandWidth }
   }
 
   return bestLayout
