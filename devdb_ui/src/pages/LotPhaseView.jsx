@@ -416,6 +416,7 @@ export default function LotPhaseView() {
         const data = await res.json()
 
         if (res.ok) {
+          console.log('[drag] lot PATCH response:', JSON.stringify(data, null, 2))
           const { transaction, phase_counts, needs_rerun, warnings } = data
           const fromUnassigned = lot.phase_id === null
 

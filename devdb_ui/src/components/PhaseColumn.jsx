@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -51,6 +51,8 @@ export default function PhaseColumn({
 
   // Per-lot-type projected editing — p is editable at the lot_type level only
   const [localByLotType, setLocalByLotType] = useState(phase.by_lot_type)
+  // Sync when parent updates phase.by_lot_type (e.g., after a drag moves a lot)
+  useEffect(() => { setLocalByLotType(phase.by_lot_type) }, [phase.by_lot_type])
   const [editingLtId, setEditingLtId] = useState(null)
   const [ltInput,     setLtInput]     = useState('')
   const [ltFlash,     setLtFlash]     = useState(null) // lot_type_id with error flash, or null
