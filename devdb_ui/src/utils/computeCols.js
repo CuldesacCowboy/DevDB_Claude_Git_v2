@@ -11,7 +11,7 @@ export function computeCols(phaseCount, availableWidth, expanded, phases) {
   const PILL_W = 160
   const GAP = 8
   const PADDING = 16
-  const BAND_BORDER = 2
+  const BAND_BORDER = 2.5
   const instrWidth = (n) => n * PILL_W + (n - 1) * GAP + PADDING + BAND_BORDER
 
   // Never fewer than 2 cols (unless only 1 phase), never more cols than phases

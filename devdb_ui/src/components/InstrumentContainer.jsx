@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -37,8 +37,6 @@ export default function InstrumentContainer({
   availableWidth, // px — passed from LotPhaseView via ProjectionGroupContainer
 }) {
   const [countsExpanded, setCountsExpanded] = useState(false)
-  const phaseRowRef = useRef(null)
-  const outerRef = useRef(null)
 
   const isNoInstrument = instrument === null
   const droppableId = isNoInstrument ? 'instrument-null' : `instrument-${instrument.instrument_id}`
@@ -78,40 +76,6 @@ export default function InstrumentContainer({
         ).width
       : null
 
-  // After render, measure the actual phase row width and snap the band to it.
-  // This corrects for sub-pixel border/gap rendering that formula-based widths miss.
-  useEffect(() => {
-    if (!phaseRowRef.current || !outerRef.current) return
-
-    const pills = Array.from(phaseRowRef.current.children)
-    if (pills.length === 0) return
-
-    // Measure one pill's actual rendered width
-    const pillW = pills[0].getBoundingClientRect().width
-
-    // Measure actual gap between pill 0 and pill 1 (if exists)
-    const gap = pills.length > 1
-      ? pills[1].getBoundingClientRect().left - pills[0].getBoundingClientRect().right
-      : parseFloat(window.getComputedStyle(phaseRowRef.current).gap) || 8
-
-    // Measure phase row padding
-    const rowStyle = window.getComputedStyle(phaseRowRef.current)
-    const padH = parseFloat(rowStyle.paddingLeft) + parseFloat(rowStyle.paddingRight)
-
-    // Measure band border
-    const bandStyle = window.getComputedStyle(outerRef.current)
-    const borderH = parseFloat(bandStyle.borderLeftWidth) + parseFloat(bandStyle.borderRightWidth)
-
-    // Back-calculate cols from the instrWidth computeCols chose
-    const cols = Math.round((instrWidth - padH - borderH + gap) / (pillW + gap))
-
-    // Exact width for cols pills using real measurements
-    const exactW = cols * pillW + (cols - 1) * gap + padH + borderH
-
-    outerRef.current.style.width = exactW + 'px'
-
-  }, [instrWidth, phasesData.length])
-
   // Droppable: instrument container body → receives phase cards
   const { isOver, setNodeRef: setDropRef } = useDroppable({
     id: droppableId,
@@ -141,7 +105,6 @@ export default function InstrumentContainer({
   })
 
   function setOuterRef(el) {
-    outerRef.current = el
     setInstrSortRef(el)
     setDropRef(el)
   }
@@ -262,7 +225,7 @@ export default function InstrumentContainer({
       </div>
 
       {/* Phase columns — wrap to new rows when phases don't fit */}
-      <div ref={phaseRowRef} className="flex flex-wrap gap-2 p-2 items-start">
+      <div className="flex flex-wrap gap-2 p-2 items-start">
         {phasesData.length > 0 ? (
           isNoInstrument ? (
             phaseColumns
