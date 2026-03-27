@@ -3,6 +3,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import LotCard from './LotCard'
+import LotTypePill from './LotTypePill'
 
 // Split "Waterton Station SF ph. 3" into prefix="Waterton Station SF" and suffix="ph. 3".
 // Falls back to { prefix: name, suffix: null } if no " ph." pattern is found.
@@ -20,8 +21,7 @@ export default function PhaseColumn({
   isCollapsed,
   onToggleCollapse,
 }) {
-  // Sortable: handles both intra-instrument reorder (drag to swap position)
-  // and cross-instrument move (drag to a different instrument container).
+  // Sortable: handles both intra-instrument reorder and cross-instrument move.
   const {
     attributes: sortAttrs,
     listeners: sortListeners,
@@ -35,7 +35,7 @@ export default function PhaseColumn({
     disabled: !!isOverlay || pendingPhaseId === phase.phase_id,
   })
 
-  // Droppable: column body → receives lot cards
+  // Phase-level droppable (Case C: lot dropped onto phase, not a specific lot-type zone)
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `phase-${phase.phase_id}`,
     data: { type: 'lot-target', phase },
@@ -47,40 +47,29 @@ export default function PhaseColumn({
     setDropRef(el)
   }
 
-  const [countsExpanded, setCountsExpanded] = useState(false)
-
-  // Per-lot-type projected editing — p is editable at the lot_type level only
+  // localByLotType drives the slash-line totals and is updated optimistically on p edits.
   const [localByLotType, setLocalByLotType] = useState(phase.by_lot_type)
-  // Sync when parent updates phase.by_lot_type (e.g., after a drag moves a lot)
   useEffect(() => { setLocalByLotType(phase.by_lot_type) }, [phase.by_lot_type])
-  const [editingLtId, setEditingLtId] = useState(null)
-  const [ltInput,     setLtInput]     = useState('')
-  const [ltFlash,     setLtFlash]     = useState(null) // lot_type_id with error flash, or null
-  const cancelLtRef = useRef(false)
 
   const isPending = pendingPhaseId === phase.phase_id
   const lotCount  = phase.lots.length
 
-  // Totals derived from localByLotType so edits are reflected immediately
   const totalActual    = localByLotType.reduce((s, lt) => s + lt.actual,    0)
   const totalProjected = localByLotType.reduce((s, lt) => s + lt.projected, 0)
   const totalTotal     = localByLotType.reduce((s, lt) => s + lt.total,     0)
 
-  async function confirmLtEdit(lotTypeId, prevProjected) {
-    if (cancelLtRef.current) {
-      cancelLtRef.current = false
-      return
-    }
-    const val = parseInt(ltInput, 10)
-    setEditingLtId(null)
-    if (isNaN(val) || val < 0 || val === prevProjected) return
+  // Handle projected edit from a LotTypePill: PATCH then update localByLotType.
+  const ltFlashRef = useRef({}) // lotTypeId -> timeout id
+  const [ltFlash, setLtFlash] = useState(null)
+
+  async function handleProjectedEdit(phaseId, lotTypeId, newValue) {
     try {
       const res = await fetch(
-        `/api/phases/${phase.phase_id}/lot-type/${lotTypeId}/projected`,
+        `/api/phases/${phaseId}/lot-type/${lotTypeId}/projected`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projected_count: val }),
+          body: JSON.stringify({ projected_count: newValue }),
         }
       )
       if (res.ok) {
@@ -125,11 +114,9 @@ export default function PhaseColumn({
         `}
       >
         <div className="flex items-center gap-1">
-          {/* Drag handle icon */}
           <span className="text-gray-300 text-[10px] leading-none flex-shrink-0" aria-hidden>
             ⠿
           </span>
-          {/* Phase name — 2-line clamp prefix + always-visible suffix */}
           {(() => {
             const { prefix, suffix } = splitPhaseName(phase.phase_name)
             return (
@@ -162,7 +149,6 @@ export default function PhaseColumn({
               </div>
             )
           })()}
-          {/* Collapse toggle */}
           {!isOverlay && onToggleCollapse && (
             <button
               onPointerDown={(e) => e.stopPropagation()}
@@ -179,94 +165,16 @@ export default function PhaseColumn({
         </div>
       </div>
 
-      {/* Capacity counts — display-only total; per-type editable p on expand */}
-      <div className="px-2 py-1 border-b border-gray-100">
+      {/* Slash line — phase-level read-only summary */}
+      <div className="px-2 py-1 border-b border-gray-100" onPointerDown={(e) => e.stopPropagation()}>
         {localByLotType.length === 0 ? (
           <p className="text-[11px] text-gray-400 italic text-center">no splits</p>
         ) : (
-          <>
-            {/* Slash line: read-only summary, click to toggle per-type breakdown */}
-            <div
-              className="w-full text-[11px] text-gray-500 leading-snug whitespace-nowrap text-center"
-              style={{ cursor: 'pointer' }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => !isOverlay && setCountsExpanded((v) => !v)}
-              title={countsExpanded ? 'Hide by type' : 'Show by type'}
-            >
-              <span className="font-medium text-gray-700">{totalActual}</span>r{' / '}
-              <span className="font-medium text-gray-700">{totalProjected}</span>p{' / '}
-              <span className="font-medium text-gray-700">{totalTotal}</span>t
-            </div>
-            {countsExpanded && (
-              <div className="mt-1 space-y-0.5">
-                {localByLotType.map((lt) => (
-                  <div
-                    key={lt.lot_type_id}
-                    className="flex items-center justify-center gap-0.5 text-[10px] text-gray-500 leading-snug whitespace-nowrap"
-                    onPointerDown={(e) => e.stopPropagation()}
-                  >
-                    <span className="text-gray-600 font-medium mr-0.5">
-                      {lt.lot_type_short ?? `t${lt.lot_type_id}`}
-                    </span>
-                    <span className="font-medium text-gray-600">{lt.actual}</span>r /
-                    {editingLtId === lt.lot_type_id ? (
-                      <input
-                        autoFocus
-                        type="text"
-                        value={ltInput}
-                        onFocus={(e) => e.target.select()}
-                        onChange={(e) => setLtInput(e.target.value.replace(/\D/g, ''))}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
-                            cancelLtRef.current = true
-                            setEditingLtId(null)
-                          }
-                          if (e.key === 'Enter') e.target.blur()
-                        }}
-                        onBlur={() => confirmLtEdit(lt.lot_type_id, lt.projected)}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          width: Math.max(2, ltInput.length) + 'ch',
-                          minWidth: '2ch',
-                          border: 'none',
-                          background: 'transparent',
-                          outline: 'none',
-                          font: 'inherit',
-                          textAlign: 'center',
-                          color: 'inherit',
-                          cursor: 'text',
-                        }}
-                        className="font-medium text-gray-700"
-                      />
-                    ) : (
-                      <span
-                        onClick={(e) => {
-                          if (isOverlay) return
-                          e.stopPropagation()
-                          setLtInput(String(lt.projected))
-                          setEditingLtId(lt.lot_type_id)
-                        }}
-                        style={{
-                          border: `1px solid ${ltFlash === lt.lot_type_id ? '#ef4444' : '#93c5fd'}`,
-                          background: ltFlash === lt.lot_type_id ? '#fef2f2' : '#eff6ff',
-                          borderRadius: 3,
-                          padding: '0 4px',
-                          cursor: 'pointer',
-                          display: 'inline-block',
-                          lineHeight: 1.5,
-                        }}
-                        className="font-medium text-gray-700"
-                        title="Click to edit projected count"
-                      >
-                        {lt.projected}
-                      </span>
-                    )}
-                    p / <span className="font-medium text-gray-600">{lt.total}</span>t
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+          <div className="w-full text-[11px] text-gray-500 leading-snug whitespace-nowrap text-center">
+            <span className="font-medium text-gray-700">{totalActual}</span>r{' / '}
+            <span className="font-medium text-gray-700">{totalProjected}</span>p{' / '}
+            <span className="font-medium text-gray-700">{totalTotal}</span>t
+          </div>
         )}
         {isCollapsed && (
           <p className="text-[11px] text-gray-400 mt-0.5 text-center">
@@ -275,34 +183,27 @@ export default function PhaseColumn({
         )}
       </div>
 
-      {/* Lot cards — 3-wide grid of lot pills, hidden when collapsed. */}
+      {/* Lot type container — one LotTypePill per entry in by_lot_type */}
       {!isCollapsed && (
-        <div
-          className="flex-1 min-h-[40px]"
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 50px)', gridAutoRows: '24px', gap: 4, padding: 4, width: 'fit-content', margin: '0 auto' }}
-        >
-          {phase.lots.map((lot) => (
-            <LotCard
-              key={lot.lot_id}
-              lot={lot}
-              isPending={pendingLotId === lot.lot_id}
-            />
-          ))}
-          {Array.from({ length: Math.max(0, totalProjected - lotCount) }).map((_, i) => (
-            <div
-              key={`temp-${i}`}
-              style={{
-                width: 50,
-                height: 24,
-                borderRadius: 4,
-                border: '1.5px dashed #d1d5db',
-                background: 'transparent',
-              }}
-            />
-          ))}
-          {lotCount === 0 && totalProjected === 0 && !isOver && (
-            <p className="text-[11px] text-gray-400 italic text-center mt-1" style={{ gridColumn: '1 / -1' }}>empty</p>
+        <div className="flex flex-col gap-1 px-2 pb-2 pt-1">
+          {localByLotType.length === 0 && (
+            <p className="text-[11px] text-gray-400 italic text-center mt-1">empty</p>
           )}
+          {localByLotType.map((lt) => (
+            <LotTypePill
+              key={lt.lot_type_id}
+              phaseId={phase.phase_id}
+              lotTypeId={lt.lot_type_id}
+              lotTypeShort={lt.lot_type_short}
+              actual={lt.actual}
+              projected={lt.projected}
+              total={lt.total}
+              lots={phase.lots.filter((l) => l.lot_type_id === lt.lot_type_id)}
+              onProjectedEdit={handleProjectedEdit}
+              pendingLotId={pendingLotId}
+              isOverlay={isOverlay}
+            />
+          ))}
         </div>
       )}
     </div>
