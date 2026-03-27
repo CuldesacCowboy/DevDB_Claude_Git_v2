@@ -838,13 +838,27 @@ export default function LotPhaseView() {
         <div className="flex flex-1 overflow-hidden">
 
           {/* -------------------------------------------------------------- */}
-          {/* Unassigned Lots panel — sticky full height, own scroll          */}
+          {/* Left column — Unassigned Lots (top) + No Instrument (bottom)   */}
           {/* -------------------------------------------------------------- */}
           <div
             style={{ width: 168, flexShrink: 0 }}
-            className="h-full flex flex-col border-r border-amber-100"
+            className="h-full flex flex-col border-r border-gray-200 overflow-hidden"
           >
-            <UnassignedColumn lots={unassigned} pendingLotId={pendingLotId} />
+            <div className="flex-1 min-h-0">
+              <UnassignedColumn lots={unassigned} pendingLotId={pendingLotId} />
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto border-t border-gray-200">
+              <InstrumentContainer
+                instrument={null}
+                phases={unassignedPhases}
+                tint={null}
+                pendingLotId={pendingLotId}
+                pendingPhaseId={pendingPhaseId}
+                activeDragType={activeDragType}
+                collapsedPhaseIds={collapsedPhaseIds}
+                onToggleCollapse={togglePhaseCollapse}
+              />
+            </div>
           </div>
 
           {/* -------------------------------------------------------------- */}
@@ -927,17 +941,6 @@ export default function LotPhaseView() {
                       />
                     ))}
 
-                    {/* "No instrument" container — always visible */}
-                    <InstrumentContainer
-                      instrument={null}
-                      phases={unassignedPhases}
-                      tint={null}
-                      pendingLotId={pendingLotId}
-                      pendingPhaseId={pendingPhaseId}
-                      activeDragType={activeDragType}
-                      collapsedPhaseIds={collapsedPhaseIds}
-                      onToggleCollapse={togglePhaseCollapse}
-                    />
                   </div>
                 </SortableContext>
               </>
