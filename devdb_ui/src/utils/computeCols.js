@@ -3,13 +3,14 @@
 // produces the most compact (minimum bounding-box area) layout for the given
 // available width.
 //
-// Phase pill width is 176px (set by PhaseColumn inline style).
-// Lot grid: 3 × 50px + 2 × 4px gaps = 158px; pill padding 8px each side = 16px; border 2px → 176px total.
-// instrWidth(N) = N * 176 + (N-1) * 8 + 16 + 2.5
+// Phase pill width is 187px.
+// Lot grid: 3 × 50px + 2 × 4px gaps + 4px padding each side = 166px content.
+// LotTypePill border (1px each side = 2px) + LotTypeContainer px-2 (8px each side = 16px) + phase border (2×1.25px) → 187px total.
+// instrWidth(N) = N * 187 + (N-1) * 8 + 16 + 2.5
 // This is the exact container width needed so that exactly N pills fit per row.
 
 export function computeCols(phaseCount, availableWidth, expanded, phases, relaxCap = false) {
-  const PILL_W = 176
+  const PILL_W = 187
   const GAP = 8
   const PADDING = 16
   const BAND_BORDER = 2.5
@@ -82,7 +83,7 @@ export function computeCols(phaseCount, availableWidth, expanded, phases, relaxC
 // padding: total horizontal padding inside phase row (default 16)
 export function computePhaseDimensions(phases, cols, instrWidth, gap = 8, padding = 16) {
   const BAND_BORDER = 2.5
-  const PILL_W = 176
+  const PILL_W = 187
 
   function naturalH(lotCount, isCollapsed) {
     if (isCollapsed || lotCount === 0) return 138
