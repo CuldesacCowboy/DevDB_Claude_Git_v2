@@ -58,3 +58,103 @@ export function computeCols(phaseCount, availableWidth, expanded, phases) {
 
   return { cols: bestCols, width: instrWidth(bestCols) }
 }
+
+// Computes per-phase { phaseId, width, height } for equalized pill layout within one band.
+//
+// Pass 1 — Orphan lateral expansion:
+//   Pills in the last row (if that row is incomplete) expand to fill the full content width.
+//
+// Pass 2 — Column height equalization:
+//   For each column, compute total natural height. Pad shorter columns so all columns
+//   share the same total height (extra px distributed evenly across that column's pills).
+//
+// Single-orphan vertical equalization:
+//   When the last row has exactly 1 pill, match its height to col0's total.
+//
+// phases: array of { phase_id, lotCount, isCollapsed }
+// cols:   column count from computeCols
+// instrWidth: band CSS width from computeCols
+// gap:    px between pills (default 8)
+// padding: total horizontal padding inside phase row (default 16)
+export function computePhaseDimensions(phases, cols, instrWidth, gap = 8, padding = 16) {
+  const BAND_BORDER = 2.5
+  const PILL_W = 160
+
+  function naturalH(lotCount, isCollapsed) {
+    return !isCollapsed && lotCount > 0
+      ? 64 + Math.ceil(lotCount / 3) * 21 + (Math.ceil(lotCount / 3) - 1) * 4 + 16
+      : 138
+  }
+
+  const phaseCount = phases.length
+  if (phaseCount === 0) return []
+
+  const rows = Math.ceil(phaseCount / cols)
+  const lastRowCount = phaseCount - (rows - 1) * cols
+  const isOrphanRow = lastRowCount < cols
+
+  // Pass 1: widths
+  const contentW = instrWidth - BAND_BORDER - padding
+  const orphanPillW = isOrphanRow
+    ? (contentW - (lastRowCount - 1) * gap) / lastRowCount
+    : PILL_W
+
+  const widths = phases.map((_, i) => {
+    const rowIdx = Math.floor(i / cols)
+    return isOrphanRow && rowIdx === rows - 1 ? orphanPillW : PILL_W
+  })
+
+  // Pass 2: column height equalization (non-orphan rows only)
+  const naturalHeights = phases.map((p) => naturalH(p.lotCount || 0, p.isCollapsed ?? false))
+  const adjustedHeights = [...naturalHeights]
+
+  const nonOrphanCount = isOrphanRow ? phaseCount - lastRowCount : phaseCount
+  const nonOrphanRowCount = isOrphanRow ? rows - 1 : rows
+
+  const colPhaseIndices = Array.from({ length: cols }, (_, c) => {
+    const indices = []
+    for (let r = 0; r < nonOrphanRowCount; r++) {
+      const idx = r * cols + c
+      if (idx < nonOrphanCount) indices.push(idx)
+    }
+    return indices
+  })
+
+  const colHeights = colPhaseIndices.map((indices) =>
+    indices.length === 0
+      ? 0
+      : indices.reduce((sum, idx) => sum + naturalHeights[idx], 0) + (indices.length - 1) * gap
+  )
+
+  const maxColH = colHeights.length > 0 ? Math.max(...colHeights) : 0
+
+  for (let c = 0; c < cols; c++) {
+    const deficit = maxColH - colHeights[c]
+    if (deficit > 0 && colPhaseIndices[c].length > 0) {
+      const extraPerPill = deficit / colPhaseIndices[c].length
+      for (const idx of colPhaseIndices[c]) {
+        adjustedHeights[idx] += extraPerPill
+      }
+    }
+  }
+
+  // Single-orphan vertical equalization: stretch orphan to match col0's adjusted total
+  if (isOrphanRow && lastRowCount === 1) {
+    const orphanIdx = phaseCount - 1
+    const col0Indices = colPhaseIndices[0]
+    const col0TotalH =
+      col0Indices.length === 0
+        ? 0
+        : col0Indices.reduce((sum, idx) => sum + adjustedHeights[idx], 0) +
+          (col0Indices.length - 1) * gap
+    if (col0TotalH > naturalHeights[orphanIdx]) {
+      adjustedHeights[orphanIdx] = col0TotalH
+    }
+  }
+
+  return phases.map((phase, i) => ({
+    phaseId: phase.phase_id,
+    width: widths[i],
+    height: adjustedHeights[i],
+  }))
+}

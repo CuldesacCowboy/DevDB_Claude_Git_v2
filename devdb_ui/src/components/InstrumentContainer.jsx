@@ -3,7 +3,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import PhaseColumn from './PhaseColumn'
-import { computeCols } from '../utils/computeCols'
+import { computeCols, computePhaseDimensions } from '../utils/computeCols'
 
 // Color tints cycle by dev_id across the ent_group.
 const DEV_TINTS = [
@@ -66,14 +66,32 @@ export default function InstrumentContainer({
   // expanded = true unless every phase is individually collapsed.
   const allCollapsed =
     phasesData.length > 0 && phasesData.every((p) => collapsedPhaseIds?.has(p.phase_id))
-  const instrWidth =
+  const _colResult =
     !isNoInstrument && availableWidth && phasesData.length > 0
       ? computeCols(
           phasesData.length,
           availableWidth,
           !allCollapsed,
           phasesData.map((p) => ({ lotCount: p.lots?.length ?? 0 }))
-        ).width
+        )
+      : null
+  const instrCols = _colResult?.cols ?? null
+  const instrWidth = _colResult?.width ?? null
+
+  // Compute per-phase equalized dimensions (orphan expansion + column height equalization).
+  const phaseDims =
+    !isNoInstrument && instrCols != null && instrWidth != null
+      ? computePhaseDimensions(
+          phasesData.map((p) => ({
+            phase_id: p.phase_id,
+            lotCount: p.lots?.length ?? 0,
+            isCollapsed: collapsedPhaseIds?.has(p.phase_id) ?? false,
+          })),
+          instrCols,
+          instrWidth,
+          8,
+          16
+        )
       : null
 
   // Droppable: instrument container body → receives phase cards
@@ -121,16 +139,21 @@ export default function InstrumentContainer({
     ? []
     : phasesData.map((p) => `phase-header-${p.phase_id}`)
 
-  const phaseColumns = phasesData.map((phase) => (
-    <PhaseColumn
-      key={phase.phase_id}
-      phase={phase}
-      pendingLotId={pendingLotId}
-      pendingPhaseId={pendingPhaseId}
-      isCollapsed={collapsedPhaseIds?.has(phase.phase_id) ?? false}
-      onToggleCollapse={() => onToggleCollapse?.(phase.phase_id)}
-    />
-  ))
+  const phaseColumns = phasesData.map((phase, i) => {
+    const dims = phaseDims?.[i]
+    return (
+      <PhaseColumn
+        key={phase.phase_id}
+        phase={phase}
+        pendingLotId={pendingLotId}
+        pendingPhaseId={pendingPhaseId}
+        isCollapsed={collapsedPhaseIds?.has(phase.phase_id) ?? false}
+        onToggleCollapse={() => onToggleCollapse?.(phase.phase_id)}
+        forcedWidth={dims?.width}
+        forcedHeight={dims?.height}
+      />
+    )
+  })
 
   return (
     <div
