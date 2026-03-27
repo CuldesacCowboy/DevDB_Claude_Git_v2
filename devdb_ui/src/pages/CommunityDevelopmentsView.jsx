@@ -45,7 +45,7 @@ function DevCard({ dev, isPending, isOverlay = false }) {
         flexShrink: 0,
       }}
     >
-      <div style={{ fontSize: 12, fontWeight: 500, color: '#1f2937', lineHeight: 1.4 }}>
+      <div style={{ fontSize: 13, fontWeight: 500, color: '#1f2937', lineHeight: 1.4 }}>
         {dev.dev_name}
       </div>
       <div style={{ fontSize: 11, color: '#9ca3af', lineHeight: 1.3 }}>
