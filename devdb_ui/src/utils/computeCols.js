@@ -8,7 +8,7 @@
 // This is the exact container width needed so that exactly N pills fit per row.
 
 export function computeCols(phaseCount, availableWidth, expanded, phases) {
-  const PILL_W = 160
+  const PILL_W = 158
   const GAP = 8
   const PADDING = 16
   const instrWidth = (n) => n * PILL_W + (n - 1) * GAP + PADDING
