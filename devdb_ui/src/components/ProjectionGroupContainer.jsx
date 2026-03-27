@@ -73,14 +73,28 @@ export default function ProjectionGroupContainer({
         {...attributes}
         {...listeners}
         className={`
-          px-3 py-1.5 rounded-t-xl border-b select-none
+          px-3 py-2 rounded-t-xl border-b select-none
           cursor-grab active:cursor-grabbing
           ${tint?.border ?? 'border-gray-200'} ${tint?.header ?? 'bg-gray-100'}
         `}
       >
-        <div className="flex items-center gap-1.5">
-          <span className="text-gray-400 text-[10px] leading-none flex-shrink-0" aria-hidden>⠿</span>
-          <p className={`text-xs font-semibold ${tint?.text ?? 'text-gray-700'}`}>{devName}</p>
+        <div className="flex flex-col gap-0.5">
+          <div className="relative flex items-center justify-center">
+            <span className="absolute left-0 text-gray-400 text-[10px] leading-none flex-shrink-0 cursor-grab active:cursor-grabbing select-none" aria-hidden>⠿</span>
+            <p className={`font-bold text-sm ${tint?.text ?? 'text-gray-700'} whitespace-nowrap`}>{devName}</p>
+          </div>
+          {(() => {
+            const devR = instruments.flatMap((i) => i.phases ?? []).flatMap((p) => p.by_lot_type ?? []).reduce((s, lt) => s + (lt.actual    || 0), 0)
+            const devP = instruments.flatMap((i) => i.phases ?? []).flatMap((p) => p.by_lot_type ?? []).reduce((s, lt) => s + (lt.projected || 0), 0)
+            const devT = instruments.flatMap((i) => i.phases ?? []).flatMap((p) => p.by_lot_type ?? []).reduce((s, lt) => s + (lt.total     || 0), 0)
+            return (
+              <div className="text-[11px] text-gray-500 text-center leading-snug whitespace-nowrap">
+                <span className="font-medium text-gray-700">{devR}</span>r{' '}
+                /<span className="font-medium text-gray-700"> {devP}</span>p{' '}
+                /<span className="font-medium text-gray-700"> {devT}</span>t
+              </div>
+            )
+          })()}
         </div>
       </div>
 
