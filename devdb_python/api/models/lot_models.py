@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -13,6 +15,7 @@ class LotPhaseReassignRequest(BaseModel):
 
 class LotTypeCount(BaseModel):
     lot_type_id: int
+    lot_type_short: Optional[str] = None
     actual: int
     projected: int
     total: int

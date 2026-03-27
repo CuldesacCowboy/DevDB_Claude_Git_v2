@@ -313,12 +313,14 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
         )
         lots_raw = list(cur.fetchall())
 
-        # Load splits (counts per phase × lot_type)
+        # Load splits (counts per phase × lot_type), including display name
         cur.execute(
             """
-            SELECT phase_id, lot_type_id, lot_count AS projected
-            FROM sim_phase_product_splits
-            WHERE phase_id = ANY(%s)
+            SELECT s.phase_id, s.lot_type_id, s.lot_count AS projected,
+                   r.lot_type_short
+            FROM sim_phase_product_splits s
+            JOIN ref_lot_types r ON r.lot_type_id = s.lot_type_id
+            WHERE s.phase_id = ANY(%s)
             """,
             (phase_ids,),
         )
@@ -352,6 +354,7 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
             splits_by_phase[pid].append(
                 {
                     "lot_type_id": lt,
+                    "lot_type_short": s["lot_type_short"],
                     "actual": actual,
                     "projected": projected,
                     "total": max(actual, projected),
