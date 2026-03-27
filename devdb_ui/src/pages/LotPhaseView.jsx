@@ -697,12 +697,12 @@ export default function LotPhaseView() {
           flexShrink: 0,
           cursor: sidebarOpen ? 'default' : 'pointer',
         }}
-        className="bg-white border-r border-gray-200 overflow-hidden h-screen"
+        className="bg-white border-r border-gray-200 overflow-hidden h-screen flex flex-col"
         onClick={!sidebarOpen ? () => setSidebarOpen(true) : undefined}
       >
         {/* Inner content always 220px wide — overflow is clipped by parent */}
-        <div style={{ width: 220, pointerEvents: sidebarOpen ? 'auto' : 'none' }}>
-          <div className="pt-10 px-3 pb-4">
+        <div style={{ width: 220, pointerEvents: sidebarOpen ? 'auto' : 'none' }} className="flex flex-col h-full">
+          <div className="pt-10 px-3 pb-4 overflow-y-auto flex-1">
             <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-2">
               Communities
             </p>
