@@ -773,7 +773,15 @@ export default function LotPhaseView() {
         </div>
 
         {activeTab === 'developments' ? (
-          <CommunityDevelopmentsView key={tabSwitchKey} entGroupId={entGroupId} />
+          <CommunityDevelopmentsView
+            key={tabSwitchKey}
+            entGroupId={entGroupId}
+            onOpenLotPhase={(id) => {
+              setEntGroupId(id)
+              setActiveTab('lot-phase')
+              setTabSwitchKey((k) => k + 1)
+            }}
+          />
         ) : (
       <DndContext key={tabSwitchKey}
         sensors={sensors}

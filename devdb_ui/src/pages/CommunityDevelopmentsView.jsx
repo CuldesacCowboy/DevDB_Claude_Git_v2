@@ -102,7 +102,7 @@ function UnassignedDevsPanel({ devs, pendingDevId }) {
 // CommunityPill — droppable community card with nested dev cards
 // innerRef: callback ref so parent can track DOM node for scroll-to-selected
 // ---------------------------------------------------------------------------
-function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef }) {
+function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef, onOpenLotPhase }) {
   const { isOver, setNodeRef: setDropRef } = useDroppable({
     id: `community-${community.ent_group_id}`,
     data: { type: 'community-target', communityId: community.ent_group_id },
@@ -133,9 +133,19 @@ function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef }) 
           borderRadius: '6px 6px 0 0',
         }}
       >
-        <p className="font-bold text-gray-800 leading-snug truncate" style={{ fontSize: 15 }}>
-          {community.ent_group_name}
-        </p>
+        <div className="flex items-center justify-between gap-1">
+          <p className="font-bold text-gray-800 leading-snug truncate" style={{ fontSize: 15 }}>
+            {community.ent_group_name}
+          </p>
+          <button
+            onClick={() => onOpenLotPhase?.(community.ent_group_id)}
+            title="Open Lot & Phase View"
+            className="flex-shrink-0 text-gray-400 hover:text-gray-700 transition-colors"
+            style={{ width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}
+          >
+            ⊞
+          </button>
+        </div>
         <p className="text-[11px] text-gray-400 mt-0.5">
           {community.real_count ?? 0}r / {community.projected_count ?? 0}p / {community.total_count ?? 0}t
           {devs.length > 0 && ` · ${devs.length} dev${devs.length !== 1 ? 's' : ''}`}
@@ -243,7 +253,7 @@ function NewCommunityDropZone({ pendingNewComm, newCommName, newCommCreating, ne
 // ---------------------------------------------------------------------------
 // CommunityDevelopmentsView — main export
 // ---------------------------------------------------------------------------
-export default function CommunityDevelopmentsView({ entGroupId }) {
+export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }) {
   const [communities, setCommunities] = useState([])
   const [developments, setDevelopments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -657,6 +667,7 @@ export default function CommunityDevelopmentsView({ entGroupId }) {
                       devs={devsByComm[c.ent_group_id] ?? []}
                       isSelected={c.ent_group_id === entGroupId}
                       pendingDevId={pendingDevId}
+                      onOpenLotPhase={onOpenLotPhase}
                       innerRef={(el) => {
                         if (el) pillRefs.current[c.ent_group_id] = el
                         else delete pillRefs.current[c.ent_group_id]
