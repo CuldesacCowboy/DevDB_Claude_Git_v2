@@ -37,9 +37,9 @@ function DevCard({ dev, isPending, isOverlay = false }) {
         opacity: (isDragging && !isOverlay) || isPending ? 0.35 : 1,
         cursor: isPending ? 'not-allowed' : isDragging ? 'grabbing' : 'grab',
         padding: '4px 8px',
-        border: `1px solid ${isDragging && !isOverlay ? '#93c5fd' : '#e5e7eb'}`,
+        border: `1px solid ${isDragging && !isOverlay ? '#93c5fd' : '#e2e8f0'}`,
         borderRadius: 6,
-        background: 'white',
+        background: '#ffffff',
         userSelect: 'none',
         touchAction: 'none',
         flexShrink: 0,
@@ -116,20 +116,21 @@ function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef }) 
   return (
     <div
       ref={setRef}
-      className="rounded-xl border-2 transition-colors duration-100 overflow-hidden"
+      className="rounded-lg border transition-colors duration-100 overflow-hidden"
       style={{
         width: '100%',
         breakInside: 'avoid',
-        borderColor: isSelected ? '#3b82f6' : isOver ? '#93c5fd' : '#e5e7eb',
-        background: isSelected ? '#eff6ff' : isOver ? '#f0f9ff' : 'white',
+        borderColor: isSelected ? '#3b82f6' : isOver ? '#93c5fd' : '#cbd5e1',
+        background: isSelected ? '#eff6ff' : isOver ? '#e8f4ff' : '#f0f4f8',
       }}
     >
       {/* Pill header */}
       <div
         className="flex-shrink-0 px-3 py-2 border-b transition-colors"
         style={{
-          borderColor: isSelected ? '#bfdbfe' : '#f3f4f6',
-          background: isSelected ? '#dbeafe' : '#f9fafb',
+          borderColor: isSelected ? '#bfdbfe' : '#cbd5e1',
+          background: isSelected ? '#dbeafe' : '#dde6f0',
+          borderRadius: '6px 6px 0 0',
         }}
       >
         <p className="font-bold text-sm text-gray-800 leading-snug truncate">
