@@ -58,6 +58,23 @@ class LotUnassignResponse(BaseModel):
     from_phase_counts: PhaseCountDetail
 
 
+class LotTypeChangeRequest(BaseModel):
+    lot_type_id: int
+    changed_by: str = "user"
+
+
+class LotTypeChangePhaseCounts(BaseModel):
+    phase: PhaseCountDetail
+
+
+class LotTypeChangeResponse(BaseModel):
+    lot_id: int
+    phase_id: int
+    old_lot_type_id: int
+    new_lot_type_id: int
+    phase_counts: LotTypeChangePhaseCounts
+
+
 class ErrorResponse(BaseModel):
     error: str
     message: str

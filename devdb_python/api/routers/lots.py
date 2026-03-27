@@ -8,9 +8,15 @@ from api.models.lot_models import (
     ErrorResponse,
     LotPhaseReassignRequest,
     LotPhaseReassignResponse,
+    LotTypeChangeRequest,
+    LotTypeChangeResponse,
     LotUnassignResponse,
 )
-from services.lot_assignment_service import reassign_lot_to_phase, unassign_lot_from_phase
+from services.lot_assignment_service import (
+    change_lot_type,
+    reassign_lot_to_phase,
+    unassign_lot_from_phase,
+)
 
 router = APIRouter(prefix="/lots", tags=["lots"])
 
@@ -28,6 +34,22 @@ async def reassign_lot_phase(
     result = reassign_lot_to_phase(
         conn, lot_id, body.target_phase_id, body.changed_by
     )
+    if not result.success:
+        raise HTTPException(status_code=422, detail=result.error)
+    return result
+
+
+@router.patch(
+    "/{lot_id}/lot-type",
+    response_model=LotTypeChangeResponse,
+    responses={422: {"model": ErrorResponse}},
+)
+async def change_lot_type_endpoint(
+    lot_id: int,
+    body: LotTypeChangeRequest,
+    conn=Depends(get_db_conn),
+):
+    result = change_lot_type(conn, lot_id, body.lot_type_id, body.changed_by)
     if not result.success:
         raise HTTPException(status_code=422, detail=result.error)
     return result

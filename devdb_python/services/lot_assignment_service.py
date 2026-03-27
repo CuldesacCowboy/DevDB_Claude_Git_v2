@@ -12,7 +12,7 @@ import psycopg2.extras
 
 
 # ---------------------------------------------------------------------------
-# Result dataclass
+# Result dataclasses
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -21,6 +21,17 @@ class ReassignmentResult:
     transaction: dict = field(default_factory=dict)
     needs_rerun: list[int] = field(default_factory=list)
     warnings: list[dict] = field(default_factory=list)
+    phase_counts: dict = field(default_factory=dict)
+    error: dict | None = None
+
+
+@dataclass
+class LotTypeChangeResult:
+    success: bool
+    lot_id: int = 0
+    phase_id: int = 0
+    old_lot_type_id: int = 0
+    new_lot_type_id: int = 0
     phase_counts: dict = field(default_factory=dict)
     error: dict | None = None
 
@@ -330,6 +341,166 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             needs_rerun=affected_pg_ids,
             warnings=warnings,
             phase_counts=phase_counts,
+        )
+
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# Change lot type
+# ---------------------------------------------------------------------------
+
+def change_lot_type(
+    conn,
+    lot_id: int,
+    new_lot_type_id: int,
+    changed_by: str,
+) -> LotTypeChangeResult:
+    """
+    Change a real lot's lot_type_id in-place.
+    Maintains sim_phase_product_splits for the lot's current phase.
+    conn must be a raw psycopg2 connection (not PGConnection wrapper).
+    """
+    try:
+        return _execute_lot_type_change(conn, lot_id, new_lot_type_id, changed_by)
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return LotTypeChangeResult(
+            success=False,
+            error={"code": "internal_error", "message": str(exc)},
+        )
+
+
+def _execute_lot_type_change(
+    conn, lot_id: int, new_lot_type_id: int, changed_by: str
+) -> LotTypeChangeResult:
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # ----------------------------------------------------------------
+        # Step 1 — Validate
+        # ----------------------------------------------------------------
+        cur.execute(
+            """
+            SELECT lot_id, phase_id, lot_type_id, lot_source, lot_number
+            FROM sim_lots
+            WHERE lot_id = %s
+            """,
+            (lot_id,),
+        )
+        lot = cur.fetchone()
+        if lot is None:
+            conn.rollback()
+            return LotTypeChangeResult(
+                success=False,
+                error={"code": "lot_not_found", "message": f"Lot {lot_id} not found."},
+            )
+
+        if lot["lot_source"] != "real":
+            conn.rollback()
+            return LotTypeChangeResult(
+                success=False,
+                error={
+                    "code": "lot_source_not_real",
+                    "message": (
+                        f"Lot {lot_id} is a sim lot and cannot be manually reclassified. "
+                        "Modify simulation parameters to change sim lot types."
+                    ),
+                },
+            )
+
+        old_lot_type_id = lot["lot_type_id"]
+        phase_id = lot["phase_id"]
+
+        if old_lot_type_id == new_lot_type_id:
+            conn.rollback()
+            return LotTypeChangeResult(
+                success=False,
+                error={
+                    "code": "already_this_type",
+                    "message": f"Lot {lot['lot_number']} is already lot_type_id {new_lot_type_id}.",
+                },
+            )
+
+        # Verify target lot type exists
+        cur.execute(
+            "SELECT lot_type_id FROM ref_lot_types WHERE lot_type_id = %s",
+            (new_lot_type_id,),
+        )
+        if cur.fetchone() is None:
+            conn.rollback()
+            return LotTypeChangeResult(
+                success=False,
+                error={
+                    "code": "lot_type_not_found",
+                    "message": f"lot_type_id {new_lot_type_id} not found in ref_lot_types.",
+                },
+            )
+
+        # ----------------------------------------------------------------
+        # Step 2 — Update lot
+        # ----------------------------------------------------------------
+        cur.execute(
+            "UPDATE sim_lots SET lot_type_id = %s WHERE lot_id = %s",
+            (new_lot_type_id, lot_id),
+        )
+
+        # ----------------------------------------------------------------
+        # Step 3 — Maintain splits (old type may drop to 0; new type may appear)
+        # ----------------------------------------------------------------
+        if phase_id is not None:
+            _maintain_splits(cur, phase_id)
+
+        # ----------------------------------------------------------------
+        # Step 4 — Audit log
+        # ----------------------------------------------------------------
+        cur.execute(
+            """
+            INSERT INTO sim_assignment_log
+                (action, resource_type, resource_id,
+                 from_owner_id, to_owner_id,
+                 changed_by, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                "lot_type_change",
+                "lot",
+                lot_id,
+                old_lot_type_id,
+                new_lot_type_id,
+                changed_by,
+                psycopg2.extras.Json({
+                    "lot_number": lot["lot_number"],
+                    "phase_id": phase_id,
+                }),
+            ),
+        )
+
+        conn.commit()
+
+        # ----------------------------------------------------------------
+        # Post-commit: build phase counts
+        # ----------------------------------------------------------------
+        by_lot_type = _build_by_lot_type(cur, phase_id) if phase_id is not None else []
+
+        return LotTypeChangeResult(
+            success=True,
+            lot_id=lot_id,
+            phase_id=phase_id if phase_id is not None else 0,
+            old_lot_type_id=old_lot_type_id,
+            new_lot_type_id=new_lot_type_id,
+            phase_counts={
+                "phase": {
+                    "phase_id": phase_id if phase_id is not None else 0,
+                    "by_lot_type": by_lot_type,
+                }
+            },
         )
 
     except Exception:
