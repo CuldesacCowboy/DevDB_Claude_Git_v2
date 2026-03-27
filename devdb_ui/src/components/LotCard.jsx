@@ -13,6 +13,13 @@ const STATUS_STYLES = {
 }
 
 export default function LotCard({ lot, isPending, isOverlay = false }) {
+  function formatLotNumber(lotNumber) {
+    if (!lotNumber) return `lot ${lot.lot_id}`
+    const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
+    if (match) return `${match[1].toUpperCase()} ${parseInt(match[2])}`
+    return lotNumber
+  }
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `lot-${lot.lot_id}`,
     data: { type: 'lot', lot },
@@ -42,7 +49,7 @@ export default function LotCard({ lot, isPending, isOverlay = false }) {
       `}
     >
       <span className="font-mono font-medium text-gray-800 truncate">
-        {lot.lot_number ?? `lot ${lot.lot_id}`}
+        {formatLotNumber(lot.lot_number)}
       </span>
 
       <div className="flex items-center gap-1 shrink-0">
