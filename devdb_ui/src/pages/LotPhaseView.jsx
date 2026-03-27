@@ -100,10 +100,11 @@ export default function LotPhaseView() {
     }
   }, [])
 
-  // Per-row dev container height equalization.
-  // After render, group containers by their top position and set all containers
-  // in the same row to the tallest one's height.
+  // Per-row dev container height equalization + solo-dev detection.
+  // After render, group containers by top position, equalize heights per row,
+  // and track which dev containers are alone on their row (for wider layout).
   const pgWrapperRef = useRef(null)
+  const [soloDevIds, setSoloDevIds] = useState(new Set())
   useLayoutEffect(() => {
     if (!pgWrapperRef.current) return
     const containers = Array.from(pgWrapperRef.current.children)
@@ -117,10 +118,19 @@ export default function LotPhaseView() {
       if (row) row.els.push(el)
       else rows.push({ top, els: [el] })
     })
-    // Apply max height of each row to all containers in that row
+    // Equalize row heights
     rows.forEach(row => {
       const maxH = Math.max(...row.els.map(el => el.getBoundingClientRect().height))
       row.els.forEach(el => { el.style.height = maxH + 'px' })
+    })
+    // Track which devs are alone on their row so they get wider layout
+    const newSoloIds = new Set(
+      rows.filter(r => r.els.length === 1).map(r => r.els[0].dataset.devId)
+    )
+    setSoloDevIds(prev => {
+      // Avoid unnecessary re-renders: only update if the set changed
+      if (newSoloIds.size === prev.size && [...newSoloIds].every(id => prev.has(id))) return prev
+      return newSoloIds
     })
   }, [pgGroups, availableWidth, collapsedPhaseIds])
 
@@ -969,22 +979,29 @@ export default function LotPhaseView() {
                   strategy={verticalListSortingStrategy}
                 >
                   <div ref={pgWrapperRef} className="flex flex-wrap gap-4 p-4 items-start">
-                    {pgGroups.map((group) => (
-                      <ProjectionGroupContainer
-                        key={group.devId}
-                        devId={group.devId}
-                        devName={group.devName}
-                        instruments={group.instruments}
-                        tint={devColorMap[group.devId]}
-                        pendingLotId={pendingLotId}
-                        pendingPhaseId={pendingPhaseId}
-                        activeDragType={activeDragType}
-                        collapsedPhaseIds={collapsedPhaseIds}
-                        onToggleCollapse={togglePhaseCollapse}
-                        onAutoSort={handleAutoSort}
-                        availableWidth={availableWidth}
-                      />
-                    ))}
+                    {pgGroups.map((group) => {
+                      const isSolo = soloDevIds.has(String(group.devId))
+                      const effectiveWidth = isSolo
+                        ? (pgWrapperRef.current?.clientWidth ?? availableWidth) - 32
+                        : availableWidth
+                      return (
+                        <ProjectionGroupContainer
+                          key={group.devId}
+                          devId={group.devId}
+                          devName={group.devName}
+                          instruments={group.instruments}
+                          tint={devColorMap[group.devId]}
+                          pendingLotId={pendingLotId}
+                          pendingPhaseId={pendingPhaseId}
+                          activeDragType={activeDragType}
+                          collapsedPhaseIds={collapsedPhaseIds}
+                          onToggleCollapse={togglePhaseCollapse}
+                          onAutoSort={handleAutoSort}
+                          availableWidth={effectiveWidth}
+                          relaxCap={isSolo}
+                        />
+                      )
+                    })}
 
                   </div>
                 </SortableContext>

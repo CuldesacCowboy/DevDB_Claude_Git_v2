@@ -35,6 +35,7 @@ export default function InstrumentContainer({
   onToggleCollapse,
   onAutoSort,     // (instrumentId: number) => void — called by auto-sort button
   availableWidth, // px — passed from LotPhaseView via ProjectionGroupContainer
+  relaxCap,       // true when this dev is alone on its row — skip sqrt col cap
 }) {
   const [countsExpanded, setCountsExpanded] = useState(false)
 
@@ -72,7 +73,8 @@ export default function InstrumentContainer({
           phasesData.length,
           availableWidth,
           !allCollapsed,
-          phasesData.map((p) => ({ lotCount: p.lots?.length ?? 0 }))
+          phasesData.map((p) => ({ lotCount: p.lots?.length ?? 0 })),
+          relaxCap ?? false
         )
       : null
   const instrCols = _colResult?.cols ?? null

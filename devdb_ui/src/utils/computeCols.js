@@ -7,7 +7,7 @@
 // instrWidth(N) = N * 160 + (N-1) * 8 + 16  =  N * 168 + 8
 // This is the exact container width needed so that exactly N pills fit per row.
 
-export function computeCols(phaseCount, availableWidth, expanded, phases) {
+export function computeCols(phaseCount, availableWidth, expanded, phases, relaxCap = false) {
   const PILL_W = 160
   const GAP = 8
   const PADDING = 16
@@ -27,9 +27,12 @@ export function computeCols(phaseCount, availableWidth, expanded, phases) {
   }
 
   // Cap columns to prevent excessively wide single-row layouts.
-  // ceil(sqrt(phaseCount * 1.5)) keeps small counts at 2-3 cols and larger
-  // counts proportional without forcing a single-row result.
-  const maxColsCapped = Math.min(maxCols, Math.ceil(Math.sqrt(phaseCount * 1.5)))
+  // ceil(sqrt(phaseCount * 1.5)) keeps small counts at 2-3 cols proportional.
+  // relaxCap=true (solo dev on its row) skips the sqrt cap so all phases can
+  // spread into one row when there is ample space.
+  const maxColsCapped = relaxCap
+    ? maxCols
+    : Math.min(maxCols, Math.ceil(Math.sqrt(phaseCount * 1.5)))
 
   let bestCols = minCols
   let bestArea = Infinity

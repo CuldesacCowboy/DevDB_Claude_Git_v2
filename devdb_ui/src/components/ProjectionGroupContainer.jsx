@@ -18,6 +18,7 @@ export default function ProjectionGroupContainer({
   onToggleCollapse,
   onAutoSort,
   availableWidth,
+  relaxCap,
 }) {
   // PG-level sortable — drag handle on the PG header to reorder among all PGs
   const {
@@ -53,6 +54,7 @@ export default function ProjectionGroupContainer({
   return (
     <div
       ref={setRef}
+      data-dev-id={devId}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
@@ -97,6 +99,7 @@ export default function ProjectionGroupContainer({
               onToggleCollapse={onToggleCollapse}
               onAutoSort={onAutoSort}
               availableWidth={aw}
+              relaxCap={relaxCap}
             />
           ))}
           {instruments.length === 0 && (
