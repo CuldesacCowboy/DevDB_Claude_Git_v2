@@ -426,7 +426,7 @@ export default function LotPhaseView() {
             updatePhaseInBothStates(transaction.from_phase_id, (p) => ({
               ...p,
               lots: p.lots.filter((l) => l.lot_id !== lot.lot_id),
-              by_lot_type: mergedCounts(p.by_lot_type, phase_counts.from_phase.by_lot_type),
+              by_lot_type: phase_counts.from_phase.by_lot_type,
             }))
           }
           updatePhaseInBothStates(transaction.to_phase_id, (p) => ({
@@ -434,7 +434,7 @@ export default function LotPhaseView() {
             lots: [...p.lots, { ...lot, phase_id: transaction.to_phase_id }].sort(
               (a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? '')
             ),
-            by_lot_type: mergedCounts(p.by_lot_type, phase_counts.to_phase.by_lot_type),
+            by_lot_type: phase_counts.to_phase.by_lot_type,
           }))
 
           if (needs_rerun?.length > 0) setNeedsRerun(true)
