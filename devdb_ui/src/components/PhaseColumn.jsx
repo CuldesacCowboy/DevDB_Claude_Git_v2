@@ -275,7 +275,7 @@ export default function PhaseColumn({
       {!isCollapsed && (
         <div
           className="flex-1 min-h-[40px]"
-          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 50px)', gap: 4, padding: 4 }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 50px)', gap: 4, padding: 4, width: 'fit-content', margin: '0 auto' }}
         >
           {phase.lots.map((lot) => (
             <LotCard

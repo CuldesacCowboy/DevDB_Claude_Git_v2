@@ -11,8 +11,9 @@ const STATUS_BG = {
 const DEFAULT_PILL_BG = 'bg-white border border-gray-200 text-gray-600'
 
 // listView=true  → tall card (white bg, lot# bold, status muted below) — used in Unassigned Lots panel
-// listView=false → compact 50px pill (status as bg color, code left / number right) — used in phase grid
-export default function LotCard({ lot, isPending, isOverlay = false, listView = false }) {
+// listView=false → compact pill (status as bg color, code left / number right) — used in phase grid
+//   pillWidth: pill width in px (default 50); override for orphan-row phases
+export default function LotCard({ lot, isPending, isOverlay = false, listView = false, pillWidth = 50 }) {
   function parseLotNumber(lotNumber) {
     if (!lotNumber) return { code: 'lot', num: String(lot.lot_id) }
     const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
@@ -65,7 +66,9 @@ export default function LotCard({ lot, isPending, isOverlay = false, listView = 
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        width: 50,
+        width: pillWidth,
+        height: 23,
+        overflow: 'hidden',
         padding: '1px 4px',
         fontSize: 11,
         borderRadius: 4,
