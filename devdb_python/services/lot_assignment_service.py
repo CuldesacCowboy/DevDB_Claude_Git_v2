@@ -101,10 +101,12 @@ def _build_by_lot_type(cur, phase_id: int) -> list:
     cur.execute(
         """
         SELECT sps.lot_type_id,
+               rlt.lot_type_short,
                COALESCE(actual.cnt, 0) AS actual,
                sps.lot_count AS projected,
                GREATEST(COALESCE(actual.cnt, 0), sps.lot_count) AS total
         FROM sim_phase_product_splits sps
+        JOIN ref_lot_types rlt ON rlt.lot_type_id = sps.lot_type_id
         LEFT JOIN (
             SELECT lot_type_id, COUNT(*) AS cnt
             FROM sim_lots
@@ -118,6 +120,7 @@ def _build_by_lot_type(cur, phase_id: int) -> list:
     return [
         {
             "lot_type_id": int(r["lot_type_id"]),
+            "lot_type_short": r["lot_type_short"],
             "actual": int(r["actual"]),
             "projected": int(r["projected"]),
             "total": int(r["total"]),
