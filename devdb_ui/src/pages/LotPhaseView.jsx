@@ -859,7 +859,7 @@ export default function LotPhaseView() {
                   items={pgOrder.map((id) => `pg-${id}`)}
                   strategy={verticalListSortingStrategy}
                 >
-                  <div className="flex flex-col gap-3 pb-4">
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: 16, paddingBottom: 16 }}>
                     {pgGroups.map((group) => (
                       <ProjectionGroupContainer
                         key={group.devId}

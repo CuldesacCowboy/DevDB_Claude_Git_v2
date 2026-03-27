@@ -129,13 +129,13 @@ export default function InstrumentContainer({
       style={{
         flex: '0 0 auto',
         width: 'fit-content',
-        maxWidth: '100%',
+        maxWidth: 'calc(100vw - 340px)',
         transform: CSS.Transform.toString(instrTransform),
         transition: instrTransition,
       }}
     >
       {/* Container header */}
-      <div className={`px-3 py-2 rounded-t-xl border-b ${containerTint.border} ${containerTint.header}`}>
+      <div className={`px-3 py-2 rounded-t-xl border-b ${containerTint.border} ${containerTint.header}`} style={{ width: 'fit-content' }}>
         {isNoInstrument ? (
           <p className="font-semibold text-sm text-gray-500 italic whitespace-nowrap">No instrument assigned</p>
         ) : (

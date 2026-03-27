@@ -55,6 +55,8 @@ export default function ProjectionGroupContainer({
         transition,
         flex: '0 0 auto',
         opacity: isDragging ? 0.4 : 1,
+        width: 'fit-content',
+        maxWidth: 'calc(100vw - 340px)',
       }}
       className={`
         flex flex-col rounded-xl border-2 transition-colors duration-100
@@ -71,6 +73,7 @@ export default function ProjectionGroupContainer({
           cursor-grab active:cursor-grabbing
           ${tint?.border ?? 'border-gray-200'} ${tint?.header ?? 'bg-gray-100'}
         `}
+        style={{ width: 'fit-content' }}
       >
         <div className="flex items-center gap-1.5">
           <span className="text-gray-400 text-[10px] leading-none flex-shrink-0" aria-hidden>⠿</span>
