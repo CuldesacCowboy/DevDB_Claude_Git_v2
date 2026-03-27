@@ -129,7 +129,7 @@ export default function InstrumentContainer({
       style={{
         flex: '0 0 auto',
         width: 'fit-content',
-        maxWidth: 'calc(100vw - 340px)',
+        maxWidth: 506,
         transform: CSS.Transform.toString(instrTransform),
         transition: instrTransition,
       }}
