@@ -38,6 +38,7 @@ export default function PhaseColumn({
   onToggleCollapse,
   onRefetch,
   onProjectedSaved,
+  onExpansionChange, // () => void — notify parent that pill content expanded/collapsed
   knownLotTypes,    // { lot_type_id, lot_type_short }[] derived from sibling phases
 }) {
   // Sortable: handles both intra-instrument reorder and cross-instrument move.
@@ -115,6 +116,7 @@ export default function PhaseColumn({
           )
         )
         onProjectedSaved?.(phaseId, lotTypeId, data.projected_count, data.total)
+        onExpansionChange?.()
       } else {
         setLtFlash(lotTypeId)
         setTimeout(() => setLtFlash(null), 1500)
@@ -135,6 +137,7 @@ export default function PhaseColumn({
     setSelectedLtId(available[0]?.lot_type_id ?? null)
     setAddLtCount('0')
     setShowAddLotType(true)
+    onExpansionChange?.()
   }
 
   async function handleAddLotType() {
@@ -152,6 +155,7 @@ export default function PhaseColumn({
       )
       if (res.ok) {
         setShowAddLotType(false)
+        onExpansionChange?.()
         onRefetch?.()
       }
     } finally {
@@ -209,7 +213,7 @@ export default function PhaseColumn({
           </p>
           <div className="flex gap-1 justify-end">
             <button
-              onClick={() => setShowDeleteConfirm(false)}
+              onClick={() => { setShowDeleteConfirm(false); onExpansionChange?.() }}
               className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-100"
             >
               Keep
@@ -324,7 +328,7 @@ export default function PhaseColumn({
           {!isOverlay && (
             <button
               onPointerDown={(e) => e.stopPropagation()}
-              onClick={() => setShowDeleteConfirm(true)}
+              onClick={() => { setShowDeleteConfirm(true); onExpansionChange?.() }}
               className="flex-shrink-0 w-[18px] h-[18px] flex items-center justify-center rounded border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-300 text-[10px] leading-none"
               aria-label="Delete phase"
               title="Delete phase"
@@ -414,7 +418,7 @@ export default function PhaseColumn({
                 </div>
                 <div className="flex gap-1 justify-end">
                   <button
-                    onClick={() => setShowAddLotType(false)}
+                    onClick={() => { setShowAddLotType(false); onExpansionChange?.() }}
                     className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
                   >
                     Cancel

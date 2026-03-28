@@ -3,7 +3,7 @@ import { useState, useRef, useLayoutEffect } from 'react'
 // Per-row dev container height equalization + solo-dev detection.
 // After render, group containers by top position, equalize heights per row,
 // and track which dev containers are alone on their row (for wider layout).
-export function usePhaseEqualization({ pgGroups, availableWidth, expandedState }) {
+export function usePhaseEqualization({ pgGroups, availableWidth, expandedState, expansionVersion }) {
   const pgWrapperRef = useRef(null)
   const [soloDevIds, setSoloDevIds] = useState(new Set())
 
@@ -34,7 +34,7 @@ export function usePhaseEqualization({ pgGroups, availableWidth, expandedState }
       if (newSoloIds.size === prev.size && [...newSoloIds].every(id => prev.has(id))) return prev
       return newSoloIds
     })
-  }, [pgGroups, availableWidth, expandedState])
+  }, [pgGroups, availableWidth, expandedState, expansionVersion])
 
   return { pgWrapperRef, soloDevIds }
 }

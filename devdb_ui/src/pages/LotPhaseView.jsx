@@ -62,6 +62,10 @@ export default function LotPhaseView() {
   const [activeTab, setActiveTab] = useState('developments')
   const [tabSwitchKey, setTabSwitchKey] = useState(0)
 
+  // Incremented whenever a pill expands or collapses its inline form so
+  // usePhaseEqualization re-runs and equalizes sibling pill heights.
+  const [expansionVersion, setExpansionVersion] = useState(0)
+
   // Add instrument modal
   const [showAddInstrument, setShowAddInstrument] = useState(false)
   const [newInstrName, setNewInstrName] = useState('')
@@ -302,6 +306,7 @@ export default function LotPhaseView() {
     pgGroups,
     availableWidth,
     expandedState: collapsedPhaseIds,
+    expansionVersion,
   })
 
   // -----------------------------------------------------------------------
@@ -442,7 +447,7 @@ export default function LotPhaseView() {
       {/* ---------------------------------------------------------------- */}
       {/* Tab shell — tab bar + conditional content                       */}
       {/* ---------------------------------------------------------------- */}
-      <div className="flex flex-col flex-1 overflow-visible">
+      <div className="flex flex-col flex-1 overflow-hidden">
 
         {/* Tab bar */}
         <div className="flex-shrink-0 flex items-end gap-0 border-b border-gray-200 bg-white px-4">
@@ -482,7 +487,7 @@ export default function LotPhaseView() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="flex flex-1 overflow-visible">
+        <div className="flex flex-1 overflow-hidden">
 
           {/* -------------------------------------------------------------- */}
           {/* Left column — Unassigned Lots (top) + No Instrument (bottom)   */}
@@ -602,6 +607,7 @@ export default function LotPhaseView() {
                           relaxCap={isSolo && group.instruments.length === 1}
                           onRefetch={refetch}
                           onProjectedSaved={handleProjectedSaved}
+                          onExpansionChange={() => setExpansionVersion((v) => v + 1)}
                         />
                       )
                     })}

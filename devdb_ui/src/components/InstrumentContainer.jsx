@@ -38,6 +38,7 @@ export default function InstrumentContainer({
   relaxCap,         // true when this dev is alone on its row — skip sqrt col cap
   onRefetch,        // () => void — triggers full data reload after mutations
   onProjectedSaved, // (phaseId, lotTypeId, projected, total) => void — cascade totals
+  onExpansionChange, // () => void — notify parent that pill content expanded/collapsed
 }) {
   const [countsExpanded, setCountsExpanded] = useState(false)
 
@@ -181,6 +182,7 @@ export default function InstrumentContainer({
     setNewPhaseName(`${instrument?.dev_name ?? ''} ph. ${nextN}`.trim())
     setAddPhaseError('')
     setShowAddPhase(true)
+    onExpansionChange?.()
   }
 
   async function handleAddPhase() {
@@ -197,6 +199,7 @@ export default function InstrumentContainer({
       const data = await res.json()
       if (res.ok) {
         setShowAddPhase(false)
+        onExpansionChange?.()
         onRefetch?.()
       } else {
         setAddPhaseError(data?.detail ?? 'Create failed')
@@ -224,6 +227,7 @@ export default function InstrumentContainer({
       onToggleCollapse={() => onToggleCollapse?.(phase.phase_id)}
       onRefetch={onRefetch}
       onProjectedSaved={onProjectedSaved}
+      onExpansionChange={onExpansionChange}
       knownLotTypes={knownLotTypes}
     />
   ))
@@ -398,7 +402,7 @@ export default function InstrumentContainer({
           )}
           <div className="flex gap-1 justify-end">
             <button
-              onClick={() => setShowAddPhase(false)}
+              onClick={() => { setShowAddPhase(false); onExpansionChange?.() }}
               className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
             >
               Cancel
