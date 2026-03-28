@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from api.routers import developments, entitlement_groups, instruments, lots, phases
+from api.routers import developments, entitlement_groups, instruments, lots, phases, takedown_agreements
 
 load_dotenv()
 
@@ -93,7 +93,12 @@ app = FastAPI(title="DevDB API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -103,3 +108,4 @@ app.include_router(phases.router)
 app.include_router(instruments.router)
 app.include_router(developments.router)
 app.include_router(entitlement_groups.router)
+app.include_router(takedown_agreements.router, prefix="/api")
