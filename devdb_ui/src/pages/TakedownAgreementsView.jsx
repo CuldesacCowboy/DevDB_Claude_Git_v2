@@ -20,6 +20,15 @@ function fmt(dateStr) {
   return `${m}/${d}/${y.slice(2)}`
 }
 
+// ── Short lot number: "WS00000001" → "WS · 001" ──────────────────
+function shortLot(lotNumber) {
+  if (!lotNumber) return '—'
+  const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
+  if (!match) return lotNumber
+  const seq = parseInt(match[2], 10)
+  return `${match[1]} · ${String(seq).padStart(3, '0')}`
+}
+
 // ── Draggable unassigned lot pill ─────────────────────────────────
 function UnassignedLotPill({ lot }) {
   const { attributes, listeners, setNodeRef, isDragging } =
@@ -108,7 +117,7 @@ function LockBtn({ locked, onClick }) {
       onClick={onClick}
       style={{
         background: 'none', border: 'none', cursor: 'pointer',
-        padding: '0 2px', fontSize: 12, lineHeight: 1,
+        padding: '0 1px', fontSize: 10, lineHeight: 1,
       }}
     >
       {locked ? '🔒' : '🔓'}
@@ -124,33 +133,37 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
       data: { type: 'assigned-lot', assignment },
     })
 
-  function dateField(label, marksDate, projDate, isLocked, dateKey, lockKey) {
+  function col(label, marksDate, projDate, isLocked, dateKey, lockKey) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
-        <span style={{ width: 28, fontSize: 10, fontWeight: 700, color: '#6b7280' }}>
-          {label}
-        </span>
-        <span style={{ fontSize: 11, color: '#9ca3af', minWidth: 52 }}>
-          {fmt(marksDate)}
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {isLocked ? (
-            <span style={{ fontSize: 11, color: '#166534', fontWeight: 600 }}>{fmt(projDate) || '—'}</span>
-          ) : (
-            <input
-              type="date"
-              defaultValue={projDate || ''}
-              onChange={(e) => { if (e.target.value) onDateChange(dateKey, e.target.value) }}
-              style={{
-                fontSize: 11, border: '1px dashed #86efac',
-                borderRadius: 4, padding: '1px 3px', width: 88,
-                background: '#f0fdf4', color: '#166534',
-                outline: 'none',
-              }}
-            />
-          )}
+      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+        {/* Label + lock */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+          <span style={{ fontSize: 7, textTransform: 'uppercase', color: '#888780', letterSpacing: '0.04em' }}>
+            {label}
+          </span>
           <LockBtn locked={isLocked} onClick={() => onLockChange(lockKey, !isLocked)} />
         </div>
+        {/* Marks date */}
+        <div style={{ fontSize: 8, color: '#B4B2A9', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {fmt(marksDate)}
+        </div>
+        {/* Projected date */}
+        {isLocked ? (
+          <div style={{ fontSize: 8, color: '#444441' }}>{fmt(projDate) || '—'}</div>
+        ) : (
+          <input
+            type="date"
+            defaultValue={projDate || ''}
+            onChange={(e) => { if (e.target.value) onDateChange(dateKey, e.target.value) }}
+            style={{
+              width: '100%', fontSize: 8, boxSizing: 'border-box',
+              border: '1px dashed #86efac',
+              borderRadius: 3, padding: '1px 2px',
+              background: '#f0fdf4', color: '#166534',
+              outline: 'none',
+            }}
+          />
+        )}
       </div>
     )
   }
@@ -158,23 +171,37 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
   return (
     <div
       ref={setNodeRef}
-      {...attributes}
-      {...listeners}
       style={{
-        background: '#fff', border: '1px solid #d1fae5',
-        borderRadius: 6, padding: '6px 8px', marginBottom: 6,
-        cursor: 'grab', opacity: isDragging ? 0.4 : 1,
+        width: 106, flexShrink: 0,
+        borderRadius: 6, overflow: 'hidden',
+        background: '#fff', border: '1px solid #E4E2DA',
+        opacity: isDragging ? 0.4 : 1,
         boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+        display: 'flex', flexDirection: 'column',
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 12, color: '#111827', marginBottom: 4 }}>
-        {assignment.lot_number}
+      {/* Drag handle — top row */}
+      <div
+        {...attributes}
+        {...listeners}
+        style={{
+          textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#2C2C2A',
+          padding: '5px 6px 4px',
+          cursor: 'grab', background: '#FAFAF8',
+          borderBottom: '1px solid #F0EEE8',
+          userSelect: 'none',
+        }}
+      >
+        {shortLot(assignment.lot_number)}
       </div>
-      <div>
-        {dateField('HC',
+
+      {/* Two-column body */}
+      <div style={{ display: 'flex', padding: '4px 5px 5px', gap: 3 }}>
+        {col('HC',
           assignment.hc_marks_date, assignment.hc_projected_date,
           assignment.hc_is_locked, 'hc_projected_date', 'hc_is_locked')}
-        {dateField('BLDR',
+        <div style={{ width: 1, background: '#F0EEE8', flexShrink: 0 }} />
+        {col('BLDR',
           assignment.bldr_marks_date, assignment.bldr_projected_date,
           assignment.bldr_is_locked, 'bldr_projected_date', 'bldr_is_locked')}
       </div>
@@ -233,8 +260,8 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         </div>
       </div>
 
-      {/* Body */}
-      <div style={{ padding: 12, minHeight: 60 }}>
+      {/* Body — flex-wrap pill grid */}
+      <div style={{ padding: 12, minHeight: 60, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'stretch' }}>
         {(checkpoint.lots || []).map(a => (
           <LotPill
             key={a.assignment_id}
@@ -244,7 +271,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
           />
         ))}
         {(checkpoint.lots || []).length === 0 && (
-          <div style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 12 }}>
+          <div style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 12, width: '100%' }}>
             Drop lots here
           </div>
         )}
@@ -435,11 +462,12 @@ export default function TakedownAgreementsView() {
             )}
             {dragLot?.type === 'assigned-lot' && (
               <div style={{
-                background: '#fff', border: '1px solid #d1fae5',
-                borderRadius: 6, padding: '4px 8px',
-                fontSize: 12, fontWeight: 700, color: '#111827',
+                width: 106, borderRadius: 6,
+                background: '#fff', border: '1px solid #E4E2DA',
+                padding: '5px 6px', fontSize: 11, fontWeight: 700, color: '#2C2C2A',
+                textAlign: 'center',
               }}>
-                {dragLot.assignment.lot_number}
+                {shortLot(dragLot.assignment.lot_number)}
               </div>
             )}
           </DragOverlay>
