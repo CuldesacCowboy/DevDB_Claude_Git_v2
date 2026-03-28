@@ -90,7 +90,6 @@ function TdaCard({ detail, colorIdx, children }) {
       display: 'inline-flex', flexDirection: 'column',
       flexShrink: 0,
     }}>
-      {/* TDA header */}
       <div style={{
         background: colors.header, padding: '8px 14px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -102,7 +101,6 @@ function TdaCard({ detail, colorIdx, children }) {
           {totalLots} lot{totalLots !== 1 ? 's' : ''}
         </span>
       </div>
-      {/* TDA body */}
       <div style={{ background: colors.tint, padding: 12 }}>
         {children}
       </div>
@@ -126,8 +124,6 @@ function LockBtn({ locked, onClick }) {
 }
 
 // ── Projected date field ──────────────────────────────────────────
-// Unlocked: green dashed visible text + transparent native input on top.
-// Locked: plain text, not clickable. Auto-locks on date entry.
 function ProjectedDateField({ value, locked, onChange }) {
   if (locked) {
     return (
@@ -143,7 +139,6 @@ function ProjectedDateField({ value, locked, onChange }) {
   }
   return (
     <div style={{ position: 'relative', height: 16 }}>
-      {/* Visible styled element */}
       <div style={{
         fontSize: 8, color: '#27500A',
         border: '1px dashed #3B6D11',
@@ -158,7 +153,6 @@ function ProjectedDateField({ value, locked, onChange }) {
       }}>
         {fmt(value) || '—'}
       </div>
-      {/* Transparent native date input on top — provides the picker */}
       <input
         key={value || ''}
         type="date"
@@ -186,18 +180,15 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
   function col(label, marksDate, projDate, isLocked, dateKey, lockKey) {
     return (
       <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-        {/* Label + lock */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
           <span style={{ fontSize: 7, textTransform: 'uppercase', color: '#888780', letterSpacing: '0.04em' }}>
             {label}
           </span>
           <LockBtn locked={isLocked} onClick={() => onLockChange(lockKey, !isLocked)} />
         </div>
-        {/* Marks date */}
         <div style={{ fontSize: 8, color: '#B4B2A9', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {fmt(marksDate)}
         </div>
-        {/* Projected date — auto-locks on entry */}
         <ProjectedDateField
           value={projDate}
           locked={isLocked}
@@ -222,7 +213,6 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
         display: 'flex', flexDirection: 'column',
       }}
     >
-      {/* Drag handle — top row */}
       <div
         {...attributes}
         {...listeners}
@@ -236,8 +226,6 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
       >
         {shortLot(assignment.lot_number)}
       </div>
-
-      {/* Two-column body */}
       <div style={{ display: 'flex', padding: '4px 5px 5px', gap: 3 }}>
         {col('HC',
           assignment.hc_marks_date, assignment.hc_projected_date,
@@ -253,14 +241,64 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
 
 // ── Droppable checkpoint band ─────────────────────────────────────
 function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
+  const [localTotal, setLocalTotal] = useState(checkpoint.lots_required_cumulative || 0)
+  const [localDate, setLocalDate] = useState(checkpoint.checkpoint_date || '')
+  const [editingTotal, setEditingTotal] = useState(false)
+
   const { setNodeRef, isOver } = useDroppable({
     id: `checkpoint-${checkpoint.checkpoint_id}`,
     data: { type: 'checkpoint', checkpointId: checkpoint.checkpoint_id },
   })
 
-  const assigned = checkpoint.lots?.length || 0
-  const required = checkpoint.lots_required_cumulative || 0
-  const over = assigned > required
+  const lots = checkpoint.lots || []
+  // C = confirmed (has marks dates), P = projected only
+  const c = lots.filter(l => l.hc_marks_date || l.bldr_marks_date).length
+  const p = lots.filter(l => !l.hc_marks_date && !l.bldr_marks_date).length
+  const t = localTotal
+  const over = (c + p) > t
+  const barFill = over ? '#E24B4A' : null
+  const cPct = t > 0 ? Math.min(100, Math.round((c / t) * 100)) : 0
+  const pPct = t > 0 ? Math.min(100, Math.round((p / t) * 100)) : 0
+
+  // Editable total — inline number input, green-dashed style
+  const tDisplay = editingTotal ? (
+    <input
+      autoFocus
+      type="number"
+      min={0}
+      defaultValue={localTotal}
+      onBlur={(e) => {
+        const val = parseInt(e.target.value, 10)
+        if (!isNaN(val) && val >= 0) setLocalTotal(val)
+        setEditingTotal(false)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.target.blur()
+        if (e.key === 'Escape') setEditingTotal(false)
+      }}
+      style={{
+        width: 28, fontSize: 9, fontWeight: 500,
+        border: '1px dashed #3B6D11',
+        background: '#EAF3DE', color: '#27500A',
+        borderRadius: 3, padding: '0 2px',
+        outline: 'none', textAlign: 'center',
+      }}
+    />
+  ) : (
+    <span
+      onClick={() => setEditingTotal(true)}
+      title="Click to edit"
+      style={{
+        fontSize: 9, fontWeight: 500, color: '#27500A',
+        border: '1px dashed #3B6D11',
+        background: '#EAF3DE',
+        borderRadius: 3, padding: '0 3px',
+        cursor: 'pointer',
+      }}
+    >
+      {t}
+    </span>
+  )
 
   return (
     <div
@@ -277,34 +315,80 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         background: '#F5F5F2',
         borderRadius: '6px 6px 0 0',
         padding: '8px 12px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontWeight: 700, fontSize: 13, color: '#444441' }}>
+        {/* Left: name + editable checkpoint date */}
+        <div style={{ flexShrink: 0 }}>
+          <div style={{ fontWeight: 700, fontSize: 12, color: '#444441', marginBottom: 4 }}>
             {checkpoint.checkpoint_name || `CP${checkpoint.checkpoint_number}`}
-          </span>
-          <span style={{ fontSize: 11, color: '#888780' }}>
-            → {fmt(checkpoint.checkpoint_date)}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {over && (
-            <span style={{
-              fontSize: 11, color: '#b45309',
-              background: '#fef3c7', padding: '1px 6px', borderRadius: 10,
+          </div>
+          {/* Editable checkpoint date — overlay pattern, local state only */}
+          <div style={{ position: 'relative', display: 'inline-block' }}>
+            <div style={{
+              fontSize: 9, color: '#27500A',
+              border: '1px dashed #3B6D11',
+              background: '#EAF3DE',
+              borderRadius: 3, padding: '1px 5px',
+              cursor: 'pointer', userSelect: 'none',
+              whiteSpace: 'nowrap',
             }}>
-              ⚠ Over-assigned — {assigned} assigned, {required} required
+              {localDate ? fmt(localDate) : '—'}
+            </div>
+            <input
+              key={localDate}
+              type="date"
+              defaultValue={localDate}
+              onChange={(e) => { if (e.target.value) setLocalDate(e.target.value) }}
+              style={{
+                position: 'absolute', top: 0, left: 0,
+                width: '100%', height: '100%',
+                opacity: 0, cursor: 'pointer',
+                border: 'none', padding: 0, margin: 0,
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Right: C / P progress grid */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 160 }}>
+          {/* C row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 9, textTransform: 'uppercase', color: '#888780', width: 10, flexShrink: 0 }}>C</span>
+            <div style={{ flex: 1, height: 6, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ width: `${cPct}%`, height: '100%', background: barFill || '#444441', borderRadius: 3, transition: 'width 0.2s' }} />
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 500, color: '#444441', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
+              {c}/{tDisplay}
             </span>
-          )}
-          <span style={{ fontSize: 12, color: '#444441', fontWeight: 600 }}>
-            {assigned}/{required} lots
-          </span>
+          </div>
+          {/* P row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 9, textTransform: 'uppercase', color: '#888780', width: 10, flexShrink: 0 }}>P</span>
+            <div style={{ flex: 1, height: 6, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
+              <div style={{ width: `${pPct}%`, height: '100%', background: barFill || '#B4B2A9', borderRadius: 3, transition: 'width 0.2s' }} />
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 500, color: '#444441', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
+              {p}/{t}
+            </span>
+          </div>
         </div>
       </div>
 
+      {/* Over-assigned warning strip */}
+      {over && (
+        <div style={{
+          padding: '3px 12px 4px',
+          background: '#FFF5F5',
+          borderTop: '1px solid #FAD5D5',
+          fontSize: 9, color: '#A32D2D',
+        }}>
+          ⚠ Over-assigned — {c + p} assigned, {t} required
+        </div>
+      )}
+
       {/* Body — flex-wrap pill grid */}
       <div style={{ padding: 12, minHeight: 60, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'stretch' }}>
-        {(checkpoint.lots || []).map(a => (
+        {lots.map(a => (
           <LotPill
             key={a.assignment_id}
             assignment={a}
@@ -312,7 +396,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
             onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
           />
         ))}
-        {(checkpoint.lots || []).length === 0 && (
+        {lots.length === 0 && (
           <div style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 12, width: '100%' }}>
             Drop lots here
           </div>
@@ -394,7 +478,6 @@ export default function TakedownAgreementsView() {
     // Assigned lot → different checkpoint
     if (src?.type === 'assigned-lot' && dst?.type === 'checkpoint') {
       const { assignment } = src
-      // Unassign first, then reassign
       await fetch(
         `${API}/takedown-agreements/${detail.tda_id}/lots/${assignment.lot_id}/assign`,
         { method: 'DELETE' }
@@ -438,7 +521,6 @@ export default function TakedownAgreementsView() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {/* TDA selector */}
           <select
             value={selectedTdaId || ''}
             onChange={e => setSelectedTdaId(Number(e.target.value))}
@@ -474,10 +556,8 @@ export default function TakedownAgreementsView() {
             flex: 1, overflowY: 'auto', padding: 24,
             display: 'flex', gap: 0, alignItems: 'flex-start',
           }}>
-            {/* Unassigned bank */}
             <UnassignedBank lots={detail.unassigned_lots || []} />
 
-            {/* TDA cards — flex-wrap row */}
             <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
               <TdaCard detail={detail} colorIdx={tdaColorIdx >= 0 ? tdaColorIdx : 0}>
                 {(detail.checkpoints || []).map((cp) => (
