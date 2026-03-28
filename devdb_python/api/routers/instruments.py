@@ -17,6 +17,10 @@ class InstrumentCreateRequest(BaseModel):
     dev_id: int
 
 
+class InstrumentRenameRequest(BaseModel):
+    name: str
+
+
 @router.post("", response_model=dict, status_code=201)
 def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
     import psycopg2.extras
@@ -71,6 +75,37 @@ def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
             "instrument_type": body.instrument_type,
             "dev_id": legacy_dev_id,
         }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+@router.patch("/{instrument_id}", response_model=dict)
+def rename_instrument(
+    instrument_id: int,
+    body: InstrumentRenameRequest,
+    conn=Depends(get_db_conn),
+):
+    """Rename a legal instrument."""
+    import psycopg2.extras
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name cannot be empty")
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "UPDATE sim_legal_instruments SET instrument_name = %s WHERE instrument_id = %s",
+            (name, instrument_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=f"Instrument {instrument_id} not found")
+        conn.commit()
+        return {"instrument_id": instrument_id, "instrument_name": name}
+    except HTTPException:
+        raise
     except Exception:
         conn.rollback()
         raise

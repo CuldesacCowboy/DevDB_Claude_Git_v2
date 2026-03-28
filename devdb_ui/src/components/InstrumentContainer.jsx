@@ -41,6 +41,10 @@ export default function InstrumentContainer({
 }) {
   const [countsExpanded, setCountsExpanded] = useState(false)
 
+  // Feature: inline instrument name edit
+  const [editingInstrName, setEditingInstrName] = useState(false)
+  const [instrNameInput, setInstrNameInput] = useState('')
+
   // Feature: add phase
   const [showAddPhase, setShowAddPhase] = useState(false)
   const [newPhaseName, setNewPhaseName] = useState('')
@@ -144,6 +148,20 @@ export default function InstrumentContainer({
     ? { border: 'border-gray-300', bg: 'bg-gray-50', header: 'bg-gray-100', text: 'text-gray-700' }
     : tint
 
+  async function saveInstrName() {
+    const name = instrNameInput.trim()
+    setEditingInstrName(false)
+    if (!name || name === instrument?.instrument_name) return
+    try {
+      await fetch(`/api/instruments/${instrument.instrument_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      onRefetch?.()
+    } catch {}
+  }
+
   function openAddPhase() {
     const nextN = phasesData.length + 1
     setNewPhaseName(`${instrument?.dev_name ?? ''} ph. ${nextN}`.trim())
@@ -234,7 +252,45 @@ export default function InstrumentContainer({
                 ⠿
               </span>
 
-              <p className={`font-bold text-sm ${containerTint.text} break-words min-w-0`}>{instrument.instrument_name}</p>
+              {editingInstrName ? (
+                <input
+                  autoFocus
+                  type="text"
+                  value={instrNameInput}
+                  onChange={(e) => setInstrNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.target.blur() }
+                    if (e.key === 'Escape') { setEditingInstrName(false) }
+                  }}
+                  onBlur={saveInstrName}
+                  onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 700,
+                    border: '1px dashed #378ADD',
+                    background: '#E6F1FB',
+                    borderRadius: 3,
+                    padding: '1px 4px',
+                    outline: 'none',
+                    minWidth: 0,
+                    flex: '1 1 auto',
+                  }}
+                />
+              ) : (
+                <p
+                  className={`font-bold text-sm ${containerTint.text} break-words min-w-0 cursor-text`}
+                  title="Click to rename"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setInstrNameInput(instrument.instrument_name)
+                    setEditingInstrName(true)
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  {instrument.instrument_name}
+                </p>
+              )}
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${containerTint.header} border ${containerTint.border} ${containerTint.text}`}>
                 {instrument.instrument_type}
               </span>

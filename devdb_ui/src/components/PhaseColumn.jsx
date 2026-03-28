@@ -71,6 +71,10 @@ export default function PhaseColumn({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
+  // Feature: inline phase name edit
+  const [editingPhaseName, setEditingPhaseName] = useState(false)
+  const [phaseNameInput, setPhaseNameInput] = useState('')
+
   // Feature: add product type
   const [showAddLotType, setShowAddLotType] = useState(false)
   const [availLotTypes, setAvailLotTypes] = useState(() => _cachedLotTypes ?? [])
@@ -150,6 +154,20 @@ export default function PhaseColumn({
     }
   }
 
+  async function savePhaseName() {
+    const name = phaseNameInput.trim()
+    setEditingPhaseName(false)
+    if (!name || name === phase.phase_name) return
+    try {
+      await fetch(`/api/phases/${phase.phase_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phase_name: name }),
+      })
+      onRefetch?.()
+    } catch {}
+  }
+
   async function handleConfirmDelete() {
     setDeleting(true)
     try {
@@ -218,38 +236,76 @@ export default function PhaseColumn({
           <span className="text-gray-300 text-[10px] leading-none flex-shrink-0" aria-hidden>
             ⠿
           </span>
-          {(() => {
-            const { prefix, suffix } = splitPhaseName(phase.phase_name)
-            return (
-              <div className="font-bold text-xs text-gray-800 flex-1 min-w-0" title={phase.phase_name}>
-                <span
-                  style={{
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                    lineHeight: 1.3,
-                    wordBreak: 'break-word',
+          {!isOverlay && editingPhaseName ? (
+            <input
+              autoFocus
+              type="text"
+              value={phaseNameInput}
+              onChange={(e) => setPhaseNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.target.blur() }
+                if (e.key === 'Escape') { setEditingPhaseName(false) }
+              }}
+              onBlur={savePhaseName}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                fontSize: 12,
+                fontWeight: 700,
+                color: '#1f2937',
+                border: '1px dashed #378ADD',
+                background: '#E6F1FB',
+                borderRadius: 3,
+                padding: '1px 4px',
+                outline: 'none',
+                boxShadow: 'none',
+              }}
+            />
+          ) : (
+            (() => {
+              const { prefix, suffix } = splitPhaseName(phase.phase_name)
+              return (
+                <div
+                  className="font-bold text-xs text-gray-800 flex-1 min-w-0 cursor-text"
+                  title={isOverlay ? phase.phase_name : 'Click to rename'}
+                  onClick={isOverlay ? undefined : (e) => {
+                    e.stopPropagation()
+                    setPhaseNameInput(phase.phase_name)
+                    setEditingPhaseName(true)
                   }}
+                  onPointerDown={isOverlay ? undefined : (e) => e.stopPropagation()}
                 >
-                  {prefix}
-                </span>
-                {suffix && (
                   <span
                     style={{
-                      display: 'block',
-                      whiteSpace: 'nowrap',
-                      color: '#9ca3af',
-                      fontSize: 11,
-                      marginTop: 2,
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      lineHeight: 1.3,
+                      wordBreak: 'break-word',
                     }}
                   >
-                    {suffix}
+                    {prefix}
                   </span>
-                )}
-              </div>
-            )
-          })()}
+                  {suffix && (
+                    <span
+                      style={{
+                        display: 'block',
+                        whiteSpace: 'nowrap',
+                        color: '#9ca3af',
+                        fontSize: 11,
+                        marginTop: 2,
+                      }}
+                    >
+                      {suffix}
+                    </span>
+                  )}
+                </div>
+              )
+            })()
+          )}
           {!isOverlay && onToggleCollapse && (
             <button
               onPointerDown={(e) => e.stopPropagation()}

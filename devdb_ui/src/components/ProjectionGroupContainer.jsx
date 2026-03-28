@@ -110,7 +110,12 @@ export default function ProjectionGroupContainer({
         <div className="flex flex-col gap-0.5">
           <div className="relative flex items-center justify-center">
             <span className="absolute left-0 text-gray-400 text-[10px] leading-none flex-shrink-0 cursor-grab active:cursor-grabbing select-none" aria-hidden>⠿</span>
-            <p className={`font-bold text-sm ${tint?.text ?? 'text-gray-700'} break-words min-w-0`}>{devName}</p>
+            <p
+              className={`font-bold text-sm ${tint?.text ?? 'text-gray-700'} break-words min-w-0 cursor-default`}
+              title="Development names are managed in MARKS."
+            >
+              {devName}
+            </p>
           </div>
           <div>
             <button

@@ -162,13 +162,30 @@ async def update_phase(
     body: PhaseUpdateRequest,
     conn=Depends(get_db_conn),
 ):
-    """Update phase attributes. Currently supports projected_count (sim_phase_product_splits.projected_count).
-    For phases with multiple splits, the new total is distributed proportionally across all splits.
+    """Update phase attributes: phase_name (sim_dev_phases) or projected_count
+    (sim_phase_product_splits, distributed proportionally across splits).
     """
-    if body.projected_count is None:
+    if body.projected_count is None and not body.phase_name:
         raise HTTPException(status_code=422, detail="No updatable field provided")
 
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Handle phase_name rename
+    if body.phase_name is not None:
+        name = body.phase_name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="phase_name cannot be empty")
+        cur.execute(
+            "UPDATE sim_dev_phases SET phase_name = %s WHERE phase_id = %s",
+            (name, phase_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=f"Phase {phase_id} not found")
+        conn.commit()
+        return {"success": True, "phase_id": phase_id, "phase_name": name}
+
+    # Handle projected_count update
     cur.execute(
         "SELECT split_id, projected_count FROM sim_phase_product_splits WHERE phase_id = %s",
         (phase_id,),
