@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useLayoutEffect } from 'react'
 import { DndContext, DragOverlay, pointerWithin } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
@@ -334,6 +334,29 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
   const cPct = t > 0 ? Math.min(100, Math.round((c / t) * 100)) : 0
   const pPct = t > 0 ? Math.min(100, Math.round((p / t) * 100)) : 0
 
+  // ── Row height equalization (lots + placeholders) ──────────────
+  const gridRef = useRef(null)
+  useLayoutEffect(() => {
+    const grid = gridRef.current
+    if (!grid) return
+    const children = Array.from(grid.children)
+    // Reset heights so natural sizes drive row grouping
+    children.forEach(el => { el.style.height = '' })
+    // Group by top position with 10px tolerance (same as usePhaseEqualization)
+    const rows = []
+    children.forEach(el => {
+      const top = el.getBoundingClientRect().top
+      const row = rows.find(r => Math.abs(r.top - top) < 10)
+      if (row) row.els.push(el)
+      else rows.push({ top, els: [el] })
+    })
+    // Equalize each row to its tallest child
+    rows.forEach(row => {
+      const maxH = Math.max(...row.els.map(el => el.getBoundingClientRect().height))
+      row.els.forEach(el => { el.style.height = `${maxH}px` })
+    })
+  }, [lots, slotCount])
+
   // Editable total — inline number input, green-dashed style
   const tDisplay = editingTotal ? (
     <input
@@ -462,7 +485,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
 
       {/* Body — outer pad + inner grid capped at 5 columns (5×106 + 4×6 = 554px) */}
       <div style={{ padding: 12, minHeight: 60 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'stretch', maxWidth: 554 }}>
+        <div ref={gridRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'stretch', maxWidth: 554 }}>
           {lots.map(a => (
             <LotPill
               key={a.assignment_id}
