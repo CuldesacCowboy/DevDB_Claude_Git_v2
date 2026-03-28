@@ -1,4 +1,4 @@
-import { useState, useRef, useLayoutEffect } from 'react'
+import { useState, useRef, useLayoutEffect, useCallback } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -40,6 +40,12 @@ export default function InstrumentContainer({
   onProjectedSaved, // (phaseId, lotTypeId, projected, total) => void — cascade totals
 }) {
   const [countsExpanded, setCountsExpanded] = useState(false)
+
+  // Feature: add phase
+  const [showAddPhase, setShowAddPhase] = useState(false)
+  const [newPhaseName, setNewPhaseName] = useState('')
+  const [addPhaseError, setAddPhaseError] = useState('')
+  const [addPhaseSaving, setAddPhaseSaving] = useState(false)
 
   const isNoInstrument = instrument === null
   const droppableId = isNoInstrument ? 'instrument-null' : `instrument-${instrument.instrument_id}`
@@ -138,6 +144,38 @@ export default function InstrumentContainer({
     ? { border: 'border-gray-300', bg: 'bg-gray-50', header: 'bg-gray-100', text: 'text-gray-700' }
     : tint
 
+  function openAddPhase() {
+    const nextN = phasesData.length + 1
+    setNewPhaseName(`${instrument?.dev_name ?? ''} ph. ${nextN}`.trim())
+    setAddPhaseError('')
+    setShowAddPhase(true)
+  }
+
+  async function handleAddPhase() {
+    const name = newPhaseName.trim()
+    if (!name) { setAddPhaseError('Phase name is required'); return }
+    setAddPhaseSaving(true)
+    setAddPhaseError('')
+    try {
+      const res = await fetch('/api/phases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instrument_id: instrument.instrument_id, phase_name: name }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setShowAddPhase(false)
+        onRefetch?.()
+      } else {
+        setAddPhaseError(data?.detail ?? 'Create failed')
+      }
+    } catch (err) {
+      setAddPhaseError(`Network error: ${err.message}`)
+    } finally {
+      setAddPhaseSaving(false)
+    }
+  }
+
   // SortableContext items for intra-instrument phase reorder.
   // Only used for real instruments (null instrument not supported for persist).
   const sortableIds = isNoInstrument
@@ -201,28 +239,40 @@ export default function InstrumentContainer({
                 {instrument.instrument_type}
               </span>
 
-              {/* Auto-sort button — sorts phases alphabetically by prefix, then by ph. N */}
-              <button
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => onAutoSort?.(instrument.instrument_id)}
-                className="absolute right-0 flex-shrink-0 p-0.5 rounded text-gray-400 hover:text-gray-600 hover:bg-white/60"
-                title="Auto-sort phases"
-                aria-label="Auto-sort phases"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+              {/* Right-side controls: add phase + auto-sort */}
+              <div className="absolute right-0 flex items-center gap-0.5">
+                <button
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={openAddPhase}
+                  className="flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-medium text-gray-500 hover:text-gray-800 hover:bg-white/60 border border-transparent hover:border-gray-200 leading-none"
+                  title="Add phase"
+                  aria-label="Add phase"
                 >
-                  <path d="M3 6h18M7 12h10M11 18h2"/>
-                </svg>
-              </button>
+                  + phase
+                </button>
+                {/* Auto-sort button — sorts phases alphabetically by prefix, then by ph. N */}
+                <button
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => onAutoSort?.(instrument.instrument_id)}
+                  className="flex-shrink-0 p-0.5 rounded text-gray-400 hover:text-gray-600 hover:bg-white/60"
+                  title="Auto-sort phases"
+                  aria-label="Auto-sort phases"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 6h18M7 12h10M11 18h2"/>
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Aggregated counts — total line clickable to expand per-type breakdown */}
@@ -253,6 +303,45 @@ export default function InstrumentContainer({
           </div>
         )}
       </div>
+
+      {/* Add phase inline form */}
+      {!isNoInstrument && showAddPhase && (
+        <div
+          className="mx-2 mt-2 border border-blue-200 rounded bg-blue-50 p-2 flex flex-col gap-1.5"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <input
+            autoFocus
+            type="text"
+            value={newPhaseName}
+            onChange={(e) => setNewPhaseName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAddPhase()
+              if (e.key === 'Escape') setShowAddPhase(false)
+            }}
+            placeholder="Phase name"
+            className="w-full text-[11px] border border-gray-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white"
+          />
+          {addPhaseError && (
+            <p className="text-[11px] text-red-600">{addPhaseError}</p>
+          )}
+          <div className="flex gap-1 justify-end">
+            <button
+              onClick={() => setShowAddPhase(false)}
+              className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddPhase}
+              disabled={addPhaseSaving}
+              className="text-[11px] px-2 py-0.5 rounded bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40"
+            >
+              {addPhaseSaving ? 'Adding…' : 'Add phase'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Phase columns — explicit rows so CSS flex:1 distributes instrument height evenly */}
       {phasesData.length > 0 ? (

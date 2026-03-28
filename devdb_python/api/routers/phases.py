@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from api.deps import get_db_conn
 from api.models.phase_models import (
+    PhaseCreateRequest,
     PhaseInstrumentReassignRequest,
     PhaseInstrumentReassignResponse,
     PhaseUpdateRequest,
@@ -26,6 +27,63 @@ async def list_lot_types(conn=Depends(get_db_conn)):
         )
         return [{"lot_type_id": r["lot_type_id"], "lot_type_short": r["lot_type_short"]}
                 for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+
+@router.post("", response_model=dict, status_code=201)
+async def create_phase(body: PhaseCreateRequest, conn=Depends(get_db_conn)):
+    """Create a new empty phase and attach it to the given instrument."""
+    import psycopg2.extras
+    name = (body.phase_name or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="phase_name is required")
+
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # Verify instrument exists and get its dev_id
+        cur.execute(
+            "SELECT instrument_id, dev_id FROM sim_legal_instruments WHERE instrument_id = %s",
+            (body.instrument_id,),
+        )
+        instr = cur.fetchone()
+        if not instr:
+            raise HTTPException(status_code=404, detail=f"Instrument {body.instrument_id} not found")
+
+        dev_id = int(instr["dev_id"])
+
+        # Compute next phase_id and sequence_number
+        cur.execute("SELECT COALESCE(MAX(phase_id), 0) + 1 AS new_id FROM sim_dev_phases")
+        new_phase_id = int(cur.fetchone()["new_id"])
+
+        cur.execute(
+            "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_seq FROM sim_dev_phases"
+            " WHERE instrument_id = %s",
+            (body.instrument_id,),
+        )
+        next_seq = int(cur.fetchone()["next_seq"])
+
+        cur.execute(
+            """
+            INSERT INTO sim_dev_phases (phase_id, phase_name, sequence_number, dev_id, instrument_id)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (new_phase_id, name, next_seq, dev_id, body.instrument_id),
+        )
+        conn.commit()
+        return {
+            "phase_id": new_phase_id,
+            "phase_name": name,
+            "sequence_number": next_seq,
+            "dev_id": dev_id,
+            "instrument_id": body.instrument_id,
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         cur.close()
 

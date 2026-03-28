@@ -10,6 +10,12 @@ from pydantic import BaseModel
 
 class PhaseUpdateRequest(BaseModel):
     projected_count: Optional[int] = None
+    phase_name: Optional[str] = None
+
+
+class PhaseCreateRequest(BaseModel):
+    instrument_id: int
+    phase_name: str
 
 
 class PhaseInstrumentReassignRequest(BaseModel):
