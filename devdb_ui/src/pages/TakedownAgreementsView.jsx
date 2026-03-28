@@ -122,6 +122,22 @@ function TdaCard({ detail, colorIdx, children }) {
   )
 }
 
+// ── Lock icon (SVG) — neutral gray, no amber ─────────────────────
+function LockIcon({ locked }) {
+  const color = locked ? '#444441' : '#B4B2A9'
+  return locked ? (
+    <svg width="10" height="12" viewBox="0 0 10 12" fill="none">
+      <rect x="1" y="5.5" width="8" height="6" rx="1.5" fill={color} />
+      <path d="M3 5.5V4a2 2 0 0 1 4 0v1.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" fill="none" />
+    </svg>
+  ) : (
+    <svg width="10" height="12" viewBox="0 0 10 12" fill="none">
+      <rect x="1" y="5.5" width="8" height="6" rx="1.5" fill={color} />
+      <path d="M3 5.5V4a2 2 0 0 1 4 0" stroke={color} strokeWidth="1.4" strokeLinecap="round" fill="none" />
+    </svg>
+  )
+}
+
 // ── Lock button ───────────────────────────────────────────────────
 function LockBtn({ locked, onClick }) {
   return (
@@ -129,10 +145,11 @@ function LockBtn({ locked, onClick }) {
       onClick={onClick}
       style={{
         background: 'none', border: 'none', cursor: 'pointer',
-        padding: '0 1px', fontSize: 10, lineHeight: 1,
+        padding: '0 1px', lineHeight: 1,
+        display: 'inline-flex', alignItems: 'center',
       }}
     >
-      {locked ? '🔒' : '🔓'}
+      <LockIcon locked={locked} />
     </button>
   )
 }
