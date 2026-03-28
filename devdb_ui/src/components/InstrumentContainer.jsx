@@ -192,7 +192,7 @@ export default function InstrumentContainer({
                 ⠿
               </span>
 
-              <p className={`font-bold text-sm ${containerTint.text} whitespace-nowrap`}>{instrument.instrument_name}</p>
+              <p className={`font-bold text-sm ${containerTint.text} break-words min-w-0`}>{instrument.instrument_name}</p>
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${containerTint.header} border ${containerTint.border} ${containerTint.text}`}>
                 {instrument.instrument_type}
               </span>
