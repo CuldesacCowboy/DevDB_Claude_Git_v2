@@ -29,25 +29,37 @@ function shortLot(lotNumber) {
   return `${match[1]} · ${String(seq).padStart(3, '0')}`
 }
 
+// ── Parse lot into code + padded seq ─────────────────────────────
+function parseLot(lotNumber) {
+  if (!lotNumber) return { code: '—', seq: '—' }
+  const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
+  if (!match) return { code: lotNumber, seq: '' }
+  return { code: match[1], seq: String(parseInt(match[2], 10)).padStart(3, '0') }
+}
+
 // ── Draggable unassigned lot pill ─────────────────────────────────
 function UnassignedLotPill({ lot }) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({ id: `unassigned-${lot.lot_id}`, data: { type: 'unassigned-lot', lot } })
+  const { code, seq } = parseLot(lot.lot_number)
   return (
     <div
       ref={setNodeRef}
       {...attributes}
       {...listeners}
       style={{
-        display: 'inline-flex', alignItems: 'center',
-        padding: '2px 8px', borderRadius: 12,
-        background: '#e0e7ff', border: '1px solid #818cf8',
-        fontSize: 11, fontWeight: 600, color: '#3730a3',
+        width: 50, height: 28, flexShrink: 0,
+        background: '#fff',
+        border: '0.5px solid #888780',
+        borderRadius: 5,
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 5px', boxSizing: 'border-box',
         cursor: 'grab', opacity: isDragging ? 0.4 : 1,
-        marginBottom: 4, marginRight: 4,
       }}
     >
-      {lot.lot_number}
+      <span style={{ fontSize: 8, color: '#888780' }}>{code}</span>
+      <span style={{ fontSize: 9, fontWeight: 500, color: '#2C2C2A' }}>{seq}</span>
     </div>
   )
 }
@@ -72,7 +84,9 @@ function UnassignedBank({ lots }) {
       <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
         {lots.length} lot{lots.length !== 1 ? 's' : ''}
       </div>
-      {lots.map(lot => <UnassignedLotPill key={lot.lot_id} lot={lot} />)}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+        {lots.map(lot => <UnassignedLotPill key={lot.lot_id} lot={lot} />)}
+      </div>
     </div>
   )
 }
