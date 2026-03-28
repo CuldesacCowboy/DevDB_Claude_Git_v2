@@ -213,6 +213,27 @@ export default function LotPhaseView() {
   }
 
   // -----------------------------------------------------------------------
+  // Projected-count cascade — update instruments state so instrument-level
+  // and dev-level slash line totals reflect the new count without a refetch.
+  // -----------------------------------------------------------------------
+  const handleProjectedSaved = useCallback((phaseId, lotTypeId, projected, total) => {
+    setInstruments((prev) =>
+      prev.map((instr) => ({
+        ...instr,
+        phases: instr.phases.map((ph) => {
+          if (ph.phase_id !== phaseId) return ph
+          return {
+            ...ph,
+            by_lot_type: ph.by_lot_type.map((lt) =>
+              lt.lot_type_id === lotTypeId ? { ...lt, projected, total } : lt
+            ),
+          }
+        }),
+      }))
+    )
+  }, [setInstruments])
+
+  // -----------------------------------------------------------------------
   // Toast helpers
   // -----------------------------------------------------------------------
   const addToast = useCallback((type, message, subMessage = null) => {
@@ -579,6 +600,8 @@ export default function LotPhaseView() {
                           onAutoSort={handleAutoSort}
                           availableWidth={effectiveWidth}
                           relaxCap={isSolo && group.instruments.length === 1}
+                          onRefetch={refetch}
+                          onProjectedSaved={handleProjectedSaved}
                         />
                       )
                     })}

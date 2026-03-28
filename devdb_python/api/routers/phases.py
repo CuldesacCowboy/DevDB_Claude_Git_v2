@@ -15,6 +15,21 @@ from services.phase_assignment_service import reassign_phase_to_instrument
 router = APIRouter(prefix="/phases", tags=["phases"])
 
 
+@router.get("/lot-types", response_model=list[dict])
+async def list_lot_types(conn=Depends(get_db_conn)):
+    """Return all lot types for the add-product-type dropdown."""
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "SELECT lot_type_id, lot_type_short FROM ref_lot_types ORDER BY lot_type_id"
+        )
+        return [{"lot_type_id": r["lot_type_id"], "lot_type_short": r["lot_type_short"]}
+                for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+
 @router.patch(
     "/{phase_id}/instrument",
     response_model=PhaseInstrumentReassignResponse,
@@ -107,12 +122,21 @@ async def update_lot_type_projected(
     )
     row = cur.fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="No split found for phase/lot_type")
-
-    cur.execute(
-        "UPDATE sim_phase_product_splits SET projected_count = %s WHERE split_id = %s",
-        (body.projected_count, row["split_id"]),
-    )
+        # New product type on this phase — insert a new split row.
+        cur.execute(
+            "SELECT COALESCE(MAX(split_id), 0) + 1 AS new_id FROM sim_phase_product_splits"
+        )
+        new_split_id = int(cur.fetchone()["new_id"])
+        cur.execute(
+            "INSERT INTO sim_phase_product_splits (split_id, phase_id, lot_type_id, projected_count)"
+            " VALUES (%s, %s, %s, %s)",
+            (new_split_id, phase_id, lot_type_id, body.projected_count),
+        )
+    else:
+        cur.execute(
+            "UPDATE sim_phase_product_splits SET projected_count = %s WHERE split_id = %s",
+            (body.projected_count, row["split_id"]),
+        )
 
     # Return updated counts so the frontend can refresh without a full reload
     cur.execute(

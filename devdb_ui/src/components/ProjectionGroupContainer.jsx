@@ -20,6 +20,8 @@ export default function ProjectionGroupContainer({
   onAutoSort,
   availableWidth,
   relaxCap,
+  onRefetch,
+  onProjectedSaved,
 }) {
   // PG-level sortable — drag handle on the PG header to reorder among all PGs
   const {
@@ -154,6 +156,8 @@ export default function ProjectionGroupContainer({
               onAutoSort={onAutoSort}
               availableWidth={aw}
               relaxCap={relaxCap}
+              onRefetch={onRefetch}
+              onProjectedSaved={onProjectedSaved}
             />
           ))}
           {instruments.length === 0 && (

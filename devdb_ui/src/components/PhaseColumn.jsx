@@ -1,4 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+
+// Module-level cache — lot types are static; only fetch once per page load.
+let _cachedLotTypes = null
 import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -20,6 +23,8 @@ export default function PhaseColumn({
   isOverlay,
   isCollapsed,
   onToggleCollapse,
+  onRefetch,
+  onProjectedSaved,
 }) {
   // Sortable: handles both intra-instrument reorder and cross-instrument move.
   const {
@@ -62,6 +67,13 @@ export default function PhaseColumn({
   const ltFlashRef = useRef({}) // lotTypeId -> timeout id
   const [ltFlash, setLtFlash] = useState(null)
 
+  // Feature: add product type
+  const [showAddLotType, setShowAddLotType] = useState(false)
+  const [availLotTypes, setAvailLotTypes] = useState(() => _cachedLotTypes ?? [])
+  const [selectedLtId, setSelectedLtId] = useState(null)
+  const [addLtCount, setAddLtCount] = useState('0')
+  const [addLtSaving, setAddLtSaving] = useState(false)
+
   async function handleProjectedEdit(phaseId, lotTypeId, newValue) {
     try {
       const res = await fetch(
@@ -81,6 +93,7 @@ export default function PhaseColumn({
               : lt
           )
         )
+        onProjectedSaved?.(phaseId, lotTypeId, data.projected_count, data.total)
       } else {
         setLtFlash(lotTypeId)
         setTimeout(() => setLtFlash(null), 1500)
@@ -88,6 +101,48 @@ export default function PhaseColumn({
     } catch {
       setLtFlash(lotTypeId)
       setTimeout(() => setLtFlash(null), 1500)
+    }
+  }
+
+  async function handleOpenAddLotType() {
+    setAddLtCount('0')
+    setShowAddLotType(true)
+    let types = availLotTypes
+    if (!types.length) {
+      try {
+        const r = await fetch('/api/phases/lot-types')
+        if (r.ok) {
+          types = await r.json()
+          _cachedLotTypes = types
+          setAvailLotTypes(types)
+        }
+      } catch {}
+    }
+    const available = types.filter(
+      (lt) => !localByLotType.some((e) => e.lot_type_id === lt.lot_type_id)
+    )
+    setSelectedLtId(available[0]?.lot_type_id ?? null)
+  }
+
+  async function handleAddLotType() {
+    const count = parseInt(addLtCount, 10)
+    if (isNaN(count) || count < 0 || !selectedLtId) return
+    setAddLtSaving(true)
+    try {
+      const res = await fetch(
+        `/api/phases/${phase.phase_id}/lot-type/${selectedLtId}/projected`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projected_count: count }),
+        }
+      )
+      if (res.ok) {
+        setShowAddLotType(false)
+        onRefetch?.()
+      }
+    } finally {
+      setAddLtSaving(false)
     }
   }
 
@@ -204,6 +259,72 @@ export default function PhaseColumn({
               isOverlay={isOverlay}
             />
           ))}
+
+          {/* Add product type */}
+          {!isOverlay && (
+            showAddLotType ? (
+              <div
+                className="mt-1 border border-blue-200 rounded bg-blue-50 p-2 flex flex-col gap-1.5"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-600 w-20 flex-shrink-0">Product type</span>
+                  {availLotTypes.length === 0 ? (
+                    <span className="text-[11px] text-gray-400 italic">Loading…</span>
+                  ) : (
+                    <select
+                      value={selectedLtId ?? ''}
+                      onChange={(e) => setSelectedLtId(Number(e.target.value))}
+                      className="flex-1 text-[11px] border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:border-blue-400 bg-white"
+                    >
+                      {availLotTypes
+                        .filter((lt) => !localByLotType.some((e) => e.lot_type_id === lt.lot_type_id))
+                        .map((lt) => (
+                          <option key={lt.lot_type_id} value={lt.lot_type_id}>
+                            {lt.lot_type_short ?? `t${lt.lot_type_id}`}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-600 w-20 flex-shrink-0">Projected count</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={addLtCount}
+                    onChange={(e) => setAddLtCount(e.target.value.replace(/[^0-9]/g, ''))}
+                    className="w-16 text-[11px] border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:border-blue-400 text-center bg-white"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddLotType(); if (e.key === 'Escape') setShowAddLotType(false) }}
+                  />
+                </div>
+                <div className="flex gap-1 justify-end">
+                  <button
+                    onClick={() => setShowAddLotType(false)}
+                    className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddLotType}
+                    disabled={addLtSaving || !selectedLtId}
+                    className="text-[11px] px-2 py-0.5 rounded bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40"
+                  >
+                    {addLtSaving ? 'Adding…' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={handleOpenAddLotType}
+                className="mt-0.5 w-full flex items-center justify-center gap-1 py-1 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded border-t border-gray-100"
+              >
+                <span className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center text-[9px] leading-none flex-shrink-0">+</span>
+                Add product type
+              </button>
+            )
+          )}
         </div>
       )}
     </div>

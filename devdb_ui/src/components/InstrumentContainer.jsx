@@ -33,9 +33,11 @@ export default function InstrumentContainer({
   activeDragType,
   collapsedPhaseIds,
   onToggleCollapse,
-  onAutoSort,     // (instrumentId: number) => void — called by auto-sort button
-  availableWidth, // px — passed from LotPhaseView via ProjectionGroupContainer
-  relaxCap,       // true when this dev is alone on its row — skip sqrt col cap
+  onAutoSort,       // (instrumentId: number) => void — called by auto-sort button
+  availableWidth,   // px — passed from LotPhaseView via ProjectionGroupContainer
+  relaxCap,         // true when this dev is alone on its row — skip sqrt col cap
+  onRefetch,        // () => void — triggers full data reload after mutations
+  onProjectedSaved, // (phaseId, lotTypeId, projected, total) => void — cascade totals
 }) {
   const [countsExpanded, setCountsExpanded] = useState(false)
 
@@ -150,6 +152,8 @@ export default function InstrumentContainer({
       pendingPhaseId={pendingPhaseId}
       isCollapsed={collapsedPhaseIds?.has(phase.phase_id) ?? false}
       onToggleCollapse={() => onToggleCollapse?.(phase.phase_id)}
+      onRefetch={onRefetch}
+      onProjectedSaved={onProjectedSaved}
     />
   ))
 
