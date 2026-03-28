@@ -144,6 +144,20 @@ export default function InstrumentContainer({
 
   const showPhaseDropHighlight = isOver && activeDragType === 'phase'
 
+  // Unique lot types across all phases of this instrument — passed to PhaseColumn
+  // so the "add product type" dropdown doesn't need an API call.
+  const knownLotTypes = (() => {
+    const seen = {}
+    phasesData.forEach((p) => {
+      ;(p.by_lot_type ?? []).forEach((lt) => {
+        if (!seen[lt.lot_type_id]) {
+          seen[lt.lot_type_id] = { lot_type_id: lt.lot_type_id, lot_type_short: lt.lot_type_short }
+        }
+      })
+    })
+    return Object.values(seen).sort((a, b) => a.lot_type_id - b.lot_type_id)
+  })()
+
   const containerTint = isNoInstrument
     ? { border: 'border-gray-300', bg: 'bg-gray-50', header: 'bg-gray-100', text: 'text-gray-700' }
     : tint
@@ -210,6 +224,7 @@ export default function InstrumentContainer({
       onToggleCollapse={() => onToggleCollapse?.(phase.phase_id)}
       onRefetch={onRefetch}
       onProjectedSaved={onProjectedSaved}
+      knownLotTypes={knownLotTypes}
     />
   ))
 

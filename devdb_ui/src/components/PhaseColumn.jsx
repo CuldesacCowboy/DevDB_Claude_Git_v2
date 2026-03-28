@@ -1,12 +1,25 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
-
-// Module-level cache — lot types are static; only fetch once per page load.
-let _cachedLotTypes = null
+import { useState, useRef, useEffect } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import LotCard from './LotCard'
 import LotTypePill from './LotTypePill'
+
+// Fallback lot types used when the instrument has no phases with known types yet.
+// These are the active sub-types from ref_lot_types (ids 101-111).
+const FALLBACK_LOT_TYPES = [
+  { lot_type_id: 101, lot_type_short: 'SF' },
+  { lot_type_id: 102, lot_type_short: 'SF-L' },
+  { lot_type_id: 103, lot_type_short: 'Villa' },
+  { lot_type_id: 104, lot_type_short: 'Duplex' },
+  { lot_type_id: 105, lot_type_short: 'Triplex' },
+  { lot_type_id: 106, lot_type_short: 'Quad' },
+  { lot_type_id: 107, lot_type_short: 'TH-F' },
+  { lot_type_id: 108, lot_type_short: 'TH-R' },
+  { lot_type_id: 109, lot_type_short: 'GW' },
+  { lot_type_id: 110, lot_type_short: 'RLS' },
+  { lot_type_id: 111, lot_type_short: 'CD' },
+]
 
 // Split "Waterton Station SF ph. 3" into prefix="Waterton Station SF" and suffix="ph. 3".
 // Falls back to { prefix: name, suffix: null } if no " ph." pattern is found.
@@ -25,6 +38,7 @@ export default function PhaseColumn({
   onToggleCollapse,
   onRefetch,
   onProjectedSaved,
+  knownLotTypes,    // { lot_type_id, lot_type_short }[] derived from sibling phases
 }) {
   // Sortable: handles both intra-instrument reorder and cross-instrument move.
   const {
@@ -77,7 +91,6 @@ export default function PhaseColumn({
 
   // Feature: add product type
   const [showAddLotType, setShowAddLotType] = useState(false)
-  const [availLotTypes, setAvailLotTypes] = useState(() => _cachedLotTypes ?? [])
   const [selectedLtId, setSelectedLtId] = useState(null)
   const [addLtCount, setAddLtCount] = useState('0')
   const [addLtSaving, setAddLtSaving] = useState(false)
@@ -112,24 +125,16 @@ export default function PhaseColumn({
     }
   }
 
-  async function handleOpenAddLotType() {
-    setAddLtCount('0')
-    setShowAddLotType(true)
-    let types = availLotTypes
-    if (!types.length) {
-      try {
-        const r = await fetch('/api/phases/lot-types')
-        if (r.ok) {
-          types = await r.json()
-          _cachedLotTypes = types
-          setAvailLotTypes(types)
-        }
-      } catch {}
-    }
-    const available = types.filter(
+  function handleOpenAddLotType() {
+    const sourceTypes = (knownLotTypes && knownLotTypes.length > 0)
+      ? knownLotTypes
+      : FALLBACK_LOT_TYPES
+    const available = sourceTypes.filter(
       (lt) => !localByLotType.some((e) => e.lot_type_id === lt.lot_type_id)
     )
     setSelectedLtId(available[0]?.lot_type_id ?? null)
+    setAddLtCount('0')
+    setShowAddLotType(true)
   }
 
   async function handleAddLotType() {
@@ -382,23 +387,19 @@ export default function PhaseColumn({
               >
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-gray-600 w-20 flex-shrink-0">Product type</span>
-                  {availLotTypes.length === 0 ? (
-                    <span className="text-[11px] text-gray-400 italic">Loading…</span>
-                  ) : (
-                    <select
-                      value={selectedLtId ?? ''}
-                      onChange={(e) => setSelectedLtId(Number(e.target.value))}
-                      className="flex-1 text-[11px] border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:border-blue-400 bg-white"
-                    >
-                      {availLotTypes
-                        .filter((lt) => !localByLotType.some((e) => e.lot_type_id === lt.lot_type_id))
-                        .map((lt) => (
-                          <option key={lt.lot_type_id} value={lt.lot_type_id}>
-                            {lt.lot_type_short ?? `t${lt.lot_type_id}`}
-                          </option>
-                        ))}
-                    </select>
-                  )}
+                  <select
+                    value={selectedLtId ?? ''}
+                    onChange={(e) => setSelectedLtId(Number(e.target.value))}
+                    className="flex-1 text-[11px] border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:border-blue-400 bg-white"
+                  >
+                    {((knownLotTypes && knownLotTypes.length > 0) ? knownLotTypes : FALLBACK_LOT_TYPES)
+                      .filter((lt) => !localByLotType.some((e) => e.lot_type_id === lt.lot_type_id))
+                      .map((lt) => (
+                        <option key={lt.lot_type_id} value={lt.lot_type_id}>
+                          {lt.lot_type_short ?? `t${lt.lot_type_id}`}
+                        </option>
+                      ))}
+                  </select>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-gray-600 w-20 flex-shrink-0">Projected count</span>
