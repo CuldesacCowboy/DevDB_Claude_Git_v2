@@ -186,7 +186,7 @@ def test_s08(conn, unmet):
 
     # Load phase capacity for TEST_PG_ID, including dev_id from sim_dev_phases
     phase_cap_df = conn.read_df(f"""
-        SELECT sps.phase_id, sdp.dev_id, sps.lot_type_id, sps.lot_count,
+        SELECT sps.phase_id, sdp.dev_id, sps.lot_type_id, sps.projected_count,
                sdp.date_dev_projected,
                COALESCE(real_counts.real_count, 0) AS real_lot_count
         FROM main.devdb.sim_phase_product_splits sps
@@ -198,7 +198,7 @@ def test_s08(conn, unmet):
             GROUP BY phase_id, lot_type_id
         ) real_counts ON sps.phase_id = real_counts.phase_id
                       AND sps.lot_type_id = real_counts.lot_type_id
-        WHERE (sps.lot_count - COALESCE(real_counts.real_count, 0)) > 0
+        WHERE (sps.projected_count - COALESCE(real_counts.real_count, 0)) > 0
         ORDER BY sps.phase_id
     """)
 
@@ -207,7 +207,7 @@ def test_s08(conn, unmet):
             "phase_id":        int(r["phase_id"]),
             "dev_id":          int(r["dev_id"]),
             "lot_type_id":     int(r["lot_type_id"]),
-            "available_slots": int(r["lot_count"]) - int(r["real_lot_count"]),
+            "available_slots": int(r["projected_count"]) - int(r["real_lot_count"]),
             "date_dev":        r["date_dev_projected"],
         }
         for _, r in phase_cap_df.iterrows()

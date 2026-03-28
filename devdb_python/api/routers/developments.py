@@ -316,7 +316,7 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
         # Load splits (counts per phase × lot_type), including display name
         cur.execute(
             """
-            SELECT s.phase_id, s.lot_type_id, s.lot_count AS projected,
+            SELECT s.phase_id, s.lot_type_id, s.projected_count AS projected,
                    r.lot_type_short
             FROM sim_phase_product_splits s
             JOIN ref_lot_types r ON r.lot_type_id = s.lot_type_id

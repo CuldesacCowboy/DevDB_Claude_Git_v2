@@ -42,7 +42,7 @@ async def update_phase(
     body: PhaseUpdateRequest,
     conn=Depends(get_db_conn),
 ):
-    """Update phase attributes. Currently supports projected_count (sim_phase_product_splits.lot_count).
+    """Update phase attributes. Currently supports projected_count (sim_phase_product_splits.projected_count).
     For phases with multiple splits, the new total is distributed proportionally across all splits.
     """
     if body.projected_count is None:
@@ -50,7 +50,7 @@ async def update_phase(
 
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
-        "SELECT split_id, lot_count FROM sim_phase_product_splits WHERE phase_id = %s",
+        "SELECT split_id, projected_count FROM sim_phase_product_splits WHERE phase_id = %s",
         (phase_id,),
     )
     splits = cur.fetchall()
@@ -61,24 +61,24 @@ async def update_phase(
 
     if len(splits) == 1:
         cur.execute(
-            "UPDATE sim_phase_product_splits SET lot_count = %s WHERE split_id = %s",
+            "UPDATE sim_phase_product_splits SET projected_count = %s WHERE split_id = %s",
             (new_total, splits[0]["split_id"]),
         )
     else:
         # Distribute new total proportionally across existing splits.
         # If current total is 0, distribute equally.
-        current_total = sum(s["lot_count"] or 0 for s in splits)
+        current_total = sum(s["projected_count"] or 0 for s in splits)
         remainder = new_total
         for i, s in enumerate(splits):
             if i == len(splits) - 1:
                 # Last split absorbs rounding remainder
                 count = remainder
             elif current_total > 0:
-                count = round(new_total * (s["lot_count"] or 0) / current_total)
+                count = round(new_total * (s["projected_count"] or 0) / current_total)
             else:
                 count = new_total // len(splits)
             cur.execute(
-                "UPDATE sim_phase_product_splits SET lot_count = %s WHERE split_id = %s",
+                "UPDATE sim_phase_product_splits SET projected_count = %s WHERE split_id = %s",
                 (count, s["split_id"]),
             )
             remainder -= count
@@ -110,7 +110,7 @@ async def update_lot_type_projected(
         raise HTTPException(status_code=404, detail="No split found for phase/lot_type")
 
     cur.execute(
-        "UPDATE sim_phase_product_splits SET lot_count = %s WHERE split_id = %s",
+        "UPDATE sim_phase_product_splits SET projected_count = %s WHERE split_id = %s",
         (body.projected_count, row["split_id"]),
     )
 

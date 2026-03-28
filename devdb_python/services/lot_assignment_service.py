@@ -74,10 +74,10 @@ def _fail(code: str, message: str) -> ReassignmentResult:
 
 
 def _maintain_splits(cur, phase_id: int) -> None:
-    """Insert splits rows for lot_type_ids with actual > 0 but no row; delete rows where actual = 0 AND lot_count = 0."""
+    """Insert splits rows for lot_type_ids with actual > 0 but no row; delete rows where actual = 0 AND projected_count = 0."""
     cur.execute(
         """
-        INSERT INTO sim_phase_product_splits (phase_id, lot_type_id, lot_count)
+        INSERT INTO sim_phase_product_splits (phase_id, lot_type_id, projected_count)
         SELECT %s, actual.lot_type_id, 0
         FROM (
             SELECT lot_type_id
@@ -94,7 +94,7 @@ def _maintain_splits(cur, phase_id: int) -> None:
         """
         DELETE FROM sim_phase_product_splits
         WHERE phase_id = %s
-          AND lot_count = 0
+          AND projected_count = 0
           AND NOT EXISTS (
               SELECT 1 FROM sim_lots sl
               WHERE sl.phase_id = %s AND sl.lot_type_id = sim_phase_product_splits.lot_type_id
@@ -112,8 +112,8 @@ def _build_by_lot_type(cur, phase_id: int) -> list:
         SELECT sps.lot_type_id,
                rlt.lot_type_short,
                COALESCE(actual.cnt, 0) AS actual,
-               sps.lot_count AS projected,
-               GREATEST(COALESCE(actual.cnt, 0), sps.lot_count) AS total
+               sps.projected_count AS projected,
+               GREATEST(COALESCE(actual.cnt, 0), sps.projected_count) AS total
         FROM sim_phase_product_splits sps
         JOIN ref_lot_types rlt ON rlt.lot_type_id = sps.lot_type_id
         LEFT JOIN (
@@ -678,14 +678,14 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
         actual = int(cur.fetchone()["actual"])
         cur.execute(
             """
-            SELECT lot_count
+            SELECT projected_count
             FROM sim_phase_product_splits
             WHERE phase_id = %s AND lot_type_id = %s
             """,
             (from_phase_id, lot["lot_type_id"]),
         )
         split_row = cur.fetchone()
-        projected = int(split_row["lot_count"]) if split_row else 0
+        projected = int(split_row["projected_count"]) if split_row else 0
 
         from_phase_counts = {
             "phase_id": from_phase_id,

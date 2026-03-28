@@ -119,7 +119,7 @@ class ProposalValidator:
                     f"[phase_id={phase_id}, lot_type_id={lot_type_id}] "
                     f"Capacity exhausted: all {cap} slots assigned. "
                     f"Any additional demand for this phase will go unmet. "
-                    f"Increase lot_count in sim_phase_product_splits to absorb more demand."
+                    f"Increase projected_count in sim_phase_product_splits to absorb more demand."
                 )
 
         return failures, warnings

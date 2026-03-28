@@ -45,7 +45,7 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
                     d.community_id,
                     sdp.phase_id,
                     COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'real') AS real_count,
-                    COALESCE(SUM(spps.lot_count), 0)                        AS projected_count
+                    COALESCE(SUM(spps.projected_count), 0)                   AS projected_count
                 FROM developments d
                 JOIN dim_development dd ON dd.dev_code2 = d.marks_code
                 JOIN sim_legal_instruments li ON li.dev_id = dd.development_id
@@ -276,7 +276,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
         # Load splits (projected capacities)
         cur.execute(
             """
-            SELECT phase_id, lot_type_id, lot_count AS projected
+            SELECT phase_id, lot_type_id, projected_count AS projected
             FROM sim_phase_product_splits
             WHERE phase_id = ANY(%s)
             """,

@@ -372,6 +372,15 @@ Flagged Revisit before go-live:
 
 ---
 
+## Schema Change Rules
+
+- **Every DDL change must be a numbered migration file in `devdb_python/migrations/` before being applied to the database.** Never apply schema changes directly in psql without a corresponding migration file in the repo.
+- Migration files are numbered sequentially: `000_`, `001_`, `002_`, etc.
+- The auto-apply runner in `api/main.py` applies unapplied migrations on every backend startup. New files are picked up automatically.
+- After creating a migration file, grep `devdb_python/` for all references to renamed or dropped columns and update every one before committing.
+
+---
+
 ## Building Group Mapping Status
 
 Complete for 14 developments (585 lots): SC, CR, DT, JC, PC, RF, RP, TC, WP, WV, VI, WC, WT, WA.

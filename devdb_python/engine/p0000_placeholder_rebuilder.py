@@ -100,11 +100,11 @@ def _first_window_month_in_year(year: int, window_start: int) -> date:
 # ---------------------------------------------------------------------------
 
 def _get_phase_lots(conn, phase_id: int):
-    """Return list of lot_count values from sim_phase_product_splits for a phase."""
-    df = conn.read_df(f"SELECT lot_count FROM sim_phase_product_splits WHERE phase_id = {phase_id}")
+    """Return list of projected_count values from sim_phase_product_splits for a phase."""
+    df = conn.read_df(f"SELECT projected_count FROM sim_phase_product_splits WHERE phase_id = {phase_id}")
     if df.empty:
         return [0]
-    return [int(x) for x in df["lot_count"] if x is not None]
+    return [int(x) for x in df["projected_count"] if x is not None]
 
 
 def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
@@ -319,7 +319,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # Each locked phase depletes independently at its own PG's pace.
     # For each locked phase:
     #   monthly_pace    = annual_starts_target for that phase's PG / 12
-    #   exhaustion_date = date_dev_actual + ceil(lot_count / monthly_pace) months
+    #   exhaustion_date = date_dev_actual + ceil(projected_count / monthly_pace) months
     #   latest_viable   = snap_to_window(exhaustion - 1 month)
     #
     # dev_latest_viable[dev_id] = earliest latest_viable across all locked
@@ -330,14 +330,14 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     if locked_phase_ids:
         locked_ids_str = ", ".join(str(p) for p in locked_phase_ids)
 
-        # Per-phase: delivery date, lot_count, and annual_starts_target from PG.
+        # Per-phase: delivery date, projected_count, and annual_starts_target from PG.
         # Use a DISTINCT subquery on sim_lots to get one projection_group_id per
-        # phase — avoids inflating lot_count by fanning out across every lot row.
+        # phase — avoids inflating projected_count by fanning out across every lot row.
         locked_phase_df = conn.read_df(f"""
             SELECT sdp.phase_id,
                    sdp.dev_id,
                    sde.date_dev_actual,
-                   sps.lot_count,
+                   sps.projected_count,
                    pp.annual_starts_target
             FROM sim_delivery_events sde
             JOIN sim_delivery_event_phases dep
@@ -359,7 +359,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             ph_id_r  = int(r["phase_id"])
             d = r["date_dev_actual"]
             d = d.date() if hasattr(d, "date") else d
-            lot_count = int(r["lot_count"])
+            lot_count = int(r["projected_count"])
             annual_target = r["annual_starts_target"]
             if annual_target is None or float(annual_target) <= 0:
                 continue

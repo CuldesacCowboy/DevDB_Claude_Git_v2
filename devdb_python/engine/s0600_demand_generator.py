@@ -60,7 +60,7 @@ def demand_generator(conn: DBConnection, projection_group_id: int,
     # Both categories must be subtracted so demand never exceeds actual sim slot supply.
     avail_df = conn.read_df(f"""
         SELECT
-            COALESCE(SUM(sps.lot_count), 0) AS total_capacity,
+            COALESCE(SUM(sps.projected_count), 0) AS total_capacity,
             COALESCE((
                 SELECT COUNT(*)
                 FROM sim_lots

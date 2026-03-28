@@ -67,7 +67,7 @@ def _load_phase_capacity(conn, projection_group_id: int) -> list:
             sps.phase_id,
             sdp.dev_id,
             sps.lot_type_id,
-            sps.lot_count,
+            sps.projected_count,
             sdp.date_dev_projected,
             COALESCE(real.real_count, 0) AS real_lot_count
         FROM sim_phase_product_splits sps
@@ -88,7 +88,7 @@ def _load_phase_capacity(conn, projection_group_id: int) -> list:
 
     result = []
     for _, row in df.iterrows():
-        available = int(row["lot_count"]) - int(row["real_lot_count"])
+        available = int(row["projected_count"]) - int(row["real_lot_count"])
         if available > 0:
             d = row["date_dev_projected"]
             if d is not None and hasattr(d, 'date'):
