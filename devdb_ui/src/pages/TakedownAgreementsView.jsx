@@ -125,6 +125,56 @@ function LockBtn({ locked, onClick }) {
   )
 }
 
+// ── Projected date field ──────────────────────────────────────────
+// Unlocked: green dashed visible text + transparent native input on top.
+// Locked: plain text, not clickable. Auto-locks on date entry.
+function ProjectedDateField({ value, locked, onChange }) {
+  if (locked) {
+    return (
+      <div style={{
+        fontSize: 8, color: '#444441',
+        pointerEvents: 'none',
+        height: 16, lineHeight: '16px',
+        padding: '1px 3px', boxSizing: 'border-box',
+      }}>
+        {fmt(value) || '—'}
+      </div>
+    )
+  }
+  return (
+    <div style={{ position: 'relative', height: 16 }}>
+      {/* Visible styled element */}
+      <div style={{
+        fontSize: 8, color: '#27500A',
+        border: '1px dashed #3B6D11',
+        background: '#EAF3DE',
+        borderRadius: 3,
+        padding: '1px 3px',
+        height: '100%', lineHeight: '14px',
+        boxSizing: 'border-box',
+        cursor: 'pointer',
+        userSelect: 'none',
+        overflow: 'hidden', whiteSpace: 'nowrap',
+      }}>
+        {fmt(value) || '—'}
+      </div>
+      {/* Transparent native date input on top — provides the picker */}
+      <input
+        key={value || ''}
+        type="date"
+        defaultValue={value || ''}
+        onChange={(e) => { if (e.target.value) onChange(e.target.value) }}
+        style={{
+          position: 'absolute', top: 0, left: 0,
+          width: '100%', height: '100%',
+          opacity: 0, cursor: 'pointer',
+          border: 'none', padding: 0, margin: 0,
+        }}
+      />
+    </div>
+  )
+}
+
 // ── Lot pill inside a checkpoint ──────────────────────────────────
 function LotPill({ assignment, onDateChange, onLockChange }) {
   const { attributes, listeners, setNodeRef, isDragging } =
@@ -147,23 +197,15 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
         <div style={{ fontSize: 8, color: '#B4B2A9', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {fmt(marksDate)}
         </div>
-        {/* Projected date */}
-        {isLocked ? (
-          <div style={{ fontSize: 8, color: '#444441' }}>{fmt(projDate) || '—'}</div>
-        ) : (
-          <input
-            type="date"
-            defaultValue={projDate || ''}
-            onChange={(e) => { if (e.target.value) onDateChange(dateKey, e.target.value) }}
-            style={{
-              width: '100%', fontSize: 8, boxSizing: 'border-box',
-              border: '1px dashed #86efac',
-              borderRadius: 3, padding: '1px 2px',
-              background: '#f0fdf4', color: '#166534',
-              outline: 'none',
-            }}
-          />
-        )}
+        {/* Projected date — auto-locks on entry */}
+        <ProjectedDateField
+          value={projDate}
+          locked={isLocked}
+          onChange={(val) => {
+            onDateChange(dateKey, val)
+            onLockChange(lockKey, true)
+          }}
+        />
       </div>
     )
   }
