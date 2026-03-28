@@ -239,6 +239,40 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
   )
 }
 
+// ── Placeholder slot pill ─────────────────────────────────────────
+// State: normal (>30d), urgent (≤30d), missed (<0d)
+function PlaceholderPill({ daysToCP }) {
+  let state = 'normal'
+  if (daysToCP !== null) {
+    if (daysToCP < 0) state = 'missed'
+    else if (daysToCP <= 30) state = 'urgent'
+  }
+  const cfg = {
+    normal: { bg: 'transparent',  border: '1.5px dashed #888780', icon: '○', iconColor: '#B4B2A9', label: null },
+    urgent: { bg: '#FFF3CD',      border: '1.5px dashed #BA7517', icon: '⚠', iconColor: '#854F0B', label: `${daysToCP} DAYS` },
+    missed: { bg: '#FCEBEB',      border: '1.5px dashed #A32D2D', icon: '✕', iconColor: '#A32D2D', label: 'PAST DUE' },
+  }[state]
+
+  return (
+    <div style={{
+      width: 106, flexShrink: 0, borderRadius: 6,
+      background: cfg.bg, border: cfg.border,
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: '10px 6px', minHeight: 72,
+    }}>
+      <span style={{ fontSize: 18, color: cfg.iconColor, lineHeight: 1 }}>
+        {cfg.icon}
+      </span>
+      {cfg.label && (
+        <span style={{ fontSize: 8, color: cfg.iconColor, marginTop: 4, letterSpacing: '0.05em', fontWeight: 600 }}>
+          {cfg.label}
+        </span>
+      )}
+    </div>
+  )
+}
+
 // ── Droppable checkpoint band ─────────────────────────────────────
 function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
   const [localTotal, setLocalTotal] = useState(checkpoint.lots_required_cumulative || 0)
@@ -256,6 +290,15 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
   const p = lots.filter(l => !l.hc_marks_date && !l.bldr_marks_date).length
   const t = localTotal
   const over = (c + p) > t
+
+  // Placeholder count and urgency
+  const slotCount = Math.max(0, t - (c + p))
+  const daysToCP = (() => {
+    if (!localDate) return null
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    const cpDate = new Date(localDate)
+    return Math.floor((cpDate - today) / (1000 * 60 * 60 * 24))
+  })()
   const barFill = over ? '#E24B4A' : null
   const cPct = t > 0 ? Math.min(100, Math.round((c / t) * 100)) : 0
   const pPct = t > 0 ? Math.min(100, Math.round((p / t) * 100)) : 0
@@ -396,11 +439,9 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
             onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
           />
         ))}
-        {lots.length === 0 && (
-          <div style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 12, width: '100%' }}>
-            Drop lots here
-          </div>
-        )}
+        {Array.from({ length: slotCount }).map((_, i) => (
+          <PlaceholderPill key={`ph-${i}`} daysToCP={daysToCP} />
+        ))}
       </div>
     </div>
   )
