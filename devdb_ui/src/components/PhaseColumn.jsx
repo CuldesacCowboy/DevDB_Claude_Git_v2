@@ -67,6 +67,10 @@ export default function PhaseColumn({
   const ltFlashRef = useRef({}) // lotTypeId -> timeout id
   const [ltFlash, setLtFlash] = useState(null)
 
+  // Feature: delete phase
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
   // Feature: add product type
   const [showAddLotType, setShowAddLotType] = useState(false)
   const [availLotTypes, setAvailLotTypes] = useState(() => _cachedLotTypes ?? [])
@@ -146,19 +150,61 @@ export default function PhaseColumn({
     }
   }
 
+  async function handleConfirmDelete() {
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/phases/${phase.phase_id}`, { method: 'DELETE' })
+      if (res.ok) {
+        onRefetch?.()
+      }
+    } finally {
+      setDeleting(false)
+      setShowDeleteConfirm(false)
+    }
+  }
+
   return (
     <div
       ref={setOuterRef}
       className={`
         flex flex-col rounded-lg border-2 transition-colors duration-100 overflow-hidden
         ${isDragging ? 'opacity-30' : ''}
-        ${isOver && !isCollapsed ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}
+        ${showDeleteConfirm ? 'border-red-300' : isOver && !isCollapsed ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}
       `}
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
       }}
     >
+      {/* Delete confirmation card — replaces normal content */}
+      {showDeleteConfirm && (
+        <div className="p-3 flex flex-col gap-2" onPointerDown={(e) => e.stopPropagation()}>
+          <p className="text-xs font-semibold text-gray-800">Delete phase?</p>
+          <p className="text-[11px] text-gray-500 leading-snug">
+            <span className="font-medium">{phase.phase_name}</span> has {lotCount} lot{lotCount !== 1 ? 's' : ''}.{' '}
+            {lotCount > 0 && 'They will return to Unassigned.'}
+          </p>
+          <div className="flex gap-1 justify-end">
+            <button
+              onClick={() => setShowDeleteConfirm(false)}
+              className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-100"
+            >
+              Keep
+            </button>
+            <button
+              onClick={handleConfirmDelete}
+              disabled={deleting}
+              className="text-[11px] px-2 py-0.5 rounded bg-red-500 text-white hover:bg-red-600 disabled:opacity-40"
+            >
+              {deleting ? 'Deleting…' : 'Delete phase'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Normal pill content — hidden while delete confirmation is active */}
+      {!showDeleteConfirm && (
+      <>
       {/* Header — drag handle + collapse toggle */}
       <div
         {...sortAttrs}
@@ -212,6 +258,17 @@ export default function PhaseColumn({
               aria-label={isCollapsed ? 'Expand' : 'Collapse'}
             >
               {isCollapsed ? '▶' : '▼'}
+            </button>
+          )}
+          {!isOverlay && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex-shrink-0 w-[18px] h-[18px] flex items-center justify-center rounded border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-300 text-[10px] leading-none"
+              aria-label="Delete phase"
+              title="Delete phase"
+            >
+              ✕
             </button>
           )}
           {isPending && (
@@ -326,6 +383,8 @@ export default function PhaseColumn({
             )
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   )

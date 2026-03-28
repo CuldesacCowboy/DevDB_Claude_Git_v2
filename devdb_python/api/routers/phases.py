@@ -51,6 +51,53 @@ async def reassign_phase_instrument(
     )
 
 
+@router.delete("/{phase_id}", response_model=dict)
+async def delete_phase(phase_id: int, conn=Depends(get_db_conn)):
+    """Delete a phase: unassign all lots, remove splits, then delete the phase row."""
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # Verify phase exists and get its name for the response
+        cur.execute(
+            "SELECT phase_name FROM sim_dev_phases WHERE phase_id = %s",
+            (phase_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Phase {phase_id} not found")
+
+        # Count lots that will be unassigned
+        cur.execute(
+            "SELECT COUNT(*) AS lot_count FROM sim_lots WHERE phase_id = %s",
+            (phase_id,),
+        )
+        lot_count = int(cur.fetchone()["lot_count"])
+
+        # Unassign all lots from this phase
+        cur.execute(
+            "UPDATE sim_lots SET phase_id = NULL WHERE phase_id = %s",
+            (phase_id,),
+        )
+        # Remove product and builder splits
+        cur.execute("DELETE FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
+        cur.execute("DELETE FROM sim_phase_builder_splits WHERE phase_id = %s", (phase_id,))
+        # Remove delivery event phase links
+        cur.execute("DELETE FROM sim_delivery_event_phases WHERE phase_id = %s", (phase_id,))
+        # Delete the phase itself
+        cur.execute("DELETE FROM sim_dev_phases WHERE phase_id = %s", (phase_id,))
+
+        conn.commit()
+        return {"success": True, "phase_id": phase_id, "lots_unassigned": lot_count}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
 @router.patch("/{phase_id}", response_model=dict)
 async def update_phase(
     phase_id: int,
