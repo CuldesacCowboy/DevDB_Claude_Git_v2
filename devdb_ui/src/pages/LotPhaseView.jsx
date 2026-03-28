@@ -69,6 +69,7 @@ export default function LotPhaseView() {
   const [newInstrDevId, setNewInstrDevId] = useState(null)
   const [addInstrError, setAddInstrError] = useState('')
   const [addInstrCreating, setAddInstrCreating] = useState(false)
+  const [modalDevs, setModalDevs] = useState([])
 
   // Collapse state — tracks which phase_ids are collapsed
   const [collapsedPhaseIds, setCollapsedPhaseIds] = useState(new Set())
@@ -90,6 +91,19 @@ export default function LotPhaseView() {
     setNeedsRerun(false)
     setCollapsedPhaseIds(new Set())
     setToasts([])
+  }, [entGroupId])
+
+  // -----------------------------------------------------------------------
+  // Fetch developments for the current community (Add Instrument modal)
+  // All developments where community_id = entGroupId, independent of whether
+  // any instruments exist yet.
+  // -----------------------------------------------------------------------
+  useEffect(() => {
+    if (!entGroupId) return
+    fetch('/api/developments')
+      .then(r => r.json())
+      .then(data => setModalDevs(data.filter(d => d.community_id === entGroupId)))
+      .catch(() => setModalDevs([]))
   }, [entGroupId])
 
   // -----------------------------------------------------------------------
@@ -129,7 +143,7 @@ export default function LotPhaseView() {
   function openAddInstrument() {
     setNewInstrName('')
     setNewInstrType('Plat')
-    setNewInstrDevId(pgGroups[0]?.devId ?? null)
+    setNewInstrDevId(modalDevs[0]?.dev_id ?? null)
     setAddInstrError('')
     setShowAddInstrument(true)
   }
@@ -639,12 +653,22 @@ export default function LotPhaseView() {
                 <select
                   value={newInstrDevId ?? ''}
                   onChange={(e) => setNewInstrDevId(Number(e.target.value))}
+                  disabled={modalDevs.length === 0}
                   className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
                 >
-                  {pgGroups.map((g) => (
-                    <option key={g.devId} value={g.devId}>{g.devName}</option>
-                  ))}
+                  {modalDevs.length === 0 ? (
+                    <option value="" disabled>No developments found for this community</option>
+                  ) : (
+                    modalDevs.map((d) => (
+                      <option key={d.dev_id} value={d.dev_id}>{d.dev_name}</option>
+                    ))
+                  )}
                 </select>
+                {modalDevs.length === 0 && (
+                  <p style={{ fontSize: 12, color: '#888780', marginTop: 4 }}>
+                    No developments are linked to this community yet. Developments must be set up before adding instruments.
+                  </p>
+                )}
               </div>
               {addInstrError && (
                 <p className="text-xs text-red-600">{addInstrError}</p>
