@@ -442,7 +442,7 @@ export default function LotPhaseView() {
       {/* ---------------------------------------------------------------- */}
       {/* Tab shell — tab bar + conditional content                       */}
       {/* ---------------------------------------------------------------- */}
-      <div className="flex flex-col flex-1 overflow-hidden">
+      <div className="flex flex-col flex-1 overflow-visible">
 
         {/* Tab bar */}
         <div className="flex-shrink-0 flex items-end gap-0 border-b border-gray-200 bg-white px-4">
@@ -482,7 +482,7 @@ export default function LotPhaseView() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-visible">
 
           {/* -------------------------------------------------------------- */}
           {/* Left column — Unassigned Lots (top) + No Instrument (bottom)   */}

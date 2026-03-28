@@ -590,7 +590,7 @@ export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-visible">
 
         {/* Unassigned Developments panel — sticky full height */}
         <div
