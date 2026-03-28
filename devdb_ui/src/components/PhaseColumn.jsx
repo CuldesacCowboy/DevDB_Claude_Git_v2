@@ -190,7 +190,7 @@ export default function PhaseColumn({
     <div
       ref={setOuterRef}
       className={`
-        flex flex-col rounded-lg border-2 transition-colors duration-100 overflow-hidden
+        flex flex-col rounded-lg border-2 transition-colors duration-100
         ${isDragging ? 'opacity-30' : ''}
         ${showDeleteConfirm ? 'border-red-300' : isOver && !isCollapsed ? 'border-blue-400 bg-blue-50' : 'border-gray-200 bg-white'}
       `}
@@ -201,7 +201,7 @@ export default function PhaseColumn({
     >
       {/* Delete confirmation card — replaces normal content */}
       {showDeleteConfirm && (
-        <div className="p-3 flex flex-col gap-2" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="rounded-lg p-3 flex flex-col gap-2" onPointerDown={(e) => e.stopPropagation()}>
           <p className="text-xs font-semibold text-gray-800">Delete phase?</p>
           <p className="text-[11px] text-gray-500 leading-snug">
             <span className="font-medium">{phase.phase_name}</span> has {lotCount} lot{lotCount !== 1 ? 's' : ''}.{' '}
@@ -233,7 +233,7 @@ export default function PhaseColumn({
         {...sortAttrs}
         {...sortListeners}
         className={`
-          px-2 py-2 border-b border-gray-200 select-none
+          rounded-t-lg px-2 py-2 border-b border-gray-200 select-none
           ${isOverlay || isPending ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'}
         `}
       >
