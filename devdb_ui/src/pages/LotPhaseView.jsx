@@ -9,7 +9,8 @@ import {
   pointerWithin,
 } from '@dnd-kit/core'
 import { arrayMove, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import InstrumentContainer, { buildDevColorMap } from '../components/InstrumentContainer'
+import InstrumentContainer from '../components/InstrumentContainer'
+import { useLotPhaseData } from '../hooks/useLotPhaseData'
 import ProjectionGroupContainer from '../components/ProjectionGroupContainer'
 import UnassignedColumn from '../components/UnassignedColumn'
 import PhaseColumn from '../components/PhaseColumn'
@@ -36,16 +37,20 @@ export default function LotPhaseView() {
   const [renameError, setRenameError] = useState('')
 
   // -----------------------------------------------------------------------
-  // Lot-phase view data
+  // Lot-phase view data (managed by useLotPhaseData)
   // -----------------------------------------------------------------------
-  const [entGroup, setEntGroup] = useState(null)
-  const [instruments, setInstruments] = useState([])
-  const [pgOrder, setPgOrder] = useState([])       // ordered dev_ids for PG containers
-  const [unassignedPhases, setUnassignedPhases] = useState([])
-  const [unassigned, setUnassigned] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState(null)
-  const [devColorMap, setDevColorMap] = useState({})
+  const {
+    instruments, setInstruments,
+    pgGroups, pgOrder, setPgOrder,
+    unassignedPhases, setUnassignedPhases,
+    unassigned, setUnassigned,
+    entGroup,
+    devColorMap,
+    availableWidth,
+    loading,
+    error: fetchError,
+    refetch,
+  } = useLotPhaseData(entGroupId)
 
   // Drag state
   const [activeLot, setActiveLot] = useState(null)
@@ -67,9 +72,6 @@ export default function LotPhaseView() {
   const [activeTab, setActiveTab] = useState('developments')
   const [tabSwitchKey, setTabSwitchKey] = useState(0)
 
-  // Lot-phase view refresh key — increment to re-fetch without tab remount
-  const [lotPhaseKey, setLotPhaseKey] = useState(0)
-
   // Add instrument modal
   const [showAddInstrument, setShowAddInstrument] = useState(false)
   const [newInstrName, setNewInstrName] = useState('')
@@ -80,25 +82,6 @@ export default function LotPhaseView() {
 
   // Collapse state — tracks which phase_ids are collapsed
   const [collapsedPhaseIds, setCollapsedPhaseIds] = useState(new Set())
-
-  // Available width for layout engine — recomputed on window resize (debounced 100ms)
-  const [availableWidth, setAvailableWidth] = useState(
-    () => window.innerWidth - LEFT_PANELS_WIDTH
-  )
-  useEffect(() => {
-    let timer
-    function handleResize() {
-      clearTimeout(timer)
-      timer = setTimeout(() => {
-        setAvailableWidth(window.innerWidth - LEFT_PANELS_WIDTH)
-      }, 100)
-    }
-    window.addEventListener('resize', handleResize)
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      clearTimeout(timer)
-    }
-  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -115,53 +98,13 @@ export default function LotPhaseView() {
   }, [])
 
   // -----------------------------------------------------------------------
-  // Fetch lot-phase view whenever entGroupId changes
+  // Reset UI state on community switch
   // -----------------------------------------------------------------------
   useEffect(() => {
-    setLoading(true)
-    setFetchError(null)
-    setEntGroup(null)
-    setInstruments([])
-    setPgOrder([])
-    setUnassignedPhases([])
-    setUnassigned([])
     setNeedsRerun(false)
     setCollapsedPhaseIds(new Set())
     setToasts([])
-
-    fetch(`/api/entitlement-groups/${entGroupId}/lot-phase-view`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then((data) => {
-        const instruments = data.instruments.map((instr) => ({
-          ...instr,
-          phases: instr.phases.map((p) => ({
-            ...p,
-            lots: p.lots.map((l) => ({ ...l, phase_id: p.phase_id })),
-          })),
-        }))
-        const unassignedPhases = (data.unassigned_phases ?? []).map((p) => ({
-          ...p,
-          lots: p.lots.map((l) => ({ ...l, phase_id: p.phase_id })),
-        }))
-
-        const allDevIds = instruments.map((i) => i.dev_id)
-        setDevColorMap(buildDevColorMap(allDevIds))
-        setPgOrder([...new Set(allDevIds)])
-
-        setEntGroup({ ent_group_id: data.ent_group_id, ent_group_name: data.ent_group_name })
-        setInstruments(instruments)
-        setUnassignedPhases(unassignedPhases)
-        setUnassigned((data.unassigned ?? []).map((l) => ({ ...l, phase_id: null })))
-        setLoading(false)
-      })
-      .catch((err) => {
-        setFetchError(err.message)
-        setLoading(false)
-      })
-  }, [entGroupId, lotPhaseKey])
+  }, [entGroupId])
 
   // -----------------------------------------------------------------------
   // Add community handlers
@@ -220,7 +163,7 @@ export default function LotPhaseView() {
       const data = await res.json()
       if (res.ok) {
         setShowAddInstrument(false)
-        setLotPhaseKey((k) => k + 1)
+        refetch()
       } else {
         setAddInstrError(data?.detail ?? 'Create failed')
       }
@@ -766,15 +709,6 @@ export default function LotPhaseView() {
     const p = unassignedPhases.find((p) => p.phase_id === phase_id)
     return p?.phase_name ?? `phase ${phase_id}`
   }
-
-  // -----------------------------------------------------------------------
-  // Derived: PG groups for rendering
-  // -----------------------------------------------------------------------
-  const pgGroups = pgOrder.map((devId) => {
-    const devInstrs = instruments.filter((i) => i.dev_id === devId)
-    const devName = devInstrs[0]?.dev_name ?? `Dev ${devId}`
-    return { devId, devName, instruments: devInstrs }
-  })
 
   // Per-row dev container height equalization + solo-dev detection.
   // After render, group containers by top position, equalize heights per row,
