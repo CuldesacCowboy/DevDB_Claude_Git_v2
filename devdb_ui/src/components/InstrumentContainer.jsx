@@ -95,18 +95,10 @@ export default function InstrumentContainer({
   const gridRef = useRef(null)
   useLayoutEffect(() => {
     if (!gridRef.current || !instrCols) return
-    const cells = Array.from(gridRef.current.children)
-    // Reset heights so natural content sizes drive measurement
-    cells.forEach((c) => { c.style.height = '' })
-    requestAnimationFrame(() => {
-      if (!gridRef.current) return
-      for (let col = 0; col < instrCols; col++) {
-        const colCells = cells.filter((_, i) => i % instrCols === col)
-        if (colCells.length === 0) continue
-        const maxH = Math.max(...colCells.map((c) => c.getBoundingClientRect().height))
-        colCells.forEach((c) => { c.style.height = maxH + 'px' })
-      }
-    })
+    // Clear any previously set heights — CSS grid gridAutoRows:'auto' equalizes
+    // row heights naturally. Explicit pixel heights prevent pills from growing
+    // when inline forms (add product type, delete confirm) expand their content.
+    Array.from(gridRef.current.children).forEach((c) => { c.style.height = '' })
   }, [instrCols, phasesData.length, collapsedPhaseIds])
 
   // Droppable: instrument container body → receives phase cards
