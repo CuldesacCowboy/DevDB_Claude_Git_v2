@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: March 2026 (2026-03-25) | Architecture v20 | Decision Log: D-001 through D-150 | Next ID: D-151*
+*Last updated: March 2026 (2026-03-25) | Architecture v20 | Decision Log: D-001 through D-151 | Next ID: D-152*
 
 ---
 
@@ -349,6 +349,29 @@ Flagged Revisit before go-live:
 
 ---
 
+## Pill Sizing Rule — NEVER VIOLATE
+
+Every pill in this UI (phase pill, instrument container, development container) must always be content-sized. This is non-negotiable and applies to every feature, every fix, every session, forever.
+
+Rules:
+- NO fixed heights on any pill, container, or wrapper at any level of the hierarchy
+- NO overflow: hidden on any pill or container (use overflow: visible)
+- NO min-height or max-height that would clip content
+- Every pill must grow and shrink naturally with its content at all times
+
+This applies to ALL states:
+  - When inline forms expand (add product type, add phase, delete confirm)
+  - When lot-type blocks are added or removed
+  - When projected counts change (more or fewer placeholder lot pills)
+  - When lot pills are dragged in or out
+  - When text wraps in headers
+
+If you add a feature that expands content inside a pill and the pill does not grow to fit, the bug is ALWAYS a fixed height, overflow:hidden, or max-height somewhere in the ancestor chain. Find it and remove it.
+
+The equalization logic in usePhaseEqualization.js runs after paint to match row heights across siblings — that is fine and expected. But the pills themselves must always be naturally sized BEFORE equalization runs.
+
+---
+
 ## Rules for Claude Code Sessions
 
 - **After every file change:** `git add`, `git commit` with descriptive message, `git push`. Do not wait.
@@ -378,6 +401,27 @@ Flagged Revisit before go-live:
 - Migration files are numbered sequentially: `000_`, `001_`, `002_`, etc.
 - The auto-apply runner in `api/main.py` applies unapplied migrations on every backend startup. New files are picked up automatically.
 - After creating a migration file, grep `devdb_python/` for all references to renamed or dropped columns and update every one before committing.
+
+## Decision Log — D-151
+
+D-151: TDA lock pattern — proof of concept for system-wide locked projected dates
+
+The TDA form introduces HC/BLDR projected dates with per-field lock flags on
+sim_takedown_lot_assignments. A LOCKED projected date behaves like a MARKsystems
+actual: the engine treats it as a fixed anchor and simulates around it without
+overwriting. An UNLOCKED projected date is freely assignable or overwritable by
+the engine.
+
+This is the first implementation of this pattern. The long-term intent is to
+apply it system-wide: every date field on sim_lots (date_str, date_td, date_dev,
+date_cmp, date_cls) will gain a companion is_locked flag, replacing the current
+two-track model of actuals vs projected. That system-wide change is deferred and
+requires its own design session before any sim_lots schema work begins.
+
+For building group lots: when the user locks/edits an HC or BLDR date on any
+unit, the API must fan out the write to all other sim_takedown_lot_assignments
+rows sharing the same building_group_id within the same tda_id, in a single
+atomic transaction.
 
 ---
 
