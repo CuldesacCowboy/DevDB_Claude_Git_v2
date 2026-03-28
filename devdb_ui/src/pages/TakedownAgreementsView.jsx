@@ -102,7 +102,7 @@ function TdaCard({ detail, colorIdx, children }) {
       borderRadius: 10, overflow: 'hidden',
       boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
       display: 'inline-flex', flexDirection: 'column',
-      flexShrink: 0,
+      flexShrink: 0, width: 'fit-content',
     }}>
       <div style={{
         background: colors.header, padding: '8px 14px',
@@ -613,7 +613,7 @@ export default function TakedownAgreementsView() {
           }}>
             <UnassignedBank lots={detail.unassigned_lots || []} />
 
-            <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
               <TdaCard detail={detail} colorIdx={tdaColorIdx >= 0 ? tdaColorIdx : 0}>
                 {(detail.checkpoints || []).map((cp) => (
                   <CheckpointBand
