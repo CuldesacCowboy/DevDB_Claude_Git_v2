@@ -443,19 +443,21 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         </div>
       )}
 
-      {/* Body — flex-wrap pill grid */}
-      <div style={{ padding: 12, minHeight: 60, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'stretch' }}>
-        {lots.map(a => (
-          <LotPill
-            key={a.assignment_id}
-            assignment={a}
-            onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
-            onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
-          />
-        ))}
-        {Array.from({ length: slotCount }).map((_, i) => (
-          <PlaceholderPill key={`ph-${i}`} daysToCP={daysToCP} />
-        ))}
+      {/* Body — outer pad + inner grid capped at 5 columns (5×106 + 4×6 = 554px) */}
+      <div style={{ padding: 12, minHeight: 60 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'stretch', maxWidth: 554 }}>
+          {lots.map(a => (
+            <LotPill
+              key={a.assignment_id}
+              assignment={a}
+              onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
+              onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
+            />
+          ))}
+          {Array.from({ length: slotCount }).map((_, i) => (
+            <PlaceholderPill key={`ph-${i}`} daysToCP={daysToCP} />
+          ))}
+        </div>
       </div>
     </div>
   )
