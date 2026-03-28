@@ -116,7 +116,7 @@ function CommunityPill({ community, devs, isSelected, pendingDevId, innerRef, on
   return (
     <div
       ref={setRef}
-      className="rounded-lg border transition-colors duration-100 overflow-hidden"
+      className="rounded-lg border transition-colors duration-100"
       style={{
         width: '100%',
         breakInside: 'avoid',
