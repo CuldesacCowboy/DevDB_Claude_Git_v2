@@ -159,25 +159,23 @@ function ProjectedDateField({ value, locked, onChange }) {
   if (locked) {
     return (
       <div style={{
-        fontSize: 8, color: '#444441',
+        fontSize: 9, color: '#444441',
         pointerEvents: 'none',
-        height: 16, lineHeight: '16px',
-        padding: '1px 3px', boxSizing: 'border-box',
+        padding: '1px 3px',
       }}>
         {fmt(value) || '—'}
       </div>
     )
   }
   return (
-    <div style={{ position: 'relative', height: 16 }}>
+    <div style={{ position: 'relative' }}>
       <div style={{
-        fontSize: 8, color: '#27500A',
+        fontSize: 9, color: '#27500A',
         border: '1px dashed #3B6D11',
         background: '#EAF3DE',
         borderRadius: 3,
         padding: '1px 3px',
-        height: '100%', lineHeight: '14px',
-        boxSizing: 'border-box',
+        lineHeight: '1.3',
         cursor: 'pointer',
         userSelect: 'none',
         overflow: 'hidden', whiteSpace: 'nowrap',
@@ -190,7 +188,7 @@ function ProjectedDateField({ value, locked, onChange }) {
         defaultValue={value || ''}
         onChange={(e) => { if (e.target.value) onChange(e.target.value) }}
         style={{
-          position: 'absolute', top: 0, left: 0,
+          position: 'absolute', inset: 0,
           width: '100%', height: '100%',
           opacity: 0, cursor: 'pointer',
           border: 'none', padding: 0, margin: 0,
@@ -212,12 +210,12 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
     return (
       <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-          <span style={{ fontSize: 7, textTransform: 'uppercase', color: '#888780', letterSpacing: '0.04em' }}>
+          <span style={{ fontSize: 8, textTransform: 'uppercase', color: '#888780', letterSpacing: '0.04em' }}>
             {label}
           </span>
           <LockBtn locked={isLocked} onClick={() => onLockChange(lockKey, !isLocked)} />
         </div>
-        <div style={{ fontSize: 8, color: '#B4B2A9', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontSize: 9, color: '#B4B2A9', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {fmt(marksDate)}
         </div>
         <ProjectedDateField
@@ -249,7 +247,7 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
         {...listeners}
         style={{
           textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#2C2C2A',
-          padding: '5px 6px 4px',
+          padding: '4px 6px',
           cursor: 'grab', background: '#FAFAF8',
           borderBottom: '1px solid #F0EEE8',
           userSelect: 'none',
@@ -257,7 +255,7 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
       >
         {shortLot(assignment.lot_number)}
       </div>
-      <div style={{ display: 'flex', padding: '4px 5px 5px', gap: 3 }}>
+      <div style={{ display: 'flex', padding: '4px 5px', gap: 3 }}>
         {col('HC',
           assignment.hc_marks_date, assignment.hc_projected_date,
           assignment.hc_is_locked, 'hc_projected_date', 'hc_is_locked')}
