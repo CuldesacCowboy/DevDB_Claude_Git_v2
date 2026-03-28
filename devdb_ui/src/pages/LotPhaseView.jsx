@@ -74,35 +74,6 @@ export default function LotPhaseView() {
   const [collapsedPhaseIds, setCollapsedPhaseIds] = useState(new Set())
 
   // -----------------------------------------------------------------------
-  // Drag handler (managed by useDragHandler)
-  // -----------------------------------------------------------------------
-  const {
-    sensors,
-    handleDragStart,
-    handleDragEnd,
-    handleDragCancel,
-    handleAutoSort,
-    activeLot,
-    activePhase,
-    activeInstrument,
-    activePg,
-    activeDragType,
-    pendingLotId,
-    pendingPhaseId,
-  } = useDragHandler({
-    instruments,
-    setInstruments,
-    pgGroups,
-    unassignedPhases,
-    setUnassignedPhases,
-    unassigned,
-    setUnassigned,
-    setPgOrder,
-    addToast,
-    setNeedsRerun,
-  })
-
-  // -----------------------------------------------------------------------
   // Fetch communities list (once on mount)
   // -----------------------------------------------------------------------
   useEffect(() => {
@@ -239,6 +210,34 @@ export default function LotPhaseView() {
     setToasts((prev) => prev.filter((t) => t.id !== id))
   }, [])
 
+  // -----------------------------------------------------------------------
+  // Drag handler (managed by useDragHandler)
+  // -----------------------------------------------------------------------
+  const {
+    sensors,
+    handleDragStart,
+    handleDragEnd,
+    handleDragCancel,
+    handleAutoSort,
+    activeLot,
+    activePhase,
+    activeInstrument,
+    activePg,
+    activeDragType,
+    pendingLotId,
+    pendingPhaseId,
+  } = useDragHandler({
+    instruments,
+    setInstruments,
+    pgGroups,
+    unassignedPhases,
+    setUnassignedPhases,
+    unassigned,
+    setUnassigned,
+    setPgOrder,
+    addToast,
+    setNeedsRerun,
+  })
 
   // -----------------------------------------------------------------------
   // Collapse helpers
