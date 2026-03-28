@@ -466,127 +466,127 @@ CREATE TABLE IF NOT EXISTS devdb.developments (
 
 DO $$ BEGIN
     ALTER TABLE devdb.dim_state ADD CONSTRAINT dim_state_pkey PRIMARY KEY (state_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.dim_county ADD CONSTRAINT dim_county_pkey PRIMARY KEY (county_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.dim_municipality ADD CONSTRAINT dim_municipality_pkey PRIMARY KEY (municipality_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.ref_lot_types ADD CONSTRAINT pk_ref_lot_types PRIMARY KEY (lot_type_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_entitlement_groups ADD CONSTRAINT pk_sim_entitlement_groups PRIMARY KEY (ent_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.dim_projection_groups ADD CONSTRAINT pk_dim_projection_groups PRIMARY KEY (projection_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_legal_instruments ADD CONSTRAINT pk_sim_legal_instruments PRIMARY KEY (instrument_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_building_groups ADD CONSTRAINT pk_sim_building_groups PRIMARY KEY (building_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_takedown_agreements ADD CONSTRAINT pk_sim_takedown_agreements PRIMARY KEY (tda_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sync_orphaned_lots ADD CONSTRAINT pk_sync_orphaned_lots PRIMARY KEY (orphan_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_lot_date_violations ADD CONSTRAINT pk_sim_lot_date_violations PRIMARY KEY (violation_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_runs ADD CONSTRAINT pk_sim_runs PRIMARY KEY (sim_run_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_assignment_log ADD CONSTRAINT sim_assignment_log_pkey PRIMARY KEY (log_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_ent_group_developments ADD CONSTRAINT pk_sim_ent_group_developments PRIMARY KEY (id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_entitlement_delivery_config ADD CONSTRAINT pk_sim_entitlement_delivery_config PRIMARY KEY (ent_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_delivery_events ADD CONSTRAINT pk_sim_delivery_events PRIMARY KEY (delivery_event_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_dev_phases ADD CONSTRAINT pk_sim_dev_phases PRIMARY KEY (phase_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_dev_defaults ADD CONSTRAINT pk_sim_dev_defaults PRIMARY KEY (dev_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_projection_actuals ADD CONSTRAINT pk_sim_projection_actuals PRIMARY KEY (actual_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_projection_params ADD CONSTRAINT pk_sim_projection_params PRIMARY KEY (projection_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_snapshots ADD CONSTRAINT pk_sim_snapshots PRIMARY KEY (snapshot_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_delivery_event_phases ADD CONSTRAINT pk_sim_delivery_event_phases PRIMARY KEY (id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_delivery_event_predecessors ADD CONSTRAINT pk_sim_delivery_event_predecessors PRIMARY KEY (id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_lots ADD CONSTRAINT pk_sim_lots PRIMARY KEY (lot_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_phase_builder_splits ADD CONSTRAINT pk_sim_phase_builder_splits PRIMARY KEY (split_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_phase_product_splits ADD CONSTRAINT pk_sim_phase_product_splits PRIMARY KEY (split_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_takedown_agreement_lots ADD CONSTRAINT pk_sim_takedown_agreement_lots PRIMARY KEY (id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_takedown_checkpoints ADD CONSTRAINT pk_sim_takedown_checkpoints PRIMARY KEY (checkpoint_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_takedown_lot_assignments ADD CONSTRAINT pk_sim_takedown_lot_assignments PRIMARY KEY (assignment_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_snapshot_lots ADD CONSTRAINT pk_sim_snapshot_lots PRIMARY KEY (snapshot_lot_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.developments ADD CONSTRAINT developments_pkey PRIMARY KEY (dev_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 -- ============================================================
 -- UNIQUE CONSTRAINTS
@@ -594,12 +594,12 @@ EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.developments ADD CONSTRAINT developments_marks_code_unique UNIQUE (marks_code);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_phase_product_splits
         ADD CONSTRAINT uq_sim_phase_product_splits_phase_lottype UNIQUE (phase_id, lot_type_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 -- ============================================================
 -- FOREIGN KEY CONSTRAINTS
@@ -608,137 +608,137 @@ EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE devdb.developments
         ADD CONSTRAINT developments_county_id_fkey FOREIGN KEY (county_id) REFERENCES devdb.dim_county(county_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.developments
         ADD CONSTRAINT developments_state_id_fkey FOREIGN KEY (state_id) REFERENCES devdb.dim_state(state_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.developments
         ADD CONSTRAINT developments_municipality_id_fkey FOREIGN KEY (municipality_id) REFERENCES devdb.dim_municipality(municipality_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.developments
         ADD CONSTRAINT developments_community_id_fkey FOREIGN KEY (community_id) REFERENCES devdb.sim_entitlement_groups(ent_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_ent_group_developments
         ADD CONSTRAINT fk_sim_entgrpdev_ent_group FOREIGN KEY (ent_group_id) REFERENCES devdb.sim_entitlement_groups(ent_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_entitlement_delivery_config
         ADD CONSTRAINT fk_sim_entdlvcfg_ent_group FOREIGN KEY (ent_group_id) REFERENCES devdb.sim_entitlement_groups(ent_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_delivery_events
         ADD CONSTRAINT fk_sim_delivevt_ent_group FOREIGN KEY (ent_group_id) REFERENCES devdb.sim_entitlement_groups(ent_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_dev_phases
         ADD CONSTRAINT fk_sim_devphase_instrument FOREIGN KEY (instrument_id) REFERENCES devdb.sim_legal_instruments(instrument_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_dev_defaults
         ADD CONSTRAINT fk_sim_devdef_lot_type FOREIGN KEY (default_lot_type_id) REFERENCES devdb.ref_lot_types(lot_type_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_runs
         ADD CONSTRAINT fk_sim_runs_proj_group FOREIGN KEY (projection_group_id) REFERENCES devdb.dim_projection_groups(projection_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_projection_actuals
         ADD CONSTRAINT fk_sim_projactuals_proj_group FOREIGN KEY (projection_group_id) REFERENCES devdb.dim_projection_groups(projection_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_projection_params
         ADD CONSTRAINT fk_sim_projparams_proj_group FOREIGN KEY (projection_group_id) REFERENCES devdb.dim_projection_groups(projection_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_snapshots
         ADD CONSTRAINT fk_sim_snapshots_proj_group FOREIGN KEY (projection_group_id) REFERENCES devdb.dim_projection_groups(projection_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_delivery_event_phases
         ADD CONSTRAINT fk_sim_delivevtphase_event FOREIGN KEY (delivery_event_id) REFERENCES devdb.sim_delivery_events(delivery_event_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_delivery_event_phases
         ADD CONSTRAINT fk_sim_delivevtphase_phase FOREIGN KEY (phase_id) REFERENCES devdb.sim_dev_phases(phase_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_delivery_event_predecessors
         ADD CONSTRAINT fk_sim_delivevtpred_event FOREIGN KEY (event_id) REFERENCES devdb.sim_delivery_events(delivery_event_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_delivery_event_predecessors
         ADD CONSTRAINT fk_sim_delivevtpred_predecessor FOREIGN KEY (predecessor_event_id) REFERENCES devdb.sim_delivery_events(delivery_event_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_lots
         ADD CONSTRAINT fk_sim_lots_projection_group FOREIGN KEY (projection_group_id) REFERENCES devdb.dim_projection_groups(projection_group_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_lots
         ADD CONSTRAINT fk_sim_lots_phase FOREIGN KEY (phase_id) REFERENCES devdb.sim_dev_phases(phase_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_lots
         ADD CONSTRAINT fk_sim_lots_lot_type FOREIGN KEY (lot_type_id) REFERENCES devdb.ref_lot_types(lot_type_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_phase_builder_splits
         ADD CONSTRAINT fk_sim_phasebldr_phase FOREIGN KEY (phase_id) REFERENCES devdb.sim_dev_phases(phase_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_phase_product_splits
         ADD CONSTRAINT fk_sim_phaseprod_phase FOREIGN KEY (phase_id) REFERENCES devdb.sim_dev_phases(phase_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_phase_product_splits
         ADD CONSTRAINT fk_sim_phaseprod_lot_type FOREIGN KEY (lot_type_id) REFERENCES devdb.ref_lot_types(lot_type_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_takedown_agreement_lots
         ADD CONSTRAINT fk_sim_tdagrplots_tda FOREIGN KEY (tda_id) REFERENCES devdb.sim_takedown_agreements(tda_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_takedown_checkpoints
         ADD CONSTRAINT fk_sim_tdachkpt_tda FOREIGN KEY (tda_id) REFERENCES devdb.sim_takedown_agreements(tda_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_takedown_lot_assignments
         ADD CONSTRAINT fk_sim_tdalotasgn_checkpoint FOREIGN KEY (checkpoint_id) REFERENCES devdb.sim_takedown_checkpoints(checkpoint_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 DO $$ BEGIN
     ALTER TABLE devdb.sim_snapshot_lots
         ADD CONSTRAINT fk_sim_snaplots_snapshot FOREIGN KEY (snapshot_id) REFERENCES devdb.sim_snapshots(snapshot_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
 
 -- ============================================================
 -- INDEXES (non-PK / non-UQ)
