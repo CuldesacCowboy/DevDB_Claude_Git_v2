@@ -4,6 +4,7 @@ import { buildDevColorMap } from '../components/InstrumentContainer'
 const LEFT_PANELS_WIDTH = 340
 
 export function useLotPhaseData(entGroupId) {
+  // ── All useState calls first, in fixed order ──────────────────────────────
   const [instruments, setInstruments] = useState([])
   const [pgOrder, setPgOrder] = useState([])
   const [unassignedPhases, setUnassignedPhases] = useState([])
@@ -12,28 +13,12 @@ export function useLotPhaseData(entGroupId) {
   const [devColorMap, setDevColorMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-
   const [availableWidth, setAvailableWidth] = useState(
     () => window.innerWidth - LEFT_PANELS_WIDTH
   )
 
-  // Debounced resize listener
-  useEffect(() => {
-    let timer
-    function handleResize() {
-      clearTimeout(timer)
-      timer = setTimeout(() => {
-        setAvailableWidth(window.innerWidth - LEFT_PANELS_WIDTH)
-      }, 100)
-    }
-    window.addEventListener('resize', handleResize)
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      clearTimeout(timer)
-    }
-  }, [])
-
-  // Named fetch function — stable per entGroupId, returned as refetch
+  // ── useCallback after all useState ────────────────────────────────────────
+  // Named fetch function — stable per entGroupId, returned as refetch.
   const fetchData = useCallback(() => {
     setLoading(true)
     setError(null)
@@ -76,12 +61,30 @@ export function useLotPhaseData(entGroupId) {
       })
   }, [entGroupId])
 
+  // ── All useEffect calls after useState and useCallback ────────────────────
+
   // Fetch on mount and whenever entGroupId changes
   useEffect(() => {
     fetchData()
   }, [fetchData])
 
-  // Derived: ordered list of dev groups for rendering
+  // Debounced resize listener
+  useEffect(() => {
+    let timer
+    function handleResize() {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        setAvailableWidth(window.innerWidth - LEFT_PANELS_WIDTH)
+      }, 100)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      clearTimeout(timer)
+    }
+  }, [])
+
+  // ── Derived values (no hooks) ─────────────────────────────────────────────
   const pgGroups = pgOrder.map((devId) => {
     const devInstrs = instruments.filter((i) => i.dev_id === devId)
     const devName = devInstrs[0]?.dev_name ?? `Dev ${devId}`
