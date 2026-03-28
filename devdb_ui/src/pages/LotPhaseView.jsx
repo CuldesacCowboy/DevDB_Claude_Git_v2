@@ -162,8 +162,8 @@ export default function LotPhaseView() {
       })
       const data = await res.json()
       if (res.ok) {
-        setShowAddInstrument(false)
         refetch()
+        setShowAddInstrument(false)
       } else {
         setAddInstrError(data?.detail ?? 'Create failed')
       }

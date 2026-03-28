@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { buildDevColorMap } from '../components/InstrumentContainer'
 
 const LEFT_PANELS_WIDTH = 340
@@ -12,7 +12,6 @@ export function useLotPhaseData(entGroupId) {
   const [devColorMap, setDevColorMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [lotPhaseKey, setLotPhaseKey] = useState(0)
 
   const [availableWidth, setAvailableWidth] = useState(
     () => window.innerWidth - LEFT_PANELS_WIDTH
@@ -34,8 +33,8 @@ export function useLotPhaseData(entGroupId) {
     }
   }, [])
 
-  // Fetch lot-phase view whenever entGroupId or lotPhaseKey changes
-  useEffect(() => {
+  // Named fetch function — stable per entGroupId, returned as refetch
+  const fetchData = useCallback(() => {
     setLoading(true)
     setError(null)
     setEntGroup(null)
@@ -75,7 +74,12 @@ export function useLotPhaseData(entGroupId) {
         setError(err.message)
         setLoading(false)
       })
-  }, [entGroupId, lotPhaseKey])
+  }, [entGroupId])
+
+  // Fetch on mount and whenever entGroupId changes
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
   // Derived: ordered list of dev groups for rendering
   const pgGroups = pgOrder.map((devId) => {
@@ -99,6 +103,6 @@ export function useLotPhaseData(entGroupId) {
     availableWidth,
     loading,
     error,
-    refetch: () => setLotPhaseKey((k) => k + 1),
+    refetch: fetchData,
   }
 }
