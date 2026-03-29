@@ -13,6 +13,7 @@ export default function LotTypePill({
   onProjectedEdit, // callback(phaseId, lotTypeId, newValue)
   pendingLotId,
   isOverlay,
+  flash = false,   // true → red flash on the projected count badge (error feedback)
   phaseColor,      // reserved for future tinting — unused for now
 }) {
   const { setNodeRef, isOver } = useDroppable({
@@ -23,7 +24,6 @@ export default function LotTypePill({
 
   const [editing, setEditing]   = useState(false)
   const [inputVal, setInputVal] = useState('')
-  const [flash, setFlash]       = useState(false)
   const cancelRef               = useRef(false)
 
   function startEdit(e) {

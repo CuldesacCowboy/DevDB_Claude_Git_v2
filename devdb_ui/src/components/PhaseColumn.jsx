@@ -115,6 +115,24 @@ export default function PhaseColumn({
           )
         )
         onProjectedSaved?.(phaseId, lotTypeId, data.projected_count, data.total)
+        // Auto-delete when projected and actual both reach 0
+        if (data.projected_count === 0 && data.actual === 0) {
+          try {
+            const delRes = await fetch(
+              `/api/phases/${phaseId}/lot-type/${lotTypeId}`,
+              { method: 'DELETE' }
+            )
+            if (delRes.ok) {
+              onRefetch?.()
+            } else {
+              setLtFlash(lotTypeId)
+              setTimeout(() => setLtFlash(null), 1500)
+            }
+          } catch {
+            setLtFlash(lotTypeId)
+            setTimeout(() => setLtFlash(null), 1500)
+          }
+        }
       } else {
         setLtFlash(lotTypeId)
         setTimeout(() => setLtFlash(null), 1500)
@@ -375,6 +393,7 @@ export default function PhaseColumn({
               onProjectedEdit={handleProjectedEdit}
               pendingLotId={pendingLotId}
               isOverlay={isOverlay}
+              flash={ltFlash === lt.lot_type_id}
             />
           ))}
 
