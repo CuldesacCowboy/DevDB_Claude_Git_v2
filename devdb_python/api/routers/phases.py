@@ -2,7 +2,7 @@
 # Phase management endpoints.
 
 import psycopg2.extras
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from api.deps import get_db_conn
 from api.models.phase_models import (
@@ -222,6 +222,78 @@ async def update_phase(
 
     conn.commit()
     return {"success": True, "projected_count": new_total}
+
+
+@router.delete("/{phase_id}/lot-type/{lot_type_id}", status_code=204)
+async def delete_lot_type_from_phase(
+    phase_id: int,
+    lot_type_id: int,
+    conn=Depends(get_db_conn),
+):
+    """Remove a (phase_id, lot_type_id) split and any sim lots for it.
+
+    Requires projected_count = 0 AND actual (real lots) = 0.
+    Returns 204 No Content on success.
+    """
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # 1. Verify the lot type exists on this phase
+        cur.execute(
+            "SELECT split_id, projected_count FROM sim_phase_product_splits"
+            " WHERE phase_id = %s AND lot_type_id = %s",
+            (phase_id, lot_type_id),
+        )
+        split = cur.fetchone()
+        if not split:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Lot type {lot_type_id} not found on phase {phase_id}",
+            )
+
+        # 2. Refuse if projected_count != 0
+        if (split["projected_count"] or 0) != 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete lot type: projected_count is not 0",
+            )
+
+        # 2. Refuse if actual (real) lots exist
+        cur.execute(
+            "SELECT COUNT(*) AS actual FROM sim_lots"
+            " WHERE phase_id = %s AND lot_type_id = %s AND lot_source = 'real'",
+            (phase_id, lot_type_id),
+        )
+        actual = int(cur.fetchone()["actual"])
+        if actual != 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot delete lot type: {actual} actual lot(s) exist",
+            )
+
+        # 3. Delete all non-real lots for this phase + lot type
+        cur.execute(
+            "DELETE FROM sim_lots"
+            " WHERE phase_id = %s AND lot_type_id = %s AND lot_source != 'real'",
+            (phase_id, lot_type_id),
+        )
+
+        # 4. Delete the split row
+        cur.execute(
+            "DELETE FROM sim_phase_product_splits WHERE phase_id = %s AND lot_type_id = %s",
+            (phase_id, lot_type_id),
+        )
+
+        conn.commit()
+        return Response(status_code=204)
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
 
 
 @router.patch("/{phase_id}/lot-type/{lot_type_id}/projected", response_model=dict)
