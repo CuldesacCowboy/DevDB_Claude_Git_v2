@@ -5,14 +5,6 @@ import { useTdaData } from '../hooks/useTdaData'
 
 const API = 'http://localhost:8765/api'
 
-// ── Building-group accent colours (left-border indicator) ────────
-// Muted palette that doesn't conflict with status colours (red/amber/green).
-const BG_ACCENTS = ['#4a7db5', '#2e8b6b', '#8060b0', '#c07030', '#3a9499']
-function bgAccentColor(bgId) {
-  if (!bgId) return null
-  return BG_ACCENTS[Math.abs(Number(bgId)) % BG_ACCENTS.length]
-}
-
 // ── Format date for display ───────────────────────────────────────
 function fmt(dateStr) {
   if (!dateStr) return '—'
@@ -35,6 +27,27 @@ function parseLot(lotNumber) {
   const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
   if (!match) return { code: lotNumber, seq: '' }
   return { code: match[1], seq: String(parseInt(match[2], 10)).padStart(3, '0') }
+}
+
+// ── Group lots by building_group_id, preserving first-appearance order ─
+// Returns [{type:'solo', lot}] or [{type:'group', bgId, lots:[...]}]
+function buildClusters(lots) {
+  const clusters = []
+  const bgMap = new Map()  // bgId -> index in clusters array
+  for (const lot of lots) {
+    const bgId = lot.building_group_id
+    if (bgId != null) {
+      if (bgMap.has(bgId)) {
+        clusters[bgMap.get(bgId)].lots.push(lot)
+      } else {
+        bgMap.set(bgId, clusters.length)
+        clusters.push({ type: 'group', bgId, lots: [lot] })
+      }
+    } else {
+      clusters.push({ type: 'solo', lot })
+    }
+  }
+  return clusters
 }
 
 // ── Draggable unassigned lot pill ─────────────────────────────────
@@ -258,7 +271,7 @@ function UnassignedBank({ lots, selectedIds, onToggle, onToggleDevGroup, onAddTo
         width: 252, flexShrink: 0,
         background: isOver ? '#eff6ff' : '#f9fafb',
         border: `2px solid ${isOver ? '#3b82f6' : '#e5e7eb'}`,
-        borderRadius: 8, padding: 12, marginRight: 20,
+        borderRadius: 8, padding: 12,
         minHeight: 200, transition: 'all 0.15s',
       }}
     >
@@ -722,8 +735,6 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
     )
   }
 
-  const bgAccent = bgAccentColor(assignment.building_group_id)
-
   // Winning fulfillment date: earlier of HC and BLDR projected dates
   const winningDate = (() => {
     const dates = [localHcDate, localBldrDate].filter(Boolean)
@@ -738,7 +749,6 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
         borderRadius: 6, overflow: 'hidden',
         background: isExcess ? '#FFF5F5' : isDelinquent ? '#fef2f2' : isCaution ? '#FFFBEB' : hasNoDates ? '#F7F6F3' : '#fff',
         border: isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',
-        ...(bgAccent ? { borderLeft: `3.5px solid ${bgAccent}` } : {}),
         opacity: isDragging ? 0.4 : 1,
         boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
         display: 'flex', flexDirection: 'column',
@@ -811,6 +821,30 @@ function PlaceholderPill({ daysToCP }) {
         </span>
       )}
     </div>
+  )
+}
+
+// ── Stitch connector between building-group pills ────────────────
+// A narrow panel with a center-track + crossbar SVG pattern that implies
+// units are sewn together.
+function StitchConnector() {
+  const w = 14
+  const crossbarSvg = encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="12">` +
+    `<line x1="${w / 2}" y1="0" x2="${w / 2}" y2="12" stroke="#C8C6BE" stroke-width="1.5"/>` +
+    `<line x1="2" y1="6" x2="${w - 2}" y2="6" stroke="#C8C6BE" stroke-width="1.5"/>` +
+    `</svg>`
+  )
+  return (
+    <div style={{
+      width: w,
+      flexShrink: 0,
+      alignSelf: 'stretch',
+      backgroundImage: `url("data:image/svg+xml,${crossbarSvg}")`,
+      backgroundRepeat: 'repeat-y',
+      backgroundSize: `${w}px 12px`,
+      backgroundPositionX: 'center',
+    }} />
   )
 }
 
@@ -1222,8 +1256,23 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
 
   const [showTimeline, setShowTimeline] = useState(false)
 
+  // Sort animation: briefly dim the grid when a sort is triggered so the
+  // reorder isn't a disorienting instantaneous snap.
+  const [sortFlash, setSortFlash] = useState(false)
+  const sortFlashTimer = useRef(null)
+
+  function triggerSort(sortFn) {
+    if (sortFlashTimer.current) clearTimeout(sortFlashTimer.current)
+    setSortFlash(true)
+    setDisplayLots(prev => [...prev].sort(sortFn))
+    sortFlashTimer.current = setTimeout(() => {
+      setSortFlash(false)
+      sortFlashTimer.current = null
+    }, 380)
+  }
+
   function handleReorderByFulfillment() {
-    setDisplayLots(prev => [...prev].sort((a, b) => {
+    triggerSort((a, b) => {
       const winDate = (l) => {
         const dates = [l.hc_projected_date, l.bldr_projected_date].filter(Boolean)
         return dates.length ? dates.reduce((m, d) => d < m ? d : m) : null
@@ -1233,11 +1282,11 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       if (!aDate) return 1
       if (!bDate) return -1
       return aDate.localeCompare(bDate)
-    }))
+    })
   }
 
   function handleReorderByUnit() {
-    setDisplayLots(prev => [...prev].sort((a, b) => {
+    triggerSort((a, b) => {
       const parse = l => {
         const m = (l.lot_number || '').match(/^([A-Za-z]+)0*(\d+)$/)
         return m ? [m[1], parseInt(m[2], 10)] : [l.lot_number || '', 0]
@@ -1245,7 +1294,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       const [ac, an] = parse(a), [bc, bn] = parse(b)
       if (ac !== bc) return ac.localeCompare(bc)
       return an - bn
-    }))
+    })
   }
 
   // C = lots with HC or BLDR projected date in the past (≤ today) — completed
@@ -1453,19 +1502,54 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         </div>
       </div>
 
-      {/* Body — outer pad + inner grid capped at 5 columns (5×148 + 4×8 = 772px) */}
+      {/* Body — outer pad + inner grid capped at 8 columns (8×148 + 7×8 = 1240px) */}
       <div style={{ padding: 14, minHeight: 60 }}>
-        <div ref={gridRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'stretch', maxWidth: 772 }}>
-          {displayLots.map((a, idx) => (
-            <LotPill
-              key={a.assignment_id}
-              assignment={a}
-              isExcess={idx >= total - excess}
-              checkpointDate={localDate}
-              onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
-              onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
-            />
-          ))}
+        <div
+          ref={gridRef}
+          style={{
+            display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'stretch',
+            maxWidth: 1240,
+            opacity: sortFlash ? 0.5 : 1,
+            transition: `opacity ${sortFlash ? '0.06s' : '0.32s'} ease-in-out`,
+          }}
+        >
+          {buildClusters(displayLots).map((cluster) => {
+            if (cluster.type === 'solo') {
+              const a = cluster.lot
+              const idx = displayLots.indexOf(a)
+              return (
+                <LotPill
+                  key={a.assignment_id}
+                  assignment={a}
+                  isExcess={idx >= total - excess}
+                  checkpointDate={localDate}
+                  onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
+                  onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
+                />
+              )
+            }
+            // Building group cluster — stays together on one row, stitched visually
+            return (
+              <div key={`grp-${cluster.bgId}`} style={{ display: 'flex', flexShrink: 0, alignItems: 'stretch' }}>
+                {cluster.lots.flatMap((a, pi) => {
+                  const idx = displayLots.indexOf(a)
+                  const items = []
+                  if (pi > 0) items.push(<StitchConnector key={`stitch-${a.assignment_id}`} />)
+                  items.push(
+                    <LotPill
+                      key={a.assignment_id}
+                      assignment={a}
+                      isExcess={idx >= total - excess}
+                      checkpointDate={localDate}
+                      onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
+                      onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
+                    />
+                  )
+                  return items
+                })}
+              </div>
+            )
+          })}
           {Array.from({ length: slotCount }).map((_, i) => (
             <PlaceholderPill key={`ph-${i}`} daysToCP={daysToCP} />
           ))}
@@ -1830,15 +1914,16 @@ export default function TakedownAgreementsView({ entGroupId }) {
             flex: 1, overflowY: 'auto', padding: 24,
             display: 'flex', gap: 0, alignItems: 'flex-start',
           }}>
-            <UnassignedBank
-              lots={detail.unassigned_lots || []}
-              selectedIds={selectedLotIds}
-              onToggle={toggleLotSelection}
-              onToggleDevGroup={toggleDevGroupSelection}
-              onAddToPool={handleAddSelectedToPool}
-              onClearSelection={() => setSelectedLotIds(new Set())}
-            />
+            {/* Left panel: Unassigned + In Agreement + Other Agreements stacked vertically */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginRight: 20, flexShrink: 0 }}>
+              <UnassignedBank
+                lots={detail.unassigned_lots || []}
+                selectedIds={selectedLotIds}
+                onToggle={toggleLotSelection}
+                onToggleDevGroup={toggleDevGroupSelection}
+                onAddToPool={handleAddSelectedToPool}
+                onClearSelection={() => setSelectedLotIds(new Set())}
+              />
               <TdaPoolBank
                 lots={detail.pool_lots || []}
                 tdaName={detail.tda_name}
