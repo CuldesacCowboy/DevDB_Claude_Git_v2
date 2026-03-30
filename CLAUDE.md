@@ -20,7 +20,7 @@
 | End-to-end run | Complete | ent_group_id=9002 converges in 1 iteration, 0.4s. 299 sim lots (PG 307: 167, PG 317: 72, PG 321: 60). 11 delivery events (2 locked + 9 auto-placeholder). All 3 PGs continuous starts Nov 2026–sellout. OQ-002 resolved: Village PG 317 D_end non-flat (0–19), drains correctly. OQ-003 resolved: 9 auto-events correct for 3 devs per D-139 cross-dev bundling. OQ-004 resolved: Village/Pointe ph.3-5 all linked by P-00. Confirmed 2026-03-25. |
 | Decision log | Current | D-151 added. Next ID: D-152. |
 | React/FastAPI phase endpoints | Complete | Route ordering fixed — specific sub-routes now registered before catch-all /{phase_id}. DELETE /phases/{id}/lot-type and all phase endpoints visible in OpenAPI spec. |
-| Session tooling | Complete | Start_DevDB_Session.bat, End_DevDB_Session.bat, Stop_DevDB.bat, devdb_run_claude.py, devdb_generate_handoff.py. Bat files use %~dp0 for path resolution when double-clicked. Handoff written by Python directly; bat files use Notepad+terminal pattern. Stop_DevDB.bat kills backend (uvicorn + detached python.exe), frontend (Vite), and Chrome DevDB windows. |
+| Session tooling | Complete | /start and /end Claude Code skills (.claude/skills/). Start_DevDB_Session.bat opens session windows via devdb_open_session_windows.ps1. Stop_DevDB.bat kills backend (uvicorn + detached python.exe), frontend (Vite), and Chrome DevDB windows. End_DevDB_Session.bat, devdb_run_claude.py, devdb_generate_handoff.py, Save_DevDB_Window_Positions.bat, devdb_save_window_positions.ps1 removed. |
 | Postgres migration | Complete | All 35 tables migrated from Databricks to local PostgreSQL 16 (devdb.devdb). migrate_to_postgres.py. 23.5s total. 266,554 schedhousedetail rows. Engine now runs against local Postgres. Run time 0.5s (was 7+ min on Databricks serverless). |
 | Streamlit UI | In progress | Projection Group Dashboard page built. Setup Tools (7 tabs) built. New Community Wizard built. sim_phase_product_splits lot_count editing added to Phases tab 2026-03-25. Streamlit is active UI. React + FastAPI downgraded to long-term possible (D-149). |
 
@@ -1309,20 +1309,16 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-30
 
 ### Start_DevDB_Session.bat
-- Owns: Session startup bat — prompts for today's task, writes devdb_cc_prompt.txt, invokes Claude Code via devdb_run_claude.py, writes DevDB_SessionBrief.md
-- Last commit: 2026-03-29
+- Owns: Session startup bat — opens DevDB session windows via devdb_open_session_windows.ps1
+- Last commit: 2026-03-30
 
-### End_DevDB_Session.bat
-- Owns: Session end bat — prompts for decisions, writes devdb_end_prompt.txt, invokes Claude Code to update CLAUDE.md and write DevDB_SessionHandoff.md
-- Last commit: 2026-03-29
+### .claude/skills/start/SKILL.md
+- Owns: /start skill — reads CLAUDE.md and acknowledges today's task at session start
+- Last commit: 2026-03-30
 
-### devdb_run_claude.py
-- Owns: Python helper that reads a prompt file and invokes claude.ps1 via powershell on Windows (bypasses CMD PATH/stdin limitations)
-- Last commit: 2026-03-29
-
-### devdb_generate_handoff.py
-- Owns: Python helper that reads git log and diff to generate DevDB_SessionHandoff.md; invoked by End_DevDB_Session.bat
-- Last commit: 2026-03-29
+### .claude/skills/end/SKILL.md
+- Owns: /end skill — updates CLAUDE.md, commits, pushes, optionally opens new session tab
+- Last commit: 2026-03-30
 
 ### 01_schema_create_postgres.sql
 - Owns: Reference copy of the full PostgreSQL schema DDL (not run by migration runner -- archival only)
