@@ -578,12 +578,25 @@ function ProjectedDateField({ value, locked, onChange }) {
 }
 
 // ── Lot pill inside a checkpoint ──────────────────────────────────
-function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, isCaution = false }) {
+function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, checkpointDate = '' }) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `assigned-${assignment.assignment_id}`,
       data: { type: 'assigned-lot', assignment },
     })
+
+  // Local projected date state for instant caution recompute (no refetch needed)
+  const [localHcDate, setLocalHcDate] = useState(assignment.hc_projected_date || '')
+  const [localBldrDate, setLocalBldrDate] = useState(assignment.bldr_projected_date || '')
+  useEffect(() => { setLocalHcDate(assignment.hc_projected_date || '') }, [assignment.hc_projected_date])
+  useEffect(() => { setLocalBldrDate(assignment.bldr_projected_date || '') }, [assignment.bldr_projected_date])
+
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const isFuture = (d) => !!d && d > todayStr
+  const isCaution = !!checkpointDate && (
+    (isFuture(localHcDate) && localHcDate > checkpointDate) ||
+    (isFuture(localBldrDate) && localBldrDate > checkpointDate)
+  )
 
   function col(label, marksDate, projDate, isLocked, dateKey, lockKey) {
     return (
@@ -596,7 +609,11 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, isC
             {marksDate && (
               <button
                 title="Set projected date to MARKsystems date and lock"
-                onClick={() => { onDateChange(dateKey, marksDate); onLockChange(lockKey, true) }}
+                onClick={() => {
+                  if (dateKey === 'hc_projected_date') setLocalHcDate(marksDate)
+                  if (dateKey === 'bldr_projected_date') setLocalBldrDate(marksDate)
+                  onDateChange(dateKey, marksDate); onLockChange(lockKey, true)
+                }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px', lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
               >
                 <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
@@ -615,6 +632,8 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, isC
           value={projDate}
           locked={isLocked}
           onChange={(val) => {
+            if (dateKey === 'hc_projected_date') setLocalHcDate(val)
+            if (dateKey === 'bldr_projected_date') setLocalBldrDate(val)
             onDateChange(dateKey, val)
             onLockChange(lockKey, true)
           }}
@@ -786,13 +805,6 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
   const overTotal = plannedTotal > t
   const overC = c > t                // completed alone exceeds required
 
-  const isLotCaution = (lot) => {
-    if (!localDate) return false
-    const hcLate = lot.hc_projected_date && !isPast(lot.hc_projected_date) && lot.hc_projected_date > localDate
-    const bldrLate = lot.bldr_projected_date && !isPast(lot.bldr_projected_date) && lot.bldr_projected_date > localDate
-    return hcLate || bldrLate
-  }
-
   // Placeholder count and urgency
   const slotCount = Math.max(0, t - total)
   const daysToCP = (() => {
@@ -905,19 +917,16 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       {/* Body — outer pad + inner grid capped at 5 columns (5×148 + 4×8 = 772px) */}
       <div style={{ padding: 14, minHeight: 60 }}>
         <div ref={gridRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'stretch', maxWidth: 772 }}>
-          {sortedLots.map((a, idx) => {
-            const lotIsExcess = idx >= total - excess
-            return (
-              <LotPill
-                key={a.assignment_id}
-                assignment={a}
-                isExcess={lotIsExcess}
-                isCaution={!lotIsExcess && isLotCaution(a)}
-                onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
-                onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
-              />
-            )
-          })}
+          {sortedLots.map((a, idx) => (
+            <LotPill
+              key={a.assignment_id}
+              assignment={a}
+              isExcess={idx >= total - excess}
+              checkpointDate={localDate}
+              onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
+              onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
+            />
+          ))}
           {Array.from({ length: slotCount }).map((_, i) => (
             <PlaceholderPill key={`ph-${i}`} daysToCP={daysToCP} />
           ))}
