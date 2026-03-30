@@ -47,7 +47,7 @@ echo Paste this entire file into Claude Desktop before starting work.
 ) > "%~dp0devdb_cc_prompt.txt"
 
 cd /d "%~dp0devdb_python"
-claude < ..\devdb_cc_prompt.txt
+python ..\devdb_run_claude.py ..\devdb_cc_prompt.txt
 
 del "%~dp0devdb_cc_prompt.txt"
 

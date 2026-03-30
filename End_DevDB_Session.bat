@@ -63,7 +63,7 @@ echo   git push
 ) > "%~dp0devdb_end_prompt.txt"
 
 cd /d "%~dp0devdb_python"
-claude < ..\devdb_end_prompt.txt
+python ..\devdb_run_claude.py ..\devdb_end_prompt.txt
 
 del "%~dp0devdb_end_prompt.txt"
 
