@@ -7,4 +7,4 @@ $Task     = $Task.TrimEnd('"')
 # Copy /start <task> to clipboard — ready to paste as first message in claude
 "/start $Task" | Set-Clipboard
 
-Start-Process "wt.exe" -ArgumentList "--window new cmd.exe /k `"cd /d $RepoRoot && claude`""
+Start-Process "wt.exe" -ArgumentList "--window new --startingDirectory `"$RepoRoot`" cmd.exe /k claude"
