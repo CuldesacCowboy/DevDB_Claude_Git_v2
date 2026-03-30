@@ -1279,7 +1279,7 @@ touches before making changes. Keep this section updated when files are added or
 
 ### CLAUDE.md
 - Owns: Primary source of truth for Claude Code sessions -- architecture decisions, module map, API contract, file manifest
-- Last commit: 2026-03-29
+- Last commit: 2026-03-30
 
 ### devdb_python/requirements.txt
 - Owns: Python dependency list (fastapi, uvicorn, psycopg2, pandas, python-dotenv, pydantic, pytest)
