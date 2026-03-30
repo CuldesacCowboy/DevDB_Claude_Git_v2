@@ -1,6 +1,6 @@
 ---
 name: end
-description: DevDB session end — updates CLAUDE.md, commits, pushes, optionally starts new session
+description: DevDB session end — updates CLAUDE.md, commits, pushes
 ---
 
 Run the end-of-session workflow in order. Do not skip any step.
@@ -20,12 +20,3 @@ The user may have typed decisions or rules after the /end command. If so, those 
    d) Update the Last updated date and Next ID at the top of CLAUDE.md.
 
 4. git add -A, commit with message "session end: [brief summary of what was done]", git push.
-
-5. Ask me: "Start a new session? (y / n)" — wait for my answer.
-
-6. If I answered y:
-   Ask me: "Keep this session open? (y / n)" — wait for my answer.
-   Then run this to open the new session as a tab in this Windows Terminal window:
-   wt.exe -w 0 new-tab --startingDirectory "C:\DevDB_Claude_Git_v2" cmd.exe /k "set CLAUDECODE= && claude"
-   If I answered n to keeping this session open, tell me: "New tab opened. Type 'exit' to close this tab."
-   If I answered y to keeping this session open, tell me: "New tab opened. This session will stay open."
