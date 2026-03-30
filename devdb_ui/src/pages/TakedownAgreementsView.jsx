@@ -604,7 +604,10 @@ function ProjectedDateField({ value, locked, onChange }) {
         key={value || ''}
         type="date"
         defaultValue={value || ''}
-        onChange={(e) => { onChange(e.target.value || null) }}
+        onBlur={(e) => {
+          const next = e.target.value || null
+          if (next !== (value || null)) onChange(next)
+        }}
         style={{
           position: 'absolute', inset: 0,
           width: '100%', height: '100%',
@@ -962,7 +965,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
               key={localDate}
               type="date"
               defaultValue={localDate}
-              onChange={(e) => { if (e.target.value) setLocalDate(e.target.value) }}
+              onBlur={(e) => { if (e.target.value && e.target.value !== localDate) setLocalDate(e.target.value) }}
               style={{
                 position: 'absolute', top: 0, left: 0,
                 width: '100%', height: '100%',
