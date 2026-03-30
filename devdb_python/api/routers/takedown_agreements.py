@@ -279,6 +279,33 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
             for r in cur.fetchall()
         ]
 
+        # 5. TDA pool lots: in sim_takedown_agreement_lots for THIS tda but not yet
+        #    assigned to any checkpoint.
+        cur.execute(
+            """
+            SELECT l.lot_id, l.lot_number, l.building_group_id
+            FROM devdb.sim_takedown_agreement_lots tal
+            JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+            WHERE tal.tda_id = %s
+              AND tal.lot_id NOT IN (
+                  SELECT a.lot_id
+                  FROM devdb.sim_takedown_lot_assignments a
+                  JOIN devdb.sim_takedown_checkpoints c ON c.checkpoint_id = a.checkpoint_id
+                  WHERE c.tda_id = %s
+              )
+            ORDER BY l.lot_number ASC
+            """,
+            (tda_id, tda_id),
+        )
+        pool_lots = [
+            {
+                "lot_id": r["lot_id"],
+                "lot_number": r["lot_number"],
+                "building_group_id": r["building_group_id"],
+            }
+            for r in cur.fetchall()
+        ]
+
         checkpoints = [
             {
                 "checkpoint_id": r["checkpoint_id"],
@@ -298,6 +325,7 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
             "status": tda["status"],
             "anchor_date": tda["anchor_date"].isoformat() if tda["anchor_date"] else None,
             "checkpoints": checkpoints,
+            "pool_lots": pool_lots,
             "unassigned_lots": unassigned_lots,
         }
     finally:
@@ -472,11 +500,8 @@ def unassign_lot_from_checkpoint(tda_id: int, lot_id: int, conn=Depends(get_db_c
             (assignment_id,),
         )
 
-        # 3. Remove from the TDA lot pool so it returns to the global unassigned bank
-        cur.execute(
-            "DELETE FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
-            (tda_id, lot_id),
-        )
+        # 3. Lot stays in sim_takedown_agreement_lots (TDA pool) — it will appear
+        #    in the pool bank until explicitly removed to the global unassigned bank.
 
         # 4. Audit log
         cur.execute(
@@ -492,6 +517,92 @@ def unassign_lot_from_checkpoint(tda_id: int, lot_id: int, conn=Depends(get_db_c
         conn.commit()
         return {"lot_id": lot_id, "unassigned": True}
 
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: POST /takedown-agreements/{tda_id}/lots/{lot_id}/pool
+# Add a lot to the TDA pool (sim_takedown_agreement_lots) without assigning
+# it to a checkpoint.
+# ---------------------------------------------------------------------------
+
+@router.post("/takedown-agreements/{tda_id}/lots/{lot_id}/pool")
+def add_lot_to_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "SELECT tda_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
+            (tda_id,),
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"TDA {tda_id} not found.")
+
+        cur.execute(
+            "SELECT 1 FROM devdb.sim_lots WHERE lot_id = %s",
+            (lot_id,),
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found.")
+
+        # Idempotent insert
+        cur.execute(
+            "SELECT 1 FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
+            (tda_id, lot_id),
+        )
+        if cur.fetchone() is None:
+            cur.execute(
+                "INSERT INTO devdb.sim_takedown_agreement_lots (tda_id, lot_id) VALUES (%s, %s)",
+                (tda_id, lot_id),
+            )
+
+        conn.commit()
+        return {"lot_id": lot_id, "tda_id": tda_id, "in_pool": True}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# Endpoint: DELETE /takedown-agreements/{tda_id}/lots/{lot_id}/pool
+# Remove a lot from the TDA pool entirely — also clears any checkpoint
+# assignment, returning the lot to the global unassigned bank.
+# ---------------------------------------------------------------------------
+
+@router.delete("/takedown-agreements/{tda_id}/lots/{lot_id}/pool")
+def remove_lot_from_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # Clear any checkpoint assignment first (may or may not exist)
+        cur.execute(
+            """
+            DELETE FROM devdb.sim_takedown_lot_assignments
+            WHERE lot_id = %s
+              AND checkpoint_id IN (
+                  SELECT checkpoint_id FROM devdb.sim_takedown_checkpoints WHERE tda_id = %s
+              )
+            """,
+            (lot_id, tda_id),
+        )
+        # Remove from TDA pool
+        cur.execute(
+            "DELETE FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
+            (tda_id, lot_id),
+        )
+
+        conn.commit()
+        return {"lot_id": lot_id, "tda_id": tda_id, "in_pool": False}
     except HTTPException:
         conn.rollback()
         raise

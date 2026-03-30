@@ -63,6 +63,60 @@ function UnassignedLotPill({ lot }) {
   )
 }
 
+// ── Draggable TDA-pool lot pill ───────────────────────────────────
+function TdaPoolLotPill({ lot }) {
+  const { attributes, listeners, setNodeRef, isDragging } =
+    useDraggable({ id: `pool-${lot.lot_id}`, data: { type: 'pool-lot', lot } })
+  const { code, seq } = parseLot(lot.lot_number)
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{
+        width: 68, height: 34, flexShrink: 0,
+        background: '#fff',
+        border: '0.5px solid #6366f1',
+        borderRadius: 5,
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 6px', boxSizing: 'border-box',
+        cursor: 'grab', opacity: isDragging ? 0.4 : 1,
+      }}
+    >
+      <span style={{ fontSize: 11, color: '#6366f1' }}>{code}</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: '#2C2C2A' }}>{seq}</span>
+    </div>
+  )
+}
+
+// ── Droppable TDA pool bank ───────────────────────────────────────
+function TdaPoolBank({ lots, tdaName }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'tda-pool', data: { type: 'tda-pool' } })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        width: 240, flexShrink: 0,
+        background: isOver ? '#eef2ff' : '#f5f3ff',
+        border: `2px solid ${isOver ? '#6366f1' : '#c7d2fe'}`,
+        borderRadius: 8, padding: 14, marginRight: 20,
+        minHeight: 200, transition: 'all 0.15s',
+      }}
+    >
+      <div style={{ fontWeight: 700, fontSize: 15, color: '#3730a3', marginBottom: 4 }}>
+        In Agreement
+      </div>
+      <div style={{ fontSize: 13, color: '#818cf8', marginBottom: 10 }}>
+        {lots.length} lot{lots.length !== 1 ? 's' : ''} · no checkpoint
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        {lots.map(lot => <TdaPoolLotPill key={lot.lot_id} lot={lot} />)}
+      </div>
+    </div>
+  )
+}
+
 // ── Droppable unassigned bank ─────────────────────────────────────
 function UnassignedBank({ lots }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'unassigned-bank', data: { type: 'unassigned-bank' } })
@@ -690,47 +744,62 @@ export default function TakedownAgreementsView({ entGroupId }) {
 
     const src = active.data.current
     const dst = over.data.current
+    const tdaId = detail.tda_id
 
-    // Assigned lot → unassigned bank
-    if (src?.type === 'assigned-lot' && dst?.type === 'unassigned-bank') {
-      const { assignment } = src
-      await fetch(
-        `${API}/takedown-agreements/${detail.tda_id}/lots/${assignment.lot_id}/assign`,
-        { method: 'DELETE' }
-      )
-      refetchDetail()
-      return
+    // Helper shortcuts
+    const assignToCP = (lotId, checkpointId) =>
+      fetch(`${API}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkpoint_id: checkpointId }),
+      })
+    const unassignFromCP = (lotId) =>
+      fetch(`${API}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, { method: 'DELETE' })
+    const addToPool = (lotId) =>
+      fetch(`${API}/takedown-agreements/${tdaId}/lots/${lotId}/pool`, { method: 'POST' })
+    const removeFromPool = (lotId) =>
+      fetch(`${API}/takedown-agreements/${tdaId}/lots/${lotId}/pool`, { method: 'DELETE' })
+
+    // ── Global unassigned → TDA pool ──────────────────────────────
+    if (src?.type === 'unassigned-lot' && dst?.type === 'tda-pool') {
+      await addToPool(src.lot.lot_id)
+      refetchDetail(); return
     }
 
-    // Unassigned lot → checkpoint
+    // ── Global unassigned → checkpoint ────────────────────────────
     if (src?.type === 'unassigned-lot' && dst?.type === 'checkpoint') {
-      await fetch(
-        `${API}/takedown-agreements/${detail.tda_id}/lots/${src.lot.lot_id}/assign`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ checkpoint_id: dst.checkpointId }),
-        }
-      )
-      refetchDetail()
-      return
+      await assignToCP(src.lot.lot_id, dst.checkpointId)
+      refetchDetail(); return
     }
 
-    // Assigned lot → different checkpoint
+    // ── TDA pool → checkpoint ─────────────────────────────────────
+    if (src?.type === 'pool-lot' && dst?.type === 'checkpoint') {
+      await assignToCP(src.lot.lot_id, dst.checkpointId)
+      refetchDetail(); return
+    }
+
+    // ── TDA pool → global unassigned ─────────────────────────────
+    if (src?.type === 'pool-lot' && dst?.type === 'unassigned-bank') {
+      await removeFromPool(src.lot.lot_id)
+      refetchDetail(); return
+    }
+
+    // ── Assigned lot → TDA pool (unassign from checkpoint, keep in pool) ──
+    if (src?.type === 'assigned-lot' && dst?.type === 'tda-pool') {
+      await unassignFromCP(src.assignment.lot_id)
+      refetchDetail(); return
+    }
+
+    // ── Assigned lot → global unassigned (remove from pool entirely) ──
+    if (src?.type === 'assigned-lot' && dst?.type === 'unassigned-bank') {
+      await removeFromPool(src.assignment.lot_id)
+      refetchDetail(); return
+    }
+
+    // ── Assigned lot → different checkpoint ──────────────────────
     if (src?.type === 'assigned-lot' && dst?.type === 'checkpoint') {
-      const { assignment } = src
-      await fetch(
-        `${API}/takedown-agreements/${detail.tda_id}/lots/${assignment.lot_id}/assign`,
-        { method: 'DELETE' }
-      )
-      await fetch(
-        `${API}/takedown-agreements/${detail.tda_id}/lots/${assignment.lot_id}/assign`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ checkpoint_id: dst.checkpointId }),
-        }
-      )
+      await unassignFromCP(src.assignment.lot_id)
+      await assignToCP(src.assignment.lot_id, dst.checkpointId)
       refetchDetail()
     }
   }
@@ -847,6 +916,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
             display: 'flex', gap: 0, alignItems: 'flex-start',
           }}>
             <UnassignedBank lots={detail.unassigned_lots || []} />
+            <TdaPoolBank lots={detail.pool_lots || []} tdaName={detail.tda_name} />
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
               <TdaCard detail={detail} colorIdx={tdaColorIdx >= 0 ? tdaColorIdx : 0} onCheckpointCreated={refetchDetail}>
@@ -863,11 +933,13 @@ export default function TakedownAgreementsView({ entGroupId }) {
           </div>
 
           <DragOverlay>
-            {dragLot?.type === 'unassigned-lot' && (
+            {(dragLot?.type === 'unassigned-lot' || dragLot?.type === 'pool-lot') && (
               <div style={{
                 padding: '3px 10px', borderRadius: 12,
-                background: '#e0e7ff', border: '1px solid #818cf8',
-                fontSize: 13, fontWeight: 600, color: '#3730a3',
+                background: dragLot.type === 'pool-lot' ? '#e0e7ff' : '#f3f4f6',
+                border: `1px solid ${dragLot.type === 'pool-lot' ? '#818cf8' : '#9ca3af'}`,
+                fontSize: 13, fontWeight: 600,
+                color: dragLot.type === 'pool-lot' ? '#3730a3' : '#374151',
               }}>
                 {dragLot.lot.lot_number}
               </div>
