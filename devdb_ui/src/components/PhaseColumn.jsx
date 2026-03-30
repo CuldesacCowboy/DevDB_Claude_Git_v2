@@ -123,7 +123,7 @@ export default function PhaseColumn({
           setLocalByLotType(prev => prev.filter(lt => lt.lot_type_id !== lotTypeId));
 
           fetch(
-            `http://localhost:8765/phases/${phaseId}/lot-type/${lotTypeId}`,
+            `/api/phases/${phaseId}/lot-type/${lotTypeId}`,
             { method: 'DELETE' }
           ).then(() => {
             onRefetch?.();
