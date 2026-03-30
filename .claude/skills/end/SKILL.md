@@ -27,3 +27,5 @@ The user may have typed decisions or rules after the /end command. If so, those 
    Ask me: "Keep this session open? (y / n)" — wait for my answer.
    Then run this to open the new session as a tab in this Windows Terminal window:
    wt.exe -w 0 new-tab --startingDirectory "C:\DevDB_Claude_Git_v2" cmd.exe /k "set CLAUDECODE= && claude"
+   If I answered n to keeping this session open, tell me: "New tab opened. Type 'exit' to close this tab."
+   If I answered y to keeping this session open, tell me: "New tab opened. This session will stay open."
