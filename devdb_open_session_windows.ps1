@@ -30,6 +30,9 @@ public class WinPos {
 }
 "@
 
+# Copy prompt to clipboard so it's ready to paste into Claude Code
+Get-Content $PromptFile -Raw | Set-Clipboard
+
 # --- Notepad ---
 $np = Start-Process "notepad.exe" -ArgumentList "`"$PromptFile`"" -PassThru
 Start-Sleep -Milliseconds 1000

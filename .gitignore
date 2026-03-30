@@ -5,7 +5,6 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 
-DevDB_SessionBrief.md
 DevDB_SessionHandoff.md
 devdb_cc_prompt.txt
 devdb_end_prompt.txt
