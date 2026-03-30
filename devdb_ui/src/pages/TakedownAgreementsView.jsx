@@ -593,10 +593,12 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
 
   const todayStr = new Date().toISOString().slice(0, 10)
   const isFuture = (d) => !!d && d > todayStr
-  const isCaution = !!checkpointDate && (
-    (isFuture(localHcDate) && localHcDate > checkpointDate) ||
-    (isFuture(localBldrDate) && localBldrDate > checkpointDate)
-  )
+  // Caution only when no projected date can meet the checkpoint.
+  // If either HC or BLDR is on/before the checkpoint date, the lot is satisfied.
+  const hcMeetsCP = !!localHcDate && localHcDate <= checkpointDate
+  const bldrMeetsCP = !!localBldrDate && localBldrDate <= checkpointDate
+  const hasAnyFutureDate = isFuture(localHcDate) || isFuture(localBldrDate)
+  const isCaution = !!checkpointDate && hasAnyFutureDate && !hcMeetsCP && !bldrMeetsCP
 
   function col(label, marksDate, projDate, isLocked, dateKey, lockKey) {
     return (
