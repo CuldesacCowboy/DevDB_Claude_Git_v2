@@ -424,10 +424,10 @@ function EditableNumber({ value, onChange }) {
           if (e.key === 'Escape') setEditing(false)
         }}
         style={{
-          width: 36, fontSize: 13, fontWeight: 700,
+          width: 42, fontSize: 15, fontWeight: 700,
           border: '1px dashed #3B6D11',
           background: '#EAF3DE', color: '#27500A',
-          borderRadius: 3, padding: '0 2px',
+          borderRadius: 3, padding: '1px 2px',
           outline: 'none', textAlign: 'center',
         }}
       />
@@ -438,10 +438,10 @@ function EditableNumber({ value, onChange }) {
       onClick={() => setEditing(true)}
       title="Click to edit"
       style={{
-        fontSize: 13, fontWeight: 700, color: '#27500A',
+        fontSize: 15, fontWeight: 700, color: '#27500A',
         border: '1px dashed #3B6D11',
         background: '#EAF3DE',
-        borderRadius: 3, padding: '0 5px',
+        borderRadius: 3, padding: '1px 6px',
         cursor: 'pointer',
       }}
     >
@@ -474,13 +474,19 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
     })
   }, [lots])
 
-  // C = confirmed (has marks dates), P = projected only
-  const c = lots.filter(l => l.hc_marks_date || l.bldr_marks_date).length
-  const p = lots.filter(l => !l.hc_marks_date && !l.bldr_marks_date).length
+  // C = lots with any HC or BLDR date (marks or projected) that is in the past (≤ today)
+  // total = all assigned lots; excess = over the required count
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const isPast = (d) => !!d && d <= todayStr
+  const c = lots.filter(l =>
+    isPast(l.hc_marks_date) || isPast(l.hc_projected_date) ||
+    isPast(l.bldr_marks_date) || isPast(l.bldr_projected_date)
+  ).length
   const t = localTotal
-  const total = c + p
+  const total = lots.length
   const excess = Math.max(0, total - t)
-  const over = excess > 0
+  const overTotal = excess > 0       // c+p exceeds required
+  const overC = c > t                // completed alone exceeds required
 
   // Placeholder count and urgency
   const slotCount = Math.max(0, t - total)
@@ -491,9 +497,8 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
     return Math.floor((cpDate - today) / (1000 * 60 * 60 * 24))
   })()
 
-  const barColor = over ? '#E24B4A' : null
-  const cPct = t > 0 ? Math.min(100, Math.round((c / t) * 100)) : 0
-  const cpPct = t > 0 ? Math.min(100, Math.round((total / t) * 100)) : 0
+  const cPct   = t > 0 ? Math.min(100, Math.round((c     / t) * 100)) : 0
+  const cpPct  = t > 0 ? Math.min(100, Math.round((total / t) * 100)) : 0
 
   // ── Row height equalization (lots + placeholders) ──────────────
   const gridRef = useRef(null)
@@ -533,16 +538,16 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14,
       }}>
         {/* Left: "{X} required by {date}" — both editable inline */}
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
           <EditableNumber value={t} onChange={setLocalTotal} />
-          <span style={{ fontSize: 13, color: '#6B6B68', fontWeight: 500 }}>required by</span>
+          <span style={{ fontSize: 15, color: '#6B6B68', fontWeight: 500 }}>required by</span>
           {/* Editable date — overlay pattern */}
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <div style={{
-              fontSize: 13, fontWeight: 700, color: '#27500A',
+              fontSize: 15, fontWeight: 700, color: '#27500A',
               border: '1px dashed #3B6D11',
               background: '#EAF3DE',
-              borderRadius: 3, padding: '0 5px',
+              borderRadius: 3, padding: '1px 6px',
               cursor: 'pointer', userSelect: 'none',
               whiteSpace: 'nowrap',
             }}>
@@ -564,29 +569,29 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         </div>
 
         {/* Right: Completed + Completed+Planned bars */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 220 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 240 }}>
           {/* Completed row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
+            <span style={{ fontSize: 11, color: overC ? '#A32D2D' : '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
               Completed
             </span>
             <div style={{ flex: 1, height: 8, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: `${cPct}%`, height: '100%', background: barColor || '#444441', borderRadius: 3, transition: 'width 0.2s' }} />
+              <div style={{ width: `${cPct}%`, height: '100%', background: overC ? '#E24B4A' : '#444441', borderRadius: 3, transition: 'width 0.2s' }} />
             </div>
-            <span style={{ fontSize: 12, fontWeight: 500, color: '#444441', flexShrink: 0, minWidth: 40, textAlign: 'right' }}>
-              {c}/{t}
+            <span style={{ fontSize: 12, fontWeight: 500, color: overC ? '#A32D2D' : '#444441', flexShrink: 0, minWidth: 52, textAlign: 'right' }}>
+              {c} of {t}
             </span>
           </div>
           {/* Completed + Planned For row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
+            <span style={{ fontSize: 11, color: overTotal ? '#A32D2D' : '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
               + Planned
             </span>
             <div style={{ flex: 1, height: 8, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: `${cpPct}%`, height: '100%', background: barColor || '#B4B2A9', borderRadius: 3, transition: 'width 0.2s' }} />
+              <div style={{ width: `${cpPct}%`, height: '100%', background: overTotal ? '#E24B4A' : '#B4B2A9', borderRadius: 3, transition: 'width 0.2s' }} />
             </div>
-            <span style={{ fontSize: 12, fontWeight: 500, color: over ? '#A32D2D' : '#444441', flexShrink: 0, minWidth: 40, textAlign: 'right' }}>
-              {total}/{t}
+            <span style={{ fontSize: 12, fontWeight: 500, color: overTotal ? '#A32D2D' : '#444441', flexShrink: 0, minWidth: 52, textAlign: 'right' }}>
+              {total} of {t}
             </span>
           </div>
         </div>
