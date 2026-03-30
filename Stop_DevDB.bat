@@ -7,6 +7,9 @@ REM ---- 1. Close DevDB terminal windows by command-line content (title matching
 echo [1/4] Closing DevDB terminal windows...
 powershell -NoProfile -Command "Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'cmd.exe' -and ($_.CommandLine -like '*uvicorn*' -or $_.CommandLine -like '*8765*' -or $_.CommandLine -like '*npm run dev*' -or $_.CommandLine -like '*Start_DevDB*') } | ForEach-Object { taskkill /F /T /PID $_.ProcessId 2>$null }"
 
+REM ---- 1b. Kill detached python.exe uvicorn processes (survive if cmd.exe parent was already killed) ----
+powershell -NoProfile -Command "Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*uvicorn*' } | ForEach-Object { taskkill /F /T /PID $_.ProcessId 2>$null }"
+
 REM ---- 2. Kill any process holding port 8765 (uvicorn backend) ----
 echo [2/4] Releasing port 8765 (backend)...
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":8765 " 2^>nul') do (
