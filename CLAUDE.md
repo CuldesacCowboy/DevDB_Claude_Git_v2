@@ -1337,6 +1337,10 @@ touches before making changes. Keep this section updated when files are added or
 - Owns: Session startup bat — opens DevDB session windows via devdb_open_session_windows.ps1
 - Last commit: 2026-03-30
 
+### devdb_open_session_windows.ps1
+- Owns: PowerShell script that opens all DevDB session windows (backend terminal, frontend terminal, browser, Claude Code terminal snapped to right half of right screen)
+- Last commit: 2026-03-30
+
 ### .claude/skills/start/SKILL.md
 - Owns: /start skill — reads CLAUDE.md and acknowledges today's task at session start
 - Last commit: 2026-03-30
