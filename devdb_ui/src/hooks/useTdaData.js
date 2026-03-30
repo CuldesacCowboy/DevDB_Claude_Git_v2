@@ -10,8 +10,7 @@ export function useTdaData(entGroupId) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
-  // Fetch agreement list for this entitlement group
-  useEffect(() => {
+  const fetchAgreements = useCallback((selectId = null) => {
     if (!entGroupId) return
     setLoading(true)
     fetch(`${API}/entitlement-groups/${entGroupId}/takedown-agreements`)
@@ -19,13 +18,17 @@ export function useTdaData(entGroupId) {
       .then(data => {
         setEntGroupName(data.ent_group_name || '')
         setAgreements(data.agreements || [])
-        if (data.agreements && data.agreements.length > 0) {
+        if (selectId) {
+          setSelectedTdaId(selectId)
+        } else if (data.agreements && data.agreements.length > 0) {
           setSelectedTdaId(prev => prev || data.agreements[0].tda_id)
         }
         setLoading(false)
       })
       .catch(e => { setError(e.message); setLoading(false) })
   }, [entGroupId])
+
+  useEffect(() => { fetchAgreements() }, [fetchAgreements])
 
   // Fetch detail for selected TDA
   const fetchDetail = useCallback(() => {
@@ -42,6 +45,7 @@ export function useTdaData(entGroupId) {
     agreements, entGroupName,
     selectedTdaId, setSelectedTdaId,
     detail, refetchDetail: fetchDetail,
+    refetchAgreements: fetchAgreements,
     loading, error,
   }
 }

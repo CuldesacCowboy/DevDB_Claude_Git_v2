@@ -503,10 +503,40 @@ export default function TakedownAgreementsView({ entGroupId }) {
     agreements, entGroupName,
     selectedTdaId, setSelectedTdaId,
     detail, refetchDetail,
+    refetchAgreements,
     loading, error,
   } = useTdaData(entGroupId)
 
   const [dragLot, setDragLot] = useState(null)
+  const [showNewTdaForm, setShowNewTdaForm] = useState(false)
+  const [newTdaName, setNewTdaName] = useState('')
+  const [newTdaCreating, setNewTdaCreating] = useState(false)
+  const [newTdaError, setNewTdaError] = useState('')
+
+  async function handleCreateTda() {
+    const name = newTdaName.trim()
+    if (!name) { setNewTdaError('Name is required.'); return }
+    setNewTdaCreating(true)
+    setNewTdaError('')
+    try {
+      const res = await fetch(`${API}/takedown-agreements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tda_name: name, ent_group_id: entGroupId }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setNewTdaError(err.detail || 'Failed to create agreement.')
+        return
+      }
+      const created = await res.json()
+      setNewTdaName('')
+      setShowNewTdaForm(false)
+      refetchAgreements(created.tda_id)
+    } finally {
+      setNewTdaCreating(false)
+    }
+  }
 
   // ── Date update ──────────────────────────────────────────────
   const handleDateChange = useCallback(async (assignmentId, patch) => {
@@ -613,27 +643,75 @@ export default function TakedownAgreementsView({ entGroupId }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <select
-            value={selectedTdaId || ''}
-            onChange={e => setSelectedTdaId(Number(e.target.value))}
-            style={{
-              fontSize: 14, padding: '5px 10px', borderRadius: 6,
-              border: '1px solid #d1d5db', background: '#fff', color: '#374151',
-            }}
-          >
-            {agreements.map(a => (
-              <option key={a.tda_id} value={a.tda_id}>{a.tda_name}</option>
-            ))}
-          </select>
-          <button
-            style={{
-              fontSize: 13, padding: '5px 14px', borderRadius: 6,
-              border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
-              cursor: 'pointer',
-            }}
-          >
-            + New agreement
-          </button>
+          {agreements.length > 0 && (
+            <select
+              value={selectedTdaId || ''}
+              onChange={e => setSelectedTdaId(Number(e.target.value))}
+              style={{
+                fontSize: 14, padding: '5px 10px', borderRadius: 6,
+                border: '1px solid #d1d5db', background: '#fff', color: '#374151',
+              }}
+            >
+              {agreements.map(a => (
+                <option key={a.tda_id} value={a.tda_id}>{a.tda_name}</option>
+              ))}
+            </select>
+          )}
+          {showNewTdaForm ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                autoFocus
+                type="text"
+                placeholder="Agreement name"
+                value={newTdaName}
+                onChange={e => { setNewTdaName(e.target.value); setNewTdaError('') }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleCreateTda()
+                  if (e.key === 'Escape') { setShowNewTdaForm(false); setNewTdaName(''); setNewTdaError('') }
+                }}
+                style={{
+                  fontSize: 14, padding: '5px 10px', borderRadius: 6,
+                  border: `1px solid ${newTdaError ? '#ef4444' : '#d1d5db'}`,
+                  outline: 'none', width: 200, color: '#374151',
+                }}
+              />
+              <button
+                onClick={handleCreateTda}
+                disabled={newTdaCreating}
+                style={{
+                  fontSize: 13, padding: '5px 12px', borderRadius: 6,
+                  border: 'none', background: '#2563eb', color: '#fff',
+                  cursor: newTdaCreating ? 'default' : 'pointer', opacity: newTdaCreating ? 0.6 : 1,
+                }}
+              >
+                {newTdaCreating ? 'Creating…' : 'Create'}
+              </button>
+              <button
+                onClick={() => { setShowNewTdaForm(false); setNewTdaName(''); setNewTdaError('') }}
+                style={{
+                  fontSize: 13, padding: '5px 10px', borderRadius: 6,
+                  border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              {newTdaError && (
+                <span style={{ fontSize: 12, color: '#ef4444' }}>{newTdaError}</span>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowNewTdaForm(true)}
+              style={{
+                fontSize: 13, padding: '5px 14px', borderRadius: 6,
+                border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
+                cursor: 'pointer',
+              }}
+            >
+              + New agreement
+            </button>
+          )}
         </div>
       </div>
 

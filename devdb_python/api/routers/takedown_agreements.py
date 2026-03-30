@@ -16,6 +16,12 @@ from api.deps import get_db_conn
 # Request models (Slice B)
 # ---------------------------------------------------------------------------
 
+class CreateTdaRequest(BaseModel):
+    tda_name: str
+    ent_group_id: int
+    anchor_date: Optional[date_type] = None
+
+
 class AssignLotRequest(BaseModel):
     checkpoint_id: int
 
@@ -107,6 +113,52 @@ def list_takedown_agreements(ent_group_id: int, conn=Depends(get_db_conn)):
             "ent_group_name": eg["ent_group_name"],
             "agreements": agreements,
         }
+    finally:
+        cur.close()
+
+
+@router.post("/takedown-agreements")
+def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        if not body.tda_name or not body.tda_name.strip():
+            raise HTTPException(status_code=422, detail="tda_name must not be empty.")
+
+        # Verify ent_group exists
+        cur.execute(
+            "SELECT ent_group_id FROM devdb.sim_entitlement_groups WHERE ent_group_id = %s",
+            (body.ent_group_id,),
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Entitlement group {body.ent_group_id} not found.")
+
+        # Generate tda_id
+        cur.execute("SELECT COALESCE(MAX(tda_id), 0) + 1 AS new_id FROM devdb.sim_takedown_agreements")
+        new_id = int(cur.fetchone()["new_id"])
+
+        cur.execute(
+            """
+            INSERT INTO devdb.sim_takedown_agreements
+                (tda_id, tda_name, ent_group_id, anchor_date, status, checkpoint_lead_days, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, 'active', 16, now(), now())
+            RETURNING tda_id, tda_name, status, anchor_date
+            """,
+            (new_id, body.tda_name.strip(), body.ent_group_id, body.anchor_date),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return {
+            "tda_id": row["tda_id"],
+            "tda_name": row["tda_name"],
+            "status": row["status"],
+            "anchor_date": row["anchor_date"].isoformat() if row["anchor_date"] else None,
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         cur.close()
 
