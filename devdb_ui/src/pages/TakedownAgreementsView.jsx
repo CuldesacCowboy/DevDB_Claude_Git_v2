@@ -131,7 +131,7 @@ function TdaPoolBank({ lots, tdaName, selectedIds, onToggle, onToggleDevGroup, o
         width: 240, flexShrink: 0,
         background: isOver ? '#eef2ff' : '#f5f3ff',
         border: `2px solid ${isOver ? '#6366f1' : '#c7d2fe'}`,
-        borderRadius: 8, padding: 14, marginRight: 20,
+        borderRadius: 8, padding: 14,
         minHeight: 200, transition: 'all 0.15s',
       }}
     >
@@ -354,6 +354,53 @@ function UnassignedBank({ lots, selectedIds, onToggle, onToggleDevGroup, onAddTo
           {isOver ? 'Drop to unassign' : 'All lots in an agreement'}
         </p>
       )}
+    </div>
+  )
+}
+
+// ── Droppable tile for another TDA ───────────────────────────────
+function OtherTdaTile({ agreement, onNavigate }) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `other-tda-${agreement.tda_id}`,
+    data: { type: 'other-tda', tdaId: agreement.tda_id },
+  })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        width: 240,
+        background: isOver ? '#eff6ff' : '#fff',
+        border: `1.5px solid ${isOver ? '#3b82f6' : '#e5e7eb'}`,
+        borderRadius: 8, padding: '10px 14px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        transition: 'all 0.15s',
+      }}
+    >
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{
+          fontSize: 13, fontWeight: 600, color: isOver ? '#1d4ed8' : '#374151',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          transition: 'color 0.15s',
+        }}>
+          {agreement.tda_name}
+        </div>
+        <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
+          {agreement.total_lots} lot{agreement.total_lots !== 1 ? 's' : ''}
+        </div>
+      </div>
+      <button
+        onClick={() => onNavigate(agreement.tda_id)}
+        title={`Switch to ${agreement.tda_name}`}
+        style={{
+          flexShrink: 0, marginLeft: 10,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#9ca3af', padding: '4px 6px', borderRadius: 4,
+          fontSize: 16, lineHeight: 1,
+          display: 'flex', alignItems: 'center',
+        }}
+      >
+        →
+      </button>
     </div>
   )
 }
@@ -1148,6 +1195,30 @@ export default function TakedownAgreementsView({ entGroupId }) {
     if (src?.type === 'assigned-lot' && dst?.type === 'checkpoint') {
       await unassignFromCP(src.assignment.lot_id)
       await assignToCP(src.assignment.lot_id, dst.checkpointId)
+      refetchDetail(); return
+    }
+
+    // ── Any lot → other TDA pool ──────────────────────────────────
+    if (dst?.type === 'other-tda') {
+      const targetTdaId = dst.tdaId
+      const addToTargetPool = (lotId) =>
+        fetch(`${API}/takedown-agreements/${targetTdaId}/lots/${lotId}/pool`, { method: 'POST' })
+
+      if (src?.type === 'unassigned-lot') {
+        const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1
+        const ids = isMulti ? [...selectedLotIds] : [src.lot.lot_id]
+        await Promise.all(ids.map(id => addToTargetPool(id)))
+        if (isMulti) setSelectedLotIds(new Set())
+      } else if (src?.type === 'pool-lot') {
+        const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
+        const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
+        await Promise.all(ids.map(async id => { await removeFromPool(id); await addToTargetPool(id) }))
+        if (isMulti) setSelectedPoolLotIds(new Set())
+      } else if (src?.type === 'assigned-lot') {
+        await removeFromPool(src.assignment.lot_id)
+        await addToTargetPool(src.assignment.lot_id)
+      }
+      refetchAgreements()
       refetchDetail()
     }
   }
@@ -1272,15 +1343,29 @@ export default function TakedownAgreementsView({ entGroupId }) {
               onAddToPool={handleAddSelectedToPool}
               onClearSelection={() => setSelectedLotIds(new Set())}
             />
-            <TdaPoolBank
-              lots={detail.pool_lots || []}
-              tdaName={detail.tda_name}
-              selectedIds={selectedPoolLotIds}
-              onToggle={togglePoolLotSelection}
-              onToggleDevGroup={togglePoolDevGroupSelection}
-              onRemoveFromPool={handleRemoveSelectedFromPool}
-              onClearSelection={() => setSelectedPoolLotIds(new Set())}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginRight: 20, flexShrink: 0 }}>
+              <TdaPoolBank
+                lots={detail.pool_lots || []}
+                tdaName={detail.tda_name}
+                selectedIds={selectedPoolLotIds}
+                onToggle={togglePoolLotSelection}
+                onToggleDevGroup={togglePoolDevGroupSelection}
+                onRemoveFromPool={handleRemoveSelectedFromPool}
+                onClearSelection={() => setSelectedPoolLotIds(new Set())}
+              />
+              {agreements.filter(a => a.tda_id !== selectedTdaId).length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#9ca3af', letterSpacing: '0.06em', paddingLeft: 2, marginTop: 4 }}>
+                    OTHER AGREEMENTS
+                  </div>
+                  {agreements
+                    .filter(a => a.tda_id !== selectedTdaId)
+                    .map(a => (
+                      <OtherTdaTile key={a.tda_id} agreement={a} onNavigate={setSelectedTdaId} />
+                    ))}
+                </>
+              )}
+            </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
               <TdaCard detail={detail} colorIdx={tdaColorIdx >= 0 ? tdaColorIdx : 0} onCheckpointCreated={refetchDetail}>
