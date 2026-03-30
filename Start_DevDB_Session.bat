@@ -48,20 +48,5 @@ echo Paste this entire file into Claude Desktop before starting work.
 ) > "%REPO_ROOT%devdb_cc_prompt.txt"
 
 echo.
-echo Opening prompt in Notepad...
-start "" notepad "%~dp0devdb_cc_prompt.txt"
-
-echo Opening Claude Code terminal...
-start "" cmd /k "cd /d "%~dp0devdb_python" && claude"
-
-timeout /t 3 /nobreak >nul
-
-echo.
-echo ============================================================
-echo  NEXT STEP:
-echo  1. Copy the prompt from Notepad
-echo  2. Paste into the Claude Code terminal
-echo  3. When CC writes DevDB_SessionBrief.md, paste it into Claude Desktop
-echo ============================================================
-echo.
-pause
+echo Opening windows...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0devdb_open_session_windows.ps1" -RepoRoot "%~dp0" -PromptFile "%~dp0devdb_cc_prompt.txt"
