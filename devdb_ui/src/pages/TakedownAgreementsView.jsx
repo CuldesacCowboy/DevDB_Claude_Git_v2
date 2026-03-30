@@ -1185,9 +1185,23 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
 
   const lots = checkpoint.lots || []
 
-  // Display order — follows server order by default; manual sort on demand
+  // Display order — follows server order by default; manual sort on demand.
+  // When lots refresh (lock/date change), preserve current order if the set of
+  // assignment_ids is unchanged; only reset to server order when lots are added/removed.
   const [displayLots, setDisplayLots] = useState(lots)
-  useEffect(() => { setDisplayLots(lots) }, [lots])
+  useEffect(() => {
+    setDisplayLots(prev => {
+      const newById = Object.fromEntries(lots.map(l => [l.assignment_id, l]))
+      const prevIds = prev.map(l => l.assignment_id)
+      const newIds  = lots.map(l => l.assignment_id)
+      // Same set of IDs: merge updated fields into existing order
+      const sameSet = prevIds.length === newIds.length &&
+        prevIds.every(id => newById[id] !== undefined)
+      if (sameSet) return prev.map(l => newById[l.assignment_id])
+      // Different set: reset to server order
+      return lots
+    })
+  }, [lots])
 
   const [showTimeline, setShowTimeline] = useState(false)
 
