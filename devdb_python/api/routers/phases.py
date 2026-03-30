@@ -240,7 +240,7 @@ async def delete_lot_type_from_phase(
     try:
         # 1. Verify the lot type exists on this phase
         cur.execute(
-            "SELECT split_id, projected_count FROM sim_phase_product_splits"
+            "SELECT split_id, projected_count FROM devdb.sim_phase_product_splits"
             " WHERE phase_id = %s AND lot_type_id = %s",
             (phase_id, lot_type_id),
         )
@@ -260,7 +260,7 @@ async def delete_lot_type_from_phase(
 
         # 2. Refuse if actual (real) lots exist
         cur.execute(
-            "SELECT COUNT(*) AS actual FROM sim_lots"
+            "SELECT COUNT(*) AS actual FROM devdb.sim_lots"
             " WHERE phase_id = %s AND lot_type_id = %s AND lot_source = 'real'",
             (phase_id, lot_type_id),
         )
@@ -273,14 +273,14 @@ async def delete_lot_type_from_phase(
 
         # 3. Delete all non-real lots for this phase + lot type
         cur.execute(
-            "DELETE FROM sim_lots"
+            "DELETE FROM devdb.sim_lots"
             " WHERE phase_id = %s AND lot_type_id = %s AND lot_source != 'real'",
             (phase_id, lot_type_id),
         )
 
         # 4. Delete the split row
         cur.execute(
-            "DELETE FROM sim_phase_product_splits WHERE phase_id = %s AND lot_type_id = %s",
+            "DELETE FROM devdb.sim_phase_product_splits WHERE phase_id = %s AND lot_type_id = %s",
             (phase_id, lot_type_id),
         )
 
