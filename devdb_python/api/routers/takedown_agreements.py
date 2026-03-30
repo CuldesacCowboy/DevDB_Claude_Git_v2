@@ -23,7 +23,7 @@ class CreateTdaRequest(BaseModel):
 
 
 class CreateCheckpointRequest(BaseModel):
-    checkpoint_name: str
+    checkpoint_name: Optional[str] = None
     checkpoint_date: Optional[date_type] = None
     lots_required_cumulative: int = 0
 
@@ -340,9 +340,6 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
 def create_checkpoint(tda_id: int, body: CreateCheckpointRequest, conn=Depends(get_db_conn)):
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        if not body.checkpoint_name or not body.checkpoint_name.strip():
-            raise HTTPException(status_code=422, detail="checkpoint_name must not be empty.")
-
         cur.execute(
             "SELECT tda_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
             (tda_id,),
@@ -355,6 +352,7 @@ def create_checkpoint(tda_id: int, body: CreateCheckpointRequest, conn=Depends(g
             (tda_id,),
         )
         next_num = int(cur.fetchone()["next_num"])
+        name = body.checkpoint_name.strip() if body.checkpoint_name else f"CP {next_num}"
 
         cur.execute(
             """
@@ -365,7 +363,7 @@ def create_checkpoint(tda_id: int, body: CreateCheckpointRequest, conn=Depends(g
             RETURNING checkpoint_id, checkpoint_number, checkpoint_name,
                       checkpoint_date, lots_required_cumulative, status
             """,
-            (tda_id, next_num, body.checkpoint_name.strip(), body.checkpoint_date,
+            (tda_id, next_num, name, body.checkpoint_date,
              body.lots_required_cumulative),
         )
         row = cur.fetchone()

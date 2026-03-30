@@ -412,32 +412,22 @@ function TdaCard({ detail, colorIdx, onCheckpointCreated, children }) {
   const cpCounts = (detail.checkpoints || []).map(cp => ({ name: cp.checkpoint_name, count: cp.lots?.length || 0 }))
   const totalLots = poolCount + cpCounts.reduce((sum, cp) => sum + cp.count, 0)
   const [showAddCP, setShowAddCP] = useState(false)
-  const [cpName, setCpName] = useState('')
   const [cpDate, setCpDate] = useState('')
+  const [cpLots, setCpLots] = useState('')
   const [cpCreating, setCpCreating] = useState(false)
-  const [cpError, setCpError] = useState('')
 
   async function handleAddCheckpoint() {
-    const name = cpName.trim()
-    if (!name) { setCpError('Name required.'); return }
     setCpCreating(true)
-    setCpError('')
     try {
-      const res = await fetch(`${API}/takedown-agreements/${detail.tda_id}/checkpoints`, {
+      await fetch(`${API}/takedown-agreements/${detail.tda_id}/checkpoints`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          checkpoint_name: name,
           checkpoint_date: cpDate || null,
-          lots_required_cumulative: 0,
+          lots_required_cumulative: parseInt(cpLots, 10) || 0,
         }),
       })
-      if (!res.ok) {
-        const err = await res.json()
-        setCpError(err.detail || 'Failed to create checkpoint.')
-        return
-      }
-      setCpName(''); setCpDate(''); setShowAddCP(false)
+      setCpDate(''); setCpLots(''); setShowAddCP(false)
       onCheckpointCreated()
     } finally {
       setCpCreating(false)
@@ -484,24 +474,27 @@ function TdaCard({ detail, colorIdx, onCheckpointCreated, children }) {
           }}>
             <input
               autoFocus
-              type="text"
-              placeholder="Checkpoint name"
-              value={cpName}
-              onChange={e => { setCpName(e.target.value); setCpError('') }}
+              type="number"
+              min={0}
+              placeholder="Lots required"
+              value={cpLots}
+              onChange={e => setCpLots(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter') handleAddCheckpoint()
-                if (e.key === 'Escape') { setShowAddCP(false); setCpName(''); setCpDate(''); setCpError('') }
+                if (e.key === 'Escape') { setShowAddCP(false); setCpDate(''); setCpLots('') }
               }}
               style={{
                 fontSize: 14, padding: '4px 8px', borderRadius: 5,
-                border: `1px solid ${cpError ? '#ef4444' : '#d1d5db'}`,
-                outline: 'none', width: 180,
+                border: '1px solid #d1d5db', outline: 'none', width: 110,
               }}
             />
             <input
               type="date"
               value={cpDate}
               onChange={e => setCpDate(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') { setShowAddCP(false); setCpDate(''); setCpLots('') }
+              }}
               style={{
                 fontSize: 13, padding: '4px 8px', borderRadius: 5,
                 border: '1px solid #d1d5db', outline: 'none',
@@ -519,7 +512,7 @@ function TdaCard({ detail, colorIdx, onCheckpointCreated, children }) {
               {cpCreating ? 'Adding…' : 'Add'}
             </button>
             <button
-              onClick={() => { setShowAddCP(false); setCpName(''); setCpDate(''); setCpError('') }}
+              onClick={() => { setShowAddCP(false); setCpDate(''); setCpLots('') }}
               style={{
                 fontSize: 13, padding: '4px 10px', borderRadius: 5,
                 border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
@@ -528,7 +521,6 @@ function TdaCard({ detail, colorIdx, onCheckpointCreated, children }) {
             >
               Cancel
             </button>
-            {cpError && <span style={{ fontSize: 12, color: '#ef4444' }}>{cpError}</span>}
           </div>
         ) : (
           <button
