@@ -632,12 +632,15 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
 
   const todayStr = new Date().toISOString().slice(0, 10)
   const isFuture = (d) => !!d && d > todayStr
-  // Caution only when no projected date can meet the checkpoint.
-  // If either HC or BLDR is on/before the checkpoint date, the lot is satisfied.
+  const cpIsPast = !!checkpointDate && checkpointDate <= todayStr
   const hcMeetsCP = !!localHcDate && localHcDate <= checkpointDate
   const bldrMeetsCP = !!localBldrDate && localBldrDate <= checkpointDate
+  const neitherMeets = !hcMeetsCP && !bldrMeetsCP
+  // Delinquent: checkpoint passed and this lot has no projected date on/before it
+  const isDelinquent = !!checkpointDate && cpIsPast && neitherMeets
+  // Caution: future checkpoint only — if it were past it would be delinquent instead
   const hasAnyFutureDate = isFuture(localHcDate) || isFuture(localBldrDate)
-  const isCaution = !!checkpointDate && hasAnyFutureDate && !hcMeetsCP && !bldrMeetsCP
+  const isCaution = !!checkpointDate && !cpIsPast && hasAnyFutureDate && neitherMeets
 
   function col(label, marksDate, projDate, isLocked, dateKey, lockKey) {
     return (
@@ -690,8 +693,8 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
       style={{
         width: 148, flexShrink: 0,
         borderRadius: 6, overflow: 'hidden',
-        background: isExcess ? '#FFF5F5' : isCaution ? '#FFFBEB' : '#fff',
-        border: isExcess ? '1.5px dashed #E24B4A' : isCaution ? '1.5px dashed #D97706' : '1px solid #E4E2DA',
+        background: isExcess ? '#FFF5F5' : isDelinquent ? '#fef2f2' : isCaution ? '#FFFBEB' : '#fff',
+        border: isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : '1px solid #E4E2DA',
         opacity: isDragging ? 0.4 : 1,
         boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
         display: 'flex', flexDirection: 'column',
@@ -704,8 +707,8 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
           textAlign: 'center', fontSize: 14, fontWeight: 700, color: '#2C2C2A',
           padding: '6px 8px',
           cursor: 'grab',
-          background: isExcess ? '#FFF0F0' : isCaution ? '#FEF3C7' : '#FAFAF8',
-          borderBottom: `1px solid ${isExcess ? '#FFCCC9' : isCaution ? '#FDE68A' : '#F0EEE8'}`,
+          background: isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : '#FAFAF8',
+          borderBottom: `1px solid ${isExcess ? '#FFCCC9' : isDelinquent ? '#fecaca' : isCaution ? '#FDE68A' : '#F0EEE8'}`,
           userSelect: 'none',
         }}
       >
