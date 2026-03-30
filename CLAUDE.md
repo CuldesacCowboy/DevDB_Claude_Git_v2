@@ -803,6 +803,13 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: delegated to lot_assignment_service
 - Last commit: 2026-03-27
 
+### devdb_python/api/routers/takedown_agreements.py
+- Owns: TDA read and write endpoints (Slice A + Slice B); agreement list, checkpoint detail, lot assignment, HC/BLDR projected date editing
+- Imports: api.deps, psycopg2.extras, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments, sim_lots, sim_entitlement_groups
+- Last commit: 2026-03-29
+
 ### devdb_python/api/routers/phases.py
 - Owns: Phase CRUD, lot-type split management; DELETE /{phase_id}/lot-type registered BEFORE DELETE /{phase_id} (route ordering is intentional)
 - Imports: api.deps, api.models.phase_models, services.phase_assignment_service, psycopg2.extras
@@ -840,7 +847,7 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: react-router-dom (BrowserRouter, Routes, Route, NavLink)
 - Imported by: main.jsx
 - Tables: none
-- Last commit: 2026-03-26
+- Last commit: 2026-03-29
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker sidebar; add instrument modal
@@ -868,7 +875,7 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: dnd-kit, react, PhaseColumn, computeCols
 - Imported by: LotPhaseView.jsx
 - Tables: none
-- Last commit: 2026-03-28
+- Last commit: 2026-03-29
 
 ### devdb_ui/src/components/PhaseColumn.jsx
 - Owns: Phase card with per-lot-type split rows, inline name edit, add product type form, delete confirm, auto-delete lot type on 0/0/0
@@ -933,6 +940,13 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: none
 - Last commit: 2026-03-29
 
+### devdb_ui/src/hooks/useTdaData.js
+- Owns: Data fetching for TDA view -- agreement list, checkpoint detail, lot assignments; HC/BLDR projected date and lock state management
+- Imports: react (useState, useEffect, useCallback)
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none (API calls via /api/takedown-agreements)
+- Last commit: 2026-03-29
+
 ### devdb_ui/src/utils/computeCols.js
 - Owns: Optimal column-count calculation for instrument band given available width and phase count
 - Imports: none
@@ -977,6 +991,21 @@ touches before making changes. Keep this section updated when files are added or
 - Owns: Renames lot_count column to projected_count in sim_phase_product_splits
 - Tables: sim_phase_product_splits
 - Last commit: 2026-03-27
+
+### devdb_python/migrations/004_tda_schema.sql
+- Owns: Adds ent_group_id to sim_takedown_agreements; checkpoint_name/status to sim_takedown_checkpoints; HC/BLDR projected date and lock fields to sim_takedown_lot_assignments (D-151 lock pattern proof-of-concept)
+- Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments
+- Last commit: 2026-03-29
+
+### devdb_python/migrations/005_tda_sequences.sql
+- Owns: Adds SERIAL sequences to sim_takedown_checkpoints.checkpoint_id, sim_takedown_agreement_lots.id, sim_takedown_lot_assignments.assignment_id; advances each past current MAX to avoid collisions
+- Tables: sim_takedown_checkpoints, sim_takedown_agreement_lots, sim_takedown_lot_assignments
+- Last commit: 2026-03-29
+
+### devdb_python/migrations/add_display_order.py
+- Owns: Idempotent migration script adding display_order column to sim_dev_phases (UI display preference only -- never read by simulation engine; sequence_number remains the engine ordering column)
+- Tables: sim_dev_phases
+- Last commit: 2026-03-29
 
 ### devdb_python/migrations/006_fix_instrument_dev_ids.sql
 - Owns: Corrects dev_id values in sim_legal_instruments using dim_development bridge
