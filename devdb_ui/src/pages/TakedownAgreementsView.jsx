@@ -815,11 +815,14 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
 
   const lots = checkpoint.lots || []
 
-  // Sort lots: earliest obligation date first (marks date > projected date > no date)
+  // Sort lots: earliest obligation date first (min of all HC/BLDR marks+projected dates)
   const sortedLots = useMemo(() => {
+    const bestDate = (l) => {
+      const dates = [l.hc_marks_date, l.hc_projected_date, l.bldr_marks_date, l.bldr_projected_date].filter(Boolean)
+      return dates.length ? dates.reduce((m, d) => (d < m ? d : m)) : null
+    }
     return [...lots].sort((a, b) => {
-      const aDate = a.hc_marks_date || a.hc_projected_date || a.bldr_marks_date || a.bldr_projected_date
-      const bDate = b.hc_marks_date || b.hc_projected_date || b.bldr_marks_date || b.bldr_projected_date
+      const aDate = bestDate(a), bDate = bestDate(b)
       if (!aDate && !bDate) return 0
       if (!aDate) return 1
       if (!bDate) return -1
@@ -858,6 +861,26 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
   const cPct   = t > 0 ? Math.min(100, Math.round((c            / t) * 100)) : 0
   const cpPct  = t > 0 ? Math.min(100, Math.round((plannedTotal / t) * 100)) : 0
 
+  // ── Checkpoint status ──────────────────────────────────────────
+  // metCP = lots where any date (marks or projected) is on/before the checkpoint date
+  const metCP = localDate ? lots.filter(l => {
+    const dates = [l.hc_marks_date, l.hc_projected_date, l.bldr_marks_date, l.bldr_projected_date].filter(Boolean)
+    return dates.some(d => d <= localDate)
+  }).length : 0
+  const cpIsPast = !!localDate && localDate <= todayStr
+  const cpStatus = (!localDate || t === 0) ? 'none'
+    : cpIsPast
+      ? (metCP >= t ? 'complete' : 'missed')
+      : (metCP >= t ? 'on-track' : metCP > 0 ? 'at-risk' : 'none')
+
+  const STATUS_CFG = {
+    'complete': { label: 'Complete', icon: '✓', color: '#15803d', bg: '#dcfce7', border: '#86efac' },
+    'on-track': { label: 'On Track', icon: '↗', color: '#0f766e', bg: '#ccfbf1', border: '#5eead4' },
+    'at-risk':  { label: 'At Risk',  icon: '⚠', color: '#b45309', bg: '#fef3c7', border: '#fcd34d' },
+    'missed':   { label: 'Missed',   icon: '✕', color: '#b91c1c', bg: '#fee2e2', border: '#fca5a5' },
+  }
+  const statusCfg = STATUS_CFG[cpStatus] || null
+
   // ── Row height equalization (lots + placeholders) ──────────────
   const gridRef = useRef(null)
   useLayoutEffect(() => {
@@ -884,6 +907,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       style={{
         background: isOver ? '#f0f9ff' : '#ffffff',
         border: `1.5px solid ${isOver ? '#3b82f6' : '#E4E2DA'}`,
+        borderLeft: isOver ? '1.5px solid #3b82f6' : statusCfg ? `4px solid ${statusCfg.border}` : '1.5px solid #E4E2DA',
         borderRadius: 8, marginBottom: 14,
         transition: 'all 0.15s',
       }}
@@ -925,6 +949,21 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
             />
           </div>
         </div>
+
+        {/* Status badge */}
+        {statusCfg && (
+          <div style={{
+            flexShrink: 0,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '3px 9px', borderRadius: 12,
+            background: statusCfg.bg, border: `1px solid ${statusCfg.border}`,
+          }}>
+            <span style={{ fontSize: 12, color: statusCfg.color, lineHeight: 1 }}>{statusCfg.icon}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: statusCfg.color, letterSpacing: '0.04em' }}>
+              {statusCfg.label.toUpperCase()}
+            </span>
+          </div>
+        )}
 
         {/* Right: Completed + Completed+Planned bars */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 240 }}>
