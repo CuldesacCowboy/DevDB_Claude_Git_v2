@@ -617,7 +617,7 @@ function ProjectedDateField({ value, locked, onChange }) {
 }
 
 // ── Lot pill inside a checkpoint ──────────────────────────────────
-function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, checkpointDate = '' }) {
+function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, checkpointDate = '', isRecentlyMoved = false }) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `assigned-${assignment.assignment_id}`,
@@ -629,6 +629,15 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
   const [localBldrDate, setLocalBldrDate] = useState(assignment.bldr_projected_date || '')
   useEffect(() => { setLocalHcDate(assignment.hc_projected_date || '') }, [assignment.hc_projected_date])
   useEffect(() => { setLocalBldrDate(assignment.bldr_projected_date || '') }, [assignment.bldr_projected_date])
+
+  // Flash indicator when this lot was repositioned by a sort
+  const [flashActive, setFlashActive] = useState(false)
+  useEffect(() => {
+    if (!isRecentlyMoved) return
+    setFlashActive(true)
+    const t = setTimeout(() => setFlashActive(false), 650)
+    return () => clearTimeout(t)
+  }, [isRecentlyMoved])
 
   const todayStr = new Date().toISOString().slice(0, 10)
   const isFuture = (d) => !!d && d > todayStr
@@ -696,7 +705,10 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
         background: isExcess ? '#FFF5F5' : isDelinquent ? '#fef2f2' : isCaution ? '#FFFBEB' : '#fff',
         border: isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : '1px solid #E4E2DA',
         opacity: isDragging ? 0.4 : 1,
-        boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+        boxShadow: flashActive
+          ? '0 0 0 2px #f59e0b, 0 1px 3px rgba(0,0,0,0.10)'
+          : '0 1px 2px rgba(0,0,0,0.06)',
+        transition: flashActive ? 'none' : 'box-shadow 0.7s ease-out',
         display: 'flex', flexDirection: 'column',
       }}
     >
@@ -833,6 +845,24 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       return aDate.localeCompare(bDate)
     })
   }, [lots])
+
+  // Detect when a sort reorder occurs and briefly flag the moved lots
+  const prevSortedIdsRef = useRef([])
+  const [reorderedIds, setReorderedIds] = useState(new Set())
+  useEffect(() => {
+    const newIds = sortedLots.map(l => l.assignment_id)
+    const prevIds = prevSortedIdsRef.current
+    if (prevIds.length > 0 && prevIds.length === newIds.length) {
+      const moved = new Set()
+      newIds.forEach((id, i) => { if (prevIds[i] !== id) moved.add(id) })
+      if (moved.size > 0) {
+        setReorderedIds(moved)
+        const t = setTimeout(() => setReorderedIds(new Set()), 900)
+        return () => clearTimeout(t)
+      }
+    }
+    prevSortedIdsRef.current = newIds
+  }, [sortedLots])
 
   // C = lots with HC or BLDR projected date in the past (≤ today) — completed
   // futureP = lots with HC or BLDR projected date in the future — planned
@@ -1010,6 +1040,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
               assignment={a}
               isExcess={idx >= total - excess}
               checkpointDate={localDate}
+              isRecentlyMoved={reorderedIds.has(a.assignment_id)}
               onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
               onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
             />
