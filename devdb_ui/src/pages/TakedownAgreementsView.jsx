@@ -4,7 +4,6 @@ import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
 
 const API = 'http://localhost:8765/api'
-const ENT_GROUP_ID = 9002
 
 // ── Colour palette for TDA cards ──────────────────────────────────
 const TDA_COLORS = [
@@ -48,18 +47,18 @@ function UnassignedLotPill({ lot }) {
       {...attributes}
       {...listeners}
       style={{
-        width: 50, height: 28, flexShrink: 0,
+        width: 68, height: 34, flexShrink: 0,
         background: '#fff',
         border: '0.5px solid #888780',
         borderRadius: 5,
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '0 5px', boxSizing: 'border-box',
+        padding: '0 6px', boxSizing: 'border-box',
         cursor: 'grab', opacity: isDragging ? 0.4 : 1,
       }}
     >
-      <span style={{ fontSize: 8, color: '#888780' }}>{code}</span>
-      <span style={{ fontSize: 9, fontWeight: 500, color: '#2C2C2A' }}>{seq}</span>
+      <span style={{ fontSize: 11, color: '#888780' }}>{code}</span>
+      <span style={{ fontSize: 12, fontWeight: 500, color: '#2C2C2A' }}>{seq}</span>
     </div>
   )
 }
@@ -71,20 +70,20 @@ function UnassignedBank({ lots }) {
     <div
       ref={setNodeRef}
       style={{
-        width: 200, flexShrink: 0,
+        width: 240, flexShrink: 0,
         background: isOver ? '#eff6ff' : '#f9fafb',
         border: `2px solid ${isOver ? '#3b82f6' : '#e5e7eb'}`,
-        borderRadius: 8, padding: 12, marginRight: 16,
+        borderRadius: 8, padding: 14, marginRight: 20,
         minHeight: 200, transition: 'all 0.15s',
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 12, color: '#374151', marginBottom: 4 }}>
+      <div style={{ fontWeight: 700, fontSize: 15, color: '#374151', marginBottom: 4 }}>
         Unassigned
       </div>
-      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
+      <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 10 }}>
         {lots.length} lot{lots.length !== 1 ? 's' : ''}
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
         {lots.map(lot => <UnassignedLotPill key={lot.lot_id} lot={lot} />)}
       </div>
     </div>
@@ -105,17 +104,17 @@ function TdaCard({ detail, colorIdx, children }) {
       flexShrink: 0, width: 'fit-content',
     }}>
       <div style={{
-        background: colors.header, padding: '8px 14px',
+        background: colors.header, padding: '10px 16px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
-        <span style={{ fontWeight: 700, fontSize: 13, color: colors.text }}>
+        <span style={{ fontWeight: 700, fontSize: 16, color: colors.text }}>
           {detail.tda_name}
         </span>
-        <span style={{ fontSize: 11, color: colors.text, opacity: 0.8, marginLeft: 12 }}>
+        <span style={{ fontSize: 13, color: colors.text, opacity: 0.8, marginLeft: 14 }}>
           {totalLots} lot{totalLots !== 1 ? 's' : ''}
         </span>
       </div>
-      <div style={{ background: colors.tint, padding: 12 }}>
+      <div style={{ background: colors.tint, padding: 14 }}>
         {children}
       </div>
     </div>
@@ -126,12 +125,12 @@ function TdaCard({ detail, colorIdx, children }) {
 function LockIcon({ locked }) {
   const color = locked ? '#444441' : '#B4B2A9'
   return locked ? (
-    <svg width="10" height="12" viewBox="0 0 10 12" fill="none">
+    <svg width="13" height="15" viewBox="0 0 10 12" fill="none">
       <rect x="1" y="5.5" width="8" height="6" rx="1.5" fill={color} />
       <path d="M3 5.5V4a2 2 0 0 1 4 0v1.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" fill="none" />
     </svg>
   ) : (
-    <svg width="10" height="12" viewBox="0 0 10 12" fill="none">
+    <svg width="13" height="15" viewBox="0 0 10 12" fill="none">
       <rect x="1" y="5.5" width="8" height="6" rx="1.5" fill={color} />
       <path d="M3 5.5V4a2 2 0 0 1 4 0" stroke={color} strokeWidth="1.4" strokeLinecap="round" fill="none" />
     </svg>
@@ -159,9 +158,9 @@ function ProjectedDateField({ value, locked, onChange }) {
   if (locked) {
     return (
       <div style={{
-        fontSize: 9, color: '#444441',
+        fontSize: 12, color: '#444441',
         pointerEvents: 'none',
-        padding: '1px 3px',
+        padding: '2px 4px',
       }}>
         {fmt(value) || '—'}
       </div>
@@ -170,11 +169,11 @@ function ProjectedDateField({ value, locked, onChange }) {
   return (
     <div style={{ position: 'relative' }}>
       <div style={{
-        fontSize: 9, color: '#27500A',
+        fontSize: 12, color: '#27500A',
         border: '1px dashed #3B6D11',
         background: '#EAF3DE',
         borderRadius: 3,
-        padding: '1px 3px',
+        padding: '2px 4px',
         lineHeight: '1.3',
         cursor: 'pointer',
         userSelect: 'none',
@@ -209,13 +208,13 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
   function col(label, marksDate, projDate, isLocked, dateKey, lockKey) {
     return (
       <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-          <span style={{ fontSize: 8, textTransform: 'uppercase', color: '#888780', letterSpacing: '0.04em' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+          <span style={{ fontSize: 11, textTransform: 'uppercase', color: '#888780', letterSpacing: '0.04em' }}>
             {label}
           </span>
           <LockBtn locked={isLocked} onClick={() => onLockChange(lockKey, !isLocked)} />
         </div>
-        <div style={{ fontSize: 9, color: '#B4B2A9', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div style={{ fontSize: 12, color: '#B4B2A9', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {fmt(marksDate)}
         </div>
         <ProjectedDateField
@@ -234,7 +233,7 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
     <div
       ref={setNodeRef}
       style={{
-        width: 106, flexShrink: 0,
+        width: 148, flexShrink: 0,
         borderRadius: 6, overflow: 'hidden',
         background: '#fff', border: '1px solid #E4E2DA',
         opacity: isDragging ? 0.4 : 1,
@@ -246,8 +245,8 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
         {...attributes}
         {...listeners}
         style={{
-          textAlign: 'center', fontSize: 11, fontWeight: 700, color: '#2C2C2A',
-          padding: '4px 6px',
+          textAlign: 'center', fontSize: 14, fontWeight: 700, color: '#2C2C2A',
+          padding: '6px 8px',
           cursor: 'grab', background: '#FAFAF8',
           borderBottom: '1px solid #F0EEE8',
           userSelect: 'none',
@@ -255,7 +254,7 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
       >
         {shortLot(assignment.lot_number)}
       </div>
-      <div style={{ display: 'flex', padding: '4px 5px', gap: 3 }}>
+      <div style={{ display: 'flex', padding: '6px 8px', gap: 4 }}>
         {col('HC',
           assignment.hc_marks_date, assignment.hc_projected_date,
           assignment.hc_is_locked, 'hc_projected_date', 'hc_is_locked')}
@@ -284,17 +283,17 @@ function PlaceholderPill({ daysToCP }) {
 
   return (
     <div style={{
-      width: 106, flexShrink: 0, borderRadius: 6,
+      width: 148, flexShrink: 0, borderRadius: 6,
       background: cfg.bg, border: cfg.border,
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
-      padding: '10px 6px', minHeight: 72,
+      padding: '12px 8px', minHeight: 88,
     }}>
-      <span style={{ fontSize: 18, color: cfg.iconColor, lineHeight: 1 }}>
+      <span style={{ fontSize: 22, color: cfg.iconColor, lineHeight: 1 }}>
         {cfg.icon}
       </span>
       {cfg.label && (
-        <span style={{ fontSize: 8, color: cfg.iconColor, marginTop: 4, letterSpacing: '0.05em', fontWeight: 600 }}>
+        <span style={{ fontSize: 11, color: cfg.iconColor, marginTop: 5, letterSpacing: '0.05em', fontWeight: 600 }}>
           {cfg.label}
         </span>
       )}
@@ -338,9 +337,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
     const grid = gridRef.current
     if (!grid) return
     const children = Array.from(grid.children)
-    // Reset heights so natural sizes drive row grouping
     children.forEach(el => { el.style.height = '' })
-    // Group by top position with 10px tolerance (same as usePhaseEqualization)
     const rows = []
     children.forEach(el => {
       const top = el.getBoundingClientRect().top
@@ -348,7 +345,6 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       if (row) row.els.push(el)
       else rows.push({ top, els: [el] })
     })
-    // Equalize each row to its tallest child
     rows.forEach(row => {
       const maxH = Math.max(...row.els.map(el => el.getBoundingClientRect().height))
       row.els.forEach(el => { el.style.height = `${maxH}px` })
@@ -372,7 +368,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         if (e.key === 'Escape') setEditingTotal(false)
       }}
       style={{
-        width: 28, fontSize: 9, fontWeight: 500,
+        width: 36, fontSize: 12, fontWeight: 500,
         border: '1px dashed #3B6D11',
         background: '#EAF3DE', color: '#27500A',
         borderRadius: 3, padding: '0 2px',
@@ -384,10 +380,10 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       onClick={() => setEditingTotal(true)}
       title="Click to edit"
       style={{
-        fontSize: 9, fontWeight: 500, color: '#27500A',
+        fontSize: 12, fontWeight: 500, color: '#27500A',
         border: '1px dashed #3B6D11',
         background: '#EAF3DE',
-        borderRadius: 3, padding: '0 3px',
+        borderRadius: 3, padding: '0 4px',
         cursor: 'pointer',
       }}
     >
@@ -401,7 +397,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       style={{
         background: isOver ? '#f0f9ff' : '#ffffff',
         border: `1.5px solid ${isOver ? '#3b82f6' : '#E4E2DA'}`,
-        borderRadius: 8, marginBottom: 12,
+        borderRadius: 8, marginBottom: 14,
         transition: 'all 0.15s',
       }}
     >
@@ -409,21 +405,21 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       <div style={{
         background: '#F5F5F2',
         borderRadius: '6px 6px 0 0',
-        padding: '8px 12px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+        padding: '10px 14px',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14,
       }}>
         {/* Left: name + editable checkpoint date */}
         <div style={{ flexShrink: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 12, color: '#444441', marginBottom: 4 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#444441', marginBottom: 5 }}>
             {checkpoint.checkpoint_name || `CP${checkpoint.checkpoint_number}`}
           </div>
           {/* Editable checkpoint date — overlay pattern, local state only */}
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <div style={{
-              fontSize: 9, color: '#27500A',
+              fontSize: 12, color: '#27500A',
               border: '1px dashed #3B6D11',
               background: '#EAF3DE',
-              borderRadius: 3, padding: '1px 5px',
+              borderRadius: 3, padding: '2px 6px',
               cursor: 'pointer', userSelect: 'none',
               whiteSpace: 'nowrap',
             }}>
@@ -445,24 +441,24 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         </div>
 
         {/* Right: C / P progress grid */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 160 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 180 }}>
           {/* C row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: 9, textTransform: 'uppercase', color: '#888780', width: 10, flexShrink: 0 }}>C</span>
-            <div style={{ flex: 1, height: 6, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, textTransform: 'uppercase', color: '#888780', width: 12, flexShrink: 0 }}>C</span>
+            <div style={{ flex: 1, height: 8, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{ width: `${cPct}%`, height: '100%', background: barFill || '#444441', borderRadius: 3, transition: 'width 0.2s' }} />
             </div>
-            <span style={{ fontSize: 9, fontWeight: 500, color: '#444441', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
+            <span style={{ fontSize: 12, fontWeight: 500, color: '#444441', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
               {c}/{tDisplay}
             </span>
           </div>
           {/* P row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: 9, textTransform: 'uppercase', color: '#888780', width: 10, flexShrink: 0 }}>P</span>
-            <div style={{ flex: 1, height: 6, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 12, textTransform: 'uppercase', color: '#888780', width: 12, flexShrink: 0 }}>P</span>
+            <div style={{ flex: 1, height: 8, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
               <div style={{ width: `${pPct}%`, height: '100%', background: barFill || '#B4B2A9', borderRadius: 3, transition: 'width 0.2s' }} />
             </div>
-            <span style={{ fontSize: 9, fontWeight: 500, color: '#444441', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
+            <span style={{ fontSize: 12, fontWeight: 500, color: '#444441', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
               {p}/{t}
             </span>
           </div>
@@ -472,18 +468,18 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       {/* Over-assigned warning strip */}
       {over && (
         <div style={{
-          padding: '3px 12px 4px',
+          padding: '4px 14px 5px',
           background: '#FFF5F5',
           borderTop: '1px solid #FAD5D5',
-          fontSize: 9, color: '#A32D2D',
+          fontSize: 12, color: '#A32D2D',
         }}>
           ⚠ Over-assigned — {c + p} assigned, {t} required
         </div>
       )}
 
-      {/* Body — outer pad + inner grid capped at 5 columns (5×106 + 4×6 = 554px) */}
-      <div style={{ padding: 12, minHeight: 60 }}>
-        <div ref={gridRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'stretch', maxWidth: 554 }}>
+      {/* Body — outer pad + inner grid capped at 5 columns (5×148 + 4×8 = 772px) */}
+      <div style={{ padding: 14, minHeight: 60 }}>
+        <div ref={gridRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'stretch', maxWidth: 772 }}>
           {lots.map(a => (
             <LotPill
               key={a.assignment_id}
@@ -502,13 +498,13 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
 }
 
 // ── Main view ─────────────────────────────────────────────────────
-export default function TakedownAgreementsView() {
+export default function TakedownAgreementsView({ entGroupId }) {
   const {
     agreements, entGroupName,
     selectedTdaId, setSelectedTdaId,
     detail, refetchDetail,
     loading, error,
-  } = useTdaData(ENT_GROUP_ID)
+  } = useTdaData(entGroupId)
 
   const [dragLot, setDragLot] = useState(null)
 
@@ -593,24 +589,25 @@ export default function TakedownAgreementsView() {
 
   // ── Render ───────────────────────────────────────────────────
   if (loading) return (
-    <div style={{ padding: 32, color: '#6b7280' }}>Loading…</div>
+    <div style={{ padding: 32, color: '#6b7280', flex: 1 }}>Loading…</div>
   )
   if (error) return (
-    <div style={{ padding: 32, color: '#dc2626' }}>Error: {error}</div>
+    <div style={{ padding: 32, color: '#dc2626', flex: 1 }}>Error: {error}</div>
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 44px)', background: '#f9fafb' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', background: '#f9fafb' }}>
       {/* Page header */}
       <div style={{
         background: '#fff', borderBottom: '1px solid #e5e7eb',
         padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        flexShrink: 0,
       }}>
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: '#111827', margin: 0 }}>
             Takedown Agreements
           </h1>
-          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+          <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>
             {entGroupName}
           </div>
         </div>
@@ -620,7 +617,7 @@ export default function TakedownAgreementsView() {
             value={selectedTdaId || ''}
             onChange={e => setSelectedTdaId(Number(e.target.value))}
             style={{
-              fontSize: 13, padding: '4px 8px', borderRadius: 6,
+              fontSize: 14, padding: '5px 10px', borderRadius: 6,
               border: '1px solid #d1d5db', background: '#fff', color: '#374151',
             }}
           >
@@ -630,7 +627,7 @@ export default function TakedownAgreementsView() {
           </select>
           <button
             style={{
-              fontSize: 12, padding: '4px 12px', borderRadius: 6,
+              fontSize: 13, padding: '5px 14px', borderRadius: 6,
               border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
               cursor: 'pointer',
             }}
@@ -653,7 +650,7 @@ export default function TakedownAgreementsView() {
           }}>
             <UnassignedBank lots={detail.unassigned_lots || []} />
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-start' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
               <TdaCard detail={detail} colorIdx={tdaColorIdx >= 0 ? tdaColorIdx : 0}>
                 {(detail.checkpoints || []).map((cp) => (
                   <CheckpointBand
@@ -670,18 +667,18 @@ export default function TakedownAgreementsView() {
           <DragOverlay>
             {dragLot?.type === 'unassigned-lot' && (
               <div style={{
-                padding: '2px 8px', borderRadius: 12,
+                padding: '3px 10px', borderRadius: 12,
                 background: '#e0e7ff', border: '1px solid #818cf8',
-                fontSize: 11, fontWeight: 600, color: '#3730a3',
+                fontSize: 13, fontWeight: 600, color: '#3730a3',
               }}>
                 {dragLot.lot.lot_number}
               </div>
             )}
             {dragLot?.type === 'assigned-lot' && (
               <div style={{
-                width: 106, borderRadius: 6,
+                width: 148, borderRadius: 6,
                 background: '#fff', border: '1px solid #E4E2DA',
-                padding: '5px 6px', fontSize: 11, fontWeight: 700, color: '#2C2C2A',
+                padding: '6px 8px', fontSize: 14, fontWeight: 700, color: '#2C2C2A',
                 textAlign: 'center',
               }}>
                 {shortLot(dragLot.assignment.lot_number)}
@@ -690,7 +687,7 @@ export default function TakedownAgreementsView() {
           </DragOverlay>
         </DndContext>
       ) : (
-        <div style={{ padding: 32, color: '#9ca3af', fontSize: 14 }}>
+        <div style={{ padding: 32, color: '#9ca3af', fontSize: 15 }}>
           No agreement selected.
         </div>
       )}

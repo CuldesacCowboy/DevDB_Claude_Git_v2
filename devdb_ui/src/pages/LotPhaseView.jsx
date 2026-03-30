@@ -16,6 +16,7 @@ import PhaseColumn from '../components/PhaseColumn'
 import LotCard, { BuildingGroupCard } from '../components/LotCard'
 import Toast from '../components/Toast'
 import CommunityDevelopmentsView from './CommunityDevelopmentsView'
+import TakedownAgreementsView from './TakedownAgreementsView'
 const LEFT_PANELS_WIDTH = 340 // sidebar + unassigned panel
 
 // TODO: re-enable when simulation run trigger is wired up
@@ -450,6 +451,7 @@ export default function LotPhaseView() {
           {[
             { id: 'developments', label: 'Developments' },
             { id: 'lot-phase', label: 'Legal Instruments' },
+            { id: 'takedown-agreements', label: 'Takedown Agreements' },
           ].map(({ id, label }) => (
             <button
               key={id}
@@ -475,6 +477,8 @@ export default function LotPhaseView() {
               setTabSwitchKey((k) => k + 1)
             }}
           />
+        ) : activeTab === 'takedown-agreements' ? (
+          <TakedownAgreementsView entGroupId={entGroupId} />
         ) : (
       <DndContext key={tabSwitchKey}
         sensors={sensors}
