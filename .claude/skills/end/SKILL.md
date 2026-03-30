@@ -1,3 +1,8 @@
+---
+name: end
+description: DevDB session end — updates CLAUDE.md, commits, pushes, optionally starts new session
+---
+
 Run the end-of-session workflow in order. Do not skip any step.
 
 1. Ask me: "Any decisions or rules to log? (Enter to skip)" — wait for my answer.
