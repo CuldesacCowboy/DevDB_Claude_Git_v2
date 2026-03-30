@@ -858,7 +858,7 @@ function EditableNumber({ value, onChange }) {
 // ── Checkpoint timeline (dot-plot) ───────────────────────────────
 // Receives all assigned lots + placeholder slot count.
 // Every slot gets a row: lots with dates get dots, all others get a ghost line.
-function CheckpointTimeline({ lots, slotCount, checkpointDate }) {
+function CheckpointTimeline({ lots, slotCount, checkpointDate, lotsRequired }) {
   const containerRef = useRef(null)
   const [width, setWidth] = useState(0)
 
@@ -966,8 +966,10 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate }) {
   const yearTop  = qTop + AXIS_ROW_H
   const svgH     = yearTop + AXIS_ROW_H
 
-  // Checkpoint label: "✕ by mm/dd/yy", anchor flips near edges
-  const cpLabel  = checkpointDate ? `✕  by ${fmt(checkpointDate)}` : null
+  // Checkpoint label: "{n} by mm/dd/yy", anchor flips near edges
+  const cpLabel  = checkpointDate
+    ? `${lotsRequired != null ? lotsRequired : ''}  by ${fmt(checkpointDate)}`.trimStart()
+    : null
   const cpAnchor = cpX == null ? 'middle'
     : cpX < PAD_L + chartW * 0.18 ? 'start'
     : cpX > PAD_L + chartW * 0.82 ? 'end'
@@ -996,18 +998,18 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate }) {
             stroke="#C8C6BE" strokeWidth={1} strokeDasharray="3,3" />
         )}
 
-        {/* ── Checkpoint line — solid red ── */}
+        {/* ── Checkpoint line — solid red, label sits above line start ── */}
         {cpX !== null && (
           <g>
-            <line x1={cpX} y1={6} x2={cpX} y2={dataBot} stroke="#dc2626" strokeWidth={2} />
             {cpLabel && (
               <text
                 x={cpX + (cpAnchor === 'end' ? -5 : cpAnchor === 'start' ? 5 : 0)}
-                y={4}
+                y={2}
                 textAnchor={cpAnchor} dominantBaseline="hanging"
                 fontSize={12} fontWeight={700} fill="#dc2626"
               >{cpLabel}</text>
             )}
+            <line x1={cpX} y1={dataTop - 2} x2={cpX} y2={dataBot} stroke="#dc2626" strokeWidth={2} />
           </g>
         )}
 
@@ -1020,23 +1022,27 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate }) {
           const cy = dataTop + i * ROW_H + ROW_H / 2
           const hx = dateX(row.hcDate)
           const bx = dateX(row.bldrDate)
-          const meetsCp = cpX !== null && (
+          const hasDate = hx !== null || bx !== null
+          const meetsCp = cpX !== null && hasDate && (
             (hx !== null && hx <= cpX) || (bx !== null && bx <= cpX)
           )
+          // Has dates but earliest is after the checkpoint date
+          const missesCp = cpX !== null && hasDate && !meetsCp
 
           return (
             <g key={row.key}>
-              {/* Alternating row tint */}
-              {i % 2 === 0 && (
-                <rect x={PAD_L + 1} y={dataTop + i * ROW_H}
-                  width={chartW - 1} height={ROW_H} fill="#FAFAF8" />
-              )}
-
-              {/* ✓ meets checkpoint — shown in label gutter */}
+              {/* Meets checkpoint — green check */}
               {meetsCp && (
                 <text x={PAD_L - 62} y={cy}
                   dominantBaseline="middle" textAnchor="middle"
                   fontSize={13} fill="#15803d" fontWeight={700}>✓</text>
+              )}
+
+              {/* Has dates but all fall after checkpoint — amber clock */}
+              {missesCp && (
+                <text x={PAD_L - 62} y={cy}
+                  dominantBaseline="middle" textAnchor="middle"
+                  fontSize={13} fill="#b45309" fontWeight={700}>↷</text>
               )}
 
               {/* Row label */}
@@ -1154,6 +1160,10 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontSize: 13, color: '#15803d', fontWeight: 700 }}>✓</span>
           <span style={{ fontSize: 12, color: '#888780' }}>Meets CP</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ fontSize: 13, color: '#b45309', fontWeight: 700 }}>↷</span>
+          <span style={{ fontSize: 12, color: '#888780' }}>Late for CP</span>
         </div>
       </div>
     </div>
@@ -1405,7 +1415,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
 
       {/* Timeline chart — toggled from checkpoint header */}
       {showTimeline && (
-        <CheckpointTimeline lots={displayLots} slotCount={slotCount} checkpointDate={localDate} />
+        <CheckpointTimeline lots={displayLots} slotCount={slotCount} checkpointDate={localDate} lotsRequired={t} />
       )}
     </div>
   )
