@@ -11,7 +11,7 @@ set /p "DECISIONS=Any decisions or rules to log? (press Enter to skip) "
 
 echo.
 echo Generating session handoff from git...
-python "%REPO_ROOT%devdb_generate_handoff.py"
+python "%~dp0devdb_generate_handoff.py"
 
 echo.
 echo Writing CLAUDE.md update prompt...
@@ -48,10 +48,13 @@ echo   git push
 
 echo.
 echo Opening prompt in Notepad...
-start notepad "%REPO_ROOT%devdb_end_prompt.txt"
+start "" notepad "%~dp0devdb_end_prompt.txt"
+start "" notepad "%~dp0DevDB_SessionHandoff.md"
 
 echo Opening Claude Code terminal...
-start cmd /k "cd /d "%REPO_ROOT%devdb_python" && claude"
+start "" cmd /k "cd /d "%~dp0devdb_python" && claude"
+
+timeout /t 3 /nobreak >nul
 
 echo.
 echo ============================================================
