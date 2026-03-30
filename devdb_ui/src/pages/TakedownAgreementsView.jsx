@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useLayoutEffect, useMemo, useEffect } from 'react'
-import { DndContext, DragOverlay, pointerWithin } from '@dnd-kit/core'
+import { DndContext, DragOverlay, pointerWithin, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
 
@@ -909,6 +909,8 @@ export default function TakedownAgreementsView({ entGroupId }) {
     loading, error,
   } = useTdaData(entGroupId)
 
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+
   const [dragLot, setDragLot] = useState(null)
   const [selectedLotIds, setSelectedLotIds] = useState(new Set())
   const [selectedPoolLotIds, setSelectedPoolLotIds] = useState(new Set())
@@ -1214,6 +1216,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
       {/* Main content — scrollable */}
       {detail ? (
         <DndContext
+          sensors={sensors}
           collisionDetection={pointerWithin}
           onDragStart={handleDragStart}
           onDragEnd={handleDragEnd}
