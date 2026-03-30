@@ -1,8 +1,11 @@
 # routers/instruments.py
 # Instrument-level endpoints.
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from typing import List
 
 from api.deps import get_db_conn
 
@@ -19,6 +22,11 @@ class InstrumentCreateRequest(BaseModel):
 
 class InstrumentRenameRequest(BaseModel):
     name: str
+
+
+class PhaseOrderRequest(BaseModel):
+    phase_ids: List[int]
+    changed_by: str = "user"
 
 
 @router.post("", response_model=dict, status_code=201)
@@ -104,6 +112,79 @@ def rename_instrument(
             raise HTTPException(status_code=404, detail=f"Instrument {instrument_id} not found")
         conn.commit()
         return {"instrument_id": instrument_id, "instrument_name": name}
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+@router.patch("/{instrument_id}/phase-order", response_model=dict)
+def update_phase_order(
+    instrument_id: int,
+    body: PhaseOrderRequest,
+    conn=Depends(get_db_conn),
+):
+    """Persist a user-defined phase display order by writing display_order to sim_dev_phases."""
+    import psycopg2.extras
+
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        for i, phase_id in enumerate(body.phase_ids):
+            cur.execute(
+                "UPDATE sim_dev_phases SET display_order = %s WHERE phase_id = %s AND instrument_id = %s",
+                (i, phase_id, instrument_id),
+            )
+        conn.commit()
+        return {"instrument_id": instrument_id, "phase_order": body.phase_ids}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+@router.post("/{instrument_id}/phase-order/auto-sort", response_model=dict)
+def auto_sort_phases(instrument_id: int, conn=Depends(get_db_conn)):
+    """Auto-sort phases alphabetically by prefix, then numerically by ph. N suffix.
+    Writes the result to display_order on sim_dev_phases and returns the ordered phase_ids."""
+    import psycopg2.extras
+
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "SELECT phase_id, phase_name FROM sim_dev_phases WHERE instrument_id = %s",
+            (instrument_id,),
+        )
+        phases = cur.fetchall()
+        if not phases:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Instrument {instrument_id} not found or has no phases",
+            )
+
+        def sort_key(p):
+            name = p["phase_name"]
+            idx = name.rfind(" ph.")
+            if idx == -1:
+                return (name.lower(), 0)
+            prefix = name[:idx].lower()
+            rest = name[idx + 4:].strip()
+            m = re.search(r"\d+", rest)
+            return (prefix, int(m.group()) if m else 0)
+
+        sorted_phases = sorted(phases, key=sort_key)
+        phase_ids = [p["phase_id"] for p in sorted_phases]
+
+        for i, phase_id in enumerate(phase_ids):
+            cur.execute(
+                "UPDATE sim_dev_phases SET display_order = %s WHERE phase_id = %s",
+                (i, phase_id),
+            )
+        conn.commit()
+        return {"phase_order": phase_ids}
     except HTTPException:
         raise
     except Exception:

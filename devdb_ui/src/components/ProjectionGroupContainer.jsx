@@ -108,6 +108,7 @@ export default function ProjectionGroupContainer({
         `}
       >
         <div className="flex flex-col gap-0.5">
+          <p className="text-[9px] font-semibold uppercase tracking-widest text-center text-gray-400 leading-none mb-0.5">Development</p>
           <div className="relative flex items-center justify-center">
             <span className="absolute left-0 text-gray-400 text-[10px] leading-none flex-shrink-0 cursor-grab active:cursor-grabbing select-none" aria-hidden>⠿</span>
             <p

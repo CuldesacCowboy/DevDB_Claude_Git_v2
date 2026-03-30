@@ -248,6 +248,7 @@ export default function InstrumentContainer({
           </>
         ) : (
           <div className="flex flex-col gap-0.5">
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-center leading-none mb-0.5" style={{ color: 'inherit', opacity: 0.55 }}>Legal Instrument</p>
             <div className="flex items-center gap-1.5">
               {/* Instrument drag handle */}
               <span
