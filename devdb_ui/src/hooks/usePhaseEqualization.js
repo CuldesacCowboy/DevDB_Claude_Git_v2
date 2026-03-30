@@ -11,9 +11,9 @@ export function usePhaseEqualization({ pgGroups, availableWidth, expandedState }
     if (!pgWrapperRef.current) return
     const containers = Array.from(pgWrapperRef.current.children)
     // Step B: Reset all to 'auto' BEFORE the rAF so the browser reflows
-    // natural content heights before we measure. Using '' here would also
-    // remove the inline style but 'auto' is explicit and reliable.
-    containers.forEach(el => { el.style.height = 'auto' })
+    // natural content heights before we measure. Clear minHeight too so
+    // the previous equalization floor doesn't suppress the natural height.
+    containers.forEach(el => { el.style.height = 'auto'; el.style.minHeight = '' })
     // Step C-E: Measure and equalize AFTER reflow
     requestAnimationFrame(() => {
       if (!pgWrapperRef.current) return
@@ -25,10 +25,11 @@ export function usePhaseEqualization({ pgGroups, availableWidth, expandedState }
         if (row) row.els.push(el)
         else rows.push({ top, els: [el] })
       })
-      // Equalize row heights
+      // Equalize row heights using min-height so containers can still grow
+      // when inline forms (add product type, delete confirm) expand their content.
       rows.forEach(row => {
         const maxH = Math.max(...row.els.map(el => el.getBoundingClientRect().height))
-        row.els.forEach(el => { el.style.height = maxH + 'px' })
+        row.els.forEach(el => { el.style.minHeight = maxH + 'px' })
       })
       // Track which devs are alone on their row so they get wider layout
       const newSoloIds = new Set(

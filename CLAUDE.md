@@ -896,7 +896,7 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: dnd-kit, react, InstrumentContainer
 - Imported by: LotPhaseView.jsx
 - Tables: none
-- Last commit: 2026-03-28
+- Last commit: 2026-03-29
 
 ### devdb_ui/src/components/UnassignedColumn.jsx
 - Owns: Sticky panel of lots with phase_id = NULL; droppable for unassign operations
@@ -931,7 +931,7 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: react (useState, useRef, useLayoutEffect)
 - Imported by: LotPhaseView.jsx
 - Tables: none
-- Last commit: 2026-03-28
+- Last commit: 2026-03-29
 
 ### devdb_ui/src/utils/computeCols.js
 - Owns: Optimal column-count calculation for instrument band given available width and phase count
