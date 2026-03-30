@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useLayoutEffect } from 'react'
+import { useState, useCallback, useRef, useLayoutEffect, useMemo } from 'react'
 import { DndContext, DragOverlay, pointerWithin } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
@@ -300,7 +300,7 @@ function ProjectedDateField({ value, locked, onChange }) {
 }
 
 // ── Lot pill inside a checkpoint ──────────────────────────────────
-function LotPill({ assignment, onDateChange, onLockChange }) {
+function LotPill({ assignment, onDateChange, onLockChange, isExcess = false }) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `assigned-${assignment.assignment_id}`,
@@ -337,7 +337,8 @@ function LotPill({ assignment, onDateChange, onLockChange }) {
       style={{
         width: 148, flexShrink: 0,
         borderRadius: 6, overflow: 'hidden',
-        background: '#fff', border: '1px solid #E4E2DA',
+        background: isExcess ? '#FFF5F5' : '#fff',
+        border: isExcess ? '1.5px dashed #E24B4A' : '1px solid #E4E2DA',
         opacity: isDragging ? 0.4 : 1,
         boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
         display: 'flex', flexDirection: 'column',
@@ -403,11 +404,56 @@ function PlaceholderPill({ daysToCP }) {
   )
 }
 
+// ── Editable inline value (green dashed style) ───────────────────
+function EditableNumber({ value, onChange }) {
+  const [editing, setEditing] = useState(false)
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        min={0}
+        defaultValue={value}
+        onBlur={(e) => {
+          const val = parseInt(e.target.value, 10)
+          if (!isNaN(val) && val >= 0) onChange(val)
+          setEditing(false)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.target.blur()
+          if (e.key === 'Escape') setEditing(false)
+        }}
+        style={{
+          width: 36, fontSize: 13, fontWeight: 700,
+          border: '1px dashed #3B6D11',
+          background: '#EAF3DE', color: '#27500A',
+          borderRadius: 3, padding: '0 2px',
+          outline: 'none', textAlign: 'center',
+        }}
+      />
+    )
+  }
+  return (
+    <span
+      onClick={() => setEditing(true)}
+      title="Click to edit"
+      style={{
+        fontSize: 13, fontWeight: 700, color: '#27500A',
+        border: '1px dashed #3B6D11',
+        background: '#EAF3DE',
+        borderRadius: 3, padding: '0 5px',
+        cursor: 'pointer',
+      }}
+    >
+      {value}
+    </span>
+  )
+}
+
 // ── Droppable checkpoint band ─────────────────────────────────────
 function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
   const [localTotal, setLocalTotal] = useState(checkpoint.lots_required_cumulative || 0)
   const [localDate, setLocalDate] = useState(checkpoint.checkpoint_date || '')
-  const [editingTotal, setEditingTotal] = useState(false)
 
   const { setNodeRef, isOver } = useDroppable({
     id: `checkpoint-${checkpoint.checkpoint_id}`,
@@ -415,23 +461,39 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
   })
 
   const lots = checkpoint.lots || []
+
+  // Sort lots: earliest obligation date first (marks date > projected date > no date)
+  const sortedLots = useMemo(() => {
+    return [...lots].sort((a, b) => {
+      const aDate = a.hc_marks_date || a.hc_projected_date || a.bldr_marks_date || a.bldr_projected_date
+      const bDate = b.hc_marks_date || b.hc_projected_date || b.bldr_marks_date || b.bldr_projected_date
+      if (!aDate && !bDate) return 0
+      if (!aDate) return 1
+      if (!bDate) return -1
+      return aDate.localeCompare(bDate)
+    })
+  }, [lots])
+
   // C = confirmed (has marks dates), P = projected only
   const c = lots.filter(l => l.hc_marks_date || l.bldr_marks_date).length
   const p = lots.filter(l => !l.hc_marks_date && !l.bldr_marks_date).length
   const t = localTotal
-  const over = (c + p) > t
+  const total = c + p
+  const excess = Math.max(0, total - t)
+  const over = excess > 0
 
   // Placeholder count and urgency
-  const slotCount = Math.max(0, t - (c + p))
+  const slotCount = Math.max(0, t - total)
   const daysToCP = (() => {
     if (!localDate) return null
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const cpDate = new Date(localDate)
     return Math.floor((cpDate - today) / (1000 * 60 * 60 * 24))
   })()
-  const barFill = over ? '#E24B4A' : null
+
+  const barColor = over ? '#E24B4A' : null
   const cPct = t > 0 ? Math.min(100, Math.round((c / t) * 100)) : 0
-  const pPct = t > 0 ? Math.min(100, Math.round((p / t) * 100)) : 0
+  const cpPct = t > 0 ? Math.min(100, Math.round((total / t) * 100)) : 0
 
   // ── Row height equalization (lots + placeholders) ──────────────
   const gridRef = useRef(null)
@@ -453,46 +515,6 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
     })
   }, [lots, slotCount])
 
-  // Editable total — inline number input, green-dashed style
-  const tDisplay = editingTotal ? (
-    <input
-      autoFocus
-      type="number"
-      min={0}
-      defaultValue={localTotal}
-      onBlur={(e) => {
-        const val = parseInt(e.target.value, 10)
-        if (!isNaN(val) && val >= 0) setLocalTotal(val)
-        setEditingTotal(false)
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') e.target.blur()
-        if (e.key === 'Escape') setEditingTotal(false)
-      }}
-      style={{
-        width: 36, fontSize: 12, fontWeight: 500,
-        border: '1px dashed #3B6D11',
-        background: '#EAF3DE', color: '#27500A',
-        borderRadius: 3, padding: '0 2px',
-        outline: 'none', textAlign: 'center',
-      }}
-    />
-  ) : (
-    <span
-      onClick={() => setEditingTotal(true)}
-      title="Click to edit"
-      style={{
-        fontSize: 12, fontWeight: 500, color: '#27500A',
-        border: '1px dashed #3B6D11',
-        background: '#EAF3DE',
-        borderRadius: 3, padding: '0 4px',
-        cursor: 'pointer',
-      }}
-    >
-      {t}
-    </span>
-  )
-
   return (
     <div
       ref={setNodeRef}
@@ -510,18 +532,17 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         padding: '10px 14px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14,
       }}>
-        {/* Left: name + editable checkpoint date */}
-        <div style={{ flexShrink: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: '#444441', marginBottom: 5 }}>
-            {checkpoint.checkpoint_name || `CP${checkpoint.checkpoint_number}`}
-          </div>
-          {/* Editable checkpoint date — overlay pattern, local state only */}
+        {/* Left: "{X} required by {date}" — both editable inline */}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <EditableNumber value={t} onChange={setLocalTotal} />
+          <span style={{ fontSize: 13, color: '#6B6B68', fontWeight: 500 }}>required by</span>
+          {/* Editable date — overlay pattern */}
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <div style={{
-              fontSize: 12, color: '#27500A',
+              fontSize: 13, fontWeight: 700, color: '#27500A',
               border: '1px dashed #3B6D11',
               background: '#EAF3DE',
-              borderRadius: 3, padding: '2px 6px',
+              borderRadius: 3, padding: '0 5px',
               cursor: 'pointer', userSelect: 'none',
               whiteSpace: 'nowrap',
             }}>
@@ -542,50 +563,43 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
           </div>
         </div>
 
-        {/* Right: C / P progress grid */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 180 }}>
-          {/* C row */}
+        {/* Right: Completed + Completed+Planned bars */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 220 }}>
+          {/* Completed row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, textTransform: 'uppercase', color: '#888780', width: 12, flexShrink: 0 }}>C</span>
+            <span style={{ fontSize: 11, color: '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
+              Completed
+            </span>
             <div style={{ flex: 1, height: 8, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: `${cPct}%`, height: '100%', background: barFill || '#444441', borderRadius: 3, transition: 'width 0.2s' }} />
+              <div style={{ width: `${cPct}%`, height: '100%', background: barColor || '#444441', borderRadius: 3, transition: 'width 0.2s' }} />
             </div>
-            <span style={{ fontSize: 12, fontWeight: 500, color: '#444441', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
-              {c}/{tDisplay}
+            <span style={{ fontSize: 12, fontWeight: 500, color: '#444441', flexShrink: 0, minWidth: 40, textAlign: 'right' }}>
+              {c}/{t}
             </span>
           </div>
-          {/* P row */}
+          {/* Completed + Planned For row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 12, textTransform: 'uppercase', color: '#888780', width: 12, flexShrink: 0 }}>P</span>
+            <span style={{ fontSize: 11, color: '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
+              + Planned
+            </span>
             <div style={{ flex: 1, height: 8, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: `${pPct}%`, height: '100%', background: barFill || '#B4B2A9', borderRadius: 3, transition: 'width 0.2s' }} />
+              <div style={{ width: `${cpPct}%`, height: '100%', background: barColor || '#B4B2A9', borderRadius: 3, transition: 'width 0.2s' }} />
             </div>
-            <span style={{ fontSize: 12, fontWeight: 500, color: '#444441', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 2 }}>
-              {p}/{t}
+            <span style={{ fontSize: 12, fontWeight: 500, color: over ? '#A32D2D' : '#444441', flexShrink: 0, minWidth: 40, textAlign: 'right' }}>
+              {total}/{t}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Over-assigned warning strip */}
-      {over && (
-        <div style={{
-          padding: '4px 14px 5px',
-          background: '#FFF5F5',
-          borderTop: '1px solid #FAD5D5',
-          fontSize: 12, color: '#A32D2D',
-        }}>
-          ⚠ Over-assigned — {c + p} assigned, {t} required
-        </div>
-      )}
-
       {/* Body — outer pad + inner grid capped at 5 columns (5×148 + 4×8 = 772px) */}
       <div style={{ padding: 14, minHeight: 60 }}>
         <div ref={gridRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'stretch', maxWidth: 772 }}>
-          {lots.map(a => (
+          {sortedLots.map((a, idx) => (
             <LotPill
               key={a.assignment_id}
               assignment={a}
+              isExcess={idx >= total - excess}
               onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
               onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
             />
