@@ -574,6 +574,12 @@ function LockBtn({ locked, onClick }) {
 
 // ── Projected date field ──────────────────────────────────────────
 function ProjectedDateField({ value, locked, onChange }) {
+  const inputRef = useRef(null)
+  // pending drives the display so the date shows immediately after selection,
+  // before the blur-triggered commit reaches the server
+  const [pending, setPending] = useState(value || '')
+  useEffect(() => { setPending(value || '') }, [value])
+
   if (locked) {
     return (
       <div style={{
@@ -586,7 +592,10 @@ function ProjectedDateField({ value, locked, onChange }) {
     )
   }
   return (
-    <div style={{ position: 'relative' }}>
+    <div
+      style={{ position: 'relative' }}
+      onClick={() => inputRef.current?.showPicker?.()}
+    >
       <div style={{
         fontSize: 12, color: '#27500A',
         border: '1px dashed #3B6D11',
@@ -598,21 +607,22 @@ function ProjectedDateField({ value, locked, onChange }) {
         userSelect: 'none',
         overflow: 'hidden', whiteSpace: 'nowrap',
       }}>
-        {fmt(value) || '—'}
+        {fmt(pending) || '—'}
       </div>
       <input
-        key={value || ''}
+        ref={inputRef}
         type="date"
-        defaultValue={value || ''}
-        onBlur={(e) => {
-          const next = e.target.value || null
-          if (next !== (value || null)) onChange(next)
+        value={pending}
+        onChange={(e) => setPending(e.target.value)}
+        onBlur={() => {
+          if (pending !== (value || '')) onChange(pending || null)
         }}
         style={{
           position: 'absolute', inset: 0,
           width: '100%', height: '100%',
-          opacity: 0, cursor: 'pointer',
+          opacity: 0, cursor: 'default',
           border: 'none', padding: 0, margin: 0,
+          pointerEvents: 'none',
         }}
       />
     </div>
