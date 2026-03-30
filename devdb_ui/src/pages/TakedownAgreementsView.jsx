@@ -91,11 +91,44 @@ function UnassignedBank({ lots }) {
 }
 
 // ── TDA card wrapper ──────────────────────────────────────────────
-function TdaCard({ detail, colorIdx, children }) {
+function TdaCard({ detail, colorIdx, onCheckpointCreated, children }) {
   const colors = TDA_COLORS[colorIdx % TDA_COLORS.length]
   const totalLots = (detail.checkpoints || []).reduce(
     (sum, cp) => sum + (cp.lots?.length || 0), 0
   )
+  const [showAddCP, setShowAddCP] = useState(false)
+  const [cpName, setCpName] = useState('')
+  const [cpDate, setCpDate] = useState('')
+  const [cpCreating, setCpCreating] = useState(false)
+  const [cpError, setCpError] = useState('')
+
+  async function handleAddCheckpoint() {
+    const name = cpName.trim()
+    if (!name) { setCpError('Name required.'); return }
+    setCpCreating(true)
+    setCpError('')
+    try {
+      const res = await fetch(`${API}/takedown-agreements/${detail.tda_id}/checkpoints`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          checkpoint_name: name,
+          checkpoint_date: cpDate || null,
+          lots_required_cumulative: 0,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        setCpError(err.detail || 'Failed to create checkpoint.')
+        return
+      }
+      setCpName(''); setCpDate(''); setShowAddCP(false)
+      onCheckpointCreated()
+    } finally {
+      setCpCreating(false)
+    }
+  }
+
   return (
     <div style={{
       borderRadius: 10, overflow: 'hidden',
@@ -116,6 +149,75 @@ function TdaCard({ detail, colorIdx, children }) {
       </div>
       <div style={{ background: colors.tint, padding: 14 }}>
         {children}
+
+        {/* Add checkpoint */}
+        {showAddCP ? (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginTop: 4,
+            padding: '10px 14px', background: '#fff',
+            borderRadius: 8, border: '1.5px solid #E4E2DA',
+          }}>
+            <input
+              autoFocus
+              type="text"
+              placeholder="Checkpoint name"
+              value={cpName}
+              onChange={e => { setCpName(e.target.value); setCpError('') }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleAddCheckpoint()
+                if (e.key === 'Escape') { setShowAddCP(false); setCpName(''); setCpDate(''); setCpError('') }
+              }}
+              style={{
+                fontSize: 14, padding: '4px 8px', borderRadius: 5,
+                border: `1px solid ${cpError ? '#ef4444' : '#d1d5db'}`,
+                outline: 'none', width: 180,
+              }}
+            />
+            <input
+              type="date"
+              value={cpDate}
+              onChange={e => setCpDate(e.target.value)}
+              style={{
+                fontSize: 13, padding: '4px 8px', borderRadius: 5,
+                border: '1px solid #d1d5db', outline: 'none',
+              }}
+            />
+            <button
+              onClick={handleAddCheckpoint}
+              disabled={cpCreating}
+              style={{
+                fontSize: 13, padding: '4px 12px', borderRadius: 5,
+                border: 'none', background: '#2563eb', color: '#fff',
+                cursor: cpCreating ? 'default' : 'pointer', opacity: cpCreating ? 0.6 : 1,
+              }}
+            >
+              {cpCreating ? 'Adding…' : 'Add'}
+            </button>
+            <button
+              onClick={() => { setShowAddCP(false); setCpName(''); setCpDate(''); setCpError('') }}
+              style={{
+                fontSize: 13, padding: '4px 10px', borderRadius: 5,
+                border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+            {cpError && <span style={{ fontSize: 12, color: '#ef4444' }}>{cpError}</span>}
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddCP(true)}
+            style={{
+              marginTop: 4,
+              fontSize: 13, padding: '6px 14px', borderRadius: 6,
+              border: '1.5px dashed #B4B2A9', background: 'transparent', color: '#888780',
+              cursor: 'pointer', width: '100%', textAlign: 'left',
+            }}
+          >
+            + Add checkpoint
+          </button>
+        )}
       </div>
     </div>
   )
@@ -729,7 +831,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
             <UnassignedBank lots={detail.unassigned_lots || []} />
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
-              <TdaCard detail={detail} colorIdx={tdaColorIdx >= 0 ? tdaColorIdx : 0}>
+              <TdaCard detail={detail} colorIdx={tdaColorIdx >= 0 ? tdaColorIdx : 0} onCheckpointCreated={refetchDetail}>
                 {(detail.checkpoints || []).map((cp) => (
                   <CheckpointBand
                     key={cp.checkpoint_id}

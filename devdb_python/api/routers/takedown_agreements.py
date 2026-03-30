@@ -22,6 +22,12 @@ class CreateTdaRequest(BaseModel):
     anchor_date: Optional[date_type] = None
 
 
+class CreateCheckpointRequest(BaseModel):
+    checkpoint_name: str
+    checkpoint_date: Optional[date_type] = None
+    lots_required_cumulative: int = 0
+
+
 class AssignLotRequest(BaseModel):
     checkpoint_id: int
 
@@ -230,24 +236,40 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
                     }
                 )
 
-        # 4. Unassigned lots: in sim_takedown_agreement_lots for this tda_id
-        #    but NOT in sim_takedown_lot_assignments for any checkpoint in this TDA
+        # 4. Unassigned lots: all real lots in the entitlement group
+        #    that are NOT yet linked to any TDA for this ent_group.
+        #    Join path: sim_lots -> sim_dev_phases -> dim_development -> developments -> community_id = ent_group_id
         cur.execute(
-            """
-            SELECT l.lot_id, l.lot_number, l.building_group_id
-            FROM devdb.sim_takedown_agreement_lots tal
-            JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
-            WHERE tal.tda_id = %s
-              AND tal.lot_id NOT IN (
-                  SELECT a.lot_id
-                  FROM devdb.sim_takedown_lot_assignments a
-                  JOIN devdb.sim_takedown_checkpoints c ON c.checkpoint_id = a.checkpoint_id
-                  WHERE c.tda_id = %s
-              )
-            ORDER BY l.lot_id ASC
-            """,
-            (tda_id, tda_id),
+            "SELECT ent_group_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
+            (tda_id,),
         )
+        tda_eg_row = cur.fetchone()
+        ent_group_id = tda_eg_row["ent_group_id"] if tda_eg_row else None
+
+        if ent_group_id is not None:
+            cur.execute(
+                """
+                SELECT DISTINCT l.lot_id, l.lot_number, l.building_group_id
+                FROM devdb.sim_lots l
+                JOIN devdb.sim_dev_phases p ON p.phase_id = l.phase_id
+                JOIN devdb.dim_development dd ON dd.development_id = p.dev_id
+                JOIN devdb.developments d ON d.marks_code = dd.dev_code2
+                WHERE d.community_id = %s
+                  AND d.marks_code IS NOT NULL
+                  AND l.lot_source = 'real'
+                  AND l.lot_id NOT IN (
+                      SELECT tal.lot_id
+                      FROM devdb.sim_takedown_agreement_lots tal
+                      JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
+                      WHERE tda.ent_group_id = %s
+                  )
+                ORDER BY l.lot_number ASC
+                """,
+                (ent_group_id, ent_group_id),
+            )
+        else:
+            cur.execute("SELECT 1 WHERE false")
+
         unassigned_lots = [
             {
                 "lot_id": r["lot_id"],
@@ -283,6 +305,62 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
 
 
 # ---------------------------------------------------------------------------
+# Endpoint: POST /takedown-agreements/{tda_id}/checkpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/takedown-agreements/{tda_id}/checkpoints")
+def create_checkpoint(tda_id: int, body: CreateCheckpointRequest, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        if not body.checkpoint_name or not body.checkpoint_name.strip():
+            raise HTTPException(status_code=422, detail="checkpoint_name must not be empty.")
+
+        cur.execute(
+            "SELECT tda_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
+            (tda_id,),
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"TDA {tda_id} not found.")
+
+        cur.execute(
+            "SELECT COALESCE(MAX(checkpoint_number), 0) + 1 AS next_num FROM devdb.sim_takedown_checkpoints WHERE tda_id = %s",
+            (tda_id,),
+        )
+        next_num = int(cur.fetchone()["next_num"])
+
+        cur.execute(
+            """
+            INSERT INTO devdb.sim_takedown_checkpoints
+                (tda_id, checkpoint_number, checkpoint_name, checkpoint_date,
+                 lots_required_cumulative, status)
+            VALUES (%s, %s, %s, %s, %s, 'pending')
+            RETURNING checkpoint_id, checkpoint_number, checkpoint_name,
+                      checkpoint_date, lots_required_cumulative, status
+            """,
+            (tda_id, next_num, body.checkpoint_name.strip(), body.checkpoint_date,
+             body.lots_required_cumulative),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return {
+            "checkpoint_id": row["checkpoint_id"],
+            "checkpoint_number": row["checkpoint_number"],
+            "checkpoint_name": row["checkpoint_name"],
+            "checkpoint_date": row["checkpoint_date"].isoformat() if row["checkpoint_date"] else None,
+            "lots_required_cumulative": row["lots_required_cumulative"],
+            "status": row["status"],
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
 # Endpoint 3: PATCH /takedown-agreements/{tda_id}/lots/{lot_id}/assign
 # ---------------------------------------------------------------------------
 
@@ -292,13 +370,17 @@ def assign_lot_to_checkpoint(tda_id: int, lot_id: int, body: AssignLotRequest, c
     try:
         checkpoint_id = body.checkpoint_id
 
-        # 1. Verify lot_id is linked to this tda_id in sim_takedown_agreement_lots
+        # 1. Ensure lot_id is linked to this tda_id in sim_takedown_agreement_lots;
+        #    insert if not already present (lot comes from the global unassigned pool).
         cur.execute(
             "SELECT 1 FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
             (tda_id, lot_id),
         )
         if cur.fetchone() is None:
-            raise HTTPException(status_code=422, detail=f"Lot {lot_id} is not linked to TDA {tda_id}.")
+            cur.execute(
+                "INSERT INTO devdb.sim_takedown_agreement_lots (tda_id, lot_id) VALUES (%s, %s)",
+                (tda_id, lot_id),
+            )
 
         # 2. Verify lot_id is NOT already assigned to any checkpoint in this TDA
         cur.execute(
@@ -384,13 +466,19 @@ def unassign_lot_from_checkpoint(tda_id: int, lot_id: int, conn=Depends(get_db_c
         assignment_id = row["assignment_id"]
         checkpoint_id = row["checkpoint_id"]
 
-        # 2. DELETE the assignment
+        # 2. DELETE the checkpoint assignment
         cur.execute(
             "DELETE FROM devdb.sim_takedown_lot_assignments WHERE assignment_id = %s",
             (assignment_id,),
         )
 
-        # 3. Audit log
+        # 3. Remove from the TDA lot pool so it returns to the global unassigned bank
+        cur.execute(
+            "DELETE FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
+            (tda_id, lot_id),
+        )
+
+        # 4. Audit log
         cur.execute(
             """
             INSERT INTO devdb.sim_assignment_log
