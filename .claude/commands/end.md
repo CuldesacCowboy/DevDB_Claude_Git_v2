@@ -15,3 +15,10 @@ Run the end-of-session workflow in order. Do not skip any step.
    d) Update the Last updated date and Next ID at the top of CLAUDE.md.
 
 5. git add -A, commit with message "session end: [brief summary of what was done]", git push.
+
+6. Ask me: "Start a new session? (y / Enter = no)" — wait for my answer.
+
+7. If I answered y:
+   Ask me: "Keep this session open? (y / Enter = no)" — wait for my answer.
+   Then run this to open the new session as a tab in this Windows Terminal window:
+   wt.exe -w 0 new-tab cmd.exe /k "cd /d C:\DevDB_Claude_Git_v2\devdb_python && claude"
