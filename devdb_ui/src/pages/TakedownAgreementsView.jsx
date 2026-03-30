@@ -5,12 +5,13 @@ import { useTdaData } from '../hooks/useTdaData'
 
 const API = 'http://localhost:8765/api'
 
-// ── Colour palette for TDA cards ──────────────────────────────────
-const TDA_COLORS = [
-  { header: '#EEEDFE', tint: '#CECBF6', text: '#3D3A8C' },
-  { header: '#E1F5EE', tint: '#9FE1CB', text: '#1A5C42' },
-  { header: '#FAEEDA', tint: '#FAC775', text: '#7A4A0A' },
-]
+// ── Building-group accent colours (left-border indicator) ────────
+// Muted palette that doesn't conflict with status colours (red/amber/green).
+const BG_ACCENTS = ['#4a7db5', '#2e8b6b', '#8060b0', '#c07030', '#3a9499']
+function bgAccentColor(bgId) {
+  if (!bgId) return null
+  return BG_ACCENTS[Math.abs(Number(bgId)) % BG_ACCENTS.length]
+}
 
 // ── Format date for display ───────────────────────────────────────
 function fmt(dateStr) {
@@ -406,8 +407,7 @@ function OtherTdaTile({ agreement, onNavigate }) {
 }
 
 // ── TDA card wrapper ──────────────────────────────────────────────
-function TdaCard({ detail, colorIdx, onCheckpointCreated, children }) {
-  const colors = TDA_COLORS[colorIdx % TDA_COLORS.length]
+function TdaCard({ detail, onCheckpointCreated, children }) {
   const poolCount = detail.pool_lots?.length || 0
   const cpCounts = (detail.checkpoints || []).map(cp => ({ name: cp.checkpoint_name, count: cp.lots?.length || 0 }))
   const totalLots = poolCount + cpCounts.reduce((sum, cp) => sum + cp.count, 0)
@@ -442,27 +442,27 @@ function TdaCard({ detail, colorIdx, onCheckpointCreated, children }) {
       flexShrink: 0, width: 'fit-content',
     }}>
       <div style={{
-        background: colors.header, padding: '10px 16px',
+        background: '#F0EEE8', padding: '10px 16px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
-        <span style={{ fontWeight: 700, fontSize: 16, color: colors.text }}>
+        <span style={{ fontWeight: 700, fontSize: 16, color: '#2C2C2A' }}>
           {detail.tda_name}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginLeft: 14, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: colors.text, opacity: 0.65 }}>
+          <span style={{ fontSize: 12, color: '#888780', marginLeft: 10 }}>
             no&nbsp;cp:&nbsp;{poolCount}
           </span>
           {cpCounts.map((cp, i) => (
-            <span key={i} style={{ fontSize: 12, color: colors.text, opacity: 0.65, marginLeft: 10 }}>
+            <span key={i} style={{ fontSize: 12, color: '#888780', marginLeft: 10 }}>
               cp{i + 1}:&nbsp;{cp.count}
             </span>
           ))}
-          <span style={{ fontSize: 13, fontWeight: 700, color: colors.text, opacity: 0.9, marginLeft: 12 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#444441', marginLeft: 12 }}>
             {totalLots}&nbsp;total
           </span>
         </div>
       </div>
-      <div style={{ background: colors.tint, padding: 14 }}>
+      <div style={{ background: '#F7F6F3', padding: 14 }}>
         {children}
 
         {/* Add checkpoint */}
@@ -722,6 +722,8 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
     )
   }
 
+  const bgAccent = bgAccentColor(assignment.building_group_id)
+
   // Winning fulfillment date: earlier of HC and BLDR projected dates
   const winningDate = (() => {
     const dates = [localHcDate, localBldrDate].filter(Boolean)
@@ -736,6 +738,7 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
         borderRadius: 6, overflow: 'hidden',
         background: isExcess ? '#FFF5F5' : isDelinquent ? '#fef2f2' : isCaution ? '#FFFBEB' : hasNoDates ? '#F7F6F3' : '#fff',
         border: isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',
+        ...(bgAccent ? { borderLeft: `3.5px solid ${bgAccent}` } : {}),
         opacity: isDragging ? 0.4 : 1,
         boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
         display: 'flex', flexDirection: 'column',
@@ -901,16 +904,16 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate, lotsRequired }) {
   ]
   const nRows = allRows.length
 
-  // Time domain: all projected dates + checkpoint + today, padded 10% each side
+  // Time domain: lot dates + checkpoint only — today never stretches the axis.
+  // Today's line is shown only when it falls within the natural date range.
   const todayTs = new Date().setHours(0, 0, 0, 0)
-  const allDateTs = [
+  const lotAndCpTs = [
     ...lots.flatMap(l => [l.hc_projected_date, l.bldr_projected_date]),
     checkpointDate,
   ].filter(Boolean).map(d => new Date(d).getTime())
-  allDateTs.push(todayTs)
 
-  const rawMin = Math.min(...allDateTs)
-  const rawMax = Math.max(...allDateTs)
+  const rawMin = lotAndCpTs.length ? Math.min(...lotAndCpTs) : todayTs
+  const rawMax = lotAndCpTs.length ? Math.max(...lotAndCpTs) : todayTs
   const span = rawMax - rawMin || 30 * 86400000
   const domMin = rawMin - span * 0.10
   const domMax = rawMax + span * 0.10
@@ -918,6 +921,8 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate, lotsRequired }) {
   const toX = ts => PAD_L + ((ts - domMin) / (domMax - domMin)) * chartW
   const dateX = d => d ? toX(new Date(d).getTime()) : null
   const todayX = toX(todayTs)
+  // Only draw today line when it falls within the visible domain (not distorting the axis)
+  const showToday = todayTs >= rawMin && todayTs <= rawMax
   const cpX = checkpointDate ? dateX(checkpointDate) : null
 
   // Generate period boundary timestamps within the domain
@@ -994,18 +999,7 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate, lotsRequired }) {
             : null
         })}
 
-        {/* ── Today line ── */}
-        {todayX >= PAD_L && todayX <= PAD_L + chartW && (
-          <g>
-            <line x1={todayX} y1={dataTop} x2={todayX} y2={dataBot}
-              stroke="#6B6B68" strokeWidth={1.5} strokeDasharray="4,3" />
-            <text
-              x={todayX + 4} y={dataTop + 4}
-              dominantBaseline="hanging" textAnchor="start"
-              fontSize={10} fill="#6B6B68"
-            >today</text>
-          </g>
-        )}
+        {/* today line is rendered LAST so it draws on top — see below */}
 
         {/* ── Checkpoint line — solid red, label sits above line start ── */}
         {cpX !== null && (
@@ -1088,6 +1082,29 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate, lotsRequired }) {
           )
         })}
 
+        {/* ── Today line — rendered last so it appears on top of all row content ── */}
+        {showToday && todayX >= PAD_L && todayX <= PAD_L + chartW && (() => {
+          // Flip label to opposite side when close to checkpoint line
+          const nearCp = cpX !== null && Math.abs(todayX - cpX) < 52
+          const labelRight = nearCp ? todayX < cpX : todayX > PAD_L + chartW * 0.7
+          const labelX = labelRight ? todayX - 5 : todayX + 5
+          const labelAnchor = labelRight ? 'end' : 'start'
+          // Suppress label entirely if it would still overlap the checkpoint label area
+          const suppressLabel = nearCp && Math.abs(todayX - cpX) < 28
+          return (
+            <g>
+              <line x1={todayX} y1={dataTop} x2={todayX} y2={dataBot}
+                stroke="#444441" strokeWidth={1.5} />
+              {!suppressLabel && (
+                <text x={labelX} y={dataTop + 5}
+                  dominantBaseline="hanging" textAnchor={labelAnchor}
+                  fontSize={12} fontWeight={600} fill="#444441"
+                >today</text>
+              )}
+            </g>
+          )
+        })()}
+
         {/* ── Month axis band ── */}
         <rect x={PAD_L} y={monthTop} width={chartW} height={AXIS_ROW_H} fill="#F3F2EE" />
         {monthCells.map((c, i) => (
@@ -1157,7 +1174,7 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate, lotsRequired }) {
           <span style={{ fontSize: 12, color: '#888780' }}>Checkpoint</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-          <svg width={18} height={13}><line x1={0} y1={6.5} x2={18} y2={6.5} stroke="#C8C6BE" strokeWidth={1} strokeDasharray="3,3" /></svg>
+          <svg width={18} height={13}><line x1={0} y1={6.5} x2={18} y2={6.5} stroke="#444441" strokeWidth={1.5} /></svg>
           <span style={{ fontSize: 12, color: '#888780' }}>Today</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -1846,7 +1863,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
-              <TdaCard detail={detail} colorIdx={tdaColorIdx >= 0 ? tdaColorIdx : 0} onCheckpointCreated={refetchDetail}>
+              <TdaCard detail={detail} onCheckpointCreated={refetchDetail}>
                 {(detail.checkpoints || []).map((cp) => (
                   <CheckpointBand
                     key={cp.checkpoint_id}
