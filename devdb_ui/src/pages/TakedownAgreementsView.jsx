@@ -832,7 +832,8 @@ function StitchConnector() {
   const crossbarSvg = encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="12">` +
     `<line x1="${w / 2}" y1="0" x2="${w / 2}" y2="12" stroke="#C8C6BE" stroke-width="1.5"/>` +
-    `<line x1="2" y1="6" x2="${w - 2}" y2="6" stroke="#C8C6BE" stroke-width="1.5"/>` +
+    `<line x1="2" y1="3" x2="${w - 2}" y2="3" stroke="#C8C6BE" stroke-width="1.5"/>` +
+    `<line x1="2" y1="9" x2="${w - 2}" y2="9" stroke="#C8C6BE" stroke-width="1.5"/>` +
     `</svg>`
   )
   return (
@@ -1507,8 +1508,8 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
         <div
           ref={gridRef}
           style={{
-            display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'stretch',
-            maxWidth: 1240,
+            display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch',
+            maxWidth: 1330,
             opacity: sortFlash ? 0.5 : 1,
             transition: `opacity ${sortFlash ? '0.06s' : '0.32s'} ease-in-out`,
           }}
