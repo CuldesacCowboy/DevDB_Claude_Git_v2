@@ -479,8 +479,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
   const todayStr = new Date().toISOString().slice(0, 10)
   const isPast = (d) => !!d && d <= todayStr
   const c = lots.filter(l =>
-    isPast(l.hc_marks_date) || isPast(l.hc_projected_date) ||
-    isPast(l.bldr_marks_date) || isPast(l.bldr_projected_date)
+    isPast(l.hc_projected_date) || isPast(l.bldr_projected_date)
   ).length
   const t = localTotal
   const total = lots.length
