@@ -4,13 +4,13 @@ echo Starting DevDB...
 echo.
 
 REM Start the FastAPI backend in its own window
-start "DevDB Backend" cmd /k "cd /d ""C:\Users\HowieHehrer\OneDrive - JTB Homes, LLC\Desktop\DevDB_Claude_Git_v2\devdb_python"" && python -m uvicorn api.main:app --reload --port 8765"
+start "DevDB Backend" cmd /k "cd /d ""%~dp0devdb_python"" && python -m uvicorn api.main:app --reload --port 8765"
 
 REM Wait 3 seconds for backend to initialize
 timeout /t 3 /nobreak >nul
 
 REM Start the Vite frontend in its own window
-start "DevDB Frontend" cmd /k "cd /d ""C:\Users\HowieHehrer\OneDrive - JTB Homes, LLC\Desktop\DevDB_Claude_Git_v2\devdb_ui"" && npm run dev"
+start "DevDB Frontend" cmd /k "cd /d ""%~dp0devdb_ui"" && npm run dev"
 
 REM Wait 4 seconds for Vite to start
 timeout /t 4 /nobreak >nul
