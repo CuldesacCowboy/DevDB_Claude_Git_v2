@@ -408,18 +408,37 @@ def assign_lot_to_checkpoint(tda_id: int, lot_id: int, body: AssignLotRequest, c
                 (tda_id, lot_id),
             )
 
-        # 2. Verify lot_id is NOT already assigned to any checkpoint in this TDA
+        # 2. Check if lot is already assigned to a checkpoint in this TDA.
+        #    If so, move it (UPDATE checkpoint_id) rather than inserting a new row,
+        #    so that HC/BLDR projected dates and lock states are preserved.
         cur.execute(
             """
-            SELECT a.assignment_id
+            SELECT a.assignment_id, a.checkpoint_id AS old_checkpoint_id
             FROM devdb.sim_takedown_lot_assignments a
             JOIN devdb.sim_takedown_checkpoints c ON c.checkpoint_id = a.checkpoint_id
             WHERE c.tda_id = %s AND a.lot_id = %s
             """,
             (tda_id, lot_id),
         )
-        if cur.fetchone() is not None:
-            raise HTTPException(status_code=409, detail=f"Lot {lot_id} is already assigned to a checkpoint in TDA {tda_id}.")
+        existing = cur.fetchone()
+        if existing is not None:
+            existing_assignment_id = existing["assignment_id"]
+            old_checkpoint_id = existing["old_checkpoint_id"]
+            cur.execute(
+                "UPDATE devdb.sim_takedown_lot_assignments SET checkpoint_id = %s WHERE assignment_id = %s",
+                (checkpoint_id, existing_assignment_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO devdb.sim_assignment_log
+                    (action, resource_type, resource_id, from_owner_id, to_owner_id,
+                     changed_by, changed_at, metadata)
+                VALUES ('move_lot_to_checkpoint', 'lot', %s, %s, %s, 'ui', now(), %s)
+                """,
+                (lot_id, old_checkpoint_id, checkpoint_id, psycopg2.extras.Json({})),
+            )
+            conn.commit()
+            return {"assignment_id": existing_assignment_id, "lot_id": lot_id, "checkpoint_id": checkpoint_id}
 
         # 3. Verify checkpoint_id belongs to this tda_id
         cur.execute(

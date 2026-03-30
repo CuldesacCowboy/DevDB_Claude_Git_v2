@@ -1272,8 +1272,8 @@ export default function TakedownAgreementsView({ entGroupId }) {
     }
 
     // ── Assigned lot → different checkpoint ──────────────────────
+    // Single call: backend moves the existing assignment row (preserves HC/BLDR dates)
     if (src?.type === 'assigned-lot' && dst?.type === 'checkpoint') {
-      await unassignFromCP(src.assignment.lot_id)
       await assignToCP(src.assignment.lot_id, dst.checkpointId)
       refetchDetail(); return
     }
