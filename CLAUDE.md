@@ -1346,7 +1346,7 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-30
 
 ### .claude/skills/end/SKILL.md
-- Owns: /end skill — updates CLAUDE.md, commits, pushes, optionally opens new session tab
+- Owns: /end skill — updates CLAUDE.md, commits, pushes
 - Last commit: 2026-03-30
 
 ### 01_schema_create_postgres.sql
