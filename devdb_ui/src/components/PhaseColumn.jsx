@@ -115,23 +115,24 @@ export default function PhaseColumn({
           )
         )
         onProjectedSaved?.(phaseId, lotTypeId, data.projected_count, data.total)
-        // Auto-delete when projected and actual both reach 0
         if (data.projected_count === 0 && data.actual === 0) {
-          try {
-            const delRes = await fetch(
-              `/api/phases/${phaseId}/lot-type/${lotTypeId}`,
-              { method: 'DELETE' }
-            )
-            if (delRes.ok) {
-              onRefetch?.()
-            } else {
-              setLtFlash(lotTypeId)
-              setTimeout(() => setLtFlash(null), 1500)
-            }
-          } catch {
-            setLtFlash(lotTypeId)
-            setTimeout(() => setLtFlash(null), 1500)
-          }
+          // Optimistic removal: update local state immediately so the row
+          // disappears from the UI without waiting for a server round-trip.
+          // Then fire the DELETE in the background and follow up with a
+          // full refetch to make sure the server and UI are in sync.
+          setLocalByLotType(prev => prev.filter(lt => lt.lot_type_id !== lotTypeId));
+
+          fetch(
+            `http://localhost:8765/phases/${phaseId}/lot-type/${lotTypeId}`,
+            { method: 'DELETE' }
+          ).then(() => {
+            onRefetch?.();
+          }).catch(err => {
+            console.error('Auto-delete lot type failed:', err);
+            onRefetch?.(); // still refetch on error so UI resyncs from server
+          });
+
+          return;
         }
       } else {
         setLtFlash(lotTypeId)
