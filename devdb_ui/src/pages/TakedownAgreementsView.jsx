@@ -676,6 +676,8 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
   // Caution: future checkpoint only — if it were past it would be delinquent instead
   const hasAnyFutureDate = isFuture(localHcDate) || isFuture(localBldrDate)
   const isCaution = !!checkpointDate && !cpIsPast && hasAnyFutureDate && neitherMeets
+  // No dates: neither projected date entered (and not already flagged by a higher-priority state)
+  const hasNoDates = !localHcDate && !localBldrDate && !isDelinquent && !isCaution
 
   function col(label, marksDate, projDate, isLocked, dateKey, lockKey) {
     return (
@@ -732,8 +734,8 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
       style={{
         width: 148, flexShrink: 0,
         borderRadius: 6, overflow: 'hidden',
-        background: isExcess ? '#FFF5F5' : isDelinquent ? '#fef2f2' : isCaution ? '#FFFBEB' : '#fff',
-        border: isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : '1px solid #E4E2DA',
+        background: isExcess ? '#FFF5F5' : isDelinquent ? '#fef2f2' : isCaution ? '#FFFBEB' : hasNoDates ? '#F7F6F3' : '#fff',
+        border: isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',
         opacity: isDragging ? 0.4 : 1,
         boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
         display: 'flex', flexDirection: 'column',
@@ -746,8 +748,8 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
           textAlign: 'center',
           padding: '5px 8px 6px',
           cursor: 'grab',
-          background: isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : '#FAFAF8',
-          borderBottom: `1px solid ${isExcess ? '#FFCCC9' : isDelinquent ? '#fecaca' : isCaution ? '#FDE68A' : '#F0EEE8'}`,
+          background: isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : hasNoDates ? '#EEECEA' : '#FAFAF8',
+          borderBottom: `1px solid ${isExcess ? '#FFCCC9' : isDelinquent ? '#fecaca' : isCaution ? '#FDE68A' : hasNoDates ? '#DDDBD3' : '#F0EEE8'}`,
           userSelect: 'none',
         }}
       >
@@ -994,8 +996,15 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate, lotsRequired }) {
 
         {/* ── Today line ── */}
         {todayX >= PAD_L && todayX <= PAD_L + chartW && (
-          <line x1={todayX} y1={dataTop} x2={todayX} y2={dataBot}
-            stroke="#C8C6BE" strokeWidth={1} strokeDasharray="3,3" />
+          <g>
+            <line x1={todayX} y1={dataTop} x2={todayX} y2={dataBot}
+              stroke="#6B6B68" strokeWidth={1.5} strokeDasharray="4,3" />
+            <text
+              x={todayX + 4} y={dataTop + 4}
+              dominantBaseline="hanging" textAnchor="start"
+              fontSize={10} fill="#6B6B68"
+            >today</text>
+          </g>
         )}
 
         {/* ── Checkpoint line — solid red, label sits above line start ── */}
@@ -1031,25 +1040,19 @@ function CheckpointTimeline({ lots, slotCount, checkpointDate, lotsRequired }) {
 
           return (
             <g key={row.key}>
-              {/* Meets checkpoint — green check */}
-              {meetsCp && (
-                <text x={PAD_L - 62} y={cy}
-                  dominantBaseline="middle" textAnchor="middle"
-                  fontSize={13} fill="#15803d" fontWeight={700}>✓</text>
-              )}
-
-              {/* Has dates but all fall after checkpoint — amber clock */}
-              {missesCp && (
-                <text x={PAD_L - 62} y={cy}
-                  dominantBaseline="middle" textAnchor="middle"
-                  fontSize={13} fill="#b45309" fontWeight={700}>↷</text>
-              )}
-
-              {/* Row label */}
-              <text x={PAD_L - 8} y={cy}
-                textAnchor="end" dominantBaseline="middle"
-                fontSize={13} fill={row.ghost ? '#C8C6BE' : '#6B6B68'}
-              >{row.label}</text>
+              {/* Icon + lot label — single text block, right-aligned */}
+              <text x={PAD_L - 8} y={cy} textAnchor="end" dominantBaseline="middle" fontSize={13}>
+                {meetsCp && (
+                  <tspan fill="#15803d" fontWeight={700}>✓</tspan>
+                )}
+                {missesCp && (
+                  <tspan fill="#b45309" fontWeight={700}>↷</tspan>
+                )}
+                <tspan
+                  fill={row.ghost ? '#C8C6BE' : '#6B6B68'}
+                  dx={meetsCp || missesCp ? 5 : 0}
+                >{row.label}</tspan>
+              </text>
 
               {row.ghost ? (
                 // Ghost row: dashed line spanning full chart width
@@ -1202,6 +1205,18 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
     }))
   }
 
+  function handleReorderByUnit() {
+    setDisplayLots(prev => [...prev].sort((a, b) => {
+      const parse = l => {
+        const m = (l.lot_number || '').match(/^([A-Za-z]+)0*(\d+)$/)
+        return m ? [m[1], parseInt(m[2], 10)] : [l.lot_number || '', 0]
+      }
+      const [ac, an] = parse(a), [bc, bn] = parse(b)
+      if (ac !== bc) return ac.localeCompare(bc)
+      return an - bn
+    }))
+  }
+
   // C = lots with HC or BLDR projected date in the past (≤ today) — completed
   // futureP = lots with HC or BLDR projected date in the future — planned
   // Caution = future projected date exists but it falls after the checkpoint date
@@ -1324,17 +1339,30 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
             />
           </div>
           {displayLots.length > 1 && (
-            <button
-              onClick={handleReorderByFulfillment}
-              title="Sort lots by earliest fulfillment date (HC or BLDR projected)"
-              style={{
-                fontSize: 11, padding: '2px 8px', borderRadius: 4,
-                border: '1px solid #D4D2CB', background: '#fff', color: '#6B6B68',
-                cursor: 'pointer', marginLeft: 2,
-              }}
-            >
-              ↕ Sort by date
-            </button>
+            <>
+              <button
+                onClick={handleReorderByFulfillment}
+                title="Sort lots by earliest fulfillment date (HC or BLDR projected)"
+                style={{
+                  fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                  border: '1px solid #D4D2CB', background: '#fff', color: '#6B6B68',
+                  cursor: 'pointer', marginLeft: 2,
+                }}
+              >
+                ↕ Sort by date
+              </button>
+              <button
+                onClick={handleReorderByUnit}
+                title="Sort lots by unit number"
+                style={{
+                  fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                  border: '1px solid #D4D2CB', background: '#fff', color: '#6B6B68',
+                  cursor: 'pointer',
+                }}
+              >
+                ↕ Sort by unit
+              </button>
+            </>
           )}
           <button
             onClick={() => setShowTimeline(v => !v)}
