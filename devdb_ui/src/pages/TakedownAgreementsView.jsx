@@ -575,10 +575,16 @@ function LockBtn({ locked, onClick }) {
 // ── Projected date field ──────────────────────────────────────────
 function ProjectedDateField({ value, locked, onChange }) {
   const inputRef = useRef(null)
-  // pending drives the display so the date shows immediately after selection,
-  // before the blur-triggered commit reaches the server
   const [pending, setPending] = useState(value || '')
-  useEffect(() => { setPending(value || '') }, [value])
+  const pendingRef = useRef(value || '')
+  const timerRef = useRef(null)
+
+  useEffect(() => {
+    // When server value changes, cancel any pending commit and sync display
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    setPending(value || '')
+    pendingRef.current = value || ''
+  }, [value])
 
   if (locked) {
     return (
@@ -613,9 +619,25 @@ function ProjectedDateField({ value, locked, onChange }) {
         ref={inputRef}
         type="date"
         value={pending}
-        onChange={(e) => setPending(e.target.value)}
+        onChange={(e) => {
+          const val = e.target.value
+          setPending(val)
+          pendingRef.current = val
+          // Debounce: with pointerEvents:none, blur fires before change in Chrome.
+          // Using onChange as primary commit (350ms) handles that race correctly.
+          if (timerRef.current) clearTimeout(timerRef.current)
+          timerRef.current = setTimeout(() => {
+            timerRef.current = null
+            onChange(pendingRef.current || null)
+          }, 350)
+        }}
         onBlur={() => {
-          if (pending !== (value || '')) onChange(pending || null)
+          // Flush immediately if a debounced commit is pending
+          if (timerRef.current) {
+            clearTimeout(timerRef.current)
+            timerRef.current = null
+            onChange(pendingRef.current || null)
+          }
         }}
         style={{
           position: 'absolute', inset: 0,
