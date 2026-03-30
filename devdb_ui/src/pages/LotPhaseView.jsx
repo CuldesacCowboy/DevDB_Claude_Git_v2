@@ -13,7 +13,7 @@ import { usePhaseEqualization } from '../hooks/usePhaseEqualization'
 import ProjectionGroupContainer from '../components/ProjectionGroupContainer'
 import UnassignedColumn from '../components/UnassignedColumn'
 import PhaseColumn from '../components/PhaseColumn'
-import LotCard from '../components/LotCard'
+import LotCard, { BuildingGroupCard } from '../components/LotCard'
 import Toast from '../components/Toast'
 import CommunityDevelopmentsView from './CommunityDevelopmentsView'
 const LEFT_PANELS_WIDTH = 340 // sidebar + unassigned panel
@@ -255,6 +255,7 @@ export default function LotPhaseView() {
     handleDragCancel,
     handleAutoSort,
     activeLot,
+    activeBuildingGroup,
     activePhase,
     activeInstrument,
     activePg,
@@ -614,7 +615,8 @@ export default function LotPhaseView() {
         </div>
 
         <DragOverlay dropAnimation={null}>
-          {activeLot && <LotCard lot={activeLot} isOverlay />}
+          {activeLot && !activeBuildingGroup && <LotCard lot={activeLot} isOverlay />}
+          {activeBuildingGroup && <BuildingGroupCard lots={activeBuildingGroup} isOverlay />}
           {activePhase && <PhaseColumn phase={activePhase} isOverlay />}
           {activeDragType === 'instrument' && activeInstrument && (
             <div

@@ -49,6 +49,7 @@ class LotPhaseReassignResponse(BaseModel):
     needs_rerun: list[int]
     warnings: list[Warning]
     phase_counts: PhaseCounts
+    building_group_lot_ids: list[int] = []
 
 
 class LotUnassignResponse(BaseModel):
@@ -56,6 +57,7 @@ class LotUnassignResponse(BaseModel):
     needs_rerun: list[int]
     warnings: list[Warning]
     from_phase_counts: PhaseCountDetail
+    building_group_lot_ids: list[int] = []
 
 
 class LotTypeChangeRequest(BaseModel):
@@ -93,6 +95,7 @@ class LotDetail(BaseModel):
     lot_source: str
     status: str
     has_actual_dates: bool
+    building_group_id: int | None = None
 
 
 class PhaseDetail(BaseModel):

@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import LotCard from './LotCard'
+import LotCard, { BuildingGroupCard } from './LotCard'
 
 export default function LotTypePill({
   phaseId,
@@ -45,6 +45,24 @@ export default function LotTypePill({
   }
 
   const tempCount = Math.max(0, projected - actual)
+
+  // Group lots: building groups become a single draggable entry; others stay individual
+  const lotItems = useMemo(() => {
+    const groups = {}
+    const items = []
+    for (const lot of lots) {
+      if (lot.building_group_id != null) {
+        if (!groups[lot.building_group_id]) groups[lot.building_group_id] = []
+        groups[lot.building_group_id].push(lot)
+      } else {
+        items.push({ kind: 'lot', lot })
+      }
+    }
+    for (const [bgId, grpLots] of Object.entries(groups)) {
+      items.push({ kind: 'building-group', lots: grpLots, building_group_id: Number(bgId) })
+    }
+    return items
+  }, [lots])
 
   return (
     <div
@@ -143,13 +161,21 @@ export default function LotTypePill({
           minHeight: 32,
         }}
       >
-        {lots.map((lot) => (
-          <LotCard
-            key={lot.lot_id}
-            lot={lot}
-            isPending={pendingLotId === lot.lot_id}
-          />
-        ))}
+        {lotItems.map((item) =>
+          item.kind === 'building-group' ? (
+            <BuildingGroupCard
+              key={`bg-${item.building_group_id}`}
+              lots={item.lots}
+              isPending={item.lots.some((l) => l.lot_id === pendingLotId)}
+            />
+          ) : (
+            <LotCard
+              key={item.lot.lot_id}
+              lot={item.lot}
+              isPending={pendingLotId === item.lot.lot_id}
+            />
+          )
+        )}
         {Array.from({ length: tempCount }).map((_, i) => (
           <div
             key={`temp-${i}`}

@@ -73,4 +73,5 @@ async def unassign_lot_phase(
         needs_rerun=result.needs_rerun,
         warnings=result.warnings,
         from_phase_counts=result.phase_counts,
+        building_group_lot_ids=result.building_group_lot_ids,
     )

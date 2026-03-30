@@ -256,6 +256,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
             f"""
             SELECT
                 lot_id, lot_number, lot_type_id, lot_source, phase_id,
+                building_group_id,
                 {_STATUS_SQL} AS status,
                 (
                     (date_str IS NOT NULL OR date_cmp IS NOT NULL)
@@ -289,6 +290,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
             f"""
             SELECT
                 lot_id, lot_number, lot_type_id, lot_source,
+                building_group_id,
                 {_STATUS_SQL} AS status,
                 (
                     (date_str IS NOT NULL OR date_cmp IS NOT NULL)
@@ -325,6 +327,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
                     "lot_source": lot["lot_source"],
                     "status": lot["status"],
                     "has_actual_dates": bool(lot["has_actual_dates"]),
+                    "building_group_id": lot["building_group_id"],
                 }
             )
 
@@ -392,6 +395,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
                 "lot_source": r["lot_source"],
                 "status": r["status"],
                 "has_actual_dates": bool(r["has_actual_dates"]),
+                "building_group_id": r["building_group_id"],
             }
             for r in unassigned_raw
         ]

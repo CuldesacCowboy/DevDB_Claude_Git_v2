@@ -23,6 +23,7 @@ class ReassignmentResult:
     warnings: list[dict] = field(default_factory=list)
     phase_counts: dict = field(default_factory=dict)
     error: dict | None = None
+    building_group_lot_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -148,7 +149,8 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         cur.execute(
             """
             SELECT lot_id, phase_id, lot_source, lot_number, lot_type_id,
-                   projection_group_id, date_str, date_cmp, date_cls
+                   projection_group_id, date_str, date_cmp, date_cls,
+                   building_group_id
             FROM sim_lots
             WHERE lot_id = %s
             """,
@@ -216,6 +218,25 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             )
 
         # ----------------------------------------------------------------
+        # Find building group siblings (same building_group_id, real lots)
+        # ----------------------------------------------------------------
+        building_group_id = lot["building_group_id"]
+        sibling_lots = []
+        if building_group_id is not None:
+            cur.execute(
+                """
+                SELECT lot_id, lot_number, lot_type_id, projection_group_id,
+                       phase_id, date_str, date_cmp, date_cls
+                FROM sim_lots
+                WHERE building_group_id = %s
+                  AND lot_source = 'real'
+                  AND lot_id != %s
+                """,
+                (building_group_id, lot_id),
+            )
+            sibling_lots = list(cur.fetchall())
+
+        # ----------------------------------------------------------------
         # Soft warning (checked after validation passes, before writes)
         # ----------------------------------------------------------------
         # Warn only when the lot is operationally active mid-lifecycle:
@@ -228,12 +249,17 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             (lot["date_str"] is not None or lot["date_cmp"] is not None)
             and lot["date_cls"] is None
         )
-        if has_actual_dates:
+        sibling_has_actual = any(
+            (s["date_str"] is not None or s["date_cmp"] is not None) and s["date_cls"] is None
+            for s in sibling_lots
+        )
+        if has_actual_dates or sibling_has_actual:
+            lot_ref = lot["lot_number"] if not sibling_lots else f"building group (lot {lot['lot_number']})"
             warnings.append(
                 {
                     "code": "actual_dates_present",
                     "message": (
-                        f"Lot {lot['lot_number']} is under construction or complete "
+                        f"Lot {lot_ref} is under construction or complete "
                         "with recorded MARKsystems dates. Moving it changes its "
                         "projected delivery context but does not affect its recorded actuals."
                     ),
@@ -241,26 +267,26 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             )
 
         # ----------------------------------------------------------------
-        # Step 2 — Update lot
+        # Step 2 — Move primary lot and all building group siblings
         # ----------------------------------------------------------------
+        all_lot_ids = [lot_id] + [s["lot_id"] for s in sibling_lots]
         cur.execute(
-            "UPDATE sim_lots SET phase_id = %s WHERE lot_id = %s",
-            (target_phase_id, lot_id),
+            "UPDATE sim_lots SET phase_id = %s WHERE lot_id = ANY(%s)",
+            (target_phase_id, all_lot_ids),
         )
 
         # ----------------------------------------------------------------
-        # Step 2b — Maintain sim_phase_product_splits
+        # Step 2b — Maintain sim_phase_product_splits for all affected phases
         # ----------------------------------------------------------------
-        for pid in [p for p in [from_phase_id, target_phase_id] if p is not None]:
+        all_from_phase_ids = {lot["phase_id"]} | {s["phase_id"] for s in sibling_lots}
+        all_from_phase_ids.discard(None)
+        for pid in all_from_phase_ids | {target_phase_id}:
             _maintain_splits(cur, pid)
 
         # ----------------------------------------------------------------
-        # Step 3 — Set needs_rerun
+        # Step 3 — Set needs_rerun across all affected phases
         # ----------------------------------------------------------------
-        # Query after lot update so the moved lot (now in target_phase) is included.
-        # Covers the edge case where from_phase has no remaining lots:
-        # the moved lot's PG is captured via target_phase_id.
-        phase_filter = [p for p in [from_phase_id, target_phase_id] if p is not None]
+        phase_filter = list(all_from_phase_ids | {target_phase_id})
         cur.execute(
             """
             SELECT DISTINCT projection_group_id
@@ -282,31 +308,39 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             )
 
         # ----------------------------------------------------------------
-        # Step 6 — Audit log
+        # Step 6 — Audit log (one entry per moved lot)
         # ----------------------------------------------------------------
-        metadata = {
-            "lot_number": lot["lot_number"],
-            "lot_type_id": lot["lot_type_id"],
-            "had_actual_dates": has_actual_dates,
-        }
-        cur.execute(
-            """
-            INSERT INTO sim_assignment_log
-                (action, resource_type, resource_id,
-                 from_owner_id, to_owner_id,
-                 changed_by, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                "lot_phase_reassignment",
-                "lot",
-                lot_id,
-                from_phase_id if from_phase_id is not None else 0,
-                target_phase_id,
-                changed_by,
-                psycopg2.extras.Json(metadata),
-            ),
-        )
+        def _log_move(lid, lnumber, ltype, from_pid, had_actual):
+            cur.execute(
+                """
+                INSERT INTO sim_assignment_log
+                    (action, resource_type, resource_id,
+                     from_owner_id, to_owner_id,
+                     changed_by, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    "lot_phase_reassignment",
+                    "lot",
+                    lid,
+                    from_pid if from_pid is not None else 0,
+                    target_phase_id,
+                    changed_by,
+                    psycopg2.extras.Json({
+                        "lot_number": lnumber,
+                        "lot_type_id": ltype,
+                        "had_actual_dates": had_actual,
+                        "building_group_id": building_group_id,
+                    }),
+                ),
+            )
+
+        _log_move(lot_id, lot["lot_number"], lot["lot_type_id"],
+                  lot["phase_id"], has_actual_dates)
+        for s in sibling_lots:
+            sib_actual = (s["date_str"] is not None or s["date_cmp"] is not None) and s["date_cls"] is None
+            _log_move(s["lot_id"], s["lot_number"], s["lot_type_id"],
+                      s["phase_id"], sib_actual)
 
         conn.commit()
 
@@ -341,6 +375,7 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             needs_rerun=affected_pg_ids,
             warnings=warnings,
             phase_counts=phase_counts,
+            building_group_lot_ids=all_lot_ids,
         )
 
     except Exception:
@@ -545,7 +580,7 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
         cur.execute(
             """
             SELECT lot_id, phase_id, lot_source, lot_number, lot_type_id,
-                   date_str, date_cmp, date_cls
+                   date_str, date_cmp, date_cls, building_group_id
             FROM sim_lots
             WHERE lot_id = %s
             """,
@@ -572,6 +607,25 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
             )
 
         # ----------------------------------------------------------------
+        # Find building group siblings
+        # ----------------------------------------------------------------
+        building_group_id = lot["building_group_id"]
+        sibling_lots = []
+        if building_group_id is not None:
+            cur.execute(
+                """
+                SELECT lot_id, lot_number, lot_type_id, projection_group_id,
+                       phase_id, date_str, date_cmp, date_cls
+                FROM sim_lots
+                WHERE building_group_id = %s
+                  AND lot_source = 'real'
+                  AND lot_id != %s
+                """,
+                (building_group_id, lot_id),
+            )
+            sibling_lots = list(cur.fetchall())
+
+        # ----------------------------------------------------------------
         # Soft warning (UC or C only — same condition as reassignment)
         # ----------------------------------------------------------------
         warnings = []
@@ -579,12 +633,17 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
             (lot["date_str"] is not None or lot["date_cmp"] is not None)
             and lot["date_cls"] is None
         )
-        if has_actual_dates:
+        sibling_has_actual = any(
+            (s["date_str"] is not None or s["date_cmp"] is not None) and s["date_cls"] is None
+            for s in sibling_lots
+        )
+        if has_actual_dates or sibling_has_actual:
+            lot_ref = lot["lot_number"] if not sibling_lots else f"building group (lot {lot['lot_number']})"
             warnings.append(
                 {
                     "code": "actual_dates_present",
                     "message": (
-                        f"Lot {lot['lot_number']} is under construction or complete "
+                        f"Lot {lot_ref} is under construction or complete "
                         "with recorded MARKsystems dates. Moving it changes its "
                         "projected delivery context but does not affect its recorded actuals."
                     ),
@@ -592,38 +651,43 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
             )
 
         # ----------------------------------------------------------------
-        # Step 2 — Unassign lot
+        # Step 2 — Unassign primary lot and all siblings
         # ----------------------------------------------------------------
+        all_lot_ids = [lot_id] + [s["lot_id"] for s in sibling_lots]
         cur.execute(
-            "UPDATE sim_lots SET phase_id = NULL WHERE lot_id = %s",
-            (lot_id,),
+            "UPDATE sim_lots SET phase_id = NULL WHERE lot_id = ANY(%s)",
+            (all_lot_ids,),
         )
 
         # ----------------------------------------------------------------
-        # Step 3 — Set needs_rerun
-        # Lot is now unassigned; query remaining lots in from_phase.
-        # The moved lot's PG is preserved via projection_group_id on lot itself.
+        # Step 3 — Maintain splits for all from_phases
+        # ----------------------------------------------------------------
+        all_from_phase_ids = {lot["phase_id"]} | {s["phase_id"] for s in sibling_lots if s["phase_id"]}
+        for pid in all_from_phase_ids:
+            _maintain_splits(cur, pid)
+
+        # ----------------------------------------------------------------
+        # Step 4 — Set needs_rerun
         # ----------------------------------------------------------------
         cur.execute(
             """
             SELECT DISTINCT projection_group_id
             FROM sim_lots
-            WHERE phase_id = %s
+            WHERE phase_id = ANY(%s)
             """,
-            (from_phase_id,),
+            (list(all_from_phase_ids),),
         )
         affected_pg_ids = [int(r["projection_group_id"]) for r in cur.fetchall()]
 
-        # Also include the unassigned lot's own PG (it may be the last lot in the phase)
+        # Include PGs from all moved lots (may be last in their phases)
         cur.execute(
-            "SELECT projection_group_id FROM sim_lots WHERE lot_id = %s",
-            (lot_id,),
+            "SELECT DISTINCT projection_group_id FROM sim_lots WHERE lot_id = ANY(%s)",
+            (all_lot_ids,),
         )
-        own_pg_row = cur.fetchone()
-        if own_pg_row and own_pg_row["projection_group_id"] is not None:
-            own_pg = int(own_pg_row["projection_group_id"])
-            if own_pg not in affected_pg_ids:
-                affected_pg_ids.append(own_pg)
+        for r in cur.fetchall():
+            pg = int(r["projection_group_id"])
+            if pg not in affected_pg_ids:
+                affected_pg_ids.append(pg)
 
         if affected_pg_ids:
             cur.execute(
@@ -636,67 +700,48 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
             )
 
         # ----------------------------------------------------------------
-        # Step 4 — Audit log
+        # Step 5 — Audit log (one entry per unassigned lot)
         # ----------------------------------------------------------------
-        metadata = {
-            "lot_number": lot["lot_number"],
-            "lot_type_id": lot["lot_type_id"],
-            "had_actual_dates": has_actual_dates,
-        }
-        cur.execute(
-            """
-            INSERT INTO sim_assignment_log
-                (action, resource_type, resource_id,
-                 from_owner_id, to_owner_id,
-                 changed_by, metadata)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (
-                "lot_phase_unassignment",
-                "lot",
-                lot_id,
-                from_phase_id,
-                0,          # NULL represented as 0 per spec
-                changed_by,
-                psycopg2.extras.Json(metadata),
-            ),
-        )
+        def _log_unassign(lid, lnumber, ltype, from_pid, had_actual):
+            cur.execute(
+                """
+                INSERT INTO sim_assignment_log
+                    (action, resource_type, resource_id,
+                     from_owner_id, to_owner_id,
+                     changed_by, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    "lot_phase_unassignment",
+                    "lot",
+                    lid,
+                    from_pid,
+                    0,
+                    changed_by,
+                    psycopg2.extras.Json({
+                        "lot_number": lnumber,
+                        "lot_type_id": ltype,
+                        "had_actual_dates": had_actual,
+                        "building_group_id": building_group_id,
+                    }),
+                ),
+            )
+
+        _log_unassign(lot_id, lot["lot_number"], lot["lot_type_id"],
+                      from_phase_id, has_actual_dates)
+        for s in sibling_lots:
+            sib_actual = (s["date_str"] is not None or s["date_cmp"] is not None) and s["date_cls"] is None
+            _log_unassign(s["lot_id"], s["lot_number"], s["lot_type_id"],
+                          s["phase_id"], sib_actual)
 
         conn.commit()
 
         # ----------------------------------------------------------------
-        # Post-commit: build from_phase_counts
+        # Post-commit: build from_phase_counts (use _build_by_lot_type for completeness)
         # ----------------------------------------------------------------
-        cur.execute(
-            """
-            SELECT COUNT(*) AS actual
-            FROM sim_lots
-            WHERE phase_id = %s AND lot_type_id = %s AND lot_source = 'real'
-            """,
-            (from_phase_id, lot["lot_type_id"]),
-        )
-        actual = int(cur.fetchone()["actual"])
-        cur.execute(
-            """
-            SELECT projected_count
-            FROM sim_phase_product_splits
-            WHERE phase_id = %s AND lot_type_id = %s
-            """,
-            (from_phase_id, lot["lot_type_id"]),
-        )
-        split_row = cur.fetchone()
-        projected = int(split_row["projected_count"]) if split_row else 0
-
         from_phase_counts = {
             "phase_id": from_phase_id,
-            "by_lot_type": [
-                {
-                    "lot_type_id": lot["lot_type_id"],
-                    "actual": actual,
-                    "projected": projected,
-                    "total": max(actual, projected),
-                }
-            ],
+            "by_lot_type": _build_by_lot_type(cur, from_phase_id),
         }
 
         return ReassignmentResult(
@@ -710,7 +755,8 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
             },
             needs_rerun=affected_pg_ids,
             warnings=warnings,
-            phase_counts=from_phase_counts,   # reuse phase_counts field to carry from_phase_counts
+            phase_counts=from_phase_counts,
+            building_group_lot_ids=all_lot_ids,
         )
 
     except Exception:

@@ -15,6 +15,7 @@ export function useDragHandler({
   setNeedsRerun,
 }) {
   const [activeLot, setActiveLot] = useState(null)
+  const [activeBuildingGroup, setActiveBuildingGroup] = useState(null)
   const [activePhase, setActivePhase] = useState(null)
   const [activeInstrument, setActiveInstrument] = useState(null)
   const [activePg, setActivePg] = useState(null)
@@ -56,6 +57,10 @@ export function useDragHandler({
     setActiveDragType(type)
     if (type === 'lot') {
       setActiveLot(event.active.data.current?.lot)
+      setActiveBuildingGroup(null)
+    } else if (type === 'building-group') {
+      setActiveBuildingGroup(event.active.data.current?.lots ?? null)
+      setActiveLot(null)
     } else if (type === 'phase') {
       setActivePhase(event.active.data.current?.phase)
     } else if (type === 'instrument') {
@@ -68,6 +73,7 @@ export function useDragHandler({
 
   function handleDragCancel() {
     setActiveLot(null)
+    setActiveBuildingGroup(null)
     setActivePhase(null)
     setActiveInstrument(null)
     setActivePg(null)
@@ -80,6 +86,7 @@ export function useDragHandler({
   async function handleDragEnd(event) {
     const { active, over } = event
     setActiveLot(null)
+    setActiveBuildingGroup(null)
     setActivePhase(null)
     setActiveInstrument(null)
     setActivePg(null)
@@ -91,6 +98,8 @@ export function useDragHandler({
 
     if (dragType === 'lot') {
       await handleLotDrop(active, over)
+    } else if (dragType === 'building-group') {
+      await handleBuildingGroupDrop(active, over)
     } else if (dragType === 'phase') {
       const overType = over.data.current?.type
       const activeInstrumentId = active.data.current?.instrumentId ?? null
@@ -309,6 +318,98 @@ export function useDragHandler({
   }
 
   // -----------------------------------------------------------------------
+  // Building group drop — move all units together as a single operation.
+  // The backend fans out the move to all siblings; frontend removes/adds all.
+  // -----------------------------------------------------------------------
+  async function handleBuildingGroupDrop(active, over) {
+    const lots = active.data.current?.lots
+    if (!lots?.length) return
+
+    const primaryLot = lots[0]
+    const droppedOnUnassigned = over.data.current?.type === 'unassigned'
+    const overLotTarget = over.data.current?.type === 'lot-target'
+
+    if (!droppedOnUnassigned && !overLotTarget) return
+    if (droppedOnUnassigned && primaryLot.phase_id === null) return
+
+    const targetPhase = over.data.current?.phase
+    const targetPhaseId = targetPhase?.phase_id ?? null
+
+    if (overLotTarget && targetPhaseId === primaryLot.phase_id) return
+
+    const lotIds = new Set(lots.map((l) => l.lot_id))
+    setPendingLotId(primaryLot.lot_id)
+
+    try {
+      if (droppedOnUnassigned) {
+        const res = await fetch(`/api/lots/${primaryLot.lot_id}/phase?changed_by=user`, { method: 'DELETE' })
+        const data = await res.json()
+
+        if (res.ok) {
+          const { transaction, from_phase_counts, needs_rerun, warnings } = data
+          updatePhaseInBothStates(transaction.from_phase_id, (p) => ({
+            ...p,
+            lots: p.lots.filter((l) => !lotIds.has(l.lot_id)),
+            by_lot_type: mergedCounts(p.by_lot_type, from_phase_counts.by_lot_type),
+          }))
+          setUnassigned((prev) =>
+            [...prev, ...lots.map((l) => ({ ...l, phase_id: null }))].sort(
+              (a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? '')
+            )
+          )
+          if (needs_rerun?.length > 0) setNeedsRerun(true)
+          const fromPhaseName = findPhaseName(transaction.from_phase_id)
+          addToast('success', `Building (${lots.length} units) unassigned from ${fromPhaseName}`)
+          warnings?.forEach((w) => addToast('warning', w.message))
+        } else {
+          addToast('error', data?.detail?.message ?? data?.detail ?? 'Unassign failed')
+        }
+      } else {
+        const fromUnassigned = primaryLot.phase_id === null
+        const res = await fetch(`/api/lots/${primaryLot.lot_id}/phase`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'user' }),
+        })
+        const data = await res.json()
+
+        if (res.ok) {
+          const { transaction, phase_counts, needs_rerun, warnings } = data
+
+          if (fromUnassigned) {
+            setUnassigned((prev) => prev.filter((l) => !lotIds.has(l.lot_id)))
+          } else {
+            updatePhaseInBothStates(transaction.from_phase_id, (p) => ({
+              ...p,
+              lots: p.lots.filter((l) => !lotIds.has(l.lot_id)),
+              by_lot_type: phase_counts.from_phase.by_lot_type,
+            }))
+          }
+          updatePhaseInBothStates(transaction.to_phase_id, (p) => ({
+            ...p,
+            lots: [
+              ...p.lots,
+              ...lots.map((l) => ({ ...l, phase_id: targetPhaseId })),
+            ].sort((a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? '')),
+            by_lot_type: phase_counts.to_phase.by_lot_type,
+          }))
+
+          if (needs_rerun?.length > 0) setNeedsRerun(true)
+          const toPhaseName = findPhaseName(targetPhaseId)
+          addToast('success', `Building (${lots.length} units) moved to ${toPhaseName}`)
+          warnings?.forEach((w) => addToast('warning', w.message))
+        } else {
+          addToast('error', data?.detail?.message ?? data?.detail ?? 'Move failed')
+        }
+      }
+    } catch (err) {
+      addToast('error', `Network error: ${err.message}`)
+    } finally {
+      setPendingLotId(null)
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Phase reassign — move phase to a different instrument container
   // -----------------------------------------------------------------------
   async function handlePhaseReassign(active, targetInstrumentId, targetInstrumentName) {
@@ -494,6 +595,7 @@ export function useDragHandler({
     handleDragCancel,
     handleAutoSort,
     activeLot,
+    activeBuildingGroup,
     activePhase,
     activeInstrument,
     activePg,
