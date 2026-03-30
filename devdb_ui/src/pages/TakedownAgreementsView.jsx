@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useLayoutEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useLayoutEffect, useMemo, useEffect } from 'react'
 import { DndContext, DragOverlay, pointerWithin } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
@@ -37,7 +37,7 @@ function parseLot(lotNumber) {
 }
 
 // ── Draggable unassigned lot pill ─────────────────────────────────
-function UnassignedLotPill({ lot }) {
+function UnassignedLotPill({ lot, isSelected, onToggle }) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({ id: `unassigned-${lot.lot_id}`, data: { type: 'unassigned-lot', lot } })
   const { code, seq } = parseLot(lot.lot_number)
@@ -46,19 +46,27 @@ function UnassignedLotPill({ lot }) {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      onClick={() => !isDragging && onToggle(lot.lot_id)}
       style={{
         width: 68, height: 34, flexShrink: 0,
-        background: '#fff',
-        border: '0.5px solid #888780',
+        background: isSelected ? '#eff6ff' : '#fff',
+        border: isSelected ? '2px solid #2563eb' : '0.5px solid #888780',
         borderRadius: 5,
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between',
         padding: '0 6px', boxSizing: 'border-box',
         cursor: 'grab', opacity: isDragging ? 0.4 : 1,
+        position: 'relative',
       }}
     >
-      <span style={{ fontSize: 11, color: '#888780' }}>{code}</span>
+      <span style={{ fontSize: 11, color: isSelected ? '#2563eb' : '#888780' }}>{code}</span>
       <span style={{ fontSize: 12, fontWeight: 500, color: '#2C2C2A' }}>{seq}</span>
+      {isSelected && (
+        <div style={{
+          position: 'absolute', top: 2, right: 2,
+          width: 8, height: 8, borderRadius: '50%', background: '#2563eb',
+        }} />
+      )}
     </div>
   )
 }
@@ -118,28 +126,127 @@ function TdaPoolBank({ lots, tdaName }) {
 }
 
 // ── Droppable unassigned bank ─────────────────────────────────────
-function UnassignedBank({ lots }) {
+function UnassignedBank({ lots, selectedIds, onToggle, onToggleDevGroup, onAddToPool, onClearSelection }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'unassigned-bank', data: { type: 'unassigned-bank' } })
+
+  const devGroups = useMemo(() => {
+    const groups = {}
+    for (const lot of lots) {
+      const code = lot.lot_number?.match(/^([A-Za-z]+)/)?.[1] ?? '??'
+      if (!groups[code]) groups[code] = []
+      groups[code].push(lot)
+    }
+    return Object.entries(groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([devCode, devLots]) => ({ devCode, devLots }))
+  }, [lots])
+
+  const selCount = selectedIds.size
+
   return (
     <div
       ref={setNodeRef}
       style={{
-        width: 240, flexShrink: 0,
+        width: 252, flexShrink: 0,
         background: isOver ? '#eff6ff' : '#f9fafb',
         border: `2px solid ${isOver ? '#3b82f6' : '#e5e7eb'}`,
-        borderRadius: 8, padding: 14, marginRight: 20,
+        borderRadius: 8, padding: 12, marginRight: 20,
         minHeight: 200, transition: 'all 0.15s',
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 15, color: '#374151', marginBottom: 4 }}>
+      <div style={{ fontWeight: 700, fontSize: 15, color: '#374151', marginBottom: 2 }}>
         Unassigned
       </div>
-      <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 10 }}>
+      <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: selCount > 0 ? 8 : 10 }}>
         {lots.length} lot{lots.length !== 1 ? 's' : ''}
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-        {lots.map(lot => <UnassignedLotPill key={lot.lot_id} lot={lot} />)}
-      </div>
+
+      {/* Selection action bar */}
+      {selCount > 0 && (
+        <div style={{
+          marginBottom: 10, padding: '6px 8px', borderRadius: 6,
+          background: '#dbeafe', border: '1px solid #93c5fd',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+        }}>
+          <span style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 500 }}>
+            {selCount} selected
+          </span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={onAddToPool}
+              style={{
+                fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                border: 'none', background: '#2563eb', color: '#fff',
+                cursor: 'pointer', fontWeight: 600,
+              }}
+            >
+              Add to In Agreement
+            </button>
+            <button
+              onClick={onClearSelection}
+              style={{
+                fontSize: 11, padding: '3px 6px', borderRadius: 4,
+                border: '1px solid #93c5fd', background: 'transparent', color: '#1d4ed8',
+                cursor: 'pointer',
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dev groups */}
+      {devGroups.map(({ devCode, devLots }) => {
+        const allSel = devLots.every(l => selectedIds.has(l.lot_id))
+        const someSel = devLots.some(l => selectedIds.has(l.lot_id))
+        return (
+          <div key={devCode} style={{ marginBottom: 10 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 5,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ height: 1, width: 8, background: '#d1d5db' }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', letterSpacing: '0.06em' }}>
+                  {devCode}
+                </span>
+                <span style={{ fontSize: 11, color: '#9ca3af' }}>
+                  {devLots.length}
+                </span>
+              </div>
+              <button
+                onClick={() => onToggleDevGroup(devLots)}
+                style={{
+                  fontSize: 10, padding: '1px 6px', borderRadius: 3,
+                  border: `1px solid ${allSel ? '#2563eb' : '#d1d5db'}`,
+                  background: allSel ? '#dbeafe' : 'transparent',
+                  color: allSel ? '#1d4ed8' : someSel ? '#2563eb' : '#9ca3af',
+                  cursor: 'pointer', fontWeight: 500,
+                }}
+              >
+                {allSel ? 'deselect' : 'select all'}
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 68px)', gap: 4 }}>
+              {devLots.map(lot => (
+                <UnassignedLotPill
+                  key={lot.lot_id}
+                  lot={lot}
+                  isSelected={selectedIds.has(lot.lot_id)}
+                  onToggle={onToggle}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {lots.length === 0 && (
+        <p style={{ fontSize: 12, color: '#9ca3af', fontStyle: 'italic', textAlign: 'center', marginTop: 12 }}>
+          {isOver ? 'Drop to unassign' : 'All lots in an agreement'}
+        </p>
+      )}
     </div>
   )
 }
@@ -368,7 +475,21 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false }) {
           <span style={{ fontSize: 11, textTransform: 'uppercase', color: '#888780', letterSpacing: '0.04em' }}>
             {label}
           </span>
-          <LockBtn locked={isLocked} onClick={() => onLockChange(lockKey, !isLocked)} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {marksDate && (
+              <button
+                title="Set projected date to MARKsystems date and lock"
+                onClick={() => { onDateChange(dateKey, marksDate); onLockChange(lockKey, true) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px', lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                  <path d="M10 6A4 4 0 1 1 8.5 2.8" stroke="#B4B2A9" strokeWidth="1.5" strokeLinecap="round"/>
+                  <polyline points="8.5,1 8.5,3 10.5,3" stroke="#B4B2A9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+            )}
+            <LockBtn locked={isLocked} onClick={() => onLockChange(lockKey, !isLocked)} />
+          </div>
         </div>
         <div style={{ fontSize: 12, color: '#B4B2A9', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {fmt(marksDate)}
@@ -682,6 +803,40 @@ export default function TakedownAgreementsView({ entGroupId }) {
   } = useTdaData(entGroupId)
 
   const [dragLot, setDragLot] = useState(null)
+  const [selectedLotIds, setSelectedLotIds] = useState(new Set())
+
+  // Clear selection when switching TDAs
+  useEffect(() => setSelectedLotIds(new Set()), [selectedTdaId])
+
+  function toggleLotSelection(lotId) {
+    setSelectedLotIds(prev => {
+      const next = new Set(prev)
+      if (next.has(lotId)) next.delete(lotId)
+      else next.add(lotId)
+      return next
+    })
+  }
+
+  function toggleDevGroupSelection(devLots) {
+    const ids = devLots.map(l => l.lot_id)
+    const allSel = ids.every(id => selectedLotIds.has(id))
+    setSelectedLotIds(prev => {
+      const next = new Set(prev)
+      if (allSel) ids.forEach(id => next.delete(id))
+      else ids.forEach(id => next.add(id))
+      return next
+    })
+  }
+
+  async function handleAddSelectedToPool() {
+    if (!detail || selectedLotIds.size === 0) return
+    await Promise.all([...selectedLotIds].map(id =>
+      fetch(`${API}/takedown-agreements/${detail.tda_id}/lots/${id}/pool`, { method: 'POST' })
+    ))
+    setSelectedLotIds(new Set())
+    refetchDetail()
+  }
+
   const [showNewTdaForm, setShowNewTdaForm] = useState(false)
   const [newTdaName, setNewTdaName] = useState('')
   const [newTdaCreating, setNewTdaCreating] = useState(false)
@@ -915,7 +1070,14 @@ export default function TakedownAgreementsView({ entGroupId }) {
             flex: 1, overflowY: 'auto', padding: 24,
             display: 'flex', gap: 0, alignItems: 'flex-start',
           }}>
-            <UnassignedBank lots={detail.unassigned_lots || []} />
+            <UnassignedBank
+              lots={detail.unassigned_lots || []}
+              selectedIds={selectedLotIds}
+              onToggle={toggleLotSelection}
+              onToggleDevGroup={toggleDevGroupSelection}
+              onAddToPool={handleAddSelectedToPool}
+              onClearSelection={() => setSelectedLotIds(new Set())}
+            />
             <TdaPoolBank lots={detail.pool_lots || []} tdaName={detail.tda_name} />
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
