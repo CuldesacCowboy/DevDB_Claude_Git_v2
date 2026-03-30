@@ -248,12 +248,12 @@ export default function InstrumentContainer({
           </>
         ) : (
           <div className="flex flex-col gap-0.5">
-            <div className="relative flex items-center justify-center gap-2">
+            <div className="flex items-center gap-1.5">
               {/* Instrument drag handle */}
               <span
                 {...instrListeners}
                 {...instrAttrs}
-                className="absolute left-0 text-gray-300 text-[10px] leading-none flex-shrink-0 cursor-grab active:cursor-grabbing select-none"
+                className="flex-shrink-0 text-gray-300 text-[10px] leading-none cursor-grab active:cursor-grabbing select-none"
                 aria-hidden
               >
                 ⠿
@@ -281,12 +281,12 @@ export default function InstrumentContainer({
                     padding: '1px 4px',
                     outline: 'none',
                     minWidth: 0,
-                    flex: '1 1 auto',
+                    flex: '1 1 0',
                   }}
                 />
               ) : (
                 <p
-                  className={`font-bold text-sm ${containerTint.text} break-words min-w-0 cursor-text`}
+                  className={`flex-1 min-w-0 font-bold text-sm ${containerTint.text} break-words cursor-text`}
                   title="Click to rename"
                   onClick={(e) => {
                     e.stopPropagation()
@@ -298,16 +298,17 @@ export default function InstrumentContainer({
                   {instrument.instrument_name}
                 </p>
               )}
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${containerTint.header} border ${containerTint.border} ${containerTint.text}`}>
+
+              <span className={`flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded ${containerTint.header} border ${containerTint.border} ${containerTint.text}`}>
                 {instrument.instrument_type}
               </span>
 
               {/* Right-side controls: add phase + auto-sort */}
-              <div className="absolute right-0 flex items-center gap-0.5">
+              <div className="flex-shrink-0 flex items-center gap-0.5">
                 <button
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={openAddPhase}
-                  className="flex-shrink-0 px-1 py-0.5 rounded text-[10px] font-medium text-gray-500 hover:text-gray-800 hover:bg-white/60 border border-transparent hover:border-gray-200 leading-none"
+                  className="px-1 py-0.5 rounded text-[10px] font-medium text-gray-500 hover:text-gray-800 hover:bg-white/60 border border-transparent hover:border-gray-200 leading-none"
                   title="Add phase"
                   aria-label="Add phase"
                 >
@@ -317,7 +318,7 @@ export default function InstrumentContainer({
                 <button
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => onAutoSort?.(instrument.instrument_id)}
-                  className="flex-shrink-0 p-0.5 rounded text-gray-400 hover:text-gray-600 hover:bg-white/60"
+                  className="p-0.5 rounded text-gray-400 hover:text-gray-600 hover:bg-white/60"
                   title="Auto-sort phases"
                   aria-label="Auto-sort phases"
                 >
