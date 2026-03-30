@@ -22,7 +22,7 @@
 | React/FastAPI phase endpoints | Complete | Route ordering fixed — specific sub-routes now registered before catch-all /{phase_id}. DELETE /phases/{id}/lot-type and all phase endpoints visible in OpenAPI spec. |
 | Session tooling | Complete | /start and /end Claude Code skills (.claude/skills/). Start_DevDB_Session.bat opens session windows via devdb_open_session_windows.ps1. Stop_DevDB.bat kills backend (uvicorn + detached python.exe), frontend (Vite), and Chrome DevDB windows. End_DevDB_Session.bat, devdb_run_claude.py, devdb_generate_handoff.py, Save_DevDB_Window_Positions.bat, devdb_save_window_positions.ps1 removed. |
 | Postgres migration | Complete | All 35 tables migrated from Databricks to local PostgreSQL 16 (devdb.devdb). migrate_to_postgres.py. 23.5s total. 266,554 schedhousedetail rows. Engine now runs against local Postgres. Run time 0.5s (was 7+ min on Databricks serverless). |
-| Streamlit UI | In progress | Projection Group Dashboard page built. Setup Tools (7 tabs) built. New Community Wizard built. sim_phase_product_splits lot_count editing added to Phases tab 2026-03-25. Streamlit is active UI. React + FastAPI downgraded to long-term possible (D-149). |
+| React/FastAPI UI | In progress | React + FastAPI is the active UI. Streamlit was a prior prototype and is no longer active. D-149 is superseded. |
 
 **Update this table at the start of each Claude Code session to reflect actual current state.**
 
@@ -49,7 +49,7 @@
 
 DevDB tracks residential lot inventory through a development pipeline for JTB Homes. Each lot moves through a sequential pipeline from raw land entitlement through home closing. The system projects that pipeline forward to support sales planning, land acquisition, and operational scheduling.
 
-**Technology stack:** Local Python simulation engine (devdb_python/engine/, pandas + psycopg2) + local PostgreSQL 16 (devdb.devdb schema) + Databricks for MARKsystems data source (schedhousedetail, one-time migration) + local Streamlit UI (active prototype). React + FastAPI is a long-term possible direction only (D-149).
+**Technology stack:** Local Python simulation engine (devdb_python/engine/, pandas + psycopg2) + local PostgreSQL 16 (devdb.devdb schema) + Databricks for MARKsystems data source (schedhousedetail, one-time migration) + React frontend + FastAPI backend (active UI). Streamlit was a prior prototype and is no longer active.
 
 ---
 
@@ -1030,6 +1030,31 @@ touches before making changes. Keep this section updated when files are added or
 ### devdb_python/migrations/010_no_ddl_phase_endpoints.sql
 - Owns: No-op marker recording addition of DELETE /phases/{id}/lot-type and DELETE /phases/{id} endpoints
 - Tables: none (SELECT 1)
+- Last commit: 2026-03-29
+
+### devdb_python/migrations/011_add_display_order.sql
+- Owns: Adds display_order column (INT NULL) to sim_dev_phases; idempotent (ADD COLUMN IF NOT EXISTS). Supersedes add_display_order.py.
+- Tables: sim_dev_phases
+- Last commit: 2026-03-30
+
+### devdb_python/migrations/create_developments.py
+- Owns: Standalone one-time migration — creates developments table; adds PKs to dim_county, dim_state, dim_municipality (migrated without constraints per D-086). Idempotent.
+- Tables: developments (CREATE IF NOT EXISTS), dim_county, dim_state, dim_municipality (ALTER ADD PRIMARY KEY)
+- Last commit: 2026-03-26
+
+### devdb_python/migrations/create_sim_assignment_log.py
+- Owns: Standalone one-time migration — creates sim_assignment_log table. Idempotent (IF NOT EXISTS).
+- Tables: sim_assignment_log (CREATE IF NOT EXISTS)
+- Last commit: 2026-03-26
+
+### devdb_python/migrations/allow_null_phase_id.py
+- Owns: Standalone one-time migration — drops NOT NULL constraint on sim_lots.phase_id to allow unassigned lots (phase_id = NULL).
+- Tables: sim_lots (ALTER COLUMN phase_id DROP NOT NULL)
+- Last commit: 2026-03-26
+
+### devdb_python/migrations/add_display_order.py
+- Owns: Superseded by 011_add_display_order.sql. Original standalone migration that added display_order to sim_dev_phases.
+- Tables: sim_dev_phases
 - Last commit: 2026-03-29
 
 ---
