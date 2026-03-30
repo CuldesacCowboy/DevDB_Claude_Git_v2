@@ -867,11 +867,13 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
     const dates = [l.hc_marks_date, l.hc_projected_date, l.bldr_marks_date, l.bldr_projected_date].filter(Boolean)
     return dates.some(d => d <= localDate)
   }).length : 0
+  // Every assigned lot must have a qualifying date — not just the required count
+  const allMet = total > 0 && metCP >= total
   const cpIsPast = !!localDate && localDate <= todayStr
   const cpStatus = (!localDate || t === 0) ? 'none'
     : cpIsPast
-      ? (metCP >= t ? 'complete' : 'missed')
-      : (metCP >= t ? 'on-track' : metCP > 0 ? 'at-risk' : 'none')
+      ? (allMet ? 'complete' : 'missed')
+      : (allMet ? 'on-track' : metCP > 0 ? 'at-risk' : 'none')
 
   const STATUS_CFG = {
     'complete': { label: 'Complete', icon: '✓', color: '#15803d', bg: '#dcfce7', border: '#86efac' },
