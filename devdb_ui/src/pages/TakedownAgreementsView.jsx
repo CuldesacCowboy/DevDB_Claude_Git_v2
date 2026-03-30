@@ -855,6 +855,268 @@ function EditableNumber({ value, onChange }) {
   )
 }
 
+// ── Checkpoint timeline (dot-plot) ───────────────────────────────
+function CheckpointTimeline({ lots, checkpointDate }) {
+  const containerRef = useRef(null)
+  const [width, setWidth] = useState(0)
+  const [open, setOpen] = useState(true)
+
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    setWidth(el.getBoundingClientRect().width)
+    const obs = new ResizeObserver(([e]) => setWidth(e.contentRect.width))
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [open])
+
+  // Only rows with at least one projected date
+  const rows = lots.filter(l => l.hc_projected_date || l.bldr_projected_date)
+  const omitted = lots.length - rows.length
+
+  const PAD_L = 64
+  const PAD_R = 16
+  const ROW_H = 24
+  const AXIS_H = 24
+  const TOP_PAD = 18  // room for CP label above rows
+
+  const chartW = Math.max(1, width - PAD_L - PAD_R)
+
+  // Domain: all dates + today, then pad 10% each side
+  const todayTs = new Date().setHours(0, 0, 0, 0)
+  const allTs = [
+    ...rows.flatMap(l => [l.hc_projected_date, l.bldr_projected_date]),
+    checkpointDate,
+  ].filter(Boolean).map(d => new Date(d).getTime())
+  allTs.push(todayTs)
+
+  const rawMin = Math.min(...allTs)
+  const rawMax = Math.max(...allTs)
+  const span = rawMax - rawMin || 30 * 86400000
+  const domMin = rawMin - span * 0.10
+  const domMax = rawMax + span * 0.10
+
+  const toX = ts => PAD_L + ((ts - domMin) / (domMax - domMin)) * chartW
+  const dateX = d => d ? toX(new Date(d).getTime()) : null
+
+  const todayX = toX(todayTs)
+  const cpX = checkpointDate ? dateX(checkpointDate) : null
+
+  // Month ticks
+  const ticks = []
+  const t0 = new Date(domMin); t0.setDate(1); t0.setHours(0, 0, 0, 0)
+  for (let td = new Date(t0); td.getTime() <= domMax; td.setMonth(td.getMonth() + 1)) {
+    const x = toX(td.getTime())
+    if (x >= PAD_L - 1 && x <= PAD_L + chartW + 1)
+      ticks.push({ x, label: td.toLocaleString('en-US', { month: 'short', year: '2-digit' }) })
+  }
+
+  const bodyH = TOP_PAD + rows.length * ROW_H + AXIS_H
+
+  return (
+    <div style={{ borderTop: '1px solid #EDEDEA' }}>
+      {/* Section toggle header */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '5px 14px', cursor: 'pointer', userSelect: 'none',
+          background: '#FAFAF8',
+        }}
+      >
+        <span style={{ fontSize: 10, color: '#B4B2A9', lineHeight: 1 }}>{open ? '▾' : '▸'}</span>
+        <span style={{ fontSize: 10, color: '#888780', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Timeline
+        </span>
+        {rows.length > 0 && (
+          <span style={{ fontSize: 10, color: '#B4B2A9' }}>
+            — {rows.length} lot{rows.length !== 1 ? 's' : ''} with projected dates
+            {omitted > 0 ? `, ${omitted} without` : ''}
+          </span>
+        )}
+      </div>
+
+      {open && (
+        <div ref={containerRef} style={{ padding: '0 14px 12px' }}>
+          {rows.length === 0 ? (
+            <div style={{ fontSize: 11, color: '#B4B2A9', padding: '8px 0' }}>
+              No projected dates to display.
+            </div>
+          ) : width > 0 && (
+            <>
+              <svg
+                width={width - 28}
+                height={bodyH}
+                style={{ display: 'block', overflow: 'visible' }}
+              >
+                {/* Vertical grid lines at month ticks */}
+                {ticks.map((tk, i) => (
+                  <line key={i}
+                    x1={tk.x} y1={TOP_PAD}
+                    x2={tk.x} y2={TOP_PAD + rows.length * ROW_H}
+                    stroke="#F0EEE8" strokeWidth={1}
+                  />
+                ))}
+
+                {/* Today line */}
+                {todayX >= PAD_L && todayX <= PAD_L + chartW && (
+                  <line
+                    x1={todayX} y1={TOP_PAD}
+                    x2={todayX} y2={TOP_PAD + rows.length * ROW_H}
+                    stroke="#D4D2CB" strokeWidth={1} strokeDasharray="2,3"
+                  />
+                )}
+
+                {/* Checkpoint line */}
+                {cpX !== null && (
+                  <g>
+                    <line
+                      x1={cpX} y1={4}
+                      x2={cpX} y2={TOP_PAD + rows.length * ROW_H}
+                      stroke="#dc2626" strokeWidth={1.5} strokeDasharray="4,3"
+                    />
+                    <text
+                      x={cpX} y={2}
+                      textAnchor="middle" dominantBaseline="hanging"
+                      fontSize={8} fontWeight={700} fill="#dc2626" letterSpacing="0.04em"
+                    >
+                      CHECKPOINT
+                    </text>
+                  </g>
+                )}
+
+                {/* Lot rows */}
+                {rows.map((lot, i) => {
+                  const cy = TOP_PAD + i * ROW_H + ROW_H / 2
+                  const hx = dateX(lot.hc_projected_date)
+                  const bx = dateX(lot.bldr_projected_date)
+                  const meetsCp = cpX !== null && (
+                    (hx !== null && hx <= cpX) || (bx !== null && bx <= cpX)
+                  )
+                  const rowBg = i % 2 === 0 ? '#FAFAF8' : null
+
+                  return (
+                    <g key={lot.assignment_id || lot.lot_id}>
+                      {/* Alternating row tint */}
+                      {rowBg && (
+                        <rect
+                          x={PAD_L} y={TOP_PAD + i * ROW_H}
+                          width={chartW} height={ROW_H}
+                          fill={rowBg}
+                        />
+                      )}
+
+                      {/* Fulfillment check mark on label side */}
+                      {meetsCp && (
+                        <text
+                          x={PAD_L - 52} y={cy}
+                          dominantBaseline="middle" textAnchor="middle"
+                          fontSize={9} fill="#15803d" fontWeight={700}
+                        >✓</text>
+                      )}
+
+                      {/* Lot label */}
+                      <text
+                        x={PAD_L - 8} y={cy}
+                        textAnchor="end" dominantBaseline="middle"
+                        fontSize={10} fill="#6B6B68"
+                      >
+                        {shortLot(lot.lot_number)}
+                      </text>
+
+                      {/* Connector line between the two dots */}
+                      {hx !== null && bx !== null && (
+                        <line
+                          x1={Math.min(hx, bx)} y1={cy}
+                          x2={Math.max(hx, bx)} y2={cy}
+                          stroke="#C8C6BE" strokeWidth={2}
+                        />
+                      )}
+
+                      {/* HC dot */}
+                      {hx !== null && (
+                        <circle cx={hx} cy={cy} r={5} fill="#2563eb" stroke="#fff" strokeWidth={1.5}>
+                          <title>HC: {fmt(lot.hc_projected_date)}</title>
+                        </circle>
+                      )}
+
+                      {/* BLDR dot */}
+                      {bx !== null && (
+                        <circle cx={bx} cy={cy} r={5} fill="#d97706" stroke="#fff" strokeWidth={1.5}>
+                          <title>BLDR: {fmt(lot.bldr_projected_date)}</title>
+                        </circle>
+                      )}
+                    </g>
+                  )
+                })}
+
+                {/* X-axis baseline */}
+                <line
+                  x1={PAD_L} y1={TOP_PAD + rows.length * ROW_H}
+                  x2={PAD_L + chartW} y2={TOP_PAD + rows.length * ROW_H}
+                  stroke="#E4E2DA" strokeWidth={1}
+                />
+
+                {/* X-axis ticks + labels */}
+                {ticks.map((tk, i) => (
+                  <g key={`tick-${i}`}>
+                    <line
+                      x1={tk.x} y1={TOP_PAD + rows.length * ROW_H}
+                      x2={tk.x} y2={TOP_PAD + rows.length * ROW_H + 4}
+                      stroke="#D4D2CB" strokeWidth={1}
+                    />
+                    <text
+                      x={tk.x} y={TOP_PAD + rows.length * ROW_H + 7}
+                      textAnchor="middle" dominantBaseline="hanging"
+                      fontSize={9} fill="#888780"
+                    >
+                      {tk.label}
+                    </text>
+                  </g>
+                ))}
+              </svg>
+
+              {/* Legend */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                marginTop: 2, paddingLeft: PAD_L,
+              }}>
+                {[
+                  { color: '#2563eb', label: 'HC' },
+                  { color: '#d97706', label: 'BLDR' },
+                ].map(({ color, label }) => (
+                  <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <svg width={10} height={10}>
+                      <circle cx={5} cy={5} r={4.5} fill={color} />
+                    </svg>
+                    <span style={{ fontSize: 10, color: '#888780' }}>{label}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <svg width={16} height={10}>
+                    <line x1={0} y1={5} x2={16} y2={5} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="3,2" />
+                  </svg>
+                  <span style={{ fontSize: 10, color: '#888780' }}>Checkpoint</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <svg width={16} height={10}>
+                    <line x1={0} y1={5} x2={16} y2={5} stroke="#D4D2CB" strokeWidth={1} strokeDasharray="2,3" />
+                  </svg>
+                  <span style={{ fontSize: 10, color: '#888780' }}>Today</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: '#15803d', fontWeight: 700 }}>✓</span>
+                  <span style={{ fontSize: 10, color: '#888780' }}>Meets CP</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Droppable checkpoint band ─────────────────────────────────────
 function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
   const [localTotal, setLocalTotal] = useState(checkpoint.lots_required_cumulative || 0)
@@ -1083,6 +1345,11 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
           ))}
         </div>
       </div>
+
+      {/* Timeline chart — collapsible dot-plot of HC/BLDR dates */}
+      {lots.length > 0 && (
+        <CheckpointTimeline lots={displayLots} checkpointDate={localDate} />
+      )}
     </div>
   )
 }
