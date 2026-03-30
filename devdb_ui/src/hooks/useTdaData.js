@@ -1,0 +1,47 @@
+import { useState, useEffect, useCallback } from 'react'
+
+const API = 'http://localhost:8765/api'
+
+export function useTdaData(entGroupId) {
+  const [agreements, setAgreements] = useState([])
+  const [selectedTdaId, setSelectedTdaId] = useState(null)
+  const [detail, setDetail] = useState(null)
+  const [entGroupName, setEntGroupName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Fetch agreement list for this entitlement group
+  useEffect(() => {
+    if (!entGroupId) return
+    setLoading(true)
+    fetch(`${API}/entitlement-groups/${entGroupId}/takedown-agreements`)
+      .then(r => r.json())
+      .then(data => {
+        setEntGroupName(data.ent_group_name || '')
+        setAgreements(data.agreements || [])
+        if (data.agreements && data.agreements.length > 0) {
+          setSelectedTdaId(prev => prev || data.agreements[0].tda_id)
+        }
+        setLoading(false)
+      })
+      .catch(e => { setError(e.message); setLoading(false) })
+  }, [entGroupId])
+
+  // Fetch detail for selected TDA
+  const fetchDetail = useCallback(() => {
+    if (!selectedTdaId) return
+    fetch(`${API}/takedown-agreements/${selectedTdaId}/detail`)
+      .then(r => r.json())
+      .then(data => setDetail(data))
+      .catch(e => setError(e.message))
+  }, [selectedTdaId])
+
+  useEffect(() => { fetchDetail() }, [fetchDetail])
+
+  return {
+    agreements, entGroupName,
+    selectedTdaId, setSelectedTdaId,
+    detail, refetchDetail: fetchDetail,
+    loading, error,
+  }
+}

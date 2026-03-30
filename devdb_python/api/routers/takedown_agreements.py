@@ -1,0 +1,582 @@
+# routers/takedown_agreements.py
+# TDA read and write endpoints (Slice A + Slice B).
+# Contract: DevDB_TDA_API_Contract_v1.md
+
+from datetime import date as date_type
+from typing import Optional
+
+import psycopg2.extras
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from api.deps import get_db_conn
+
+
+# ---------------------------------------------------------------------------
+# Request models (Slice B)
+# ---------------------------------------------------------------------------
+
+class AssignLotRequest(BaseModel):
+    checkpoint_id: int
+
+
+class UpdateDatesRequest(BaseModel):
+    hc_projected_date: Optional[date_type] = None
+    bldr_projected_date: Optional[date_type] = None
+
+
+class UpdateLockRequest(BaseModel):
+    hc_is_locked: Optional[bool] = None
+    bldr_is_locked: Optional[bool] = None
+
+router = APIRouter(tags=["takedown-agreements"])
+
+
+@router.get("/entitlement-groups/{ent_group_id}/takedown-agreements")
+def list_takedown_agreements(ent_group_id: int, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # 1. Look up ent_group
+        cur.execute(
+            "SELECT ent_group_id, ent_group_name FROM devdb.sim_entitlement_groups WHERE ent_group_id = %s",
+            (ent_group_id,),
+        )
+        eg = cur.fetchone()
+        if eg is None:
+            raise HTTPException(status_code=404, detail=f"Entitlement group {ent_group_id} not found.")
+
+        # 2. All TDAs for this ent_group
+        cur.execute(
+            """
+            SELECT tda_id, tda_name, status, anchor_date
+            FROM devdb.sim_takedown_agreements
+            WHERE ent_group_id = %s
+            ORDER BY tda_id ASC
+            """,
+            (ent_group_id,),
+        )
+        tda_rows = list(cur.fetchall())
+
+        if not tda_rows:
+            return {
+                "ent_group_id": eg["ent_group_id"],
+                "ent_group_name": eg["ent_group_name"],
+                "agreements": [],
+            }
+
+        tda_ids = [r["tda_id"] for r in tda_rows]
+
+        # 3a. total_lots per tda_id
+        cur.execute(
+            """
+            SELECT tda_id, COUNT(*) AS total_lots
+            FROM devdb.sim_takedown_agreement_lots
+            WHERE tda_id = ANY(%s)
+            GROUP BY tda_id
+            """,
+            (tda_ids,),
+        )
+        total_lots_map = {r["tda_id"]: int(r["total_lots"]) for r in cur.fetchall()}
+
+        # 3b. checkpoint_count per tda_id
+        cur.execute(
+            """
+            SELECT tda_id, COUNT(*) AS checkpoint_count
+            FROM devdb.sim_takedown_checkpoints
+            WHERE tda_id = ANY(%s)
+            GROUP BY tda_id
+            """,
+            (tda_ids,),
+        )
+        checkpoint_count_map = {r["tda_id"]: int(r["checkpoint_count"]) for r in cur.fetchall()}
+
+        agreements = [
+            {
+                "tda_id": r["tda_id"],
+                "tda_name": r["tda_name"],
+                "status": r["status"],
+                "anchor_date": r["anchor_date"].isoformat() if r["anchor_date"] else None,
+                "total_lots": total_lots_map.get(r["tda_id"], 0),
+                "checkpoint_count": checkpoint_count_map.get(r["tda_id"], 0),
+            }
+            for r in tda_rows
+        ]
+
+        return {
+            "ent_group_id": eg["ent_group_id"],
+            "ent_group_name": eg["ent_group_name"],
+            "agreements": agreements,
+        }
+    finally:
+        cur.close()
+
+
+@router.get("/takedown-agreements/{tda_id}/detail")
+def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # 1. Look up TDA
+        cur.execute(
+            "SELECT tda_id, tda_name, status, anchor_date FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
+            (tda_id,),
+        )
+        tda = cur.fetchone()
+        if tda is None:
+            raise HTTPException(status_code=404, detail=f"Takedown agreement {tda_id} not found.")
+
+        # 2. Checkpoints ordered by checkpoint_number
+        cur.execute(
+            """
+            SELECT checkpoint_id, checkpoint_number, checkpoint_name,
+                   checkpoint_date, status, lots_required_cumulative
+            FROM devdb.sim_takedown_checkpoints
+            WHERE tda_id = %s
+            ORDER BY checkpoint_number ASC
+            """,
+            (tda_id,),
+        )
+        checkpoint_rows = list(cur.fetchall())
+        checkpoint_ids = [r["checkpoint_id"] for r in checkpoint_rows]
+
+        # 3. All lot assignments for this TDA's checkpoints, joined to sim_lots
+        assignments_by_checkpoint: dict[int, list] = {r["checkpoint_id"]: [] for r in checkpoint_rows}
+        if checkpoint_ids:
+            cur.execute(
+                """
+                SELECT
+                    a.assignment_id,
+                    a.checkpoint_id,
+                    a.lot_id,
+                    a.hc_projected_date,
+                    a.hc_is_locked,
+                    a.bldr_projected_date,
+                    a.bldr_is_locked,
+                    l.lot_number,
+                    l.building_group_id,
+                    l.date_str   AS hc_marks_date,
+                    l.date_cmp   AS bldr_marks_date
+                FROM devdb.sim_takedown_lot_assignments a
+                JOIN devdb.sim_lots l ON l.lot_id = a.lot_id
+                WHERE a.checkpoint_id = ANY(%s)
+                ORDER BY a.assignment_id ASC
+                """,
+                (checkpoint_ids,),
+            )
+            for row in cur.fetchall():
+                assignments_by_checkpoint[row["checkpoint_id"]].append(
+                    {
+                        "assignment_id": row["assignment_id"],
+                        "lot_id": row["lot_id"],
+                        "lot_number": row["lot_number"],
+                        "building_group_id": row["building_group_id"],
+                        "hc_marks_date": row["hc_marks_date"].isoformat() if row["hc_marks_date"] else None,
+                        "hc_projected_date": row["hc_projected_date"].isoformat() if row["hc_projected_date"] else None,
+                        "hc_is_locked": bool(row["hc_is_locked"]),
+                        "bldr_marks_date": row["bldr_marks_date"].isoformat() if row["bldr_marks_date"] else None,
+                        "bldr_projected_date": row["bldr_projected_date"].isoformat() if row["bldr_projected_date"] else None,
+                        "bldr_is_locked": bool(row["bldr_is_locked"]),
+                    }
+                )
+
+        # 4. Unassigned lots: in sim_takedown_agreement_lots for this tda_id
+        #    but NOT in sim_takedown_lot_assignments for any checkpoint in this TDA
+        cur.execute(
+            """
+            SELECT l.lot_id, l.lot_number, l.building_group_id
+            FROM devdb.sim_takedown_agreement_lots tal
+            JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+            WHERE tal.tda_id = %s
+              AND tal.lot_id NOT IN (
+                  SELECT a.lot_id
+                  FROM devdb.sim_takedown_lot_assignments a
+                  JOIN devdb.sim_takedown_checkpoints c ON c.checkpoint_id = a.checkpoint_id
+                  WHERE c.tda_id = %s
+              )
+            ORDER BY l.lot_id ASC
+            """,
+            (tda_id, tda_id),
+        )
+        unassigned_lots = [
+            {
+                "lot_id": r["lot_id"],
+                "lot_number": r["lot_number"],
+                "building_group_id": r["building_group_id"],
+            }
+            for r in cur.fetchall()
+        ]
+
+        checkpoints = [
+            {
+                "checkpoint_id": r["checkpoint_id"],
+                "checkpoint_number": r["checkpoint_number"],
+                "checkpoint_name": r["checkpoint_name"],
+                "checkpoint_date": r["checkpoint_date"].isoformat() if r["checkpoint_date"] else None,
+                "status": r["status"],
+                "lots_required_cumulative": r["lots_required_cumulative"],
+                "lots": assignments_by_checkpoint.get(r["checkpoint_id"], []),
+            }
+            for r in checkpoint_rows
+        ]
+
+        return {
+            "tda_id": tda["tda_id"],
+            "tda_name": tda["tda_name"],
+            "status": tda["status"],
+            "anchor_date": tda["anchor_date"].isoformat() if tda["anchor_date"] else None,
+            "checkpoints": checkpoints,
+            "unassigned_lots": unassigned_lots,
+        }
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 3: PATCH /takedown-agreements/{tda_id}/lots/{lot_id}/assign
+# ---------------------------------------------------------------------------
+
+@router.patch("/takedown-agreements/{tda_id}/lots/{lot_id}/assign")
+def assign_lot_to_checkpoint(tda_id: int, lot_id: int, body: AssignLotRequest, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        checkpoint_id = body.checkpoint_id
+
+        # 1. Verify lot_id is linked to this tda_id in sim_takedown_agreement_lots
+        cur.execute(
+            "SELECT 1 FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
+            (tda_id, lot_id),
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=422, detail=f"Lot {lot_id} is not linked to TDA {tda_id}.")
+
+        # 2. Verify lot_id is NOT already assigned to any checkpoint in this TDA
+        cur.execute(
+            """
+            SELECT a.assignment_id
+            FROM devdb.sim_takedown_lot_assignments a
+            JOIN devdb.sim_takedown_checkpoints c ON c.checkpoint_id = a.checkpoint_id
+            WHERE c.tda_id = %s AND a.lot_id = %s
+            """,
+            (tda_id, lot_id),
+        )
+        if cur.fetchone() is not None:
+            raise HTTPException(status_code=409, detail=f"Lot {lot_id} is already assigned to a checkpoint in TDA {tda_id}.")
+
+        # 3. Verify checkpoint_id belongs to this tda_id
+        cur.execute(
+            "SELECT 1 FROM devdb.sim_takedown_checkpoints WHERE checkpoint_id = %s AND tda_id = %s",
+            (checkpoint_id, tda_id),
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=422, detail=f"Checkpoint {checkpoint_id} does not belong to TDA {tda_id}.")
+
+        # 4. Generate assignment_id (no IDENTITY on this table — D-086 pattern)
+        cur.execute("SELECT COALESCE(MAX(assignment_id), 0) + 1 AS new_id FROM devdb.sim_takedown_lot_assignments")
+        new_assignment_id = int(cur.fetchone()["new_id"])
+
+        # 5. INSERT into sim_takedown_lot_assignments
+        cur.execute(
+            """
+            INSERT INTO devdb.sim_takedown_lot_assignments
+                (assignment_id, checkpoint_id, lot_id, assigned_at, hc_is_locked, bldr_is_locked)
+            VALUES (%s, %s, %s, now(), false, false)
+            """,
+            (new_assignment_id, checkpoint_id, lot_id),
+        )
+
+        # 6. Audit log
+        cur.execute(
+            """
+            INSERT INTO devdb.sim_assignment_log
+                (action, resource_type, resource_id, from_owner_id, to_owner_id,
+                 changed_by, changed_at, metadata)
+            VALUES ('assign_lot_to_checkpoint', 'lot', %s, 0, %s, 'ui', now(), %s)
+            """,
+            (lot_id, checkpoint_id, psycopg2.extras.Json({})),
+        )
+
+        conn.commit()
+        return {"assignment_id": new_assignment_id, "lot_id": lot_id, "checkpoint_id": checkpoint_id}
+
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 4: DELETE /takedown-agreements/{tda_id}/lots/{lot_id}/assign
+# ---------------------------------------------------------------------------
+
+@router.delete("/takedown-agreements/{tda_id}/lots/{lot_id}/assign")
+def unassign_lot_from_checkpoint(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # 1. Look up assignment_id, confirm checkpoint belongs to this tda_id
+        cur.execute(
+            """
+            SELECT a.assignment_id, a.checkpoint_id
+            FROM devdb.sim_takedown_lot_assignments a
+            JOIN devdb.sim_takedown_checkpoints c ON c.checkpoint_id = a.checkpoint_id
+            WHERE c.tda_id = %s AND a.lot_id = %s
+            """,
+            (tda_id, lot_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"No assignment found for lot {lot_id} in TDA {tda_id}.")
+
+        assignment_id = row["assignment_id"]
+        checkpoint_id = row["checkpoint_id"]
+
+        # 2. DELETE the assignment
+        cur.execute(
+            "DELETE FROM devdb.sim_takedown_lot_assignments WHERE assignment_id = %s",
+            (assignment_id,),
+        )
+
+        # 3. Audit log
+        cur.execute(
+            """
+            INSERT INTO devdb.sim_assignment_log
+                (action, resource_type, resource_id, from_owner_id, to_owner_id,
+                 changed_by, changed_at, metadata)
+            VALUES ('unassign_lot_from_checkpoint', 'lot', %s, %s, 0, 'ui', now(), %s)
+            """,
+            (lot_id, checkpoint_id, psycopg2.extras.Json({})),
+        )
+
+        conn.commit()
+        return {"lot_id": lot_id, "unassigned": True}
+
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 5: PATCH /tda-lot-assignments/{assignment_id}/dates
+# ---------------------------------------------------------------------------
+
+@router.patch("/tda-lot-assignments/{assignment_id}/dates")
+def update_lot_assignment_dates(assignment_id: int, body: UpdateDatesRequest, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # Validate at least one field provided
+        updates = {}
+        if body.hc_projected_date is not None:
+            updates["hc_projected_date"] = body.hc_projected_date
+        if body.bldr_projected_date is not None:
+            updates["bldr_projected_date"] = body.bldr_projected_date
+        if not updates:
+            raise HTTPException(status_code=422, detail="At least one date field must be provided.")
+
+        # 1. Look up the assignment row
+        cur.execute(
+            """
+            SELECT a.assignment_id, a.checkpoint_id, a.lot_id,
+                   a.hc_projected_date, a.bldr_projected_date
+            FROM devdb.sim_takedown_lot_assignments a
+            WHERE a.assignment_id = %s
+            """,
+            (assignment_id,),
+        )
+        asgn = cur.fetchone()
+        if asgn is None:
+            raise HTTPException(status_code=404, detail=f"Assignment {assignment_id} not found.")
+
+        lot_id = asgn["lot_id"]
+        checkpoint_id = asgn["checkpoint_id"]
+
+        # 2. Look up building_group_id and tda_id
+        cur.execute(
+            "SELECT building_group_id FROM devdb.sim_lots WHERE lot_id = %s",
+            (lot_id,),
+        )
+        lot_row = cur.fetchone()
+        building_group_id = lot_row["building_group_id"] if lot_row else None
+
+        cur.execute(
+            "SELECT tda_id FROM devdb.sim_takedown_checkpoints WHERE checkpoint_id = %s",
+            (checkpoint_id,),
+        )
+        cp_row = cur.fetchone()
+        tda_id = cp_row["tda_id"] if cp_row else None
+
+        # 3. Build SET clause
+        set_parts = [f"{col} = %s" for col in updates]
+        set_values = list(updates.values())
+        set_clause = ", ".join(set_parts)
+
+        # 4. UPDATE the target assignment row first — collect it as the first updated id
+        cur.execute(
+            f"UPDATE devdb.sim_takedown_lot_assignments SET {set_clause} WHERE assignment_id = %s RETURNING assignment_id",
+            set_values + [assignment_id],
+        )
+        updated_ids = [row["assignment_id"] for row in cur.fetchall()]
+
+        # 5. Fan-out to building group mates within the same TDA
+        if building_group_id is not None and tda_id is not None:
+            cur.execute(
+                f"""
+                UPDATE devdb.sim_takedown_lot_assignments SET {set_clause}
+                WHERE assignment_id != %s
+                  AND lot_id IN (
+                      SELECT lot_id FROM devdb.sim_lots WHERE building_group_id = %s
+                  )
+                  AND checkpoint_id IN (
+                      SELECT checkpoint_id FROM devdb.sim_takedown_checkpoints WHERE tda_id = %s
+                  )
+                RETURNING assignment_id
+                """,
+                set_values + [assignment_id, building_group_id, tda_id],
+            )
+            updated_ids += [row["assignment_id"] for row in cur.fetchall()]
+
+        # 6. Audit log — one entry per updated assignment_id
+        for aid in updated_ids:
+            cur.execute(
+                """
+                INSERT INTO devdb.sim_assignment_log
+                    (action, resource_type, resource_id, from_owner_id, to_owner_id,
+                     changed_by, changed_at, metadata)
+                VALUES ('update_tda_lot_date', 'tda_assignment', %s, 0, 0, 'ui', now(), %s)
+                """,
+                (aid, psycopg2.extras.Json({})),
+            )
+
+        conn.commit()
+
+        return {
+            "assignment_id": assignment_id,
+            "updated_assignment_ids": updated_ids,
+            "hc_projected_date": updates.get("hc_projected_date", asgn["hc_projected_date"]),
+            "bldr_projected_date": updates.get("bldr_projected_date", asgn["bldr_projected_date"]),
+        }
+
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# Endpoint 6: PATCH /tda-lot-assignments/{assignment_id}/lock
+# ---------------------------------------------------------------------------
+
+@router.patch("/tda-lot-assignments/{assignment_id}/lock")
+def update_lot_assignment_lock(assignment_id: int, body: UpdateLockRequest, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # Validate at least one field provided
+        updates = {}
+        if body.hc_is_locked is not None:
+            updates["hc_is_locked"] = body.hc_is_locked
+        if body.bldr_is_locked is not None:
+            updates["bldr_is_locked"] = body.bldr_is_locked
+        if not updates:
+            raise HTTPException(status_code=422, detail="At least one lock field must be provided.")
+
+        # 1. Look up the assignment row
+        cur.execute(
+            """
+            SELECT a.assignment_id, a.checkpoint_id, a.lot_id,
+                   a.hc_is_locked, a.bldr_is_locked
+            FROM devdb.sim_takedown_lot_assignments a
+            WHERE a.assignment_id = %s
+            """,
+            (assignment_id,),
+        )
+        asgn = cur.fetchone()
+        if asgn is None:
+            raise HTTPException(status_code=404, detail=f"Assignment {assignment_id} not found.")
+
+        lot_id = asgn["lot_id"]
+        checkpoint_id = asgn["checkpoint_id"]
+
+        # 2. Look up building_group_id and tda_id
+        cur.execute(
+            "SELECT building_group_id FROM devdb.sim_lots WHERE lot_id = %s",
+            (lot_id,),
+        )
+        lot_row = cur.fetchone()
+        building_group_id = lot_row["building_group_id"] if lot_row else None
+
+        cur.execute(
+            "SELECT tda_id FROM devdb.sim_takedown_checkpoints WHERE checkpoint_id = %s",
+            (checkpoint_id,),
+        )
+        cp_row = cur.fetchone()
+        tda_id = cp_row["tda_id"] if cp_row else None
+
+        # 3. Build SET clause
+        set_parts = [f"{col} = %s" for col in updates]
+        set_values = list(updates.values())
+        set_clause = ", ".join(set_parts)
+
+        # 4. UPDATE the target assignment row
+        cur.execute(
+            f"UPDATE devdb.sim_takedown_lot_assignments SET {set_clause} WHERE assignment_id = %s RETURNING assignment_id",
+            set_values + [assignment_id],
+        )
+        updated_ids = [row["assignment_id"] for row in cur.fetchall()]
+
+        # 5. Fan-out to building group mates within the same TDA
+        if building_group_id is not None and tda_id is not None:
+            cur.execute(
+                f"""
+                UPDATE devdb.sim_takedown_lot_assignments SET {set_clause}
+                WHERE assignment_id != %s
+                  AND lot_id IN (
+                      SELECT lot_id FROM devdb.sim_lots WHERE building_group_id = %s
+                  )
+                  AND checkpoint_id IN (
+                      SELECT checkpoint_id FROM devdb.sim_takedown_checkpoints WHERE tda_id = %s
+                  )
+                RETURNING assignment_id
+                """,
+                set_values + [assignment_id, building_group_id, tda_id],
+            )
+            updated_ids += [row["assignment_id"] for row in cur.fetchall()]
+
+        # 6. Audit log — one entry per updated assignment_id
+        for aid in updated_ids:
+            cur.execute(
+                """
+                INSERT INTO devdb.sim_assignment_log
+                    (action, resource_type, resource_id, from_owner_id, to_owner_id,
+                     changed_by, changed_at, metadata)
+                VALUES ('update_tda_lot_lock', 'tda_assignment', %s, 0, 0, 'ui', now(), %s)
+                """,
+                (aid, psycopg2.extras.Json({})),
+            )
+
+        conn.commit()
+
+        return {
+            "assignment_id": assignment_id,
+            "updated_assignment_ids": updated_ids,
+            "hc_is_locked": updates.get("hc_is_locked", bool(asgn["hc_is_locked"])),
+            "bldr_is_locked": updates.get("bldr_is_locked", bool(asgn["bldr_is_locked"])),
+        }
+
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
