@@ -72,7 +72,7 @@ function UnassignedLotPill({ lot, isSelected, onToggle }) {
 }
 
 // ── Draggable TDA-pool lot pill ───────────────────────────────────
-function TdaPoolLotPill({ lot }) {
+function TdaPoolLotPill({ lot, isSelected, onToggle }) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({ id: `pool-${lot.lot_id}`, data: { type: 'pool-lot', lot } })
   const { code, seq } = parseLot(lot.lot_number)
@@ -81,26 +81,49 @@ function TdaPoolLotPill({ lot }) {
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      onClick={() => !isDragging && onToggle && onToggle(lot.lot_id)}
       style={{
         width: 68, height: 34, flexShrink: 0,
-        background: '#fff',
-        border: '0.5px solid #6366f1',
+        background: isSelected ? '#eef2ff' : '#fff',
+        border: isSelected ? '2px solid #6366f1' : '0.5px solid #6366f1',
         borderRadius: 5,
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between',
         padding: '0 6px', boxSizing: 'border-box',
         cursor: 'grab', opacity: isDragging ? 0.4 : 1,
+        position: 'relative',
       }}
     >
       <span style={{ fontSize: 11, color: '#6366f1' }}>{code}</span>
       <span style={{ fontSize: 12, fontWeight: 500, color: '#2C2C2A' }}>{seq}</span>
+      {isSelected && (
+        <div style={{
+          position: 'absolute', top: 2, right: 2,
+          width: 8, height: 8, borderRadius: '50%', background: '#6366f1',
+        }} />
+      )}
     </div>
   )
 }
 
 // ── Droppable TDA pool bank ───────────────────────────────────────
-function TdaPoolBank({ lots, tdaName }) {
+function TdaPoolBank({ lots, tdaName, selectedIds, onToggle, onToggleDevGroup, onRemoveFromPool, onClearSelection }) {
   const { setNodeRef, isOver } = useDroppable({ id: 'tda-pool', data: { type: 'tda-pool' } })
+
+  const devGroups = useMemo(() => {
+    const groups = {}
+    for (const lot of lots) {
+      const code = lot.lot_number?.match(/^([A-Za-z]+)/)?.[1] ?? '??'
+      if (!groups[code]) groups[code] = []
+      groups[code].push(lot)
+    }
+    return Object.entries(groups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([devCode, devLots]) => ({ devCode, devLots }))
+  }, [lots])
+
+  const selCount = selectedIds?.size || 0
+
   return (
     <div
       ref={setNodeRef}
@@ -115,12 +138,96 @@ function TdaPoolBank({ lots, tdaName }) {
       <div style={{ fontWeight: 700, fontSize: 15, color: '#3730a3', marginBottom: 4 }}>
         In Agreement
       </div>
-      <div style={{ fontSize: 13, color: '#818cf8', marginBottom: 10 }}>
+      <div style={{ fontSize: 13, color: '#818cf8', marginBottom: selCount > 0 ? 8 : 10 }}>
         {lots.length} lot{lots.length !== 1 ? 's' : ''} · no checkpoint
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-        {lots.map(lot => <TdaPoolLotPill key={lot.lot_id} lot={lot} />)}
-      </div>
+
+      {/* Selection action bar */}
+      {selCount > 0 && (
+        <div style={{
+          marginBottom: 10, padding: '6px 8px', borderRadius: 6,
+          background: '#e0e7ff', border: '1px solid #a5b4fc',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+        }}>
+          <span style={{ fontSize: 12, color: '#3730a3', fontWeight: 500 }}>
+            {selCount} selected
+          </span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={onRemoveFromPool}
+              style={{
+                fontSize: 11, padding: '3px 8px', borderRadius: 4,
+                border: 'none', background: '#4f46e5', color: '#fff',
+                cursor: 'pointer', fontWeight: 600,
+              }}
+            >
+              Remove
+            </button>
+            <button
+              onClick={onClearSelection}
+              style={{
+                fontSize: 11, padding: '3px 6px', borderRadius: 4,
+                border: '1px solid #a5b4fc', background: 'transparent', color: '#3730a3',
+                cursor: 'pointer',
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Dev groups */}
+      {devGroups.map(({ devCode, devLots }) => {
+        const allSel = devLots.every(l => selectedIds?.has(l.lot_id))
+        const someSel = devLots.some(l => selectedIds?.has(l.lot_id))
+        return (
+          <div key={devCode} style={{ marginBottom: 10 }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              marginBottom: 5,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ height: 1, width: 8, background: '#c7d2fe' }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#4f46e5', letterSpacing: '0.06em' }}>
+                  {devCode}
+                </span>
+                <span style={{ fontSize: 11, color: '#818cf8' }}>
+                  {devLots.length}
+                </span>
+              </div>
+              <button
+                onClick={() => onToggleDevGroup && onToggleDevGroup(devLots)}
+                style={{
+                  fontSize: 10, padding: '1px 6px', borderRadius: 3,
+                  border: `1px solid ${allSel ? '#6366f1' : '#c7d2fe'}`,
+                  background: allSel ? '#e0e7ff' : 'transparent',
+                  color: allSel ? '#3730a3' : someSel ? '#6366f1' : '#a5b4fc',
+                  cursor: 'pointer', fontWeight: 500,
+                }}
+              >
+                {allSel ? 'deselect' : 'select all'}
+              </button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 68px)', gap: 4 }}>
+              {devLots.map(lot => (
+                <TdaPoolLotPill
+                  key={lot.lot_id}
+                  lot={lot}
+                  isSelected={selectedIds?.has(lot.lot_id)}
+                  onToggle={onToggle}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {lots.length === 0 && (
+        <p style={{ fontSize: 12, color: '#818cf8', fontStyle: 'italic', textAlign: 'center', marginTop: 12 }}>
+          {isOver ? 'Drop to add to pool' : 'No lots in pool'}
+        </p>
+      )}
     </div>
   )
 }
@@ -804,9 +911,13 @@ export default function TakedownAgreementsView({ entGroupId }) {
 
   const [dragLot, setDragLot] = useState(null)
   const [selectedLotIds, setSelectedLotIds] = useState(new Set())
+  const [selectedPoolLotIds, setSelectedPoolLotIds] = useState(new Set())
 
-  // Clear selection when switching TDAs
-  useEffect(() => setSelectedLotIds(new Set()), [selectedTdaId])
+  // Clear selections when switching TDAs
+  useEffect(() => {
+    setSelectedLotIds(new Set())
+    setSelectedPoolLotIds(new Set())
+  }, [selectedTdaId])
 
   function toggleLotSelection(lotId) {
     setSelectedLotIds(prev => {
@@ -834,6 +945,35 @@ export default function TakedownAgreementsView({ entGroupId }) {
       fetch(`${API}/takedown-agreements/${detail.tda_id}/lots/${id}/pool`, { method: 'POST' })
     ))
     setSelectedLotIds(new Set())
+    refetchDetail()
+  }
+
+  function togglePoolLotSelection(lotId) {
+    setSelectedPoolLotIds(prev => {
+      const next = new Set(prev)
+      if (next.has(lotId)) next.delete(lotId)
+      else next.add(lotId)
+      return next
+    })
+  }
+
+  function togglePoolDevGroupSelection(devLots) {
+    const ids = devLots.map(l => l.lot_id)
+    const allSel = ids.every(id => selectedPoolLotIds.has(id))
+    setSelectedPoolLotIds(prev => {
+      const next = new Set(prev)
+      if (allSel) ids.forEach(id => next.delete(id))
+      else ids.forEach(id => next.add(id))
+      return next
+    })
+  }
+
+  async function handleRemoveSelectedFromPool() {
+    if (!detail || selectedPoolLotIds.size === 0) return
+    await Promise.all([...selectedPoolLotIds].map(id =>
+      fetch(`${API}/takedown-agreements/${detail.tda_id}/lots/${id}/pool`, { method: 'DELETE' })
+    ))
+    setSelectedPoolLotIds(new Set())
     refetchDetail()
   }
 
@@ -917,25 +1057,37 @@ export default function TakedownAgreementsView({ entGroupId }) {
 
     // ── Global unassigned → TDA pool ──────────────────────────────
     if (src?.type === 'unassigned-lot' && dst?.type === 'tda-pool') {
-      await addToPool(src.lot.lot_id)
+      const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1
+      const ids = isMulti ? [...selectedLotIds] : [src.lot.lot_id]
+      await Promise.all(ids.map(id => addToPool(id)))
+      if (isMulti) setSelectedLotIds(new Set())
       refetchDetail(); return
     }
 
     // ── Global unassigned → checkpoint ────────────────────────────
     if (src?.type === 'unassigned-lot' && dst?.type === 'checkpoint') {
-      await assignToCP(src.lot.lot_id, dst.checkpointId)
+      const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1
+      const ids = isMulti ? [...selectedLotIds] : [src.lot.lot_id]
+      await Promise.all(ids.map(id => assignToCP(id, dst.checkpointId)))
+      if (isMulti) setSelectedLotIds(new Set())
       refetchDetail(); return
     }
 
     // ── TDA pool → checkpoint ─────────────────────────────────────
     if (src?.type === 'pool-lot' && dst?.type === 'checkpoint') {
-      await assignToCP(src.lot.lot_id, dst.checkpointId)
+      const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
+      const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
+      await Promise.all(ids.map(id => assignToCP(id, dst.checkpointId)))
+      if (isMulti) setSelectedPoolLotIds(new Set())
       refetchDetail(); return
     }
 
     // ── TDA pool → global unassigned ─────────────────────────────
     if (src?.type === 'pool-lot' && dst?.type === 'unassigned-bank') {
-      await removeFromPool(src.lot.lot_id)
+      const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
+      const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
+      await Promise.all(ids.map(id => removeFromPool(id)))
+      if (isMulti) setSelectedPoolLotIds(new Set())
       refetchDetail(); return
     }
 
@@ -1078,7 +1230,15 @@ export default function TakedownAgreementsView({ entGroupId }) {
               onAddToPool={handleAddSelectedToPool}
               onClearSelection={() => setSelectedLotIds(new Set())}
             />
-            <TdaPoolBank lots={detail.pool_lots || []} tdaName={detail.tda_name} />
+            <TdaPoolBank
+              lots={detail.pool_lots || []}
+              tdaName={detail.tda_name}
+              selectedIds={selectedPoolLotIds}
+              onToggle={togglePoolLotSelection}
+              onToggleDevGroup={togglePoolDevGroupSelection}
+              onRemoveFromPool={handleRemoveSelectedFromPool}
+              onClearSelection={() => setSelectedPoolLotIds(new Set())}
+            />
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
               <TdaCard detail={detail} colorIdx={tdaColorIdx >= 0 ? tdaColorIdx : 0} onCheckpointCreated={refetchDetail}>
@@ -1095,17 +1255,22 @@ export default function TakedownAgreementsView({ entGroupId }) {
           </div>
 
           <DragOverlay>
-            {(dragLot?.type === 'unassigned-lot' || dragLot?.type === 'pool-lot') && (
-              <div style={{
-                padding: '3px 10px', borderRadius: 12,
-                background: dragLot.type === 'pool-lot' ? '#e0e7ff' : '#f3f4f6',
-                border: `1px solid ${dragLot.type === 'pool-lot' ? '#818cf8' : '#9ca3af'}`,
-                fontSize: 13, fontWeight: 600,
-                color: dragLot.type === 'pool-lot' ? '#3730a3' : '#374151',
-              }}>
-                {dragLot.lot.lot_number}
-              </div>
-            )}
+            {(dragLot?.type === 'unassigned-lot' || dragLot?.type === 'pool-lot') && (() => {
+              const isPool = dragLot.type === 'pool-lot'
+              const sel = isPool ? selectedPoolLotIds : selectedLotIds
+              const isMulti = sel.has(dragLot.lot.lot_id) && sel.size > 1
+              return (
+                <div style={{
+                  padding: isMulti ? '5px 14px' : '3px 10px', borderRadius: 12,
+                  background: isPool ? '#e0e7ff' : '#f3f4f6',
+                  border: `1px solid ${isPool ? '#818cf8' : '#9ca3af'}`,
+                  fontSize: 13, fontWeight: isMulti ? 700 : 600,
+                  color: isPool ? '#3730a3' : '#374151',
+                }}>
+                  {isMulti ? `${sel.size} lots` : dragLot.lot.lot_number}
+                </div>
+              )
+            })()}
             {dragLot?.type === 'assigned-lot' && (
               <div style={{
                 width: 148, borderRadius: 6,
