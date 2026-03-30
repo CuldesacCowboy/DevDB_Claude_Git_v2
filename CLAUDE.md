@@ -20,7 +20,7 @@
 | End-to-end run | Complete | ent_group_id=9002 converges in 1 iteration, 0.4s. 299 sim lots (PG 307: 167, PG 317: 72, PG 321: 60). 11 delivery events (2 locked + 9 auto-placeholder). All 3 PGs continuous starts Nov 2026–sellout. OQ-002 resolved: Village PG 317 D_end non-flat (0–19), drains correctly. OQ-003 resolved: 9 auto-events correct for 3 devs per D-139 cross-dev bundling. OQ-004 resolved: Village/Pointe ph.3-5 all linked by P-00. Confirmed 2026-03-25. |
 | Decision log | Current | D-151 added. Next ID: D-152. |
 | React/FastAPI phase endpoints | In progress | DELETE /phases/{id}/lot-type route registered in phases.py but not appearing in OpenAPI spec. Top priority next session. |
-| Session tooling | Complete | Start_DevDB_Session.bat, End_DevDB_Session.bat, devdb_run_claude.py created. Claude invoked via powershell -File claude.ps1 -p prompt. |
+| Session tooling | Complete | Start_DevDB_Session.bat, End_DevDB_Session.bat, devdb_run_claude.py, devdb_generate_handoff.py. Bat files use %~dp0 for path resolution when double-clicked. Handoff written by Python directly; bat files use Notepad+terminal pattern. |
 | Postgres migration | Complete | All 35 tables migrated from Databricks to local PostgreSQL 16 (devdb.devdb). migrate_to_postgres.py. 23.5s total. 266,554 schedhousedetail rows. Engine now runs against local Postgres. Run time 0.5s (was 7+ min on Databricks serverless). |
 | Streamlit UI | In progress | Projection Group Dashboard page built. Setup Tools (7 tabs) built. New Community Wizard built. sim_phase_product_splits lot_count editing added to Phases tab 2026-03-25. Streamlit is active UI. React + FastAPI downgraded to long-term possible (D-149). |
 
@@ -1285,6 +1285,10 @@ touches before making changes. Keep this section updated when files are added or
 
 ### devdb_run_claude.py
 - Owns: Python helper that reads a prompt file and invokes claude.ps1 via powershell on Windows (bypasses CMD PATH/stdin limitations)
+- Last commit: 2026-03-29
+
+### devdb_generate_handoff.py
+- Owns: Python helper that reads git log and diff to generate DevDB_SessionHandoff.md; invoked by End_DevDB_Session.bat
 - Last commit: 2026-03-29
 
 ### 01_schema_create_postgres.sql
