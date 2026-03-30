@@ -6,8 +6,6 @@ echo  DevDB Claude Code Session End
 echo ============================================================
 echo.
 
-set /p "COMPLETED=What was completed this session? "
-echo.
 set /p "DECISIONS=Any decisions or rules to log? (press Enter to skip) "
 
 echo.
@@ -17,45 +15,51 @@ echo Writing end-of-session prompt...
 echo SESSION END — CLAUDE CODE
 echo.
 echo Today's date: %date%
-echo Completed this session: %COMPLETED%
-echo New decisions/rules: %DECISIONS%
+echo New decisions or rules from the user: %DECISIONS%
 echo.
-echo Do all of the following in order:
+echo Do all of the following steps in order. Do not skip any.
 echo.
-echo 1. Update the "Current Build Status" table in CLAUDE.md to reflect
-echo    what was completed. Mark completed items as Complete.
+echo STEP 1 — Figure out what was done this session.
+echo Run: git log --since="8 hours ago" --oneline
+echo Read every commit message. That is what was completed this session.
 echo.
-echo 2. If the new decisions/rules field above is not empty, append each
-echo    decision to the Decision Log section of CLAUDE.md with the next
-echo    available D-number.
+echo STEP 2 — Figure out which files changed.
+echo Run: git diff --name-only HEAD~5 HEAD
+echo ^(use last 5 commits as a reasonable session window^)
 echo.
-echo 3. Update the "Last commit" date for every file in the File Manifest
-echo    that was modified this session. Run:
-echo      git diff --name-only HEAD~1
-echo    to find which files changed.
+echo STEP 3 — Update CLAUDE.md.
+echo   a^) Update the "Current Build Status" table based on the commit
+echo      messages from Step 1. Mark completed items as Complete.
+echo   b^) Update the "Last commit" date for every file in the File Manifest
+echo      that appears in Step 2's output.
+echo   c^) If the new decisions/rules field above is not empty, append each
+echo      decision to the Decision Log with the next available D-number.
+echo   d^) Update the "Last updated" date and "Next ID" at the top of CLAUDE.md.
 echo.
-echo 4. Write a session handoff file called DevDB_SessionHandoff.md in the
-echo    repo root with this structure:
+echo STEP 4 — Write DevDB_SessionHandoff.md in the repo root:
 echo.
 echo # DevDB Session Handoff
 echo **Date:** %date%
-echo **Completed:** %COMPLETED%
 echo.
-echo ## What was built
-echo.
-echo.
-echo ## Current state
+echo ## What was completed
 echo.
 echo.
-echo ## Next task
+echo ## Files changed
 echo.
 echo.
-echo ## Files changed this session
+echo ## What is NOT yet working
 echo.
 echo.
-echo 5. git add -A
-echo    git commit -m "session end: %COMPLETED%"
-echo    git push
+echo ## Recommended next task
+echo.
+echo.
+echo ## Paste this into Claude Desktop to start the next session
+echo.
+echo.
+echo STEP 5 — Commit everything.
+echo   git add -A
+echo   git commit -m "session end: "
+echo   git push
 ) > "%~dp0devdb_end_prompt.txt"
 
 cd /d "%~dp0devdb_python"
@@ -65,7 +69,8 @@ del "%~dp0devdb_end_prompt.txt"
 
 echo.
 echo ============================================================
-echo  Session closed. Handoff written to DevDB_SessionHandoff.md
+echo  Session closed. Open DevDB_SessionHandoff.md and paste it
+echo  into Claude Desktop.
 echo ============================================================
 echo.
 pause
