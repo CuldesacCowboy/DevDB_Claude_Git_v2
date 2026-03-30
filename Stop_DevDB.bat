@@ -3,10 +3,9 @@ title DevDB Stop
 echo Stopping DevDB...
 echo.
 
-REM ---- 1. Close titled terminal windows ----
+REM ---- 1. Close titled terminal windows (PowerShell MainWindowTitle is reliable; taskkill WINDOWTITLE filter is not) ----
 echo [1/4] Closing DevDB terminal windows...
-taskkill /FI "WINDOWTITLE eq DevDB Backend" /F >nul 2>&1
-taskkill /FI "WINDOWTITLE eq DevDB Frontend" /F >nul 2>&1
+powershell -NoProfile -Command "Get-Process -Name cmd -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq 'DevDB Backend' -or $_.MainWindowTitle -eq 'DevDB Frontend' } | Stop-Process -Force -ErrorAction SilentlyContinue"
 
 REM ---- 2. Kill any process holding port 8765 (uvicorn backend) ----
 echo [2/4] Releasing port 8765 (backend)...
