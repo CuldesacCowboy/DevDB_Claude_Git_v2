@@ -1,5 +1,8 @@
 param([string]$RepoRoot)
 
+# %~dp0 in bat ends with \ which escapes the closing quote — strip trailing \ and "
+$RepoRoot = $RepoRoot.TrimEnd('\', '"')
+
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -22,8 +25,15 @@ $notepadProc = Get-Process "notepad" -ErrorAction SilentlyContinue |
     Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } |
     Select-Object -First 1
 
-$cmdProc = Get-Process "cmd" -ErrorAction SilentlyContinue |
-    Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero -and $_.MainWindowTitle -ne "" } |
+# Find the cmd/terminal window to use as the Claude Code position reference.
+# Exclude the save bat's own window (titled "Save DevDB Window Positions").
+# Also check WindowsTerminal in case the user runs terminals through wt.exe.
+$cmdProc = Get-Process "cmd","WindowsTerminal" -ErrorAction SilentlyContinue |
+    Where-Object {
+        $_.MainWindowHandle -ne [IntPtr]::Zero -and
+        $_.MainWindowTitle -ne "" -and
+        $_.MainWindowTitle -notlike "*Save DevDB*"
+    } |
     Select-Object -First 1
 
 $pos = [ordered]@{

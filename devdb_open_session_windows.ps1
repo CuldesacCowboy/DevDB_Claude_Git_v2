@@ -3,6 +3,10 @@ param(
     [string]$PromptFile
 )
 
+# %~dp0 in bat ends with \ which escapes the closing quote — strip trailing \ and "
+$RepoRoot   = $RepoRoot.TrimEnd('\', '"')
+$PromptFile = $PromptFile.TrimEnd('"')
+
 $posFile = Join-Path $RepoRoot "devdb_window_positions.json"
 
 # Defaults (used if no saved positions file exists yet)
