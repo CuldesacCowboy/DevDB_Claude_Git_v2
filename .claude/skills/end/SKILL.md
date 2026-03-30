@@ -26,4 +26,4 @@ The user may have typed decisions or rules after the /end command. If so, those 
 6. If I answered y:
    Ask me: "Keep this session open? (y / n)" — wait for my answer.
    Then run this to open the new session as a tab in this Windows Terminal window:
-   wt.exe -w 0 new-tab cmd.exe /k "cd /d C:\DevDB_Claude_Git_v2 && claude"
+   wt.exe -w 0 new-tab --startingDirectory "C:\DevDB_Claude_Git_v2" cmd.exe /k "set CLAUDECODE= && claude"
