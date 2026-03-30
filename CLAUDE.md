@@ -864,11 +864,11 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-28
 
 ### devdb_ui/src/pages/TakedownAgreementsView.jsx
-- Owns: Takedown agreement management view; checkpoint bands; lot assignment drag-drop; lock toggles; projected date editing
+- Owns: Takedown agreement management view; checkpoint bands; lot assignment drag-drop; lock toggles; projected date editing; building group stitch connectors; cluster row grouping; sort animation; stacked left panel
 - Imports: dnd-kit, react, useTdaData
 - Imported by: App.jsx
 - Tables: none (API calls via /api/takedown-agreements)
-- Last commit: 2026-03-28
+- Last commit: 2026-03-30
 
 ### devdb_ui/src/components/InstrumentContainer.jsx
 - Owns: Draggable/droppable legal instrument card with phase columns, aggregate lot-type totals, inline rename
