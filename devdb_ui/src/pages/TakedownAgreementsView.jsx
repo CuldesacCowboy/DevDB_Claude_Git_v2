@@ -361,9 +361,9 @@ function UnassignedBank({ lots, selectedIds, onToggle, onToggleDevGroup, onAddTo
 // ── TDA card wrapper ──────────────────────────────────────────────
 function TdaCard({ detail, colorIdx, onCheckpointCreated, children }) {
   const colors = TDA_COLORS[colorIdx % TDA_COLORS.length]
-  const totalLots = (detail.checkpoints || []).reduce(
-    (sum, cp) => sum + (cp.lots?.length || 0), 0
-  )
+  const poolCount = detail.pool_lots?.length || 0
+  const cpCounts = (detail.checkpoints || []).map(cp => ({ name: cp.checkpoint_name, count: cp.lots?.length || 0 }))
+  const totalLots = poolCount + cpCounts.reduce((sum, cp) => sum + cp.count, 0)
   const [showAddCP, setShowAddCP] = useState(false)
   const [cpName, setCpName] = useState('')
   const [cpDate, setCpDate] = useState('')
@@ -411,9 +411,19 @@ function TdaCard({ detail, colorIdx, onCheckpointCreated, children }) {
         <span style={{ fontWeight: 700, fontSize: 16, color: colors.text }}>
           {detail.tda_name}
         </span>
-        <span style={{ fontSize: 13, color: colors.text, opacity: 0.8, marginLeft: 14 }}>
-          {totalLots} lot{totalLots !== 1 ? 's' : ''}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginLeft: 14, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, color: colors.text, opacity: 0.65 }}>
+            no&nbsp;cp:&nbsp;{poolCount}
+          </span>
+          {cpCounts.map((cp, i) => (
+            <span key={i} style={{ fontSize: 12, color: colors.text, opacity: 0.65, marginLeft: 10 }}>
+              cp{i + 1}:&nbsp;{cp.count}
+            </span>
+          ))}
+          <span style={{ fontSize: 13, fontWeight: 700, color: colors.text, opacity: 0.9, marginLeft: 12 }}>
+            {totalLots}&nbsp;total
+          </span>
+        </div>
       </div>
       <div style={{ background: colors.tint, padding: 14 }}>
         {children}
@@ -568,7 +578,7 @@ function ProjectedDateField({ value, locked, onChange }) {
 }
 
 // ── Lot pill inside a checkpoint ──────────────────────────────────
-function LotPill({ assignment, onDateChange, onLockChange, isExcess = false }) {
+function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, isCaution = false }) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `assigned-${assignment.assignment_id}`,
@@ -619,8 +629,8 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false }) {
       style={{
         width: 148, flexShrink: 0,
         borderRadius: 6, overflow: 'hidden',
-        background: isExcess ? '#FFF5F5' : '#fff',
-        border: isExcess ? '1.5px dashed #E24B4A' : '1px solid #E4E2DA',
+        background: isExcess ? '#FFF5F5' : isCaution ? '#FFFBEB' : '#fff',
+        border: isExcess ? '1.5px dashed #E24B4A' : isCaution ? '1.5px dashed #D97706' : '1px solid #E4E2DA',
         opacity: isDragging ? 0.4 : 1,
         boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
         display: 'flex', flexDirection: 'column',
@@ -632,8 +642,9 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false }) {
         style={{
           textAlign: 'center', fontSize: 14, fontWeight: 700, color: '#2C2C2A',
           padding: '6px 8px',
-          cursor: 'grab', background: '#FAFAF8',
-          borderBottom: '1px solid #F0EEE8',
+          cursor: 'grab',
+          background: isExcess ? '#FFF0F0' : isCaution ? '#FEF3C7' : '#FAFAF8',
+          borderBottom: `1px solid ${isExcess ? '#FFCCC9' : isCaution ? '#FDE68A' : '#F0EEE8'}`,
           userSelect: 'none',
         }}
       >
@@ -756,18 +767,31 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
     })
   }, [lots])
 
-  // C = lots with any HC or BLDR date (marks or projected) that is in the past (≤ today)
-  // total = all assigned lots; excess = over the required count
+  // C = lots with HC or BLDR projected date in the past (≤ today) — completed
+  // futureP = lots with HC or BLDR projected date in the future — planned
+  // Caution = future projected date exists but it falls after the checkpoint date
   const todayStr = new Date().toISOString().slice(0, 10)
   const isPast = (d) => !!d && d <= todayStr
   const c = lots.filter(l =>
     isPast(l.hc_projected_date) || isPast(l.bldr_projected_date)
   ).length
+  const futureP = lots.filter(l =>
+    (l.hc_projected_date && !isPast(l.hc_projected_date)) ||
+    (l.bldr_projected_date && !isPast(l.bldr_projected_date))
+  ).length
+  const plannedTotal = c + futureP  // used for "+ Planned" bar
   const t = localTotal
   const total = lots.length
   const excess = Math.max(0, total - t)
-  const overTotal = excess > 0       // c+p exceeds required
+  const overTotal = plannedTotal > t
   const overC = c > t                // completed alone exceeds required
+
+  const isLotCaution = (lot) => {
+    if (!localDate) return false
+    const hcLate = lot.hc_projected_date && !isPast(lot.hc_projected_date) && lot.hc_projected_date > localDate
+    const bldrLate = lot.bldr_projected_date && !isPast(lot.bldr_projected_date) && lot.bldr_projected_date > localDate
+    return hcLate || bldrLate
+  }
 
   // Placeholder count and urgency
   const slotCount = Math.max(0, t - total)
@@ -778,8 +802,8 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
     return Math.floor((cpDate - today) / (1000 * 60 * 60 * 24))
   })()
 
-  const cPct   = t > 0 ? Math.min(100, Math.round((c     / t) * 100)) : 0
-  const cpPct  = t > 0 ? Math.min(100, Math.round((total / t) * 100)) : 0
+  const cPct   = t > 0 ? Math.min(100, Math.round((c            / t) * 100)) : 0
+  const cpPct  = t > 0 ? Math.min(100, Math.round((plannedTotal / t) * 100)) : 0
 
   // ── Row height equalization (lots + placeholders) ──────────────
   const gridRef = useRef(null)
@@ -872,7 +896,7 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
               <div style={{ width: `${cpPct}%`, height: '100%', background: overTotal ? '#E24B4A' : '#B4B2A9', borderRadius: 3, transition: 'width 0.2s' }} />
             </div>
             <span style={{ fontSize: 12, fontWeight: 500, color: overTotal ? '#A32D2D' : '#444441', flexShrink: 0, minWidth: 52, textAlign: 'right' }}>
-              {total} of {t}
+              {plannedTotal} of {t}
             </span>
           </div>
         </div>
@@ -881,15 +905,19 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
       {/* Body — outer pad + inner grid capped at 5 columns (5×148 + 4×8 = 772px) */}
       <div style={{ padding: 14, minHeight: 60 }}>
         <div ref={gridRef} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'stretch', maxWidth: 772 }}>
-          {sortedLots.map((a, idx) => (
-            <LotPill
-              key={a.assignment_id}
-              assignment={a}
-              isExcess={idx >= total - excess}
-              onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
-              onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
-            />
-          ))}
+          {sortedLots.map((a, idx) => {
+            const lotIsExcess = idx >= total - excess
+            return (
+              <LotPill
+                key={a.assignment_id}
+                assignment={a}
+                isExcess={lotIsExcess}
+                isCaution={!lotIsExcess && isLotCaution(a)}
+                onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
+                onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
+              />
+            )
+          })}
           {Array.from({ length: slotCount }).map((_, i) => (
             <PlaceholderPill key={`ph-${i}`} daysToCP={daysToCP} />
           ))}
