@@ -619,11 +619,11 @@ def remove_lot_from_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
 def update_lot_assignment_dates(assignment_id: int, body: UpdateDatesRequest, conn=Depends(get_db_conn)):
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        # Validate at least one field provided
+        # Validate at least one field explicitly provided (null clears the field)
         updates = {}
-        if body.hc_projected_date is not None:
+        if "hc_projected_date" in body.model_fields_set:
             updates["hc_projected_date"] = body.hc_projected_date
-        if body.bldr_projected_date is not None:
+        if "bldr_projected_date" in body.model_fields_set:
             updates["bldr_projected_date"] = body.bldr_projected_date
         if not updates:
             raise HTTPException(status_code=422, detail="At least one date field must be provided.")

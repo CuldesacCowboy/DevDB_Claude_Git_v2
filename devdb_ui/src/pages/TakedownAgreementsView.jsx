@@ -604,7 +604,7 @@ function ProjectedDateField({ value, locked, onChange }) {
         key={value || ''}
         type="date"
         defaultValue={value || ''}
-        onChange={(e) => { if (e.target.value) onChange(e.target.value) }}
+        onChange={(e) => { onChange(e.target.value || null) }}
         style={{
           position: 'absolute', inset: 0,
           width: '100%', height: '100%',
@@ -673,10 +673,11 @@ function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, che
           value={projDate}
           locked={isLocked}
           onChange={(val) => {
-            if (dateKey === 'hc_projected_date') setLocalHcDate(val)
-            if (dateKey === 'bldr_projected_date') setLocalBldrDate(val)
+            if (dateKey === 'hc_projected_date') setLocalHcDate(val || '')
+            if (dateKey === 'bldr_projected_date') setLocalBldrDate(val || '')
             onDateChange(dateKey, val)
-            onLockChange(lockKey, true)
+            if (val) onLockChange(lockKey, true)
+            else onLockChange(lockKey, false)
           }}
         />
       </div>
@@ -863,8 +864,9 @@ function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
 
   // ── Checkpoint status ──────────────────────────────────────────
   // metCP = lots where any date (marks or projected) is on/before the checkpoint date
+  // Only user-entered projected dates count — marks dates are system actuals, not "entered"
   const metCP = localDate ? lots.filter(l => {
-    const dates = [l.hc_marks_date, l.hc_projected_date, l.bldr_marks_date, l.bldr_projected_date].filter(Boolean)
+    const dates = [l.hc_projected_date, l.bldr_projected_date].filter(Boolean)
     return dates.some(d => d <= localDate)
   }).length : 0
   // Every assigned lot must have a qualifying date — not just the required count
