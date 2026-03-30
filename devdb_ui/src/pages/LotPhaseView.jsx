@@ -733,9 +733,10 @@ export default function LotPhaseView() {
   )
 }
 
-// Phase drags: pointerWithin first so hovering anywhere inside a container or
-// phase column registers correctly. Falls back to closestCenter when the pointer
-// is in empty space (no droppable under it), preventing "lost" drops.
+// Phase drags: prefer phase-type droppables (sortable peers) over the outer
+// instrument-target container. Filter droppableContainers to phase-type first;
+// if the pointer is not over any phase card, fall back to the full set so
+// cross-instrument moves and instrument-target drops still work.
 // Lot drags: filter to only lot-target and unassigned droppables so sortable
 // phase-header-* items (type='phase') never win the collision and silently swallow the drop.
 // Instrument drags: filter to instrument and pg-target droppables only.
@@ -743,14 +744,18 @@ export default function LotPhaseView() {
 function customCollision(args) {
   const activeType = args.active?.data?.current?.type
   if (activeType === 'phase') {
+    // Try phase-only containers first (sortable peers within the same instrument).
+    const phaseArgs = {
+      ...args,
+      droppableContainers: args.droppableContainers.filter(
+        (c) => c.data?.current?.type === 'phase'
+      ),
+    }
+    const phaseResult = pointerWithin(phaseArgs)
+    if (phaseResult.length > 0) return phaseResult
+    // Pointer is not over a peer phase — allow instrument-target or any container.
     const result = pointerWithin(args)
-    if (result.length === 0) return closestCenter(args)
-    // Prefer phase-type (sortable) hits over instrument-target containers.
-    // Without this, the outer instrument droppable always wins, routing every
-    // intra-instrument drop to handlePhaseReassign instead of handlePhaseReorder.
-    const phaseHit = result.find((r) => r.data?.current?.type === 'phase')
-    if (phaseHit) return [phaseHit]
-    return result
+    return result.length > 0 ? result : closestCenter(args)
   }
   if (activeType === 'lot') {
     const lotArgs = {
