@@ -1,5 +1,6 @@
 @echo off
 title DevDB Session Startup
+set REPO_ROOT=%~dp0
 echo.
 echo ============================================================
 echo  DevDB Claude Code Session Startup
@@ -44,17 +45,21 @@ echo ^<2-3 sentences on current build status relevant to today's task^>
 echo.
 echo ## Ready to work
 echo Paste this entire file into Claude Desktop before starting work.
-) > "%~dp0devdb_cc_prompt.txt"
+) > "%REPO_ROOT%devdb_cc_prompt.txt"
 
-cd /d "%~dp0devdb_python"
-python ..\devdb_run_claude.py ..\devdb_cc_prompt.txt
+echo.
+echo Opening prompt in Notepad...
+start notepad "%REPO_ROOT%devdb_cc_prompt.txt"
 
-del "%~dp0devdb_cc_prompt.txt"
+echo Opening Claude Code terminal...
+start cmd /k "cd /d "%REPO_ROOT%devdb_python" && claude"
 
 echo.
 echo ============================================================
-echo  Session brief written to DevDB_SessionBrief.md
-echo  Paste it into Claude Desktop now.
+echo  NEXT STEP:
+echo  1. Copy the prompt from Notepad
+echo  2. Paste into the Claude Code terminal
+echo  3. When CC writes DevDB_SessionBrief.md, paste it into Claude Desktop
 echo ============================================================
 echo.
 pause

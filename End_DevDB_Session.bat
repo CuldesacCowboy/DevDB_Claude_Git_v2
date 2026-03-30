@@ -1,5 +1,6 @@
 @echo off
 title DevDB Session End
+set REPO_ROOT=%~dp0
 echo.
 echo ============================================================
 echo  DevDB Claude Code Session End
@@ -9,7 +10,11 @@ echo.
 set /p "DECISIONS=Any decisions or rules to log? (press Enter to skip) "
 
 echo.
-echo Writing end-of-session prompt...
+echo Generating session handoff from git...
+python "%REPO_ROOT%devdb_generate_handoff.py"
+
+echo.
+echo Writing CLAUDE.md update prompt...
 
 (
 echo SESSION END — CLAUDE CODE
@@ -25,52 +30,36 @@ echo Read every commit message. That is what was completed this session.
 echo.
 echo STEP 2 — Figure out which files changed.
 echo Run: git diff --name-only HEAD~5 HEAD
-echo ^(use last 5 commits as a reasonable session window^)
 echo.
 echo STEP 3 — Update CLAUDE.md.
-echo   a^) Update the "Current Build Status" table based on the commit
-echo      messages from Step 1. Mark completed items as Complete.
+echo   a^) Update the "Current Build Status" table based on commit messages from Step 1.
+echo      Mark completed items as Complete.
 echo   b^) Update the "Last commit" date for every file in the File Manifest
 echo      that appears in Step 2's output.
-echo   c^) If the new decisions/rules field above is not empty, append each
-echo      decision to the Decision Log with the next available D-number.
+echo   c^) If the decisions/rules field above is not empty, append each decision
+echo      to the Decision Log with the next available D-number.
 echo   d^) Update the "Last updated" date and "Next ID" at the top of CLAUDE.md.
 echo.
-echo STEP 4 — Write DevDB_SessionHandoff.md in the repo root:
-echo.
-echo # DevDB Session Handoff
-echo **Date:** %date%
-echo.
-echo ## What was completed
-echo.
-echo.
-echo ## Files changed
-echo.
-echo.
-echo ## What is NOT yet working
-echo.
-echo.
-echo ## Recommended next task
-echo.
-echo.
-echo ## Paste this into Claude Desktop to start the next session
-echo.
-echo.
-echo STEP 5 — Commit everything.
+echo STEP 4 — Commit everything.
 echo   git add -A
-echo   git commit -m "session end: "
+echo   git commit -m "session end: %COMPLETED%"
 echo   git push
-) > "%~dp0devdb_end_prompt.txt"
+) > "%REPO_ROOT%devdb_end_prompt.txt"
 
-cd /d "%~dp0devdb_python"
-python ..\devdb_run_claude.py ..\devdb_end_prompt.txt
+echo.
+echo Opening prompt in Notepad...
+start notepad "%REPO_ROOT%devdb_end_prompt.txt"
 
-del "%~dp0devdb_end_prompt.txt"
+echo Opening Claude Code terminal...
+start cmd /k "cd /d "%REPO_ROOT%devdb_python" && claude"
 
 echo.
 echo ============================================================
-echo  Session closed. Open DevDB_SessionHandoff.md and paste it
-echo  into Claude Desktop.
+echo  NEXT STEP:
+echo  1. Copy the prompt from Notepad
+echo  2. Paste into the Claude Code terminal
+echo  3. When CC is done, close the CC terminal
+echo  4. Open DevDB_SessionHandoff.md and paste into Claude Desktop
 echo ============================================================
 echo.
 pause
