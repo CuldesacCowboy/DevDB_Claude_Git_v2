@@ -1,8 +1,7 @@
-param([string]$RepoRoot, [string]$Task)
+param([string]$Task)
 
-# %~dp0 ends with \ which escapes the closing quote — strip trailing \ and "
-$RepoRoot = $RepoRoot.TrimEnd('\', '"')
-$Task     = $Task.TrimEnd('"')
+# Determine repo root from this script's own location — avoids %~dp0 trailing backslash issues
+$RepoRoot = Split-Path -Parent $PSCommandPath
 
 # Copy /start <task> to clipboard — ready to paste as first message in claude
 "/start $Task" | Set-Clipboard
