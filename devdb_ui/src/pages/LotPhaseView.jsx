@@ -744,7 +744,13 @@ function customCollision(args) {
   const activeType = args.active?.data?.current?.type
   if (activeType === 'phase') {
     const result = pointerWithin(args)
-    return result.length > 0 ? result : closestCenter(args)
+    if (result.length === 0) return closestCenter(args)
+    // Prefer phase-type (sortable) hits over instrument-target containers.
+    // Without this, the outer instrument droppable always wins, routing every
+    // intra-instrument drop to handlePhaseReassign instead of handlePhaseReorder.
+    const phaseHit = result.find((r) => r.data?.current?.type === 'phase')
+    if (phaseHit) return [phaseHit]
+    return result
   }
   if (activeType === 'lot') {
     const lotArgs = {
