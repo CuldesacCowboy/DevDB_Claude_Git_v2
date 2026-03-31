@@ -47,6 +47,14 @@ export function useTdaData(entGroupId) {
       })
   }, [entGroupId])
 
+  // Reset TDA state immediately when the community changes so the stale selectedTdaId
+  // does not prevent fetchAgreements from selecting the first TDA of the new community.
+  useEffect(() => {
+    setSelectedTdaId(null)
+    setDetail(null)
+    setAgreements([])
+  }, [entGroupId])
+
   // Fix 3: AbortController prevents stale responses from landing after entGroupId changes.
   useEffect(() => {
     const controller = new AbortController()
