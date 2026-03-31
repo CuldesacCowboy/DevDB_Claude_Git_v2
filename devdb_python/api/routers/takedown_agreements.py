@@ -41,6 +41,10 @@ class UpdateLockRequest(BaseModel):
     hc_is_locked: Optional[bool] = None
     bldr_is_locked: Optional[bool] = None
 
+
+class RenameTdaRequest(BaseModel):
+    tda_name: str
+
 router = APIRouter(tags=["takedown-agreements"])
 
 
@@ -159,6 +163,37 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
             "status": row["status"],
             "anchor_date": row["anchor_date"].isoformat() if row["anchor_date"] else None,
         }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+@router.patch("/takedown-agreements/{tda_id}")
+def rename_takedown_agreement(tda_id: int, body: RenameTdaRequest, conn=Depends(get_db_conn)):
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        name = body.tda_name.strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Agreement name cannot be empty.")
+        cur.execute(
+            """
+            UPDATE devdb.sim_takedown_agreements
+            SET tda_name = %s, updated_at = now()
+            WHERE tda_id = %s
+            RETURNING tda_id, tda_name
+            """,
+            (name, tda_id),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"TDA {tda_id} not found.")
+        conn.commit()
+        return {"tda_id": row["tda_id"], "tda_name": row["tda_name"]}
     except HTTPException:
         conn.rollback()
         raise

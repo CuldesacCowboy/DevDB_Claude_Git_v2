@@ -56,6 +56,32 @@ export function useTdaData(entGroupId) {
 
   // ── Mutations ───────────────────────────────────────────────────
 
+  const renameTda = useCallback(async (tdaId, name) => {
+    const trimmed = name?.trim()
+    if (!trimmed) return { ok: false, error: 'Name is required.' }
+    setMutationStatus(SAVING)
+    try {
+      const res = await fetch(`${API_BASE}/takedown-agreements/${tdaId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tda_name: trimmed }),
+      })
+      if (!res.ok) {
+        const body = await res.json()
+        const msg = body.detail || 'Failed to rename.'
+        setMutationStatus(errorState(msg))
+        return { ok: false, error: msg }
+      }
+      setMutationStatus(IDLE)
+      fetchAgreements(tdaId)
+      if (tdaId === selectedTdaId) fetchDetail()
+      return { ok: true }
+    } catch (e) {
+      setMutationStatus(errorState(e))
+      return { ok: false, error: e.message }
+    }
+  }, [fetchAgreements, fetchDetail, selectedTdaId])
+
   const createTda = useCallback(async (name) => {
     if (!name?.trim()) return { ok: false, error: 'Name is required.' }
     setMutationStatus(SAVING)
@@ -212,6 +238,7 @@ export function useTdaData(entGroupId) {
     // Mutation status
     mutationStatus,
     // Mutations
+    renameTda,
     createTda,
     createCheckpoint,
     updateAssignmentDates,

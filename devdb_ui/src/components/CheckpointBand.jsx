@@ -51,7 +51,7 @@ export function EditableNumber({ value, onChange }) {
 }
 
 // ── Droppable checkpoint band ─────────────────────────────────────
-export default function CheckpointBand({ checkpoint, onDateChange, onLockChange }) {
+export default function CheckpointBand({ checkpoint, onDateChange, onLockChange, selectedAssignedLotIds, onToggleAssignedLot, onToggleCheckpointLots, onContextMenu, dragLot }) {
   const [localTotal, setLocalTotal] = useState(checkpoint.lots_required_cumulative || 0)
   const [localDate, setLocalDate] = useState(checkpoint.checkpoint_date || '')
 
@@ -61,6 +61,13 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange 
   })
 
   const lots = checkpoint.lots || []
+  const checkpointLotIds = lots.map(l => l.lot_id)
+  const allSelected = checkpointLotIds.length > 0 && checkpointLotIds.every(id => selectedAssignedLotIds?.has(id))
+  const someSelected = !allSelected && checkpointLotIds.some(id => selectedAssignedLotIds?.has(id))
+  const selectedCount = checkpointLotIds.filter(id => selectedAssignedLotIds?.has(id)).length
+
+  // Landing zone: highlight when a drag is in progress (any lot type can land on a checkpoint)
+  const isValidDrop = !!dragLot && !isOver
 
   // Display order — follows server order by default; manual sort on demand.
   // When lots refresh (lock/date change), preserve current order if the set of
@@ -206,8 +213,8 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange 
       ref={setNodeRef}
       style={{
         background: isOver ? '#f0f9ff' : '#ffffff',
-        border: `1.5px solid ${isOver ? '#3b82f6' : '#E4E2DA'}`,
-        borderLeft: isOver ? '1.5px solid #3b82f6' : statusCfg ? `4px solid ${statusCfg.border}` : '1.5px solid #E4E2DA',
+        border: isOver ? '1.5px solid #3b82f6' : isValidDrop ? '1.5px dashed #93c5fd' : '1.5px solid #E4E2DA',
+        borderLeft: isOver ? '1.5px solid #3b82f6' : isValidDrop ? '1.5px dashed #93c5fd' : statusCfg ? `4px solid ${statusCfg.border}` : '1.5px solid #E4E2DA',
         borderRadius: 8, marginBottom: 14,
         transition: 'all 0.15s',
       }}
@@ -219,8 +226,29 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange 
         padding: '10px 14px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14,
       }}>
-        {/* Left: "{X} required by {date}" — both editable inline */}
+        {/* Left: select-all toggle + "{X} required by {date}" — both editable inline */}
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+          {checkpointLotIds.length > 0 && onToggleCheckpointLots && (
+            <button
+              onClick={() => onToggleCheckpointLots(checkpointLotIds)}
+              title={allSelected ? 'Deselect all lots in this checkpoint' : 'Select all lots in this checkpoint'}
+              style={{
+                width: 18, height: 18, borderRadius: 3, flexShrink: 0,
+                border: `1.5px solid ${allSelected ? '#2563eb' : someSelected ? '#93c5fd' : '#D4D2CB'}`,
+                background: allSelected ? '#2563eb' : someSelected ? '#dbeafe' : '#fff',
+                cursor: 'pointer', padding: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 11, color: allSelected ? '#fff' : someSelected ? '#2563eb' : '#9ca3af',
+              }}
+            >
+              {allSelected ? '✓' : someSelected ? '–' : ''}
+            </button>
+          )}
+          {selectedCount > 0 && (
+            <span style={{ fontSize: 11, color: '#2563eb', fontWeight: 600 }}>
+              {selectedCount} selected
+            </span>
+          )}
           <EditableNumber value={t} onChange={setLocalTotal} />
           <span style={{ fontSize: 15, color: '#6B6B68', fontWeight: 500 }}>required by</span>
           {/* Editable date — overlay pattern */}
@@ -381,6 +409,8 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange 
                     isExcess={idx >= total - excess}
                     checkpointDate={localDate}
                     condensed={condensed}
+                    isSelected={selectedAssignedLotIds?.has(a.lot_id)}
+                    onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(e, 'assigned', a.lot_id) } : undefined}
                     onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
                     onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
                   />
@@ -400,6 +430,8 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange 
                         isExcess={idx >= total - excess}
                         checkpointDate={localDate}
                         condensed={condensed}
+                        isSelected={selectedAssignedLotIds?.has(a.lot_id)}
+                        onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(e, 'assigned', a.lot_id) } : undefined}
                         onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
                         onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
                       />

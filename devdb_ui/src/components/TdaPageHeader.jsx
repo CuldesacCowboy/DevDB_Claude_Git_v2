@@ -1,13 +1,6 @@
 import { useState } from 'react'
 
-export default function TdaPageHeader({
-  entGroupName,
-  agreements,
-  selectedTdaId,
-  setSelectedTdaId,
-  mutationStatus,
-  createTda,
-}) {
+export default function TdaPageHeader({ entGroupName, mutationStatus, createTda }) {
   const [showNewTdaForm, setShowNewTdaForm] = useState(false)
   const [newTdaName, setNewTdaName] = useState('')
   const [newTdaError, setNewTdaError] = useState('')
@@ -38,27 +31,9 @@ export default function TdaPageHeader({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        {/* Mutation status indicator */}
-        {isSaving && (
-          <span style={{ fontSize: 12, color: '#6b7280' }}>Saving…</span>
-        )}
+        {isSaving && <span style={{ fontSize: 12, color: '#6b7280' }}>Saving…</span>}
         {mutationStatus.status === 'error' && (
           <span style={{ fontSize: 12, color: '#dc2626' }}>{mutationStatus.error}</span>
-        )}
-
-        {agreements.length > 0 && (
-          <select
-            value={selectedTdaId || ''}
-            onChange={e => setSelectedTdaId(Number(e.target.value))}
-            style={{
-              fontSize: 14, padding: '5px 10px', borderRadius: 6,
-              border: '1px solid #d1d5db', background: '#fff', color: '#374151',
-            }}
-          >
-            {agreements.map(a => (
-              <option key={a.tda_id} value={a.tda_id}>{a.tda_name}</option>
-            ))}
-          </select>
         )}
         {showNewTdaForm ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -99,9 +74,7 @@ export default function TdaPageHeader({
             >
               Cancel
             </button>
-            {newTdaError && (
-              <span style={{ fontSize: 12, color: '#ef4444' }}>{newTdaError}</span>
-            )}
+            {newTdaError && <span style={{ fontSize: 12, color: '#ef4444' }}>{newTdaError}</span>}
           </div>
         ) : (
           <button

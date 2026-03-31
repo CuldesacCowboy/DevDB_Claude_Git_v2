@@ -190,7 +190,7 @@ export function PlaceholderPill({ daysToCP, condensed = false }) {
 }
 
 // ── Lot pill inside a checkpoint ──────────────────────────────────
-export default function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, checkpointDate = '', condensed = false }) {
+export default function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, checkpointDate = '', condensed = false, isSelected = false, onContextMenu }) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `assigned-${assignment.assignment_id}`,
@@ -226,17 +226,18 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
         ref={setNodeRef}
         {...attributes}
         {...listeners}
+        onContextMenu={onContextMenu}
         style={{
           width: 68, height: 34, flexShrink: 0,
-          background: isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : hasNoDates ? '#EEECEA' : '#FAFAF8',
-          border: isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',
+          background: isSelected ? '#dbeafe' : isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : hasNoDates ? '#EEECEA' : '#FAFAF8',
+          border: isSelected ? '2px solid #2563eb' : isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',
           borderRadius: 5,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '0 6px', boxSizing: 'border-box',
           cursor: 'grab', opacity: isDragging ? 0.4 : 1,
         }}
       >
-        <span style={{ fontSize: 11, color: codeColor, flexShrink: 0 }}>{code}</span>
+        <span style={{ fontSize: 11, color: isSelected ? '#1d4ed8' : codeColor, flexShrink: 0 }}>{code}</span>
         <span style={{ fontSize: 12, fontWeight: 500, color: '#2C2C2A' }}>{seq}</span>
       </div>
     )
@@ -294,13 +295,14 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
   return (
     <div
       ref={setNodeRef}
+      onContextMenu={onContextMenu}
       style={{
         width: 148, flexShrink: 0,
         borderRadius: 6, overflow: 'hidden',
-        background: isExcess ? '#FFF5F5' : isDelinquent ? '#fef2f2' : isCaution ? '#FFFBEB' : hasNoDates ? '#F7F6F3' : '#fff',
-        border: isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',
+        background: isSelected ? '#eff6ff' : isExcess ? '#FFF5F5' : isDelinquent ? '#fef2f2' : isCaution ? '#FFFBEB' : hasNoDates ? '#F7F6F3' : '#fff',
+        border: isSelected ? '2px solid #2563eb' : isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',
         opacity: isDragging ? 0.4 : 1,
-        boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+        boxShadow: isSelected ? '0 0 0 2px #bfdbfe' : '0 1px 2px rgba(0,0,0,0.06)',
         display: 'flex', flexDirection: 'column',
       }}
     >
@@ -311,8 +313,8 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
           textAlign: 'center',
           padding: '5px 8px 6px',
           cursor: 'grab',
-          background: isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : hasNoDates ? '#EEECEA' : '#FAFAF8',
-          borderBottom: `1px solid ${isExcess ? '#FFCCC9' : isDelinquent ? '#fecaca' : isCaution ? '#FDE68A' : hasNoDates ? '#DDDBD3' : '#F0EEE8'}`,
+          background: isSelected ? '#dbeafe' : isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : hasNoDates ? '#EEECEA' : '#FAFAF8',
+          borderBottom: `1px solid ${isSelected ? '#93c5fd' : isExcess ? '#FFCCC9' : isDelinquent ? '#fecaca' : isCaution ? '#FDE68A' : hasNoDates ? '#DDDBD3' : '#F0EEE8'}`,
           userSelect: 'none',
         }}
       >
