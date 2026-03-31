@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: March 2026 (2026-04-01) | Architecture v20 | Decision Log: D-001 through D-151 | Next ID: D-152*
+*Last updated: April 2026 (2026-04-01) | Architecture v20 | Decision Log: D-001 through D-151 | Next ID: D-152*
 
 ---
 
@@ -864,8 +864,8 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-28
 
 ### devdb_ui/src/pages/TakedownAgreementsView.jsx
-- Owns: Takedown agreement management view orchestrator; wires TdaNavBar, TdaPageHeader, UnassignedBank, TdaCard, CheckpointBand, TdaDragOverlay, ContextMenu; manages context menu state; threads dragLot for landing zone highlights
-- Imports: dnd-kit, react, useTdaData, useTdaDragHandler, LeftPanel, TdaPageHeader, CheckpointBand, TdaCard, TdaDragOverlay, TdaNavBar, ContextMenu
+- Owns: Takedown agreement management view orchestrator; wires TdaNavBar, TdaPageHeader, UnassignedBank, TdaCard, CheckpointBand, TdaDragOverlay, ContextMenu; manages context menu state; threads dragLot for landing zone highlights; contextMenuItems is useMemo([contextMenu, detail, agreements, ...callbacks]); handleContextMenu is useCallback
+- Imports: dnd-kit, react (useState, useCallback, useEffect, useMemo), useTdaData, useTdaDragHandler, LeftPanel, TdaPageHeader, CheckpointBand, TdaCard, TdaDragOverlay, TdaNavBar, ContextMenu
 - Imported by: LotPhaseView.jsx (as tab)
 - Tables: none (API calls via /api/takedown-agreements)
 - Last commit: 2026-04-01
@@ -920,7 +920,7 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-26
 
 ### devdb_ui/src/components/CheckpointBand.jsx
-- Owns: Checkpoint band row; EditableNumber, show/hide lots, expanded/condensed view toggles, select-all checkbox for bulk drag, landing zone highlight (isValidDrop), right-click context menu passthrough
+- Owns: Checkpoint band row; EditableNumber (with onEditingChange callback), show/hide lots, expanded/condensed view toggles, select-all checkbox for bulk drag, landing zone highlight (isValidDrop), right-click context menu passthrough; localDate/localTotal sync from props guarded by editingDate/editingTotal flags; date input is controlled (value+onChange, no key workaround)
 - Imports: react, dnd-kit (useDroppable), LotPill, StitchConnector, PlaceholderPill, CheckpointTimeline, tdaUtils
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
@@ -1011,7 +1011,7 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/hooks/useTdaDragHandler.js
-- Owns: Drag orchestration for TDA view; manages dnd-kit sensors, drag state, drop dispatch; selectedAssignedLotIds for checkpoint lot multi-select; toggleAssignedCheckpointSelection for header select-all
+- Owns: Drag orchestration for TDA view; manages dnd-kit sensors, drag state, drop dispatch; selectedAssignedLotIds for checkpoint lot multi-select; toggleAssignedCheckpointSelection for header select-all; pool-lot other-tda branch uses Promise.all for parallel moves
 - Imports: dnd-kit, react
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
