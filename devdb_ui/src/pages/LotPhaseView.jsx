@@ -487,134 +487,232 @@ export default function LotPhaseView() {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="flex flex-1 overflow-hidden">
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
 
-          {/* -------------------------------------------------------------- */}
-          {/* Left column — Unassigned Lots (top) + No Instrument (bottom)   */}
-          {/* -------------------------------------------------------------- */}
-          <div
-            style={{ width: 168, flexShrink: 0 }}
-            className="h-full flex flex-col border-r border-gray-200 overflow-hidden"
-          >
-            <div className="flex-1 min-h-0">
-              <UnassignedColumn lots={unassigned} pendingLotId={pendingLotId} />
-            </div>
-            <div className="flex-1 min-h-0 overflow-auto border-t border-gray-200">
-              <InstrumentContainer
-                instrument={null}
-                phases={unassignedPhases}
-                tint={null}
-                pendingLotId={pendingLotId}
-                pendingPhaseId={pendingPhaseId}
-                activeDragType={activeDragType}
-                collapsedPhaseIds={collapsedPhaseIds}
-                onToggleCollapse={togglePhaseCollapse}
-              />
-            </div>
-          </div>
-
-          {/* -------------------------------------------------------------- */}
-          {/* Main scrollable area                                            */}
-          {/* -------------------------------------------------------------- */}
-          <div className="flex-1 overflow-auto bg-slate-50 p-4">
-
-            {loading && (
-              <div className="flex items-center justify-center min-h-[calc(100vh-2rem)] text-gray-500">
-                Loading…
+          {/* ---------------------------------------------------------------- */}
+          {/* Page header — fixed, non-scrolling (matches TDA header pattern)  */}
+          {/* ---------------------------------------------------------------- */}
+          <div style={{
+            background: '#fff', borderBottom: '1px solid #e5e7eb',
+            padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            flexShrink: 0,
+          }}>
+            <div>
+              <h1 style={{ fontSize: 18, fontWeight: 700, color: '#111827', margin: 0 }}>
+                Legal Instruments
+              </h1>
+              <div style={{ fontSize: 13, color: '#6b7280', marginTop: 2 }}>
+                {activeEntGroupName}
+                {!loading && !fetchError && (
+                  <span>
+                    <span style={{ margin: '0 6px', color: '#d1d5db' }}>·</span>
+                    <span style={{ color: '#374151', fontWeight: 500 }}>{communityR}</span>r{' / '}
+                    <span style={{ color: '#374151', fontWeight: 500 }}>{communityP}</span>p{' / '}
+                    <span style={{ color: '#374151', fontWeight: 500 }}>{communityT}</span>t
+                  </span>
+                )}
               </div>
-            )}
-
-            {fetchError && (
-              <div className="flex items-center justify-center min-h-[calc(100vh-2rem)] text-red-600">
-                Failed to load: {fetchError}
-              </div>
-            )}
+            </div>
 
             {!loading && !fetchError && (
-              <>
-                {/* Header */}
-                <div className="mb-4 flex items-start justify-between gap-4 pl-2">
-                  <div className="min-w-0">
-                    <h1 className="text-xl font-bold text-gray-900">
-                      Legal Instruments
-                      <span className="font-normal text-gray-400"> &nbsp;|&nbsp; </span>
-                      <span className="font-bold">{activeEntGroupName}</span>
-                      <span className="font-normal text-gray-400"> &nbsp;|&nbsp; </span>
-                      <span className="text-sm text-gray-500 font-normal">
-                        <span className="font-medium text-gray-700">{communityR}</span>r{' / '}
-                        <span className="font-medium text-gray-700">{communityP}</span>p{' / '}
-                        <span className="font-medium text-gray-700">{communityT}</span>t
-                      </span>
-                    </h1>
-                    <p className="text-sm text-gray-500 mt-0.5">
-                      Drag lot cards between lot type and phase containers. Drag phase headers (⠿) to reassign instrument.
-                    </p>
-                  </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button
-                      onClick={openAddInstrument}
-                      className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {showAddInstrument ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      autoFocus
+                      type="text"
+                      placeholder="Instrument name"
+                      value={newInstrName}
+                      onChange={(e) => { setNewInstrName(e.target.value); setAddInstrError('') }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleCreateInstrument(); if (e.key === 'Escape') { setShowAddInstrument(false); setNewInstrName(''); setAddInstrError('') } }}
+                      style={{
+                        fontSize: 14, padding: '5px 10px', borderRadius: 6,
+                        border: `1px solid ${addInstrError ? '#ef4444' : '#d1d5db'}`,
+                        outline: 'none', width: 190, color: '#374151',
+                      }}
+                    />
+                    <select
+                      value={newInstrType}
+                      onChange={(e) => setNewInstrType(e.target.value)}
+                      style={{
+                        fontSize: 13, padding: '5px 8px', borderRadius: 6,
+                        border: '1px solid #d1d5db', outline: 'none',
+                        color: '#374151', background: '#fff',
+                      }}
                     >
-                      + Add instrument
+                      {['Plat', 'Site Condo', 'Condo Declaration', 'Other'].map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={newInstrDevId ?? ''}
+                      onChange={(e) => setNewInstrDevId(Number(e.target.value))}
+                      disabled={modalDevs.length === 0}
+                      style={{
+                        fontSize: 13, padding: '5px 8px', borderRadius: 6,
+                        border: '1px solid #d1d5db', outline: 'none',
+                        color: modalDevs.length === 0 ? '#9ca3af' : '#374151',
+                        background: '#fff', maxWidth: 200,
+                      }}
+                    >
+                      {modalDevs.length === 0 ? (
+                        <option value="" disabled>No developments</option>
+                      ) : (
+                        modalDevs.map((d) => (
+                          <option key={d.dev_id} value={d.dev_id}>{d.dev_name}</option>
+                        ))
+                      )}
+                    </select>
+                    {addInstrError && (
+                      <span style={{ fontSize: 12, color: '#ef4444' }}>{addInstrError}</span>
+                    )}
+                    <button
+                      onClick={handleCreateInstrument}
+                      disabled={addInstrCreating}
+                      style={{
+                        fontSize: 13, padding: '5px 12px', borderRadius: 6,
+                        border: 'none', background: '#2563eb', color: '#fff',
+                        cursor: addInstrCreating ? 'default' : 'pointer',
+                        opacity: addInstrCreating ? 0.6 : 1,
+                      }}
+                    >
+                      {addInstrCreating ? 'Creating…' : 'Create'}
                     </button>
                     <button
-                      onClick={collapseAll}
-                      className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                      onClick={() => { setShowAddInstrument(false); setNewInstrName(''); setAddInstrError('') }}
+                      style={{
+                        fontSize: 13, padding: '5px 10px', borderRadius: 6,
+                        border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
+                        cursor: 'pointer',
+                      }}
                     >
-                      Collapse all
-                    </button>
-                    <button
-                      onClick={expandAll}
-                      className="rounded border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50"
-                    >
-                      Expand all
+                      Cancel
                     </button>
                   </div>
-                </div>
-
-                {/* Needs-rerun banner — hidden until simulation trigger is wired */}
-                {!hideOutdatedWarning && needsRerun && (
-                  <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 font-medium">
-                    ⚠ Simulation results are outdated. Run simulation to update.
-                  </div>
+                ) : (
+                  <button
+                    onClick={openAddInstrument}
+                    style={{
+                      fontSize: 13, padding: '5px 14px', borderRadius: 6,
+                      border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    + Add instrument
+                  </button>
                 )}
-
-                {/* PG containers + No-instrument container */}
-                <SortableContext
-                  items={pgOrder.map((id) => `pg-${id}`)}
-                  strategy={verticalListSortingStrategy}
+                <button
+                  onClick={collapseAll}
+                  style={{
+                    fontSize: 13, padding: '5px 10px', borderRadius: 6,
+                    border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
+                    cursor: 'pointer',
+                  }}
                 >
-                  <div ref={pgWrapperRef} className="flex flex-wrap gap-4 p-4 items-start">
-                    {pgGroups.map((group) => {
-                      const isSolo = soloDevIds.has(String(group.devId))
-                      const effectiveWidth = isSolo
-                        ? (pgWrapperRef.current?.clientWidth ?? availableWidth) - 32
-                        : availableWidth
-                      return (
-                        <ProjectionGroupContainer
-                          key={group.devId}
-                          devId={group.devId}
-                          devName={group.devName}
-                          instruments={group.instruments}
-                          tint={devColorMap[group.devId]}
-                          pendingLotId={pendingLotId}
-                          pendingPhaseId={pendingPhaseId}
-                          activeDragType={activeDragType}
-                          collapsedPhaseIds={collapsedPhaseIds}
-                          onToggleCollapse={togglePhaseCollapse}
-                          onAutoSort={handleAutoSort}
-                          availableWidth={effectiveWidth}
-                          relaxCap={isSolo && group.instruments.length === 1}
-                          onRefetch={refetch}
-                          onProjectedSaved={handleProjectedSaved}
-                        />
-                      )
-                    })}
-
-                  </div>
-                </SortableContext>
-              </>
+                  Collapse all
+                </button>
+                <button
+                  onClick={expandAll}
+                  style={{
+                    fontSize: 13, padding: '5px 10px', borderRadius: 6,
+                    border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Expand all
+                </button>
+              </div>
             )}
+          </div>
+
+          {/* ---------------------------------------------------------------- */}
+          {/* Content row — left column + main scrollable area                 */}
+          {/* ---------------------------------------------------------------- */}
+          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+
+            {/* Left column — Unassigned Lots (top) + No Instrument (bottom) */}
+            <div
+              style={{ width: 168, flexShrink: 0 }}
+              className="h-full flex flex-col border-r border-gray-200 overflow-hidden"
+            >
+              <div className="flex-1 min-h-0">
+                <UnassignedColumn lots={unassigned} pendingLotId={pendingLotId} />
+              </div>
+              <div className="flex-1 min-h-0 overflow-auto border-t border-gray-200">
+                <InstrumentContainer
+                  instrument={null}
+                  phases={unassignedPhases}
+                  tint={null}
+                  pendingLotId={pendingLotId}
+                  pendingPhaseId={pendingPhaseId}
+                  activeDragType={activeDragType}
+                  collapsedPhaseIds={collapsedPhaseIds}
+                  onToggleCollapse={togglePhaseCollapse}
+                />
+              </div>
+            </div>
+
+            {/* Main scrollable area */}
+            <div className="flex-1 overflow-auto p-4" style={{ background: '#f9fafb' }}>
+
+              {loading && (
+                <div className="flex items-center justify-center min-h-[calc(100vh-2rem)] text-gray-500">
+                  Loading…
+                </div>
+              )}
+
+              {fetchError && (
+                <div className="flex items-center justify-center min-h-[calc(100vh-2rem)] text-red-600">
+                  Failed to load: {fetchError}
+                </div>
+              )}
+
+              {!loading && !fetchError && (
+                <>
+                  {/* Needs-rerun banner — hidden until simulation trigger is wired */}
+                  {!hideOutdatedWarning && needsRerun && (
+                    <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 font-medium">
+                      ⚠ Simulation results are outdated. Run simulation to update.
+                    </div>
+                  )}
+
+                  {/* PG containers */}
+                  <SortableContext
+                    items={pgOrder.map((id) => `pg-${id}`)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div ref={pgWrapperRef} className="flex flex-wrap gap-4 p-4 items-start">
+                      {pgGroups.map((group) => {
+                        const isSolo = soloDevIds.has(String(group.devId))
+                        const effectiveWidth = isSolo
+                          ? (pgWrapperRef.current?.clientWidth ?? availableWidth) - 32
+                          : availableWidth
+                        return (
+                          <ProjectionGroupContainer
+                            key={group.devId}
+                            devId={group.devId}
+                            devName={group.devName}
+                            instruments={group.instruments}
+                            tint={devColorMap[group.devId]}
+                            pendingLotId={pendingLotId}
+                            pendingPhaseId={pendingPhaseId}
+                            activeDragType={activeDragType}
+                            collapsedPhaseIds={collapsedPhaseIds}
+                            onToggleCollapse={togglePhaseCollapse}
+                            onAutoSort={handleAutoSort}
+                            availableWidth={effectiveWidth}
+                            relaxCap={isSolo && group.instruments.length === 1}
+                            onRefetch={refetch}
+                            onProjectedSaved={handleProjectedSaved}
+                          />
+                        )
+                      })}
+
+                    </div>
+                  </SortableContext>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -640,87 +738,6 @@ export default function LotPhaseView() {
       </DndContext>
         )}
       </div>
-
-      {/* Add instrument modal */}
-      {showAddInstrument && (
-        <div
-          style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={() => setShowAddInstrument(false)}
-        >
-          <div
-            style={{ background: 'white', borderRadius: 10, padding: '24px', width: 380, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="text-base font-semibold text-gray-800 mb-4">Add instrument</h2>
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Instrument name</label>
-                <input
-                  autoFocus
-                  type="text"
-                  value={newInstrName}
-                  onChange={(e) => setNewInstrName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreateInstrument(); if (e.key === 'Escape') setShowAddInstrument(false) }}
-                  className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
-                  placeholder="e.g. Waterton North Plat"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Instrument type</label>
-                <select
-                  value={newInstrType}
-                  onChange={(e) => setNewInstrType(e.target.value)}
-                  className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
-                >
-                  {['Plat', 'Site Condo', 'Condo Declaration', 'Other'].map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Development</label>
-                <select
-                  value={newInstrDevId ?? ''}
-                  onChange={(e) => setNewInstrDevId(Number(e.target.value))}
-                  disabled={modalDevs.length === 0}
-                  className="w-full text-sm border border-gray-300 rounded px-2 py-1.5 focus:outline-none focus:border-blue-400"
-                >
-                  {modalDevs.length === 0 ? (
-                    <option value="" disabled>No developments found for this community</option>
-                  ) : (
-                    modalDevs.map((d) => (
-                      <option key={d.dev_id} value={d.dev_id}>{d.dev_name}</option>
-                    ))
-                  )}
-                </select>
-                {modalDevs.length === 0 && (
-                  <p style={{ fontSize: 12, color: '#888780', marginTop: 4 }}>
-                    No developments are linked to this community yet. Developments must be set up before adding instruments.
-                  </p>
-                )}
-              </div>
-              {addInstrError && (
-                <p className="text-xs text-red-600">{addInstrError}</p>
-              )}
-              <div className="flex gap-2 justify-end mt-1">
-                <button
-                  onClick={() => setShowAddInstrument(false)}
-                  className="rounded border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateInstrument}
-                  disabled={addInstrCreating}
-                  className="rounded bg-blue-500 text-white px-3 py-1.5 text-xs font-medium hover:bg-blue-600 disabled:opacity-40"
-                >
-                  {addInstrCreating ? 'Creating…' : 'Create'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Toast stack — lot-phase tab only */}
       <div className="fixed bottom-4 right-4 flex flex-col gap-2 z-50">

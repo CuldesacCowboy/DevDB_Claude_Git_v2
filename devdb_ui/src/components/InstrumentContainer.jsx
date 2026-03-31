@@ -276,8 +276,8 @@ export default function InstrumentContainer({
                   style={{
                     fontSize: 14,
                     fontWeight: 700,
-                    border: '1px dashed #378ADD',
-                    background: '#E6F1FB',
+                    border: '1px dashed #3B6D11',
+                    background: '#EAF3DE',
                     borderRadius: 3,
                     padding: '1px 4px',
                     outline: 'none',
@@ -372,7 +372,11 @@ export default function InstrumentContainer({
       {/* Add phase inline form */}
       {!isNoInstrument && showAddPhase && (
         <div
-          className="mx-2 mt-2 border border-blue-200 rounded bg-blue-50 p-2 flex flex-col gap-1.5"
+          style={{
+            margin: '8px 8px 0', padding: '10px 14px',
+            background: '#fff', borderRadius: 8, border: '1.5px solid #E4E2DA',
+            display: 'flex', flexDirection: 'column', gap: 8,
+          }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           <input
@@ -385,22 +389,34 @@ export default function InstrumentContainer({
               if (e.key === 'Escape') setShowAddPhase(false)
             }}
             placeholder="Phase name"
-            className="w-full text-[11px] border border-gray-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400 bg-white"
+            style={{
+              fontSize: 13, padding: '4px 8px', borderRadius: 5,
+              border: '1px solid #d1d5db', outline: 'none', width: '100%', boxSizing: 'border-box',
+            }}
           />
           {addPhaseError && (
-            <p className="text-[11px] text-red-600">{addPhaseError}</p>
+            <p style={{ fontSize: 11, color: '#dc2626', margin: 0 }}>{addPhaseError}</p>
           )}
-          <div className="flex gap-1 justify-end">
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
             <button
               onClick={() => setShowAddPhase(false)}
-              className="text-[11px] px-2 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-100"
+              style={{
+                fontSize: 12, padding: '3px 10px', borderRadius: 5,
+                border: '1px solid #d1d5db', background: '#fff', color: '#6b7280',
+                cursor: 'pointer',
+              }}
             >
               Cancel
             </button>
             <button
               onClick={handleAddPhase}
               disabled={addPhaseSaving}
-              className="text-[11px] px-2 py-0.5 rounded bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-40"
+              style={{
+                fontSize: 12, padding: '3px 10px', borderRadius: 5,
+                border: 'none', background: '#2563eb', color: '#fff',
+                cursor: addPhaseSaving ? 'default' : 'pointer',
+                opacity: addPhaseSaving ? 0.6 : 1,
+              }}
             >
               {addPhaseSaving ? 'Adding…' : 'Add phase'}
             </button>
