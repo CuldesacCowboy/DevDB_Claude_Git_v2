@@ -7,10 +7,10 @@ export function fmt(dateStr) {
   return `${m}/${d}/${y.slice(2)}`
 }
 
-// ── Short lot number: "WS00000001" → "WS · 001" ──────────────────
+// ── Short lot number: "WS00000001" → "WS · 001", "4300000001" → "43 · 001" ──
 export function shortLot(lotNumber) {
   if (!lotNumber) return '—'
-  const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
+  const match = lotNumber.match(/^([A-Za-z]+|\d{2})0*(\d+)$/)
   if (!match) return lotNumber
   const seq = parseInt(match[2], 10)
   return `${match[1]} · ${String(seq).padStart(3, '0')}`
@@ -19,7 +19,7 @@ export function shortLot(lotNumber) {
 // ── Parse lot into { code, seq } ─────────────────────────────────
 export function parseLot(lotNumber) {
   if (!lotNumber) return { code: '—', seq: '—' }
-  const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
+  const match = lotNumber.match(/^([A-Za-z]+|\d{2})0*(\d+)$/)
   if (!match) return { code: lotNumber, seq: '' }
   return { code: match[1], seq: String(parseInt(match[2], 10)).padStart(3, '0') }
 }
