@@ -48,6 +48,39 @@ class RenameTdaRequest(BaseModel):
 router = APIRouter(tags=["takedown-agreements"])
 
 
+@router.get("/entitlement-groups/{ent_group_id}/tda-unassigned-lots")
+def get_tda_unassigned_lots(ent_group_id: int, conn=Depends(get_db_conn)):
+    """Real lots for this community not yet in any TDA."""
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """
+            SELECT DISTINCT l.lot_id, l.lot_number, l.building_group_id
+            FROM devdb.sim_lots l
+            JOIN devdb.sim_dev_phases p ON p.phase_id = l.phase_id
+            JOIN devdb.dim_development dd ON dd.development_id = p.dev_id
+            JOIN devdb.developments d ON d.marks_code = dd.dev_code2
+            WHERE d.community_id = %s
+              AND d.marks_code IS NOT NULL
+              AND l.lot_source = 'real'
+              AND l.lot_id NOT IN (
+                  SELECT tal.lot_id
+                  FROM devdb.sim_takedown_agreement_lots tal
+                  JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
+                  WHERE tda.ent_group_id = %s
+              )
+            ORDER BY l.lot_number ASC
+            """,
+            (ent_group_id, ent_group_id),
+        )
+        return [
+            {"lot_id": r["lot_id"], "lot_number": r["lot_number"], "building_group_id": r["building_group_id"]}
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
 @router.get("/entitlement-groups/{ent_group_id}/takedown-agreements")
 def list_takedown_agreements(ent_group_id: int, conn=Depends(get_db_conn)):
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

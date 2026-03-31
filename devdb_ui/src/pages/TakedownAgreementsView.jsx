@@ -17,6 +17,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
     agreements, entGroupName,
     selectedTdaId, setSelectedTdaId,
     detail,
+    unassignedLots,
     mutationStatus,
     renameTda,
     createTda,
@@ -173,35 +174,35 @@ export default function TakedownAgreementsView({ entGroupId }) {
       />
 
       {/* Main content — scrollable */}
-      {detail ? (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={pointerWithin}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <div style={{
-            flex: 1, overflowY: 'auto', padding: 24,
-            display: 'flex', gap: 20, alignItems: 'flex-start',
-          }}>
-            {/* Left panel: Unassigned only */}
-            <UnassignedBank
-              lots={detail.unassigned_lots || []}
-              selectedIds={selectedLotIds}
-              onToggle={toggleLotSelection}
-              onToggleDevGroup={toggleDevGroupSelection}
-              onAddToPool={() => {
-                if (!detail || selectedLotIds.size === 0) return
-                const ids = [...selectedLotIds]
-                clearLotSelection()
-                addLotsToPool(detail.tda_id, ids)
-              }}
-              onClearSelection={clearLotSelection}
-              onContextMenu={handleContextMenu}
-              dragLot={dragLot}
-            />
+      <DndContext
+        sensors={sensors}
+        collisionDetection={pointerWithin}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <div style={{
+          flex: 1, overflowY: 'auto', padding: 24,
+          display: 'flex', gap: 20, alignItems: 'flex-start',
+        }}>
+          {/* Left panel: Unassigned — always visible */}
+          <UnassignedBank
+            lots={unassignedLots}
+            selectedIds={selectedLotIds}
+            onToggle={toggleLotSelection}
+            onToggleDevGroup={toggleDevGroupSelection}
+            onAddToPool={() => {
+              if (!detail || selectedLotIds.size === 0) return
+              const ids = [...selectedLotIds]
+              clearLotSelection()
+              addLotsToPool(detail.tda_id, ids)
+            }}
+            onClearSelection={clearLotSelection}
+            onContextMenu={handleContextMenu}
+            dragLot={dragLot}
+          />
 
-            {/* TDA card: editable name + In Agreement pool + checkpoints */}
+          {/* TDA card area — only when a TDA is selected */}
+          {detail ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
               <TdaCard
                 detail={detail}
@@ -237,19 +238,19 @@ export default function TakedownAgreementsView({ entGroupId }) {
                 ))}
               </TdaCard>
             </div>
-          </div>
-
-          <TdaDragOverlay
-            dragLot={dragLot}
-            selectedLotIds={selectedLotIds}
-            selectedPoolLotIds={selectedPoolLotIds}
-          />
-        </DndContext>
-      ) : (
-        <div style={{ padding: 32, color: '#9ca3af', fontSize: 15 }}>
-          No agreement selected.
+          ) : (
+            <div style={{ padding: '32px 0', color: '#9ca3af', fontSize: 15 }}>
+              No agreement selected. Create one above to get started.
+            </div>
+          )}
         </div>
-      )}
+
+        <TdaDragOverlay
+          dragLot={dragLot}
+          selectedLotIds={selectedLotIds}
+          selectedPoolLotIds={selectedPoolLotIds}
+        />
+      </DndContext>
 
       {/* Right-click context menu */}
       {contextMenu && (

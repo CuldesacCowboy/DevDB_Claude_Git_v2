@@ -15,6 +15,7 @@ export function useTdaData(entGroupId) {
   const [selectedTdaId, setSelectedTdaId] = useState(null)
   const [detail, setDetail] = useState(null)
   const [entGroupName, setEntGroupName] = useState('')
+  const [unassignedLots, setUnassignedLots] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -53,6 +54,7 @@ export function useTdaData(entGroupId) {
     setSelectedTdaId(null)
     setDetail(null)
     setAgreements([])
+    setUnassignedLots([])
   }, [entGroupId])
 
   // Fix 3: AbortController prevents stale responses from landing after entGroupId changes.
@@ -79,6 +81,23 @@ export function useTdaData(entGroupId) {
     fetchDetail(controller.signal)
     return () => controller.abort()
   }, [fetchDetail])
+
+  const fetchUnassignedLots = useCallback((signal = undefined) => {
+    if (!entGroupId) return
+    fetch(`${API_BASE}/entitlement-groups/${entGroupId}/tda-unassigned-lots`, { signal })
+      .then(r => r.json())
+      .then(data => setUnassignedLots(Array.isArray(data) ? data : []))
+      .catch(e => {
+        if (e.name === 'AbortError') return
+        // non-fatal — unassigned bank just stays empty
+      })
+  }, [entGroupId])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchUnassignedLots(controller.signal)
+    return () => controller.abort()
+  }, [fetchUnassignedLots])
 
   // ── Mutations ───────────────────────────────────────────────────
 
@@ -214,10 +233,11 @@ export function useTdaData(entGroupId) {
       }
       setMutationStatus(IDLE)
       fetchDetail()
+      fetchUnassignedLots()
     } catch (e) {
       setMutationStatus(errorState(e))
     }
-  }, [fetchDetail])
+  }, [fetchDetail, fetchUnassignedLots])
 
   // Fix 1: collect all responses, surface the first failure if any.
   const removeLotsFromPool = useCallback(async (tdaId, lotIds) => {
@@ -234,10 +254,11 @@ export function useTdaData(entGroupId) {
       }
       setMutationStatus(IDLE)
       fetchDetail()
+      fetchUnassignedLots()
     } catch (e) {
       setMutationStatus(errorState(e))
     }
-  }, [fetchDetail])
+  }, [fetchDetail, fetchUnassignedLots])
 
   // Fix 1: collect all responses, surface the first failure if any.
   const assignLotsToCheckpoint = useCallback(async (tdaId, lotIds, checkpointId) => {
@@ -302,10 +323,11 @@ export function useTdaData(entGroupId) {
       setMutationStatus(IDLE)
       fetchAgreements()
       fetchDetail()
+      fetchUnassignedLots()
     } catch (e) {
       setMutationStatus(errorState(e))
     }
-  }, [fetchAgreements, fetchDetail])
+  }, [fetchAgreements, fetchDetail, fetchUnassignedLots])
 
   return {
     // Read state
@@ -314,6 +336,7 @@ export function useTdaData(entGroupId) {
     selectedTdaId,
     setSelectedTdaId,
     detail,
+    unassignedLots,
     loading,
     error,
     // Mutation status
