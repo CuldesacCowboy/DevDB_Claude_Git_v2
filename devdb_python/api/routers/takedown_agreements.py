@@ -448,21 +448,19 @@ def assign_lot_to_checkpoint(tda_id: int, lot_id: int, body: AssignLotRequest, c
         if cur.fetchone() is None:
             raise HTTPException(status_code=422, detail=f"Checkpoint {checkpoint_id} does not belong to TDA {tda_id}.")
 
-        # 4. Generate assignment_id (no IDENTITY on this table — D-086 pattern)
-        cur.execute("SELECT COALESCE(MAX(assignment_id), 0) + 1 AS new_id FROM devdb.sim_takedown_lot_assignments")
-        new_assignment_id = int(cur.fetchone()["new_id"])
-
-        # 5. INSERT into sim_takedown_lot_assignments
+        # 4. INSERT into sim_takedown_lot_assignments — assignment_id uses sequence default
         cur.execute(
             """
             INSERT INTO devdb.sim_takedown_lot_assignments
-                (assignment_id, checkpoint_id, lot_id, assigned_at, hc_is_locked, bldr_is_locked)
-            VALUES (%s, %s, %s, now(), false, false)
+                (checkpoint_id, lot_id, assigned_at, hc_is_locked, bldr_is_locked)
+            VALUES (%s, %s, now(), false, false)
+            RETURNING assignment_id
             """,
-            (new_assignment_id, checkpoint_id, lot_id),
+            (checkpoint_id, lot_id),
         )
+        new_assignment_id = int(cur.fetchone()["assignment_id"])
 
-        # 6. Audit log
+        # 5. Audit log
         cur.execute(
             """
             INSERT INTO devdb.sim_assignment_log
