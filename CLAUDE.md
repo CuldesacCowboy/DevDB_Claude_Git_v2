@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: March 2026 (2026-03-31) | Architecture v20 | Decision Log: D-001 through D-151 | Next ID: D-152*
+*Last updated: March 2026 (2026-04-01) | Architecture v20 | Decision Log: D-001 through D-151 | Next ID: D-152*
 
 ---
 
@@ -808,7 +808,7 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: api.deps, psycopg2.extras, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments, sim_lots, sim_entitlement_groups
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_python/api/routers/phases.py
 - Owns: Phase CRUD, lot-type split management; DELETE /{phase_id}/lot-type registered BEFORE DELETE /{phase_id} (route ordering is intentional)
@@ -850,11 +850,11 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-29
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
-- Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker sidebar; add instrument modal
+- Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker sidebar; add instrument inline form (replaces modal — expands in page header matching TDA pattern)
 - Imports: dnd-kit, react, hooks (useLotPhaseData, useDragHandler, usePhaseEqualization), components, CommunityDevelopmentsView
 - Imported by: App.jsx
 - Tables: none (API calls via /api/entitlement-groups, /api/developments, /api/instruments, /api/phases)
-- Last commit: 2026-03-30
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/CommunityDevelopmentsView.jsx
 - Owns: Community-development assignment view; unassigned dev panel; community pills; alphabet slider; drag-to-create-community
@@ -868,14 +868,14 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: dnd-kit, react, useTdaData, useTdaDragHandler, LeftPanel, TdaPageHeader, CheckpointBand, TdaCard, TdaDragOverlay, TdaNavBar, ContextMenu
 - Imported by: LotPhaseView.jsx (as tab)
 - Tables: none (API calls via /api/takedown-agreements)
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/components/InstrumentContainer.jsx
-- Owns: Draggable/droppable legal instrument card with phase columns, aggregate lot-type totals, inline rename
+- Owns: Draggable/droppable legal instrument card with phase columns, aggregate lot-type totals, inline rename; warm neutral card chrome (#F0EEE8 header, #F7F6F3 body) matching TDA aesthetic; green dashed inline name edit (#3B6D11/#EAF3DE)
 - Imports: dnd-kit, react, PhaseColumn, computeCols
 - Imported by: LotPhaseView.jsx
 - Tables: none
-- Last commit: 2026-03-29
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/components/PhaseColumn.jsx
 - Owns: Phase card with per-lot-type split rows, inline name edit, add product type form, delete confirm, auto-delete lot type on 0/0/0
@@ -899,11 +899,11 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-27
 
 ### devdb_ui/src/components/ProjectionGroupContainer.jsx
-- Owns: Development-level wrapper for all instruments; equalized row heights; aggregate counts
+- Owns: Development-level wrapper for all instruments; equalized row heights; aggregate counts; warm neutral card chrome (#F0EEE8 header, #F7F6F3 body) matching TDA aesthetic
 - Imports: dnd-kit, react, InstrumentContainer
 - Imported by: LotPhaseView.jsx
 - Tables: none
-- Last commit: 2026-03-29
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/components/UnassignedColumn.jsx
 - Owns: Sticky panel of lots with phase_id = NULL; droppable for unassign operations
@@ -924,7 +924,7 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: react, dnd-kit (useDroppable), LotPill, StitchConnector, PlaceholderPill, CheckpointTimeline, tdaUtils
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/components/CheckpointTimeline.jsx
 - Owns: Checkpoint timeline visualization extracted from TakedownAgreementsView
@@ -938,21 +938,21 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: react, dnd-kit (useDraggable, useDroppable), tdaUtils (parseLot)
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/components/LotPill.jsx
 - Owns: Assigned lot pill (expanded + condensed modes); PlaceholderPill (expanded + condensed); StitchConnector; LockIcon; LockBtn; ProjectedDateField; isSelected highlight; onContextMenu passthrough
 - Imports: dnd-kit (useDraggable), react, tdaUtils (fmt, shortLot, parseLot)
 - Imported by: CheckpointBand.jsx
 - Tables: none
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/components/TdaCard.jsx
 - Owns: TDA card shell; EditableTdaName (green dashed inline editor, PATCH on save); PoolSection (inline In Agreement droppable with pool lot pills, landing zone highlight); add-checkpoint form
 - Imports: react, dnd-kit (useDraggable, useDroppable), tdaUtils (parseLot)
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/components/TdaDragOverlay.jsx
 - Owns: Drag overlay component for TDA view; renders floating pill during drag
@@ -966,21 +966,21 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: react
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/components/TdaNavBar.jsx
 - Owns: Horizontal TDA navigation bar; clickable pills (name + lot count) for all community agreements; active pill highlighted green; replaces OtherTdaTile left-panel section
 - Imports: react
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/components/ContextMenu.jsx
 - Owns: Right-click context menu; backdrop overlay; keyboard Escape to close; viewport clamping; renders action items from caller
 - Imports: react (useEffect)
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/hooks/useLotPhaseData.js
 - Owns: Data fetching and caching for entitlement group lot-phase view (instruments, phases, lots)
@@ -1004,18 +1004,18 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-29
 
 ### devdb_ui/src/hooks/useTdaData.js
-- Owns: Data fetching for TDA view -- agreement list, checkpoint detail, lot assignments; HC/BLDR projected date and lock state management; all TDA mutations including renameTda (PATCH /takedown-agreements/{id})
+- Owns: Data fetching for TDA view -- agreement list, checkpoint detail, lot assignments; HC/BLDR projected date and lock state management; all TDA mutations including renameTda (PATCH /takedown-agreements/{id}); res.ok checks on all mutations; AbortController cleanup on fetchAgreements and fetchDetail useEffects
 - Imports: react (useState, useEffect, useCallback), src/config.js
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none (API calls via /api/takedown-agreements)
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/hooks/useTdaDragHandler.js
 - Owns: Drag orchestration for TDA view; manages dnd-kit sensors, drag state, drop dispatch; selectedAssignedLotIds for checkpoint lot multi-select; toggleAssignedCheckpointSelection for header select-all
 - Imports: dnd-kit, react
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
-- Last commit: 2026-03-31
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/config.js
 - Owns: Centralized API base URL and frontend config constants
