@@ -24,10 +24,11 @@ export function useTdaData(entGroupId) {
   const [mutationStatus, setMutationStatus] = useState(IDLE)
 
   // ── Fetch helpers ───────────────────────────────────────────────
-  const fetchAgreements = useCallback((selectId = null) => {
+  // signal is passed from the useEffect cleanup; mutation-triggered calls omit it.
+  const fetchAgreements = useCallback((selectId = null, signal = undefined) => {
     if (!entGroupId) return
     setLoading(true)
-    fetch(`${API_BASE}/entitlement-groups/${entGroupId}/takedown-agreements`)
+    fetch(`${API_BASE}/entitlement-groups/${entGroupId}/takedown-agreements`, { signal })
       .then(r => r.json())
       .then(data => {
         setEntGroupName(data.ent_group_name || '')
@@ -39,20 +40,37 @@ export function useTdaData(entGroupId) {
         }
         setLoading(false)
       })
-      .catch(e => { setError(e.message); setLoading(false) })
+      .catch(e => {
+        if (e.name === 'AbortError') return
+        setError(e.message)
+        setLoading(false)
+      })
   }, [entGroupId])
 
-  useEffect(() => { fetchAgreements() }, [fetchAgreements])
+  // Fix 3: AbortController prevents stale responses from landing after entGroupId changes.
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchAgreements(null, controller.signal)
+    return () => controller.abort()
+  }, [fetchAgreements])
 
-  const fetchDetail = useCallback(() => {
+  const fetchDetail = useCallback((signal = undefined) => {
     if (!selectedTdaId) return
-    fetch(`${API_BASE}/takedown-agreements/${selectedTdaId}/detail`)
+    fetch(`${API_BASE}/takedown-agreements/${selectedTdaId}/detail`, { signal })
       .then(r => r.json())
       .then(data => setDetail(data))
-      .catch(e => setError(e.message))
+      .catch(e => {
+        if (e.name === 'AbortError') return
+        setError(e.message)
+      })
   }, [selectedTdaId])
 
-  useEffect(() => { fetchDetail() }, [fetchDetail])
+  // Fix 3: AbortController prevents stale detail responses from landing after TDA switches.
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchDetail(controller.signal)
+    return () => controller.abort()
+  }, [fetchDetail])
 
   // ── Mutations ───────────────────────────────────────────────────
 
@@ -107,10 +125,11 @@ export function useTdaData(entGroupId) {
     }
   }, [entGroupId, fetchAgreements])
 
+  // Fix 1: read response, check res.ok, surface backend error message.
   const createCheckpoint = useCallback(async (tdaId, { checkpointDate, lotsRequired }) => {
     setMutationStatus(SAVING)
     try {
-      await fetch(`${API_BASE}/takedown-agreements/${tdaId}/checkpoints`, {
+      const res = await fetch(`${API_BASE}/takedown-agreements/${tdaId}/checkpoints`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -118,6 +137,11 @@ export function useTdaData(entGroupId) {
           lots_required_cumulative: parseInt(lotsRequired, 10) || 0,
         }),
       })
+      if (!res.ok) {
+        const body = await res.json()
+        setMutationStatus(errorState(body.detail || 'Failed to create checkpoint.'))
+        return
+      }
       setMutationStatus(IDLE)
       fetchDetail()
     } catch (e) {
@@ -125,14 +149,20 @@ export function useTdaData(entGroupId) {
     }
   }, [fetchDetail])
 
+  // Fix 1: read response, check res.ok.
   const updateAssignmentDates = useCallback(async (assignmentId, patch) => {
     setMutationStatus(SAVING)
     try {
-      await fetch(`${API_BASE}/tda-lot-assignments/${assignmentId}/dates`, {
+      const res = await fetch(`${API_BASE}/tda-lot-assignments/${assignmentId}/dates`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       })
+      if (!res.ok) {
+        const body = await res.json()
+        setMutationStatus(errorState(body.detail || 'Failed to update dates.'))
+        return
+      }
       setMutationStatus(IDLE)
       fetchDetail()
     } catch (e) {
@@ -140,14 +170,20 @@ export function useTdaData(entGroupId) {
     }
   }, [fetchDetail])
 
+  // Fix 1: read response, check res.ok.
   const updateAssignmentLock = useCallback(async (assignmentId, patch) => {
     setMutationStatus(SAVING)
     try {
-      await fetch(`${API_BASE}/tda-lot-assignments/${assignmentId}/lock`, {
+      const res = await fetch(`${API_BASE}/tda-lot-assignments/${assignmentId}/lock`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       })
+      if (!res.ok) {
+        const body = await res.json()
+        setMutationStatus(errorState(body.detail || 'Failed to update lock.'))
+        return
+      }
       setMutationStatus(IDLE)
       fetchDetail()
     } catch (e) {
@@ -155,12 +191,19 @@ export function useTdaData(entGroupId) {
     }
   }, [fetchDetail])
 
+  // Fix 1: collect all responses, surface the first failure if any.
   const addLotsToPool = useCallback(async (tdaId, lotIds) => {
     setMutationStatus(SAVING)
     try {
-      await Promise.all(lotIds.map(id =>
+      const responses = await Promise.all(lotIds.map(id =>
         fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${id}/pool`, { method: 'POST' })
       ))
+      const failed = responses.find(r => !r.ok)
+      if (failed) {
+        const body = await failed.json()
+        setMutationStatus(errorState(body.detail || 'Failed to add lots to pool.'))
+        return
+      }
       setMutationStatus(IDLE)
       fetchDetail()
     } catch (e) {
@@ -168,12 +211,19 @@ export function useTdaData(entGroupId) {
     }
   }, [fetchDetail])
 
+  // Fix 1: collect all responses, surface the first failure if any.
   const removeLotsFromPool = useCallback(async (tdaId, lotIds) => {
     setMutationStatus(SAVING)
     try {
-      await Promise.all(lotIds.map(id =>
+      const responses = await Promise.all(lotIds.map(id =>
         fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${id}/pool`, { method: 'DELETE' })
       ))
+      const failed = responses.find(r => !r.ok)
+      if (failed) {
+        const body = await failed.json()
+        setMutationStatus(errorState(body.detail || 'Failed to remove lots from pool.'))
+        return
+      }
       setMutationStatus(IDLE)
       fetchDetail()
     } catch (e) {
@@ -181,16 +231,23 @@ export function useTdaData(entGroupId) {
     }
   }, [fetchDetail])
 
+  // Fix 1: collect all responses, surface the first failure if any.
   const assignLotsToCheckpoint = useCallback(async (tdaId, lotIds, checkpointId) => {
     setMutationStatus(SAVING)
     try {
-      await Promise.all(lotIds.map(id =>
+      const responses = await Promise.all(lotIds.map(id =>
         fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${id}/assign`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ checkpoint_id: checkpointId }),
         })
       ))
+      const failed = responses.find(r => !r.ok)
+      if (failed) {
+        const body = await failed.json()
+        setMutationStatus(errorState(body.detail || 'Failed to assign lots.'))
+        return
+      }
       setMutationStatus(IDLE)
       fetchDetail()
     } catch (e) {
@@ -198,10 +255,16 @@ export function useTdaData(entGroupId) {
     }
   }, [fetchDetail])
 
+  // Fix 1: read response, check res.ok.
   const unassignLotFromCheckpoint = useCallback(async (tdaId, lotId) => {
     setMutationStatus(SAVING)
     try {
-      await fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, { method: 'DELETE' })
+      if (!res.ok) {
+        const body = await res.json()
+        setMutationStatus(errorState(body.detail || 'Failed to unassign lot.'))
+        return
+      }
       setMutationStatus(IDLE)
       fetchDetail()
     } catch (e) {
@@ -209,15 +272,25 @@ export function useTdaData(entGroupId) {
     }
   }, [fetchDetail])
 
-  // Move lot across TDAs: remove from source pool, add to target pool.
-  // If lot is assigned to a checkpoint in the source TDA, unassign first.
-  const moveLotToOtherTda = useCallback(async (sourceTdaId, targetTdaId, lotId, isAssigned) => {
+  // Fix 2: source pool DELETE always runs — it removes the lot from the source TDA
+  // (the backend handles checkpoint unassignment as part of the pool DELETE).
+  // isAssigned is retained in the signature to avoid changing the call sites, but
+  // it no longer gates the source DELETE.
+  const moveLotToOtherTda = useCallback(async (sourceTdaId, targetTdaId, lotId, isAssigned) => { // eslint-disable-line no-unused-vars
     setMutationStatus(SAVING)
     try {
-      if (isAssigned) {
-        await fetch(`${API_BASE}/takedown-agreements/${sourceTdaId}/lots/${lotId}/pool`, { method: 'DELETE' })
+      const delRes = await fetch(`${API_BASE}/takedown-agreements/${sourceTdaId}/lots/${lotId}/pool`, { method: 'DELETE' })
+      if (!delRes.ok) {
+        const body = await delRes.json()
+        setMutationStatus(errorState(body.detail || 'Failed to remove lot from source TDA.'))
+        return
       }
-      await fetch(`${API_BASE}/takedown-agreements/${targetTdaId}/lots/${lotId}/pool`, { method: 'POST' })
+      const addRes = await fetch(`${API_BASE}/takedown-agreements/${targetTdaId}/lots/${lotId}/pool`, { method: 'POST' })
+      if (!addRes.ok) {
+        const body = await addRes.json()
+        setMutationStatus(errorState(body.detail || 'Failed to add lot to target TDA.'))
+        return
+      }
       setMutationStatus(IDLE)
       fetchAgreements()
       fetchDetail()
