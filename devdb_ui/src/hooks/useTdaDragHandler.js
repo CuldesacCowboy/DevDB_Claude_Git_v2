@@ -26,6 +26,9 @@ export function useTdaDragHandler({
     setSelectedPoolLotIds(new Set())
   }
 
+  function clearLotSelection() { setSelectedLotIds(new Set()) }
+  function clearPoolLotSelection() { setSelectedPoolLotIds(new Set()) }
+
   function toggleLotSelection(lotId) {
     setSelectedLotIds(prev => {
       const next = new Set(prev)
@@ -161,6 +164,8 @@ export function useTdaDragHandler({
     selectedLotIds,
     selectedPoolLotIds,
     clearSelectionsForTda,
+    clearLotSelection,
+    clearPoolLotSelection,
     toggleLotSelection,
     toggleDevGroupSelection,
     togglePoolLotSelection,
