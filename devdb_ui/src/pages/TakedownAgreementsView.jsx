@@ -1,9 +1,8 @@
-import { useState, useCallback, useRef, useLayoutEffect, useMemo, useEffect } from 'react'
+import { useState, useRef, useLayoutEffect, useMemo, useEffect } from 'react'
 import { DndContext, DragOverlay, pointerWithin, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
 import { fmt, shortLot, parseLot, buildClusters } from '../utils/tdaUtils'
-import { API_BASE } from '../config'
 import CheckpointTimeline from '../components/CheckpointTimeline'
 
 // ── Draggable unassigned lot pill ─────────────────────────────────
@@ -376,7 +375,7 @@ function OtherTdaTile({ agreement, onNavigate }) {
 }
 
 // ── TDA card wrapper ──────────────────────────────────────────────
-function TdaCard({ detail, onCheckpointCreated, children }) {
+function TdaCard({ detail, onAddCheckpoint, children }) {
   const poolCount = detail.pool_lots?.length || 0
   const cpCounts = (detail.checkpoints || []).map(cp => ({ name: cp.checkpoint_name, count: cp.lots?.length || 0 }))
   const totalLots = poolCount + cpCounts.reduce((sum, cp) => sum + cp.count, 0)
@@ -388,16 +387,8 @@ function TdaCard({ detail, onCheckpointCreated, children }) {
   async function handleAddCheckpoint() {
     setCpCreating(true)
     try {
-      await fetch(`${API_BASE}/takedown-agreements/${detail.tda_id}/checkpoints`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          checkpoint_date: cpDate || null,
-          lots_required_cumulative: parseInt(cpLots, 10) || 0,
-        }),
-      })
+      await onAddCheckpoint(cpDate || null, cpLots)
       setCpDate(''); setCpLots(''); setShowAddCP(false)
-      onCheckpointCreated()
     } finally {
       setCpCreating(false)
     }
@@ -1197,8 +1188,17 @@ export default function TakedownAgreementsView({ entGroupId }) {
   const {
     agreements, entGroupName,
     selectedTdaId, setSelectedTdaId,
-    detail, refetchDetail,
-    refetchAgreements,
+    detail,
+    mutationStatus,
+    createTda,
+    createCheckpoint,
+    updateAssignmentDates,
+    updateAssignmentLock,
+    addLotsToPool,
+    removeLotsFromPool,
+    assignLotsToCheckpoint,
+    unassignLotFromCheckpoint,
+    moveLotToOtherTda,
     loading, error,
   } = useTdaData(entGroupId)
 
@@ -1234,15 +1234,6 @@ export default function TakedownAgreementsView({ entGroupId }) {
     })
   }
 
-  async function handleAddSelectedToPool() {
-    if (!detail || selectedLotIds.size === 0) return
-    await Promise.all([...selectedLotIds].map(id =>
-      fetch(`${API_BASE}/takedown-agreements/${detail.tda_id}/lots/${id}/pool`, { method: 'POST' })
-    ))
-    setSelectedLotIds(new Set())
-    refetchDetail()
-  }
-
   function togglePoolLotSelection(lotId) {
     setSelectedPoolLotIds(prev => {
       const next = new Set(prev)
@@ -1263,64 +1254,18 @@ export default function TakedownAgreementsView({ entGroupId }) {
     })
   }
 
-  async function handleRemoveSelectedFromPool() {
-    if (!detail || selectedPoolLotIds.size === 0) return
-    await Promise.all([...selectedPoolLotIds].map(id =>
-      fetch(`${API_BASE}/takedown-agreements/${detail.tda_id}/lots/${id}/pool`, { method: 'DELETE' })
-    ))
-    setSelectedPoolLotIds(new Set())
-    refetchDetail()
-  }
-
+  // ── Create TDA form state (local — ephemeral form fields only) ──
   const [showNewTdaForm, setShowNewTdaForm] = useState(false)
   const [newTdaName, setNewTdaName] = useState('')
-  const [newTdaCreating, setNewTdaCreating] = useState(false)
   const [newTdaError, setNewTdaError] = useState('')
 
   async function handleCreateTda() {
-    const name = newTdaName.trim()
-    if (!name) { setNewTdaError('Name is required.'); return }
-    setNewTdaCreating(true)
     setNewTdaError('')
-    try {
-      const res = await fetch(`${API_BASE}/takedown-agreements`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tda_name: name, ent_group_id: entGroupId }),
-      })
-      if (!res.ok) {
-        const err = await res.json()
-        setNewTdaError(err.detail || 'Failed to create agreement.')
-        return
-      }
-      const created = await res.json()
-      setNewTdaName('')
-      setShowNewTdaForm(false)
-      refetchAgreements(created.tda_id)
-    } finally {
-      setNewTdaCreating(false)
-    }
+    const result = await createTda(newTdaName)
+    if (!result.ok) { setNewTdaError(result.error); return }
+    setNewTdaName('')
+    setShowNewTdaForm(false)
   }
-
-  // ── Date update ──────────────────────────────────────────────
-  const handleDateChange = useCallback(async (assignmentId, patch) => {
-    await fetch(`${API_BASE}/tda-lot-assignments/${assignmentId}/dates`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    })
-    refetchDetail()
-  }, [refetchDetail])
-
-  // ── Lock toggle ──────────────────────────────────────────────
-  const handleLockChange = useCallback(async (assignmentId, patch) => {
-    await fetch(`${API_BASE}/tda-lot-assignments/${assignmentId}/lock`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    })
-    refetchDetail()
-  }, [refetchDetail])
 
   // ── Drag ─────────────────────────────────────────────────────
   function handleDragStart(event) {
@@ -1330,107 +1275,85 @@ export default function TakedownAgreementsView({ entGroupId }) {
   async function handleDragEnd(event) {
     setDragLot(null)
     const { active, over } = event
-    if (!over || !active) return
+    if (!over || !active || !detail) return
 
     const src = active.data.current
     const dst = over.data.current
     const tdaId = detail.tda_id
 
-    // Helper shortcuts
-    const assignToCP = (lotId, checkpointId) =>
-      fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ checkpoint_id: checkpointId }),
-      })
-    const unassignFromCP = (lotId) =>
-      fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, { method: 'DELETE' })
-    const addToPool = (lotId) =>
-      fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/pool`, { method: 'POST' })
-    const removeFromPool = (lotId) =>
-      fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/pool`, { method: 'DELETE' })
-
     // ── Global unassigned → TDA pool ──────────────────────────────
     if (src?.type === 'unassigned-lot' && dst?.type === 'tda-pool') {
       const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1
       const ids = isMulti ? [...selectedLotIds] : [src.lot.lot_id]
-      await Promise.all(ids.map(id => addToPool(id)))
       if (isMulti) setSelectedLotIds(new Set())
-      refetchDetail(); return
+      await addLotsToPool(tdaId, ids)
+      return
     }
 
     // ── Global unassigned → checkpoint ────────────────────────────
     if (src?.type === 'unassigned-lot' && dst?.type === 'checkpoint') {
       const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1
       const ids = isMulti ? [...selectedLotIds] : [src.lot.lot_id]
-      await Promise.all(ids.map(id => assignToCP(id, dst.checkpointId)))
       if (isMulti) setSelectedLotIds(new Set())
-      refetchDetail(); return
+      await assignLotsToCheckpoint(tdaId, ids, dst.checkpointId)
+      return
     }
 
     // ── TDA pool → checkpoint ─────────────────────────────────────
     if (src?.type === 'pool-lot' && dst?.type === 'checkpoint') {
       const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
       const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
-      await Promise.all(ids.map(id => assignToCP(id, dst.checkpointId)))
       if (isMulti) setSelectedPoolLotIds(new Set())
-      refetchDetail(); return
+      await assignLotsToCheckpoint(tdaId, ids, dst.checkpointId)
+      return
     }
 
     // ── TDA pool → global unassigned ─────────────────────────────
     if (src?.type === 'pool-lot' && dst?.type === 'unassigned-bank') {
       const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
       const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
-      await Promise.all(ids.map(id => removeFromPool(id)))
       if (isMulti) setSelectedPoolLotIds(new Set())
-      refetchDetail(); return
+      await removeLotsFromPool(tdaId, ids)
+      return
     }
 
     // ── Assigned lot → TDA pool (unassign from checkpoint, keep in pool) ──
     if (src?.type === 'assigned-lot' && dst?.type === 'tda-pool') {
-      await unassignFromCP(src.assignment.lot_id)
-      refetchDetail(); return
+      await unassignLotFromCheckpoint(tdaId, src.assignment.lot_id)
+      return
     }
 
     // ── Assigned lot → global unassigned (remove from pool entirely) ──
     if (src?.type === 'assigned-lot' && dst?.type === 'unassigned-bank') {
-      await removeFromPool(src.assignment.lot_id)
-      refetchDetail(); return
+      await removeLotsFromPool(tdaId, [src.assignment.lot_id])
+      return
     }
 
     // ── Assigned lot → different checkpoint ──────────────────────
-    // Single call: backend moves the existing assignment row (preserves HC/BLDR dates)
+    // Backend moves the existing assignment row (preserves HC/BLDR dates)
     if (src?.type === 'assigned-lot' && dst?.type === 'checkpoint') {
-      await assignToCP(src.assignment.lot_id, dst.checkpointId)
-      refetchDetail(); return
+      await assignLotsToCheckpoint(tdaId, [src.assignment.lot_id], dst.checkpointId)
+      return
     }
 
     // ── Any lot → other TDA pool ──────────────────────────────────
     if (dst?.type === 'other-tda') {
       const targetTdaId = dst.tdaId
-      const addToTargetPool = (lotId) =>
-        fetch(`${API_BASE}/takedown-agreements/${targetTdaId}/lots/${lotId}/pool`, { method: 'POST' })
-
       if (src?.type === 'unassigned-lot') {
         const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1
         const ids = isMulti ? [...selectedLotIds] : [src.lot.lot_id]
-        await Promise.all(ids.map(id => addToTargetPool(id)))
         if (isMulti) setSelectedLotIds(new Set())
+        await addLotsToPool(targetTdaId, ids)
       } else if (src?.type === 'pool-lot') {
         const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
         const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
-        await Promise.all(ids.map(async id => { await removeFromPool(id); await addToTargetPool(id) }))
         if (isMulti) setSelectedPoolLotIds(new Set())
+        for (const id of ids) await moveLotToOtherTda(tdaId, targetTdaId, id, false)
       } else if (src?.type === 'assigned-lot') {
-        await removeFromPool(src.assignment.lot_id)
-        await addToTargetPool(src.assignment.lot_id)
+        await moveLotToOtherTda(tdaId, targetTdaId, src.assignment.lot_id, true)
       }
-      refetchAgreements()
-      refetchDetail()
     }
   }
-
-  const tdaColorIdx = agreements.findIndex(a => a.tda_id === detail?.tda_id)
 
   // ── Render ───────────────────────────────────────────────────
   if (loading) return (
@@ -1439,6 +1362,8 @@ export default function TakedownAgreementsView({ entGroupId }) {
   if (error) return (
     <div style={{ padding: 32, color: '#dc2626', flex: 1 }}>Error: {error}</div>
   )
+
+  const isSaving = mutationStatus.status === 'saving'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', background: '#f9fafb' }}>
@@ -1458,6 +1383,14 @@ export default function TakedownAgreementsView({ entGroupId }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Mutation status indicator */}
+          {isSaving && (
+            <span style={{ fontSize: 12, color: '#6b7280' }}>Saving…</span>
+          )}
+          {mutationStatus.status === 'error' && (
+            <span style={{ fontSize: 12, color: '#dc2626' }}>{mutationStatus.error}</span>
+          )}
+
           {agreements.length > 0 && (
             <select
               value={selectedTdaId || ''}
@@ -1492,14 +1425,14 @@ export default function TakedownAgreementsView({ entGroupId }) {
               />
               <button
                 onClick={handleCreateTda}
-                disabled={newTdaCreating}
+                disabled={isSaving}
                 style={{
                   fontSize: 13, padding: '5px 12px', borderRadius: 6,
                   border: 'none', background: '#2563eb', color: '#fff',
-                  cursor: newTdaCreating ? 'default' : 'pointer', opacity: newTdaCreating ? 0.6 : 1,
+                  cursor: isSaving ? 'default' : 'pointer', opacity: isSaving ? 0.6 : 1,
                 }}
               >
-                {newTdaCreating ? 'Creating…' : 'Create'}
+                {isSaving ? 'Creating…' : 'Create'}
               </button>
               <button
                 onClick={() => { setShowNewTdaForm(false); setNewTdaName(''); setNewTdaError('') }}
@@ -1549,7 +1482,12 @@ export default function TakedownAgreementsView({ entGroupId }) {
                 selectedIds={selectedLotIds}
                 onToggle={toggleLotSelection}
                 onToggleDevGroup={toggleDevGroupSelection}
-                onAddToPool={handleAddSelectedToPool}
+                onAddToPool={() => {
+                  if (!detail || selectedLotIds.size === 0) return
+                  const ids = [...selectedLotIds]
+                  setSelectedLotIds(new Set())
+                  addLotsToPool(detail.tda_id, ids)
+                }}
                 onClearSelection={() => setSelectedLotIds(new Set())}
               />
               <TdaPoolBank
@@ -1558,7 +1496,12 @@ export default function TakedownAgreementsView({ entGroupId }) {
                 selectedIds={selectedPoolLotIds}
                 onToggle={togglePoolLotSelection}
                 onToggleDevGroup={togglePoolDevGroupSelection}
-                onRemoveFromPool={handleRemoveSelectedFromPool}
+                onRemoveFromPool={() => {
+                  if (!detail || selectedPoolLotIds.size === 0) return
+                  const ids = [...selectedPoolLotIds]
+                  setSelectedPoolLotIds(new Set())
+                  removeLotsFromPool(detail.tda_id, ids)
+                }}
                 onClearSelection={() => setSelectedPoolLotIds(new Set())}
               />
               {agreements.filter(a => a.tda_id !== selectedTdaId).length > 0 && (
@@ -1576,13 +1519,18 @@ export default function TakedownAgreementsView({ entGroupId }) {
             </div>
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
-              <TdaCard detail={detail} onCheckpointCreated={refetchDetail}>
+              <TdaCard
+                detail={detail}
+                onAddCheckpoint={(checkpointDate, lotsRequired) =>
+                  createCheckpoint(detail.tda_id, { checkpointDate, lotsRequired })
+                }
+              >
                 {(detail.checkpoints || []).map((cp) => (
                   <CheckpointBand
                     key={cp.checkpoint_id}
                     checkpoint={cp}
-                    onDateChange={handleDateChange}
-                    onLockChange={handleLockChange}
+                    onDateChange={updateAssignmentDates}
+                    onLockChange={updateAssignmentLock}
                   />
                 ))}
               </TdaCard>
