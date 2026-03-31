@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useDraggable } from '@dnd-kit/core'
-import { fmt, shortLot } from '../utils/tdaUtils'
+import { fmt, shortLot, parseLot } from '../utils/tdaUtils'
 
 // ── Lock icon (SVG) — neutral gray, no amber ─────────────────────
 export function LockIcon({ locked }) {
@@ -140,7 +140,7 @@ export function StitchConnector() {
 
 // ── Placeholder slot pill ─────────────────────────────────────────
 // State: normal (>30d), urgent (≤30d), missed (<0d)
-export function PlaceholderPill({ daysToCP }) {
+export function PlaceholderPill({ daysToCP, condensed = false }) {
   let state = 'normal'
   if (daysToCP !== null) {
     if (daysToCP < 0) state = 'missed'
@@ -151,6 +151,23 @@ export function PlaceholderPill({ daysToCP }) {
     urgent: { bg: '#FFF3CD',      border: '1.5px dashed #BA7517', icon: '⚠', iconColor: '#854F0B', label: `${daysToCP} DAYS` },
     missed: { bg: '#FCEBEB',      border: '1.5px dashed #A32D2D', icon: '✕', iconColor: '#A32D2D', label: 'PAST DUE' },
   }[state]
+
+  if (condensed) {
+    return (
+      <div style={{
+        width: 68, height: 34, flexShrink: 0, borderRadius: 5,
+        background: cfg.bg, border: cfg.border,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+      }}>
+        <span style={{ fontSize: 14, color: cfg.iconColor, lineHeight: 1 }}>{cfg.icon}</span>
+        {cfg.label && (
+          <span style={{ fontSize: 9, color: cfg.iconColor, fontWeight: 700, letterSpacing: '0.04em' }}>
+            {cfg.label}
+          </span>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -173,7 +190,7 @@ export function PlaceholderPill({ daysToCP }) {
 }
 
 // ── Lot pill inside a checkpoint ──────────────────────────────────
-export default function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, checkpointDate = '' }) {
+export default function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, checkpointDate = '', condensed = false }) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `assigned-${assignment.assignment_id}`,
@@ -199,6 +216,31 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
   const isCaution = !!checkpointDate && !cpIsPast && hasAnyFutureDate && neitherMeets
   // No dates: neither projected date entered (and not already flagged by a higher-priority state)
   const hasNoDates = !localHcDate && !localBldrDate && !isDelinquent && !isCaution
+
+  // ── Condensed view ───────────────────────────────────────────────
+  if (condensed) {
+    const { code, seq } = parseLot(assignment.lot_number)
+    const codeColor = isExcess ? '#E24B4A' : isDelinquent ? '#dc2626' : isCaution ? '#D97706' : '#888780'
+    return (
+      <div
+        ref={setNodeRef}
+        {...attributes}
+        {...listeners}
+        style={{
+          width: 68, height: 34, flexShrink: 0,
+          background: isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : hasNoDates ? '#EEECEA' : '#FAFAF8',
+          border: isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',
+          borderRadius: 5,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '0 6px', boxSizing: 'border-box',
+          cursor: 'grab', opacity: isDragging ? 0.4 : 1,
+        }}
+      >
+        <span style={{ fontSize: 11, color: codeColor, flexShrink: 0 }}>{code}</span>
+        <span style={{ fontSize: 12, fontWeight: 500, color: '#2C2C2A' }}>{seq}</span>
+      </div>
+    )
+  }
 
   function col(label, marksDate, projDate, isLocked, dateKey, lockKey) {
     return (

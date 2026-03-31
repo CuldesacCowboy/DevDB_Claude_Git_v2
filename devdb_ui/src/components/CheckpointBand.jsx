@@ -80,6 +80,10 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange 
     })
   }, [lots])
 
+  const [showLots, setShowLots] = useState(true)
+  const [lotView, setLotView] = useState('expanded') // 'expanded' | 'condensed'
+  const condensed = lotView === 'condensed'
+
   const [showTimeline, setShowTimeline] = useState(false)
 
   // Sort animation: briefly dim the grid when a sort is triggered so the
@@ -195,7 +199,7 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange 
       const maxH = Math.max(...row.els.map(el => el.getBoundingClientRect().height))
       row.els.forEach(el => { el.style.height = `${maxH}px` })
     })
-  }, [displayLots, slotCount])
+  }, [displayLots, slotCount, showLots, lotView])
 
   return (
     <div
@@ -282,6 +286,32 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange 
           >
             {showTimeline ? '▾ Timeline' : '▸ Timeline'}
           </button>
+          {showLots && (
+            <button
+              onClick={() => setLotView(v => v === 'expanded' ? 'condensed' : 'expanded')}
+              style={{
+                fontSize: 11, padding: '2px 9px', borderRadius: 4,
+                border: `1px solid ${condensed ? '#6366f1' : '#D4D2CB'}`,
+                background: condensed ? '#eef2ff' : '#fff',
+                color: condensed ? '#4338ca' : '#6B6B68',
+                cursor: 'pointer', marginLeft: 2,
+              }}
+            >
+              {condensed ? '⊟ Condensed' : '⊞ Condensed'}
+            </button>
+          )}
+          <button
+            onClick={() => setShowLots(v => !v)}
+            style={{
+              fontSize: 11, padding: '2px 9px', borderRadius: 4,
+              border: '1px solid #D4D2CB',
+              background: '#fff',
+              color: '#6B6B68',
+              cursor: 'pointer', marginLeft: 2,
+            }}
+          >
+            {showLots ? '▾ Lots' : '▸ Lots'}
+          </button>
         </div>
 
         {/* Status badge */}
@@ -329,58 +359,62 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange 
       </div>
 
       {/* Body — outer pad + inner grid capped at 8 columns (8×148 + 7×8 = 1240px) */}
-      <div style={{ padding: 14, minHeight: 60 }}>
-        <div
-          ref={gridRef}
-          style={{
-            display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'stretch',
-            maxWidth: 1330,
-            opacity: sortFlash ? 0.5 : 1,
-            transition: `opacity ${sortFlash ? '0.06s' : '0.32s'} ease-in-out`,
-          }}
-        >
-          {buildClusters(displayLots).map((cluster) => {
-            if (cluster.type === 'solo') {
-              const a = cluster.lot
-              const idx = displayLots.indexOf(a)
+      {showLots && (
+        <div style={{ padding: 14, minHeight: 60 }}>
+          <div
+            ref={gridRef}
+            style={{
+              display: 'flex', flexWrap: 'wrap', gap: condensed ? 6 : 14, alignItems: 'stretch',
+              maxWidth: 1330,
+              opacity: sortFlash ? 0.5 : 1,
+              transition: `opacity ${sortFlash ? '0.06s' : '0.32s'} ease-in-out`,
+            }}
+          >
+            {buildClusters(displayLots).map((cluster) => {
+              if (cluster.type === 'solo') {
+                const a = cluster.lot
+                const idx = displayLots.indexOf(a)
+                return (
+                  <LotPill
+                    key={a.assignment_id}
+                    assignment={a}
+                    isExcess={idx >= total - excess}
+                    checkpointDate={localDate}
+                    condensed={condensed}
+                    onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
+                    onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
+                  />
+                )
+              }
+              // Building group cluster — stays together on one row, stitched visually
               return (
-                <LotPill
-                  key={a.assignment_id}
-                  assignment={a}
-                  isExcess={idx >= total - excess}
-                  checkpointDate={localDate}
-                  onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
-                  onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
-                />
+                <div key={`grp-${cluster.bgId}`} style={{ display: 'flex', flexShrink: 0, alignItems: 'stretch' }}>
+                  {cluster.lots.flatMap((a, pi) => {
+                    const idx = displayLots.indexOf(a)
+                    const items = []
+                    if (pi > 0) items.push(<StitchConnector key={`stitch-${a.assignment_id}`} />)
+                    items.push(
+                      <LotPill
+                        key={a.assignment_id}
+                        assignment={a}
+                        isExcess={idx >= total - excess}
+                        checkpointDate={localDate}
+                        condensed={condensed}
+                        onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
+                        onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
+                      />
+                    )
+                    return items
+                  })}
+                </div>
               )
-            }
-            // Building group cluster — stays together on one row, stitched visually
-            return (
-              <div key={`grp-${cluster.bgId}`} style={{ display: 'flex', flexShrink: 0, alignItems: 'stretch' }}>
-                {cluster.lots.flatMap((a, pi) => {
-                  const idx = displayLots.indexOf(a)
-                  const items = []
-                  if (pi > 0) items.push(<StitchConnector key={`stitch-${a.assignment_id}`} />)
-                  items.push(
-                    <LotPill
-                      key={a.assignment_id}
-                      assignment={a}
-                      isExcess={idx >= total - excess}
-                      checkpointDate={localDate}
-                      onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
-                      onLockChange={(key, val) => onLockChange(a.assignment_id, { [key]: val })}
-                    />
-                  )
-                  return items
-                })}
-              </div>
-            )
-          })}
-          {Array.from({ length: slotCount }).map((_, i) => (
-            <PlaceholderPill key={`ph-${i}`} daysToCP={daysToCP} />
-          ))}
+            })}
+            {Array.from({ length: slotCount }).map((_, i) => (
+              <PlaceholderPill key={`ph-${i}`} daysToCP={daysToCP} condensed={condensed} />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Timeline chart — toggled from checkpoint header */}
       {showTimeline && (
