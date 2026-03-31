@@ -3,6 +3,7 @@ import { DndContext, DragOverlay, pointerWithin, PointerSensor, useSensor, useSe
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
 import { fmt, shortLot, parseLot, buildClusters } from '../utils/tdaUtils'
+import { API_BASE } from '../config'
 
 // ── Draggable unassigned lot pill ─────────────────────────────────
 function UnassignedLotPill({ lot, isSelected, onToggle }) {
@@ -386,7 +387,7 @@ function TdaCard({ detail, onCheckpointCreated, children }) {
   async function handleAddCheckpoint() {
     setCpCreating(true)
     try {
-      await fetch(`${API}/takedown-agreements/${detail.tda_id}/checkpoints`, {
+      await fetch(`${API_BASE}/takedown-agreements/${detail.tda_id}/checkpoints`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1564,7 +1565,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
   async function handleAddSelectedToPool() {
     if (!detail || selectedLotIds.size === 0) return
     await Promise.all([...selectedLotIds].map(id =>
-      fetch(`${API}/takedown-agreements/${detail.tda_id}/lots/${id}/pool`, { method: 'POST' })
+      fetch(`${API_BASE}/takedown-agreements/${detail.tda_id}/lots/${id}/pool`, { method: 'POST' })
     ))
     setSelectedLotIds(new Set())
     refetchDetail()
@@ -1593,7 +1594,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
   async function handleRemoveSelectedFromPool() {
     if (!detail || selectedPoolLotIds.size === 0) return
     await Promise.all([...selectedPoolLotIds].map(id =>
-      fetch(`${API}/takedown-agreements/${detail.tda_id}/lots/${id}/pool`, { method: 'DELETE' })
+      fetch(`${API_BASE}/takedown-agreements/${detail.tda_id}/lots/${id}/pool`, { method: 'DELETE' })
     ))
     setSelectedPoolLotIds(new Set())
     refetchDetail()
@@ -1610,7 +1611,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
     setNewTdaCreating(true)
     setNewTdaError('')
     try {
-      const res = await fetch(`${API}/takedown-agreements`, {
+      const res = await fetch(`${API_BASE}/takedown-agreements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tda_name: name, ent_group_id: entGroupId }),
@@ -1631,7 +1632,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
 
   // ── Date update ──────────────────────────────────────────────
   const handleDateChange = useCallback(async (assignmentId, patch) => {
-    await fetch(`${API}/tda-lot-assignments/${assignmentId}/dates`, {
+    await fetch(`${API_BASE}/tda-lot-assignments/${assignmentId}/dates`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
@@ -1641,7 +1642,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
 
   // ── Lock toggle ──────────────────────────────────────────────
   const handleLockChange = useCallback(async (assignmentId, patch) => {
-    await fetch(`${API}/tda-lot-assignments/${assignmentId}/lock`, {
+    await fetch(`${API_BASE}/tda-lot-assignments/${assignmentId}/lock`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
@@ -1665,17 +1666,17 @@ export default function TakedownAgreementsView({ entGroupId }) {
 
     // Helper shortcuts
     const assignToCP = (lotId, checkpointId) =>
-      fetch(`${API}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, {
+      fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ checkpoint_id: checkpointId }),
       })
     const unassignFromCP = (lotId) =>
-      fetch(`${API}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, { method: 'DELETE' })
+      fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, { method: 'DELETE' })
     const addToPool = (lotId) =>
-      fetch(`${API}/takedown-agreements/${tdaId}/lots/${lotId}/pool`, { method: 'POST' })
+      fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/pool`, { method: 'POST' })
     const removeFromPool = (lotId) =>
-      fetch(`${API}/takedown-agreements/${tdaId}/lots/${lotId}/pool`, { method: 'DELETE' })
+      fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/pool`, { method: 'DELETE' })
 
     // ── Global unassigned → TDA pool ──────────────────────────────
     if (src?.type === 'unassigned-lot' && dst?.type === 'tda-pool') {
@@ -1736,7 +1737,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
     if (dst?.type === 'other-tda') {
       const targetTdaId = dst.tdaId
       const addToTargetPool = (lotId) =>
-        fetch(`${API}/takedown-agreements/${targetTdaId}/lots/${lotId}/pool`, { method: 'POST' })
+        fetch(`${API_BASE}/takedown-agreements/${targetTdaId}/lots/${lotId}/pool`, { method: 'POST' })
 
       if (src?.type === 'unassigned-lot') {
         const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1

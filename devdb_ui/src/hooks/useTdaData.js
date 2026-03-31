@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-
-const API = 'http://localhost:8765/api'
+import { API_BASE } from '../config'
 
 export function useTdaData(entGroupId) {
   const [agreements, setAgreements] = useState([])
@@ -13,7 +12,7 @@ export function useTdaData(entGroupId) {
   const fetchAgreements = useCallback((selectId = null) => {
     if (!entGroupId) return
     setLoading(true)
-    fetch(`${API}/entitlement-groups/${entGroupId}/takedown-agreements`)
+    fetch(`${API_BASE}/entitlement-groups/${entGroupId}/takedown-agreements`)
       .then(r => r.json())
       .then(data => {
         setEntGroupName(data.ent_group_name || '')
@@ -33,7 +32,7 @@ export function useTdaData(entGroupId) {
   // Fetch detail for selected TDA
   const fetchDetail = useCallback(() => {
     if (!selectedTdaId) return
-    fetch(`${API}/takedown-agreements/${selectedTdaId}/detail`)
+    fetch(`${API_BASE}/takedown-agreements/${selectedTdaId}/detail`)
       .then(r => r.json())
       .then(data => setDetail(data))
       .catch(e => setError(e.message))
