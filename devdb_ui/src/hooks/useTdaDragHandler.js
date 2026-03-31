@@ -181,7 +181,7 @@ export function useTdaDragHandler({
         const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
         const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
         if (isMulti) setSelectedPoolLotIds(new Set())
-        for (const id of ids) await moveLotToOtherTda(tdaId, targetTdaId, id, false)
+        await Promise.all(ids.map(id => moveLotToOtherTda(tdaId, targetTdaId, id, false)))
       } else if (src?.type === 'assigned-lot') {
         await moveLotToOtherTda(tdaId, targetTdaId, src.assignment.lot_id, true)
       }

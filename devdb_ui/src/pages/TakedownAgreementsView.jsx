@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { DndContext, pointerWithin } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
 import { useTdaDragHandler } from '../hooks/useTdaDragHandler'
@@ -83,7 +83,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
     setContextMenu({ x: e.clientX, y: e.clientY, type, lotIds })
   }, [selectedLotIds, selectedPoolLotIds, selectedAssignedLotIds])
 
-  function buildContextMenuItems() {
+  const contextMenuItems = useMemo(() => {
     if (!contextMenu || !detail) return []
     const { type, lotIds } = contextMenu
     const n = lotIds.length
@@ -118,7 +118,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
             label: `Move to ${tda.tda_name}`,
             onClick: async () => {
               clearPoolLotSelection()
-              for (const id of lotIds) await moveLotToOtherTda(tdaId, tda.tda_id, id, false)
+              await Promise.all(lotIds.map(id => moveLotToOtherTda(tdaId, tda.tda_id, id, false)))
             },
           })
         })
@@ -140,14 +140,14 @@ export default function TakedownAgreementsView({ entGroupId }) {
             label: `Move to ${tda.tda_name}`,
             onClick: async () => {
               clearAssignedLotSelection()
-              for (const id of lotIds) await moveLotToOtherTda(tdaId, tda.tda_id, id, true)
+              await Promise.all(lotIds.map(id => moveLotToOtherTda(tdaId, tda.tda_id, id, true)))
             },
           })
         })
       }
     }
     return items
-  }
+  }, [contextMenu, detail, agreements, clearLotSelection, clearPoolLotSelection, clearAssignedLotSelection, addLotsToPool, removeLotsFromPool, assignLotsToCheckpoint, unassignLotFromCheckpoint, moveLotToOtherTda])
 
   // ── Render ───────────────────────────────────────────────────
   if (loading) return (
@@ -256,7 +256,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
-          items={buildContextMenuItems()}
+          items={contextMenuItems}
           onClose={() => setContextMenu(null)}
         />
       )}

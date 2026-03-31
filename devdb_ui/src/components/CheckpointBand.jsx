@@ -5,8 +5,12 @@ import CheckpointTimeline from './CheckpointTimeline'
 import { fmt, buildClusters } from '../utils/tdaUtils'
 
 // ── Editable inline value (green dashed style) ───────────────────
-export function EditableNumber({ value, onChange }) {
+export function EditableNumber({ value, onChange, onEditingChange }) {
   const [editing, setEditing] = useState(false)
+
+  function startEditing() { setEditing(true); onEditingChange?.(true) }
+  function stopEditing()  { setEditing(false); onEditingChange?.(false) }
+
   if (editing) {
     return (
       <input
@@ -17,11 +21,11 @@ export function EditableNumber({ value, onChange }) {
         onBlur={(e) => {
           const val = parseInt(e.target.value, 10)
           if (!isNaN(val) && val >= 0) onChange(val)
-          setEditing(false)
+          stopEditing()
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.target.blur()
-          if (e.key === 'Escape') setEditing(false)
+          if (e.key === 'Escape') stopEditing()
         }}
         style={{
           width: 42, fontSize: 15, fontWeight: 700,
@@ -35,7 +39,7 @@ export function EditableNumber({ value, onChange }) {
   }
   return (
     <span
-      onClick={() => setEditing(true)}
+      onClick={startEditing}
       title="Click to edit"
       style={{
         fontSize: 15, fontWeight: 700, color: '#27500A',
@@ -54,6 +58,17 @@ export function EditableNumber({ value, onChange }) {
 export default function CheckpointBand({ checkpoint, onDateChange, onLockChange, selectedAssignedLotIds, onToggleAssignedLot, onToggleCheckpointLots, onContextMenu, dragLot }) {
   const [localTotal, setLocalTotal] = useState(checkpoint.lots_required_cumulative || 0)
   const [localDate, setLocalDate] = useState(checkpoint.checkpoint_date || '')
+  const [editingTotal, setEditingTotal] = useState(false)
+  const [editingDate, setEditingDate] = useState(false)
+
+  // Sync from server when props change — guarded so an in-progress edit is not clobbered.
+  useEffect(() => {
+    if (!editingTotal) setLocalTotal(checkpoint.lots_required_cumulative || 0)
+  }, [checkpoint.lots_required_cumulative, editingTotal])
+
+  useEffect(() => {
+    if (!editingDate) setLocalDate(checkpoint.checkpoint_date || '')
+  }, [checkpoint.checkpoint_date, editingDate])
 
   const { setNodeRef, isOver } = useDroppable({
     id: `checkpoint-${checkpoint.checkpoint_id}`,
@@ -249,7 +264,7 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
               {selectedCount} selected
             </span>
           )}
-          <EditableNumber value={t} onChange={setLocalTotal} />
+          <EditableNumber value={t} onChange={setLocalTotal} onEditingChange={setEditingTotal} />
           <span style={{ fontSize: 15, color: '#6B6B68', fontWeight: 500 }}>required by</span>
           {/* Editable date — overlay pattern */}
           <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -264,10 +279,11 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
               {localDate ? fmt(localDate) : '—'}
             </div>
             <input
-              key={localDate}
               type="date"
-              defaultValue={localDate}
-              onBlur={(e) => { if (e.target.value && e.target.value !== localDate) setLocalDate(e.target.value) }}
+              value={localDate}
+              onChange={(e) => setLocalDate(e.target.value)}
+              onFocus={() => setEditingDate(true)}
+              onBlur={() => setEditingDate(false)}
               style={{
                 position: 'absolute', top: 0, left: 0,
                 width: '100%', height: '100%',
