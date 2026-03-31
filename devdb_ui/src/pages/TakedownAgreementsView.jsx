@@ -2,53 +2,7 @@ import { useState, useCallback, useRef, useLayoutEffect, useMemo, useEffect } fr
 import { DndContext, DragOverlay, pointerWithin, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
-
-const API = 'http://localhost:8765/api'
-
-// ── Format date for display ───────────────────────────────────────
-function fmt(dateStr) {
-  if (!dateStr) return '—'
-  const [y, m, d] = dateStr.split('-')
-  return `${m}/${d}/${y.slice(2)}`
-}
-
-// ── Short lot number: "WS00000001" → "WS · 001" ──────────────────
-function shortLot(lotNumber) {
-  if (!lotNumber) return '—'
-  const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
-  if (!match) return lotNumber
-  const seq = parseInt(match[2], 10)
-  return `${match[1]} · ${String(seq).padStart(3, '0')}`
-}
-
-// ── Parse lot into code + padded seq ─────────────────────────────
-function parseLot(lotNumber) {
-  if (!lotNumber) return { code: '—', seq: '—' }
-  const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
-  if (!match) return { code: lotNumber, seq: '' }
-  return { code: match[1], seq: String(parseInt(match[2], 10)).padStart(3, '0') }
-}
-
-// ── Group lots by building_group_id, preserving first-appearance order ─
-// Returns [{type:'solo', lot}] or [{type:'group', bgId, lots:[...]}]
-function buildClusters(lots) {
-  const clusters = []
-  const bgMap = new Map()  // bgId -> index in clusters array
-  for (const lot of lots) {
-    const bgId = lot.building_group_id
-    if (bgId != null) {
-      if (bgMap.has(bgId)) {
-        clusters[bgMap.get(bgId)].lots.push(lot)
-      } else {
-        bgMap.set(bgId, clusters.length)
-        clusters.push({ type: 'group', bgId, lots: [lot] })
-      }
-    } else {
-      clusters.push({ type: 'solo', lot })
-    }
-  }
-  return clusters
-}
+import { fmt, shortLot, parseLot, buildClusters } from '../utils/tdaUtils'
 
 // ── Draggable unassigned lot pill ─────────────────────────────────
 function UnassignedLotPill({ lot, isSelected, onToggle }) {
