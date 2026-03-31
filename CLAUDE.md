@@ -612,7 +612,7 @@ Count mode (body.projected_count provided):
 - Tables: developments (read), dim_development (bridge read), sim_legal_instruments (read MAX, INSERT)
 - Guards:
   - 422 if instrument_name empty
-  - 422 if instrument_type not in {Plat, Site Condo, Condo Declaration, Other}
+  - 422 if instrument_type not in {Plat, Site Condo, Other}
   - 422 if dev_id has no marks_code (cannot bridge to legacy dev_id)
 - Returns: {instrument_id: int, instrument_name: str, instrument_type: str, dev_id: int}
   - dev_id in response is the legacy dim_development.development_id, not the input developments.dev_id

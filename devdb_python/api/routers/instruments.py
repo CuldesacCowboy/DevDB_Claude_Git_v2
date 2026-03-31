@@ -11,7 +11,7 @@ from api.deps import get_db_conn
 
 router = APIRouter(prefix="/instruments", tags=["instruments"])
 
-VALID_INSTRUMENT_TYPES = {"Plat", "Site Condo", "Condo Declaration", "Other"}
+VALID_INSTRUMENT_TYPES = {"Plat", "Site Condo", "Other"}
 
 
 class InstrumentCreateRequest(BaseModel):

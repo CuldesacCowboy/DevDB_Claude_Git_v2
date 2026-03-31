@@ -540,7 +540,7 @@ export default function LotPhaseView() {
                         color: '#374151', background: '#fff',
                       }}
                     >
-                      {['Plat', 'Site Condo', 'Condo Declaration', 'Other'].map((t) => (
+                      {['Plat', 'Site Condo', 'Other'].map((t) => (
                         <option key={t} value={t}>{t}</option>
                       ))}
                     </select>
