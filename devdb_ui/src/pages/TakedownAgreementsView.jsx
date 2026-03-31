@@ -1,7 +1,8 @@
 import { useState, useRef, useLayoutEffect, useMemo, useEffect } from 'react'
-import { DndContext, DragOverlay, pointerWithin, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { DndContext, DragOverlay, pointerWithin } from '@dnd-kit/core'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
+import { useTdaDragHandler } from '../hooks/useTdaDragHandler'
 import { fmt, shortLot, parseLot, buildClusters } from '../utils/tdaUtils'
 import CheckpointTimeline from '../components/CheckpointTimeline'
 
@@ -1202,57 +1203,29 @@ export default function TakedownAgreementsView({ entGroupId }) {
     loading, error,
   } = useTdaData(entGroupId)
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
-
-  const [dragLot, setDragLot] = useState(null)
-  const [selectedLotIds, setSelectedLotIds] = useState(new Set())
-  const [selectedPoolLotIds, setSelectedPoolLotIds] = useState(new Set())
+  const {
+    sensors,
+    dragLot,
+    handleDragStart,
+    handleDragEnd,
+    selectedLotIds,
+    selectedPoolLotIds,
+    clearSelectionsForTda,
+    toggleLotSelection,
+    toggleDevGroupSelection,
+    togglePoolLotSelection,
+    togglePoolDevGroupSelection,
+  } = useTdaDragHandler({
+    detail,
+    addLotsToPool,
+    removeLotsFromPool,
+    assignLotsToCheckpoint,
+    unassignLotFromCheckpoint,
+    moveLotToOtherTda,
+  })
 
   // Clear selections when switching TDAs
-  useEffect(() => {
-    setSelectedLotIds(new Set())
-    setSelectedPoolLotIds(new Set())
-  }, [selectedTdaId])
-
-  function toggleLotSelection(lotId) {
-    setSelectedLotIds(prev => {
-      const next = new Set(prev)
-      if (next.has(lotId)) next.delete(lotId)
-      else next.add(lotId)
-      return next
-    })
-  }
-
-  function toggleDevGroupSelection(devLots) {
-    const ids = devLots.map(l => l.lot_id)
-    const allSel = ids.every(id => selectedLotIds.has(id))
-    setSelectedLotIds(prev => {
-      const next = new Set(prev)
-      if (allSel) ids.forEach(id => next.delete(id))
-      else ids.forEach(id => next.add(id))
-      return next
-    })
-  }
-
-  function togglePoolLotSelection(lotId) {
-    setSelectedPoolLotIds(prev => {
-      const next = new Set(prev)
-      if (next.has(lotId)) next.delete(lotId)
-      else next.add(lotId)
-      return next
-    })
-  }
-
-  function togglePoolDevGroupSelection(devLots) {
-    const ids = devLots.map(l => l.lot_id)
-    const allSel = ids.every(id => selectedPoolLotIds.has(id))
-    setSelectedPoolLotIds(prev => {
-      const next = new Set(prev)
-      if (allSel) ids.forEach(id => next.delete(id))
-      else ids.forEach(id => next.add(id))
-      return next
-    })
-  }
+  useEffect(() => { clearSelectionsForTda() }, [selectedTdaId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Create TDA form state (local — ephemeral form fields only) ──
   const [showNewTdaForm, setShowNewTdaForm] = useState(false)
@@ -1265,94 +1238,6 @@ export default function TakedownAgreementsView({ entGroupId }) {
     if (!result.ok) { setNewTdaError(result.error); return }
     setNewTdaName('')
     setShowNewTdaForm(false)
-  }
-
-  // ── Drag ─────────────────────────────────────────────────────
-  function handleDragStart(event) {
-    setDragLot(event.active.data.current)
-  }
-
-  async function handleDragEnd(event) {
-    setDragLot(null)
-    const { active, over } = event
-    if (!over || !active || !detail) return
-
-    const src = active.data.current
-    const dst = over.data.current
-    const tdaId = detail.tda_id
-
-    // ── Global unassigned → TDA pool ──────────────────────────────
-    if (src?.type === 'unassigned-lot' && dst?.type === 'tda-pool') {
-      const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1
-      const ids = isMulti ? [...selectedLotIds] : [src.lot.lot_id]
-      if (isMulti) setSelectedLotIds(new Set())
-      await addLotsToPool(tdaId, ids)
-      return
-    }
-
-    // ── Global unassigned → checkpoint ────────────────────────────
-    if (src?.type === 'unassigned-lot' && dst?.type === 'checkpoint') {
-      const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1
-      const ids = isMulti ? [...selectedLotIds] : [src.lot.lot_id]
-      if (isMulti) setSelectedLotIds(new Set())
-      await assignLotsToCheckpoint(tdaId, ids, dst.checkpointId)
-      return
-    }
-
-    // ── TDA pool → checkpoint ─────────────────────────────────────
-    if (src?.type === 'pool-lot' && dst?.type === 'checkpoint') {
-      const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
-      const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
-      if (isMulti) setSelectedPoolLotIds(new Set())
-      await assignLotsToCheckpoint(tdaId, ids, dst.checkpointId)
-      return
-    }
-
-    // ── TDA pool → global unassigned ─────────────────────────────
-    if (src?.type === 'pool-lot' && dst?.type === 'unassigned-bank') {
-      const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
-      const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
-      if (isMulti) setSelectedPoolLotIds(new Set())
-      await removeLotsFromPool(tdaId, ids)
-      return
-    }
-
-    // ── Assigned lot → TDA pool (unassign from checkpoint, keep in pool) ──
-    if (src?.type === 'assigned-lot' && dst?.type === 'tda-pool') {
-      await unassignLotFromCheckpoint(tdaId, src.assignment.lot_id)
-      return
-    }
-
-    // ── Assigned lot → global unassigned (remove from pool entirely) ──
-    if (src?.type === 'assigned-lot' && dst?.type === 'unassigned-bank') {
-      await removeLotsFromPool(tdaId, [src.assignment.lot_id])
-      return
-    }
-
-    // ── Assigned lot → different checkpoint ──────────────────────
-    // Backend moves the existing assignment row (preserves HC/BLDR dates)
-    if (src?.type === 'assigned-lot' && dst?.type === 'checkpoint') {
-      await assignLotsToCheckpoint(tdaId, [src.assignment.lot_id], dst.checkpointId)
-      return
-    }
-
-    // ── Any lot → other TDA pool ──────────────────────────────────
-    if (dst?.type === 'other-tda') {
-      const targetTdaId = dst.tdaId
-      if (src?.type === 'unassigned-lot') {
-        const isMulti = selectedLotIds.has(src.lot.lot_id) && selectedLotIds.size > 1
-        const ids = isMulti ? [...selectedLotIds] : [src.lot.lot_id]
-        if (isMulti) setSelectedLotIds(new Set())
-        await addLotsToPool(targetTdaId, ids)
-      } else if (src?.type === 'pool-lot') {
-        const isMulti = selectedPoolLotIds.has(src.lot.lot_id) && selectedPoolLotIds.size > 1
-        const ids = isMulti ? [...selectedPoolLotIds] : [src.lot.lot_id]
-        if (isMulti) setSelectedPoolLotIds(new Set())
-        for (const id of ids) await moveLotToOtherTda(tdaId, targetTdaId, id, false)
-      } else if (src?.type === 'assigned-lot') {
-        await moveLotToOtherTda(tdaId, targetTdaId, src.assignment.lot_id, true)
-      }
-    }
   }
 
   // ── Render ───────────────────────────────────────────────────
