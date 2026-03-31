@@ -235,10 +235,12 @@ export default function InstrumentContainer({
         width: instrWidth != null ? instrWidth + 'px' : 'fit-content',
         transform: CSS.Transform.toString(instrTransform),
         transition: instrTransition,
+        background: '#F7F6F3',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
       }}
     >
       {/* Container header */}
-      <div className={`px-3 py-2 rounded-t-xl border-b ${containerTint.border} ${containerTint.header}`}>
+      <div className={`px-3 py-2 rounded-t-xl border-b ${containerTint.border}`} style={{ background: '#F0EEE8' }}>
         {isNoInstrument ? (
           <>
             <p className="font-bold text-sm text-gray-700">No Instrument</p>
@@ -248,7 +250,7 @@ export default function InstrumentContainer({
           </>
         ) : (
           <div className="flex flex-col gap-0.5">
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-center leading-none mb-0.5" style={{ color: 'inherit', opacity: 0.55 }}>Legal Instrument</p>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-center leading-none mb-0.5" style={{ color: '#888780' }}>Legal Instrument</p>
             <div className="flex items-center gap-1.5">
               {/* Instrument drag handle */}
               <span

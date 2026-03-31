@@ -90,6 +90,8 @@ export default function ProjectionGroupContainer({
         flex: '0 0 auto',
         opacity: isDragging ? 0.4 : 1,
         width: 'fit-content',
+        background: '#F7F6F3',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.07)',
       }}
       className={`
         flex flex-col rounded-xl border-2 transition-colors duration-100
@@ -104,11 +106,12 @@ export default function ProjectionGroupContainer({
         className={`
           px-3 py-2 rounded-t-xl border-b select-none
           cursor-grab active:cursor-grabbing
-          ${tint?.border ?? 'border-gray-200'} ${tint?.header ?? 'bg-gray-100'}
+          ${tint?.border ?? 'border-gray-200'}
         `}
+        style={{ background: '#F0EEE8' }}
       >
         <div className="flex flex-col gap-0.5">
-          <p className="text-[9px] font-semibold uppercase tracking-widest text-center text-gray-400 leading-none mb-0.5">Development</p>
+          <p className="text-[9px] font-semibold uppercase tracking-widest text-center leading-none mb-0.5" style={{ color: '#888780' }}>Development</p>
           <div className="relative flex items-center justify-center">
             <span className="absolute left-0 text-gray-400 text-[10px] leading-none flex-shrink-0 cursor-grab active:cursor-grabbing select-none" aria-hidden>⠿</span>
             <p
