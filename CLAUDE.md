@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: March 2026 (2026-03-30) | Architecture v20 | Decision Log: D-001 through D-151 | Next ID: D-152*
+*Last updated: March 2026 (2026-03-31) | Architecture v20 | Decision Log: D-001 through D-151 | Next ID: D-152*
 
 ---
 
@@ -864,11 +864,11 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-28
 
 ### devdb_ui/src/pages/TakedownAgreementsView.jsx
-- Owns: Takedown agreement management view; checkpoint bands; lot assignment drag-drop; lock toggles; projected date editing; building group stitch connectors; cluster row grouping; sort animation; stacked left panel
-- Imports: dnd-kit, react, useTdaData
+- Owns: Takedown agreement management view orchestrator; wires LeftPanel, TdaPageHeader, CheckpointBand, TdaCard, TdaDragOverlay; reduced to composition shell after refactor
+- Imports: dnd-kit, react, useTdaData, useTdaDragHandler, LeftPanel, TdaPageHeader, CheckpointBand, TdaCard, TdaDragOverlay
 - Imported by: App.jsx
 - Tables: none (API calls via /api/takedown-agreements)
-- Last commit: 2026-03-30
+- Last commit: 2026-03-31
 
 ### devdb_ui/src/components/InstrumentContainer.jsx
 - Owns: Draggable/droppable legal instrument card with phase columns, aggregate lot-type totals, inline rename
@@ -919,6 +919,55 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: none
 - Last commit: 2026-03-26
 
+### devdb_ui/src/components/CheckpointBand.jsx
+- Owns: Checkpoint band row -- EditableNumber and checkpoint band UI extracted from TakedownAgreementsView
+- Imports: react, EditableNumber (inline or imported)
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
+### devdb_ui/src/components/CheckpointTimeline.jsx
+- Owns: Checkpoint timeline visualization extracted from TakedownAgreementsView
+- Imports: react
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
+### devdb_ui/src/components/LeftPanel.jsx
+- Owns: Stacked left panel for TDA view extracted from TakedownAgreementsView
+- Imports: react
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
+### devdb_ui/src/components/LotPill.jsx
+- Owns: Lot pill component for TDA view (draggable lot display)
+- Imports: dnd-kit, react
+- Imported by: TakedownAgreementsView.jsx, CheckpointBand.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
+### devdb_ui/src/components/TdaCard.jsx
+- Owns: TDA card component extracted from TakedownAgreementsView
+- Imports: react
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
+### devdb_ui/src/components/TdaDragOverlay.jsx
+- Owns: Drag overlay component for TDA view extracted from TakedownAgreementsView
+- Imports: dnd-kit, react, LotPill
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
+### devdb_ui/src/components/TdaPageHeader.jsx
+- Owns: Page header for TDA view extracted from TakedownAgreementsView
+- Imports: react
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
 ### devdb_ui/src/hooks/useLotPhaseData.js
 - Owns: Data fetching and caching for entitlement group lot-phase view (instruments, phases, lots)
 - Imports: react (useState, useEffect, useCallback, useMemo)
@@ -941,11 +990,25 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-29
 
 ### devdb_ui/src/hooks/useTdaData.js
-- Owns: Data fetching for TDA view -- agreement list, checkpoint detail, lot assignments; HC/BLDR projected date and lock state management
-- Imports: react (useState, useEffect, useCallback)
+- Owns: Data fetching for TDA view -- agreement list, checkpoint detail, lot assignments; HC/BLDR projected date and lock state management; all TDA mutations lifted here
+- Imports: react (useState, useEffect, useCallback), src/config.js
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none (API calls via /api/takedown-agreements)
-- Last commit: 2026-03-29
+- Last commit: 2026-03-31
+
+### devdb_ui/src/hooks/useTdaDragHandler.js
+- Owns: Drag orchestration for TDA view extracted from TakedownAgreementsView; manages dnd-kit sensors, drag state, and drop dispatch
+- Imports: dnd-kit, react
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
+### devdb_ui/src/config.js
+- Owns: Centralized API base URL and frontend config constants
+- Imports: none
+- Imported by: useTdaData.js and other hooks/components needing API base URL
+- Tables: none
+- Last commit: 2026-03-31
 
 ### devdb_ui/src/utils/computeCols.js
 - Owns: Optimal column-count calculation for instrument band given available width and phase count
@@ -953,6 +1016,13 @@ touches before making changes. Keep this section updated when files are added or
 - Imported by: InstrumentContainer.jsx
 - Tables: none
 - Last commit: 2026-03-27
+
+### devdb_ui/src/utils/tdaUtils.js
+- Owns: TDA domain utility functions extracted from TakedownAgreementsView (formatting, status helpers, etc.)
+- Imports: none
+- Imported by: TakedownAgreementsView.jsx and TDA components
+- Tables: none
+- Last commit: 2026-03-31
 
 ### devdb_ui/src/utils/layoutEngine.js
 - Owns: DELETED -- replaced by computeCols.js (CSS-first approach)
