@@ -759,7 +759,7 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: psycopg2, fastapi, dotenv, all six routers
 - Imported by: uvicorn (entry point)
 - Tables: devdb.schema_migrations (reads/inserts applied versions)
-- Last commit: 2026-03-28
+- Last commit: 2026-03-31
 
 ### devdb_python/api/models/lot_models.py
 - Owns: Pydantic request/response models for lot and phase-view endpoints
@@ -804,11 +804,11 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-27
 
 ### devdb_python/api/routers/takedown_agreements.py
-- Owns: TDA read and write endpoints (Slice A + Slice B); agreement list, checkpoint detail, lot assignment, HC/BLDR projected date editing
+- Owns: TDA read and write endpoints (Slice A + Slice B); agreement list, checkpoint detail, lot assignment, HC/BLDR projected date editing; PATCH rename endpoint; sequence-based assignment_id (no MAX+1 race)
 - Imports: api.deps, psycopg2.extras, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments, sim_lots, sim_entitlement_groups
-- Last commit: 2026-03-29
+- Last commit: 2026-03-31
 
 ### devdb_python/api/routers/phases.py
 - Owns: Phase CRUD, lot-type split management; DELETE /{phase_id}/lot-type registered BEFORE DELETE /{phase_id} (route ordering is intentional)
@@ -864,9 +864,9 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-28
 
 ### devdb_ui/src/pages/TakedownAgreementsView.jsx
-- Owns: Takedown agreement management view orchestrator; wires LeftPanel, TdaPageHeader, CheckpointBand, TdaCard, TdaDragOverlay; reduced to composition shell after refactor
-- Imports: dnd-kit, react, useTdaData, useTdaDragHandler, LeftPanel, TdaPageHeader, CheckpointBand, TdaCard, TdaDragOverlay
-- Imported by: App.jsx
+- Owns: Takedown agreement management view orchestrator; wires TdaNavBar, TdaPageHeader, UnassignedBank, TdaCard, CheckpointBand, TdaDragOverlay, ContextMenu; manages context menu state; threads dragLot for landing zone highlights
+- Imports: dnd-kit, react, useTdaData, useTdaDragHandler, LeftPanel, TdaPageHeader, CheckpointBand, TdaCard, TdaDragOverlay, TdaNavBar, ContextMenu
+- Imported by: LotPhaseView.jsx (as tab)
 - Tables: none (API calls via /api/takedown-agreements)
 - Last commit: 2026-03-31
 
@@ -920,8 +920,8 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-26
 
 ### devdb_ui/src/components/CheckpointBand.jsx
-- Owns: Checkpoint band row -- EditableNumber and checkpoint band UI extracted from TakedownAgreementsView
-- Imports: react, EditableNumber (inline or imported)
+- Owns: Checkpoint band row; EditableNumber, show/hide lots, expanded/condensed view toggles, select-all checkbox for bulk drag, landing zone highlight (isValidDrop), right-click context menu passthrough
+- Imports: react, dnd-kit (useDroppable), LotPill, StitchConnector, PlaceholderPill, CheckpointTimeline, tdaUtils
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
 - Last commit: 2026-03-31
@@ -934,36 +934,50 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-31
 
 ### devdb_ui/src/components/LeftPanel.jsx
-- Owns: Stacked left panel for TDA view extracted from TakedownAgreementsView
-- Imports: react
+- Owns: UnassignedBank only (TdaPoolBank and OtherTdaTile removed -- pool moved into TdaCard, nav replaced by TdaNavBar); landing zone highlight via dragLot prop; onContextMenu on lot pills
+- Imports: react, dnd-kit (useDraggable, useDroppable), tdaUtils (parseLot)
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
 - Last commit: 2026-03-31
 
 ### devdb_ui/src/components/LotPill.jsx
-- Owns: Lot pill component for TDA view (draggable lot display)
-- Imports: dnd-kit, react
-- Imported by: TakedownAgreementsView.jsx, CheckpointBand.jsx
+- Owns: Assigned lot pill (expanded + condensed modes); PlaceholderPill (expanded + condensed); StitchConnector; LockIcon; LockBtn; ProjectedDateField; isSelected highlight; onContextMenu passthrough
+- Imports: dnd-kit (useDraggable), react, tdaUtils (fmt, shortLot, parseLot)
+- Imported by: CheckpointBand.jsx
 - Tables: none
 - Last commit: 2026-03-31
 
 ### devdb_ui/src/components/TdaCard.jsx
-- Owns: TDA card component extracted from TakedownAgreementsView
-- Imports: react
+- Owns: TDA card shell; EditableTdaName (green dashed inline editor, PATCH on save); PoolSection (inline In Agreement droppable with pool lot pills, landing zone highlight); add-checkpoint form
+- Imports: react, dnd-kit (useDraggable, useDroppable), tdaUtils (parseLot)
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
 - Last commit: 2026-03-31
 
 ### devdb_ui/src/components/TdaDragOverlay.jsx
-- Owns: Drag overlay component for TDA view extracted from TakedownAgreementsView
+- Owns: Drag overlay component for TDA view; renders floating pill during drag
 - Imports: dnd-kit, react, LotPill
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
 - Last commit: 2026-03-31
 
 ### devdb_ui/src/components/TdaPageHeader.jsx
-- Owns: Page header for TDA view extracted from TakedownAgreementsView
+- Owns: Page header (community name, mutation status, New Agreement form); select dropdown removed -- navigation now in TdaNavBar
 - Imports: react
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
+### devdb_ui/src/components/TdaNavBar.jsx
+- Owns: Horizontal TDA navigation bar; clickable pills (name + lot count) for all community agreements; active pill highlighted green; replaces OtherTdaTile left-panel section
+- Imports: react
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-03-31
+
+### devdb_ui/src/components/ContextMenu.jsx
+- Owns: Right-click context menu; backdrop overlay; keyboard Escape to close; viewport clamping; renders action items from caller
+- Imports: react (useEffect)
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
 - Last commit: 2026-03-31
@@ -990,14 +1004,14 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-29
 
 ### devdb_ui/src/hooks/useTdaData.js
-- Owns: Data fetching for TDA view -- agreement list, checkpoint detail, lot assignments; HC/BLDR projected date and lock state management; all TDA mutations lifted here
+- Owns: Data fetching for TDA view -- agreement list, checkpoint detail, lot assignments; HC/BLDR projected date and lock state management; all TDA mutations including renameTda (PATCH /takedown-agreements/{id})
 - Imports: react (useState, useEffect, useCallback), src/config.js
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none (API calls via /api/takedown-agreements)
 - Last commit: 2026-03-31
 
 ### devdb_ui/src/hooks/useTdaDragHandler.js
-- Owns: Drag orchestration for TDA view extracted from TakedownAgreementsView; manages dnd-kit sensors, drag state, and drop dispatch
+- Owns: Drag orchestration for TDA view; manages dnd-kit sensors, drag state, drop dispatch; selectedAssignedLotIds for checkpoint lot multi-select; toggleAssignedCheckpointSelection for header select-all
 - Imports: dnd-kit, react
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
