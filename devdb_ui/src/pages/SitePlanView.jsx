@@ -217,11 +217,9 @@ export default function SitePlanView() {
                 Edit Parcel
               </button>
             )}
-            {hasBoundaries && (
-              <button onClick={() => { setMode('split'); setSelectedBoundaryId(null) }} style={btn('#7c3aed', '#f5f3ff', '#ddd6fe')}>
-                Split Phases
-              </button>
-            )}
+            <button onClick={() => { setMode('split'); setSelectedBoundaryId(null) }} style={btn('#7c3aed', '#f5f3ff', '#ddd6fe')}>
+              Split Phases
+            </button>
             {hasParcel && (
               <button onClick={clearParcel} style={btn('#dc2626', '#fef2f2', '#fecaca')}>
                 Clear Parcel
@@ -298,8 +296,8 @@ export default function SitePlanView() {
           )}
         </div>
 
-        {/* Phase side panel — only when boundaries exist */}
-        {hasPlan && hasBoundaries && (
+        {/* Phase side panel — always visible when a plan is loaded */}
+        {hasPlan && (
           <PhasePanel
             boundaries={boundaries}
             phases={phases}
@@ -342,9 +340,18 @@ function PhasePanel({
       <div style={{ padding: '8px 12px', borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Phase Boundaries</div>
         <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
-          {boundaries.length} region{boundaries.length !== 1 ? 's' : ''} · {assignedPhaseIds.size} assigned
+          {boundaries.length > 0
+            ? `${boundaries.length} region${boundaries.length !== 1 ? 's' : ''} · ${assignedPhaseIds.size} assigned`
+            : 'No regions yet'}
         </div>
       </div>
+
+      {/* Empty state */}
+      {boundaries.length === 0 && (
+        <div style={{ padding: '16px 12px', fontSize: 11, color: '#9ca3af', lineHeight: 1.5 }}>
+          Trace a parcel on the plan to create your first phase region, then use Split Phases to subdivide it.
+        </div>
+      )}
 
       {/* Boundary list */}
       <div style={{ borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
