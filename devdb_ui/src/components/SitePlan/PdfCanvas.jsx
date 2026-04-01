@@ -25,11 +25,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 const RENDER_SCALE   = 2.0
 const MIN_ZOOM       = 0.1
 const MAX_ZOOM       = 8.0
-const SNAP_TRACE_PX  = 16   // snap-to-first ring in trace mode
-const DRAG_THRESHOLD = 5
-const VERTEX_HIT_PX  = 12
-const EDGE_HIT_PX    = 8
-const SNAP_SPLIT_PX  = 18   // snap to boundary edge in split mode
+const SNAP_TRACE_PX      = 16    // snap-to-first ring in trace mode
+const DRAG_THRESHOLD     = 5
+const VERTEX_HIT_PX      = 12
+const EDGE_HIT_PX        = 8
+const SNAP_SPLIT_PX      = 18    // snap to boundary edge in split mode
+const SNAP_VERTEX_EDIT_PX = 14   // snap-to-vertex while dragging in edit mode
+const SHARED_VERTEX_TOL  = 1e-5  // normalized-space tolerance for "same vertex"
 
 // Colour palette for boundary polygons
 const BOUNDARY_COLORS = [
@@ -75,9 +77,10 @@ export default function PdfCanvas({
   const [cursorNorm, setCursorNorm]   = useState(null)
 
   // Parcel + boundary edit
-  const [editPoints, setEditPoints]           = useState(null)
+  const [editPoints, setEditPoints]                 = useState(null)
   const [editBoundaryPoints, setEditBoundaryPoints] = useState({}) // {boundaryId: [{x,y}]}
-  const [hoverTarget, setHoverTarget]         = useState(null)
+  const [hoverTarget, setHoverTarget]               = useState(null)
+  const [editSnapSvg, setEditSnapSvg]               = useState(null) // snap indicator while dragging
 
   // Split
   // phase: 'idle' | 'drawing' | 'review'
@@ -97,7 +100,7 @@ export default function PdfCanvas({
   // Reset mode-local state on mode change
   useEffect(() => {
     setTracePoints([]); setCursorNorm(null); traceRef.current = null
-    setEditPoints(null); setEditBoundaryPoints({}); setHoverTarget(null); editRef.current = null
+    setEditPoints(null); setEditBoundaryPoints({}); setHoverTarget(null); setEditSnapSvg(null); editRef.current = null
     setSplitPhase('idle'); setSplitLine([]); setSplitCursorSvg(null)
     setSplitSnapSvg(null); setSplitTargetId(null)
 
@@ -244,48 +247,131 @@ export default function PdfCanvas({
     return null
   }
 
+  // Find all vertices (across parcel + boundaries) at the same position as the drag target.
+  function buildSharedGroup(target) {
+    const pos = target.source === 'parcel'
+      ? editPoints?.[target.idx]
+      : editBoundaryPoints[target.boundaryId]?.[target.idx]
+    if (!pos) return [target]
+    const group = [target]
+    if (editPoints) {
+      editPoints.forEach((p, i) => {
+        if (target.source === 'parcel' && i === target.idx) return
+        if (Math.abs(p.x - pos.x) < SHARED_VERTEX_TOL && Math.abs(p.y - pos.y) < SHARED_VERTEX_TOL)
+          group.push({ type: 'vertex', source: 'parcel', idx: i })
+      })
+    }
+    for (const [bidStr, pts] of Object.entries(editBoundaryPoints)) {
+      const bid = Number(bidStr)
+      pts.forEach((p, i) => {
+        if (target.source === 'boundary' && bid === target.boundaryId && i === target.idx) return
+        if (Math.abs(p.x - pos.x) < SHARED_VERTEX_TOL && Math.abs(p.y - pos.y) < SHARED_VERTEX_TOL)
+          group.push({ type: 'vertex', source: 'boundary', boundaryId: bid, idx: i })
+      })
+    }
+    return group
+  }
+
+  // Find nearest vertex not in the drag's shared group for snapping.
+  function findSnapForDrag(sx, sy, sharedGroup) {
+    const inGroup = (src, bid, idx) =>
+      sharedGroup.some(g => g.source === src && g.idx === idx &&
+        (src === 'parcel' || g.boundaryId === bid))
+    let best = null, bestDist = SNAP_VERTEX_EDIT_PX
+    if (editPoints) {
+      editPoints.forEach((p, i) => {
+        if (inGroup('parcel', null, i)) return
+        const sp = normToScreen(p.x, p.y)
+        const d = Math.hypot(sp.x - sx, sp.y - sy)
+        if (d < bestDist) { bestDist = d; best = { normPos: p, svgPos: sp } }
+      })
+    }
+    for (const [bidStr, pts] of Object.entries(editBoundaryPoints)) {
+      const bid = Number(bidStr)
+      pts.forEach((p, i) => {
+        if (inGroup('boundary', bid, i)) return
+        const sp = normToScreen(p.x, p.y)
+        const d = Math.hypot(sp.x - sx, sp.y - sy)
+        if (d < bestDist) { bestDist = d; best = { normPos: p, svgPos: sp } }
+      })
+    }
+    return best
+  }
+
   function handleEditDown(e) {
     if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
     const { sx, sy } = svgXY(e)
     const target = getEditTargetAll(sx, sy)
+    const sharedGroup = target?.type === 'vertex' ? buildSharedGroup(target) : (target ? [target] : [])
     editRef.current = {
       target,
+      sharedGroup,
       startX: e.clientX, startY: e.clientY,
       startPanX: pan.x, startPanY: pan.y,
       startPts: editPoints ? [...editPoints] : [],
-      startBndPts: target?.source === 'boundary'
-        ? [...(editBoundaryPoints[target.boundaryId] || [])]
-        : [],
+      // Deep copy ALL boundary point arrays — needed to reconstruct each frame
+      startBndPts: Object.fromEntries(
+        Object.entries(editBoundaryPoints).map(([k, v]) => [k, [...v]])
+      ),
       moved: false,
     }
   }
   function handleEditMove(e) {
     const ref = editRef.current
     const { sx, sy } = svgXY(e)
-    if (!ref?.moved) setHoverTarget(getEditTargetAll(sx, sy))
-    if (!ref) return
+    if (!ref) { setHoverTarget(getEditTargetAll(sx, sy)); return }
     const dx = e.clientX - ref.startX, dy = e.clientY - ref.startY
     if (Math.hypot(dx, dy) <= DRAG_THRESHOLD) return
     ref.moved = true
+
     if (ref.target?.type === 'vertex') {
-      const n = screenToNorm(sx, sy); if (!n) return
-      if (ref.target.source === 'parcel') {
-        const np = [...ref.startPts]; np[ref.target.idx] = n; setEditPoints(np)
-      } else {
-        const np = [...ref.startBndPts]; np[ref.target.idx] = n
-        setEditBoundaryPoints(prev => ({ ...prev, [ref.target.boundaryId]: np }))
+      // Snap to a nearby vertex not in the shared group
+      const snap = findSnapForDrag(sx, sy, ref.sharedGroup)
+      setEditSnapSvg(snap ? snap.svgPos : null)
+      const n = snap ? snap.normPos : screenToNorm(sx, sy)
+      if (!n) return
+
+      // Parcel vertices in group
+      const parcelIdxs = ref.sharedGroup.filter(g => g.source === 'parcel').map(g => g.idx)
+      if (parcelIdxs.length > 0) {
+        const np = [...ref.startPts]
+        parcelIdxs.forEach(i => { np[i] = n })
+        setEditPoints(np)
       }
-    } else { setPan({ x: ref.startPanX + dx, y: ref.startPanY + dy }) }
+
+      // Boundary vertices in group (grouped by boundary)
+      const bndGroups = {}
+      ref.sharedGroup.filter(g => g.source === 'boundary').forEach(g => {
+        ;(bndGroups[g.boundaryId] ??= []).push(g.idx)
+      })
+      if (Object.keys(bndGroups).length > 0) {
+        setEditBoundaryPoints(prev => {
+          const next = { ...prev }
+          for (const [bidStr, idxs] of Object.entries(bndGroups)) {
+            const bid = Number(bidStr)
+            const np = [...(ref.startBndPts[bid] || [])]
+            idxs.forEach(i => { np[i] = n })
+            next[bid] = np
+          }
+          return next
+        })
+      }
+    } else {
+      setPan({ x: ref.startPanX + dx, y: ref.startPanY + dy })
+    }
   }
+
   async function handleEditUp(e) {
-    const ref = editRef.current; editRef.current = null; if (!ref) return
+    const ref = editRef.current; editRef.current = null
+    setEditSnapSvg(null)
+    if (!ref) return
     if (ref.target?.type === 'vertex' && ref.moved) {
-      if (ref.target.source === 'parcel') {
-        await saveParcel(editPoints)
-      } else {
-        await saveBoundaryPoints(ref.target.boundaryId, editBoundaryPoints[ref.target.boundaryId])
-      }
+      // Save parcel if any parcel vertex moved
+      if (ref.sharedGroup.some(g => g.source === 'parcel')) await saveParcel(editPoints)
+      // Save every affected boundary
+      const bids = [...new Set(ref.sharedGroup.filter(g => g.source === 'boundary').map(g => g.boundaryId))]
+      for (const bid of bids) await saveBoundaryPoints(bid, editBoundaryPoints[bid])
     } else if (!ref.moved) {
       const { sx, sy } = svgXY(e)
       const t = getEditTargetAll(sx, sy)
@@ -302,6 +388,7 @@ export default function PdfCanvas({
       }
     }
   }
+
   async function handleEditContextMenu(e) {
     e.preventDefault()
     const { sx, sy } = svgXY(e)
@@ -431,7 +518,7 @@ export default function PdfCanvas({
   }
   function onSvgPointerLeave() {
     if (inTrace) setCursorNorm(null)
-    else if (inEdit) setHoverTarget(null)
+    else if (inEdit) { setHoverTarget(null); setEditSnapSvg(null) }
     else if (inSplit) { setSplitCursorSvg(null); setSplitSnapSvg(null) }
   }
   function onSvgContextMenu(e) {
@@ -522,6 +609,13 @@ export default function PdfCanvas({
             {!inEdit && svgSaved.length >= 3 && (
               <polygon points={svgSaved.map(p=>`${p.x},${p.y}`).join(' ')}
                 fill="none" stroke="rgba(37,99,235,0.25)" strokeWidth={1} strokeDasharray="4 4" />
+            )}
+
+            {/* ── Vertex snap indicator (edit mode drag) ── */}
+            {inEdit && editSnapSvg && (
+              <circle cx={editSnapSvg.x} cy={editSnapSvg.y} r={10}
+                fill="rgba(245,158,11,0.2)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 2"
+                style={{ pointerEvents: 'none' }} />
             )}
 
             {/* ── Parcel edit ── */}
