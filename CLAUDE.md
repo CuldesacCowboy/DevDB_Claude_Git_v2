@@ -1061,6 +1061,13 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: none
 - Last commit: 2026-03-31
 
+### devdb_ui/src/utils/tdaContextMenu.js
+- Owns: Context menu policy for TDA view — pure helper: (type, lotIds, detail, agreements, callbacks) → items[]; extracted from TakedownAgreementsView to keep the page as orchestration/wiring only
+- Imports: none
+- Imported by: TakedownAgreementsView.jsx
+- Tables: none
+- Last commit: 2026-04-01
+
 ### devdb_ui/src/utils/layoutEngine.js
 - Owns: DELETED -- replaced by computeCols.js (CSS-first approach)
 - Imports: n/a
