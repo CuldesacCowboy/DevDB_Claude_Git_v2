@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: April 2026 (2026-04-01) | Architecture v20 | Decision Log: D-001 through D-151 | Next ID: D-152*
+*Last updated: April 2026 (2026-04-01) | Architecture v20 | Decision Log: D-001 through D-152 | Next ID: D-153*
 
 ---
 
@@ -22,7 +22,7 @@
 | React/FastAPI phase endpoints | Complete | Route ordering fixed — specific sub-routes now registered before catch-all /{phase_id}. DELETE /phases/{id}/lot-type and all phase endpoints visible in OpenAPI spec. |
 | Session tooling | Complete | /start and /end Claude Code skills (.claude/skills/). Start_DevDB_Session.bat opens session windows via devdb_open_session_windows.ps1. Stop_DevDB.bat kills backend (uvicorn + detached python.exe), frontend (Vite), and Chrome DevDB windows. End_DevDB_Session.bat, devdb_run_claude.py, devdb_generate_handoff.py, Save_DevDB_Window_Positions.bat, devdb_save_window_positions.ps1 removed. |
 | Postgres migration | Complete | All 35 tables migrated from Databricks to local PostgreSQL 16 (devdb.devdb). migrate_to_postgres.py. 23.5s total. 266,554 schedhousedetail rows. Engine now runs against local Postgres. Run time 0.5s (was 7+ min on Databricks serverless). |
-| React/FastAPI UI | In progress | React + FastAPI is the active UI. Streamlit was a prior prototype and is no longer active. D-149 is superseded. |
+| React/FastAPI UI | In progress | React + FastAPI is the active UI. Streamlit was a prior prototype and is no longer active. D-149 is superseded. TDA pipeline dates (HC/BLDR/DIG) moved to sim_lots (migration 012). Global master controls, DIG module, reversible sorts, wider pills, text date input added. |
 
 **Update this table at the start of each Claude Code session to reflect actual current state.**
 
@@ -403,6 +403,29 @@ The equalization logic in usePhaseEqualization.js runs after paint to match row 
 - Migration files are numbered sequentially: `000_`, `001_`, `002_`, etc.
 - The auto-apply runner in `api/main.py` applies unapplied migrations on every backend startup. New files are picked up automatically.
 - After creating a migration file, grep `devdb_python/` for all references to renamed or dropped columns and update every one before committing.
+
+## Decision Log — D-152
+
+D-152: Pipeline dates (HC/BLDR/DIG) moved from sim_takedown_lot_assignments to sim_lots
+
+HC (date_td_hold), BLDR (date_td), and DIG (date_str) projected dates and lock flags now
+live on sim_lots as part of the D-151 system-wide companion-field pattern. All 7 pipeline
+dates (ent, dev, td_hold, td, str, frm, cmp, cls) now have _projected and _is_locked
+companions on sim_lots.
+
+Previously HC/BLDR projected dates lived on sim_takedown_lot_assignments. This caused data
+loss when a lot was dragged between checkpoints, because the assignment row was replaced.
+Moving to sim_lots ensures projected dates and lock flags follow the lot regardless of
+checkpoint or TDA membership.
+
+MARKS date source corrections also applied: HC MARKS = date_td_hold (was incorrectly mapped
+to date_str), BLDR MARKS = date_td (was incorrectly mapped to date_cmp).
+
+Migration 012 handles the schema changes and data migration. The API fan-out for building-group
+lots now targets sim_lots WHERE building_group_id matches AND lot_id IN
+(SELECT lot_id FROM sim_takedown_agreement_lots WHERE tda_id = %s).
+
+---
 
 ## Decision Log — D-151
 
@@ -1120,6 +1143,11 @@ touches before making changes. Keep this section updated when files are added or
 - Owns: Adds display_order column (INT NULL) to sim_dev_phases; idempotent (ADD COLUMN IF NOT EXISTS). Supersedes add_display_order.py.
 - Tables: sim_dev_phases
 - Last commit: 2026-03-30
+
+### devdb_python/migrations/012_sim_lots_projected_lock_fields.sql
+- Owns: Implements D-151/D-152 system-wide pattern — adds projected date and is_locked companion columns for all 7 pipeline dates to sim_lots; migrates HC/BLDR projected+lock data from sim_takedown_lot_assignments to sim_lots; drops the old columns from sim_takedown_lot_assignments
+- Tables: sim_lots (ADD COLUMNS), sim_takedown_lot_assignments (UPDATE/DROP COLUMNS)
+- Last commit: 2026-04-01
 
 ### devdb_python/migrations/create_developments.py
 - Owns: Standalone one-time migration — creates developments table; adds PKs to dim_county, dim_state, dim_municipality (migrated without constraints per D-086). Idempotent.
