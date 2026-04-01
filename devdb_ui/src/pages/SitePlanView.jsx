@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from 'react'
 import PdfCanvas from '../components/SitePlan/PdfCanvas'
 
-const API = 'http://localhost:8000'
+const API = '/api'
 
 export default function SitePlanView() {
   const [developments, setDevelopments] = useState([])
