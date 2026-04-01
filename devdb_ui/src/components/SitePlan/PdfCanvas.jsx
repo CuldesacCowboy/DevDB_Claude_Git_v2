@@ -67,6 +67,7 @@ export default function PdfCanvas({
   const [pan, setPan]               = useState({ x: 0, y: 0 })
   const [zoom, setZoom]             = useState(1.0)
   const [rotation, setRotation]     = useState(0)
+  const [pdfError, setPdfError]     = useState(null)
 
   // Parcel
   const [savedParcel, setSavedParcel] = useState(initialParcel || null)
@@ -115,23 +116,28 @@ export default function PdfCanvas({
   useEffect(() => {
     if (!pdfUrl) return
     let cancelled = false
+    setPdfError(null)
     async function load() {
-      const pdf  = await pdfjsLib.getDocument(pdfUrl).promise
-      if (cancelled) return
-      const page = await pdf.getPage(1)
-      if (cancelled) return
-      const vp   = page.getViewport({ scale: RENDER_SCALE, rotation })
-      const cv   = canvasRef.current
-      cv.width = vp.width; cv.height = vp.height
-      await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise
-      if (cancelled) return
-      const w = vp.width / RENDER_SCALE, h = vp.height / RENDER_SCALE
-      setCssDims({ width: w, height: h })
-      const el = containerRef.current
-      if (el) {
-        const fit = Math.min(el.clientWidth / w, el.clientHeight / h, 1.0)
-        setZoom(fit)
-        setPan({ x: (el.clientWidth - w * fit) / 2, y: (el.clientHeight - h * fit) / 2 })
+      try {
+        const pdf  = await pdfjsLib.getDocument(pdfUrl).promise
+        if (cancelled) return
+        const page = await pdf.getPage(1)
+        if (cancelled) return
+        const vp   = page.getViewport({ scale: RENDER_SCALE, rotation })
+        const cv   = canvasRef.current
+        cv.width = vp.width; cv.height = vp.height
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise
+        if (cancelled) return
+        const w = vp.width / RENDER_SCALE, h = vp.height / RENDER_SCALE
+        setCssDims({ width: w, height: h })
+        const el = containerRef.current
+        if (el && el.clientWidth > 0 && el.clientHeight > 0) {
+          const fit = Math.min(el.clientWidth / w, el.clientHeight / h, 1.0)
+          setZoom(fit)
+          setPan({ x: (el.clientWidth - w * fit) / 2, y: (el.clientHeight - h * fit) / 2 })
+        }
+      } catch (err) {
+        if (!cancelled) setPdfError(String(err))
       }
     }
     load()
@@ -602,6 +608,19 @@ export default function PdfCanvas({
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {pdfError && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 20, background: '#1f2937' }}>
+          <div style={{ color: '#f87171', fontSize: 13, maxWidth: 420, textAlign: 'center', padding: 24 }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Failed to load PDF</div>
+            <div style={{ opacity: 0.7, fontFamily: 'monospace', fontSize: 11 }}>{pdfError}</div>
+          </div>
+        </div>
+      )}
+      {!cssDims && !pdfError && (
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10, pointerEvents: 'none' }}>
+          <div style={{ color: '#9ca3af', fontSize: 13 }}>Loading PDF…</div>
+        </div>
+      )}
       <div ref={containerRef}
         style={{ width: '100%', height: '100%', overflow: 'hidden', background: '#374151',
           cursor: mode === 'view' ? (dragRef.current ? 'grabbing' : 'grab') : 'default' }}
