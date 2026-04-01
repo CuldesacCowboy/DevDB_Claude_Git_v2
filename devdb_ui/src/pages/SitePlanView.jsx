@@ -24,7 +24,10 @@ export default function SitePlanView() {
   const [boundaries, setBoundaries]           = useState([])
   const [selectedBoundaryId, setSelectedBoundaryId] = useState(null)
   const [phases, setPhases]                   = useState([])
-  const fileInputRef = useRef(null)
+  const [undoStack, setUndoStack]             = useState([])
+  const fileInputRef  = useRef(null)
+  const boundariesRef = useRef(boundaries)
+  useEffect(() => { boundariesRef.current = boundaries }, [boundaries])
 
   // Load entitlement groups
   useEffect(() => {
@@ -38,9 +41,10 @@ export default function SitePlanView() {
   useEffect(() => {
     if (!selectedGroupId) {
       setPlan(null); setMode('view'); setBoundaries([]); setPhases([])
-      setSelectedBoundaryId(null)
+      setSelectedBoundaryId(null); setUndoStack([])
       return
     }
+    setUndoStack([])
     setLoading(true)
     setError(null)
     fetch(`${API}/site-plans/ent-group/${selectedGroupId}`)
@@ -121,6 +125,7 @@ export default function SitePlanView() {
 
   const onSplitConfirm = useCallback(async (originalBoundaryId, polyA, polyB) => {
     if (!plan) return
+    const original = boundariesRef.current.find(b => b.boundary_id === originalBoundaryId)
     try {
       const res = await fetch(`${API}/phase-boundaries/split`, {
         method: 'POST',
@@ -133,15 +138,69 @@ export default function SitePlanView() {
         }),
       })
       if (!res.ok) throw new Error('Split failed')
+      const newPair = await res.json()  // [{boundary_id, ...}, {boundary_id, ...}]
       const fresh = await fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
       setBoundaries(fresh.ok ? await fresh.json() : [])
       setSelectedBoundaryId(null)
+      if (original) {
+        setUndoStack(prev => [...prev.slice(-19), {
+          type: 'split',
+          deleted: original,
+          addedIds: newPair.map(b => b.boundary_id),
+        }])
+      }
     } catch (err) { setError(err.message) }
   }, [plan?.plan_id])
 
   const onBoundarySelect = useCallback((id) => {
     setSelectedBoundaryId(prev => prev === id ? null : id)
   }, [])
+
+  // Called by PdfCanvas before/after vertex edits — push undo entry
+  const onVertexEditComplete = useCallback((oldStates) => {
+    if (!oldStates?.length) return
+    setUndoStack(prev => [...prev.slice(-19), { type: 'edit', oldStates }])
+  }, [])
+
+  async function handleUndo() {
+    if (!undoStack.length || !plan) return
+    const entry = undoStack[undoStack.length - 1]
+    setUndoStack(prev => prev.slice(0, -1))
+    setError(null)
+    try {
+      if (entry.type === 'split') {
+        // Delete the two child boundaries, then re-create the original
+        for (const id of entry.addedIds) {
+          await fetch(`${API}/phase-boundaries/${id}`, { method: 'DELETE' })
+        }
+        await fetch(`${API}/phase-boundaries`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            plan_id: plan.plan_id,
+            polygon_json: entry.deleted.polygon_json,
+            label: entry.deleted.label ?? undefined,
+            phase_id: entry.deleted.phase_id ?? undefined,
+            split_order: entry.deleted.split_order,
+          }),
+        })
+      } else if (entry.type === 'edit') {
+        for (const { boundary_id, old_polygon_json } of entry.oldStates) {
+          await fetch(`${API}/phase-boundaries/${boundary_id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ polygon_json: old_polygon_json }),
+          })
+        }
+      }
+      const fresh = await fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
+      setBoundaries(fresh.ok ? await fresh.json() : [])
+      setSelectedBoundaryId(null)
+    } catch (err) {
+      setError('Undo failed: ' + err.message)
+      setUndoStack(prev => [...prev, entry])  // re-push on failure
+    }
+  }
 
   async function assignPhaseToSelected(phaseId) {
     if (!selectedBoundaryId) return
@@ -206,6 +265,13 @@ export default function SitePlanView() {
         </select>
 
         {hasPlan && <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />}
+
+        {/* Undo — visible in all modes when there's something to undo */}
+        {hasPlan && undoStack.length > 0 && mode !== 'trace' && (
+          <button onClick={handleUndo} style={btn('#b45309', '#fffbeb', '#fde68a')}>
+            ↩ Undo
+          </button>
+        )}
 
         {hasPlan && mode === 'view' && (
           <>
@@ -293,6 +359,7 @@ export default function SitePlanView() {
               onBoundarySelect={onBoundarySelect}
               onSplitConfirm={onSplitConfirm}
               onBoundaryUpdated={updated => setBoundaries(bs => bs.map(b => b.boundary_id === updated.boundary_id ? updated : b))}
+              onVertexEditComplete={onVertexEditComplete}
             />
           )}
         </div>

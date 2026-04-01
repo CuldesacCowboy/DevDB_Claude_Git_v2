@@ -62,6 +62,7 @@ export default function PdfCanvas({
   selectedBoundaryId,
   mode, onModeChange,
   onParcelSaved, onSplitConfirm, onBoundarySelect, onBoundaryUpdated,
+  onVertexEditComplete,   // ({boundary_id, old_polygon_json}[]) => void — for undo tracking
 }) {
   const canvasRef    = useRef(null)
   const containerRef = useRef(null)
@@ -369,11 +370,17 @@ export default function PdfCanvas({
     setEditSnapSvg(null)
     if (!ref) return
     if (ref.target?.type === 'vertex' && ref.moved) {
+      // Collect old boundary states BEFORE saving (for undo)
+      const bids = [...new Set(ref.sharedGroup.filter(g => g.source === 'boundary').map(g => g.boundaryId))]
+      const oldStates = bids.map(bid => ({
+        boundary_id: bid,
+        old_polygon_json: JSON.stringify(ref.startBndPts[bid] || []),
+      }))
       // Save parcel if any parcel vertex moved
       if (ref.sharedGroup.some(g => g.source === 'parcel')) await saveParcel(editPoints)
       // Save every affected boundary
-      const bids = [...new Set(ref.sharedGroup.filter(g => g.source === 'boundary').map(g => g.boundaryId))]
       for (const bid of bids) await saveBoundaryPoints(bid, editBoundaryPoints[bid])
+      if (oldStates.length > 0) onVertexEditComplete?.(oldStates)
     } else if (!ref.moved) {
       const { sx, sy } = svgXY(e)
       const tgt = getEditTargetAll(sx, sy)
@@ -390,6 +397,7 @@ export default function PdfCanvas({
           const n = { x: edgeA.x + tgt.t * (edgeB.x - edgeA.x), y: edgeA.y + tgt.t * (edgeB.y - edgeA.y) }
           const np = [...srcPts]; np.splice(tgt.idx + 1, 0, n)
           // Propagate to any other boundary sharing this exact edge (topology preservation)
+          const oldStates = [{ boundary_id: tgt.boundaryId, old_polygon_json: JSON.stringify(srcPts) }]
           const updates = { [tgt.boundaryId]: np }
           for (const [bidStr, pts] of Object.entries(editBoundaryPoints)) {
             const bid = Number(bidStr)
@@ -399,6 +407,7 @@ export default function PdfCanvas({
               const fwd = Math.hypot(p.x-edgeA.x,p.y-edgeA.y) < SHARED_VERTEX_TOL && Math.hypot(q.x-edgeB.x,q.y-edgeB.y) < SHARED_VERTEX_TOL
               const rev = Math.hypot(p.x-edgeB.x,p.y-edgeB.y) < SHARED_VERTEX_TOL && Math.hypot(q.x-edgeA.x,q.y-edgeA.y) < SHARED_VERTEX_TOL
               if (fwd || rev) {
+                oldStates.push({ boundary_id: bid, old_polygon_json: JSON.stringify(pts) })
                 const spts = [...pts]; spts.splice(i + 1, 0, n)
                 updates[bid] = spts
                 break
@@ -409,6 +418,7 @@ export default function PdfCanvas({
           for (const [bidStr, updatedPts] of Object.entries(updates)) {
             await saveBoundaryPoints(Number(bidStr), updatedPts)
           }
+          onVertexEditComplete?.(oldStates)
         }
       }
     }
@@ -417,19 +427,37 @@ export default function PdfCanvas({
   async function handleEditContextMenu(e) {
     e.preventDefault()
     const { sx, sy } = svgXY(e)
-    const t = getEditTargetAll(sx, sy)
-    if (t?.type === 'vertex') {
-      if (t.source === 'parcel' && editPoints && editPoints.length > 3) {
-        const np = editPoints.filter((_, i) => i !== t.idx)
-        setEditPoints(np); await saveParcel(np)
-      } else if (t.source === 'boundary') {
-        const pts = editBoundaryPoints[t.boundaryId] || []
-        if (pts.length > 3) {
-          const np = pts.filter((_, i) => i !== t.idx)
-          setEditBoundaryPoints(prev => ({ ...prev, [t.boundaryId]: np }))
-          await saveBoundaryPoints(t.boundaryId, np)
-        }
+    const tgt = getEditTargetAll(sx, sy)
+    if (tgt?.type !== 'vertex') return
+
+    const sharedGroup = buildSharedGroup(tgt)
+
+    // Delete vertex from parcel if it's there
+    const parcelIdxs = new Set(sharedGroup.filter(g => g.source === 'parcel').map(g => g.idx))
+    if (parcelIdxs.size > 0 && editPoints && editPoints.length - parcelIdxs.size >= 3) {
+      const np = editPoints.filter((_, i) => !parcelIdxs.has(i))
+      setEditPoints(np); await saveParcel(np)
+    }
+
+    // Delete vertex from every boundary in the shared group
+    const bndMap = {}
+    sharedGroup.filter(g => g.source === 'boundary').forEach(g => {
+      ;(bndMap[g.boundaryId] ??= []).push(g.idx)
+    })
+    const oldStates = [], updates = {}
+    for (const [bidStr, idxs] of Object.entries(bndMap)) {
+      const bid = Number(bidStr)
+      const pts = editBoundaryPoints[bid] || []
+      const del = new Set(idxs)
+      if (pts.length - del.size >= 3) {
+        oldStates.push({ boundary_id: bid, old_polygon_json: JSON.stringify(pts) })
+        updates[bid] = pts.filter((_, i) => !del.has(i))
       }
+    }
+    if (Object.keys(updates).length > 0) {
+      setEditBoundaryPoints(prev => ({ ...prev, ...updates }))
+      for (const [bidStr, pts] of Object.entries(updates)) await saveBoundaryPoints(Number(bidStr), pts)
+      onVertexEditComplete?.(oldStates)
     }
   }
   async function saveParcel(pts) {
@@ -621,10 +649,14 @@ export default function PdfCanvas({
                   onClick={inSplit ? undefined : () => onBoundarySelect?.(isSelected ? null : b.boundary_id)}
                   style={{ cursor: inSplit ? 'inherit' : 'pointer' }}
                 >
+                  {/* White backing stroke so boundaries are legible over any PDF background */}
                   <polygon points={polyStr}
-                    fill={isTarget ? `${color}30` : `${color}18`}
-                    stroke={isSelected ? color : color}
-                    strokeWidth={isSelected ? 3 : isTarget ? 2.5 : 1.5}
+                    fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth={isSelected ? 6 : 5}
+                    style={{ pointerEvents: 'none' }} />
+                  <polygon points={polyStr}
+                    fill={isTarget ? `${color}50` : `${color}30`}
+                    stroke={color}
+                    strokeWidth={isSelected ? 3.5 : isTarget ? 3 : 2}
                     strokeDasharray={isTarget ? '6 3' : 'none'}
                   />
                   {b.label && (
