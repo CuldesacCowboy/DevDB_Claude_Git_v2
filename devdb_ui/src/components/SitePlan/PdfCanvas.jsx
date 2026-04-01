@@ -33,12 +33,7 @@ const SNAP_SPLIT_PX      = 18    // snap to boundary edge in split mode
 const SNAP_VERTEX_EDIT_PX = 14   // snap-to-vertex while dragging in edit mode
 const SHARED_VERTEX_TOL  = 1e-5  // normalized-space tolerance for "same vertex"
 
-// Colour palette for boundary polygons
-const BOUNDARY_COLORS = [
-  '#3b82f6','#10b981','#f97316','#8b5cf6','#06b6d4',
-  '#ec4899','#84cc16','#eab308','#ef4444','#6366f1',
-]
-function boundaryColor(idx) { return BOUNDARY_COLORS[idx % BOUNDARY_COLORS.length] }
+const UNASSIGNED_COLOR = '#9ca3af'
 
 // ─── Parcel edit hit detection (SVG space) ────────────────────────────────────
 function getEditTarget(sx, sy, svgPts) {
@@ -60,6 +55,7 @@ export default function PdfCanvas({
   pdfUrl, planId, initialParcel,
   boundaries = [],
   selectedBoundaryId,
+  phaseColorMap = {},   // {phase_id: color} — assigned by instrument in SitePlanView
   mode, onModeChange,
   onParcelSaved, onSplitConfirm, onBoundarySelect, onBoundaryUpdated,
   onVertexEditComplete,   // ({boundary_id, old_polygon_json}[]) => void — for undo tracking
@@ -633,11 +629,11 @@ export default function PdfCanvas({
             onContextMenu={overlayActive ? onSvgContextMenu : undefined}
           >
             {/* ── Phase boundaries ── */}
-            {boundaries.map((b, idx) => {
+            {boundaries.map((b) => {
               const pts = JSON.parse(b.polygon_json)
               const svg = pts.map(p => normToScreen(p.x, p.y))
               const polyStr = svg.map(p => `${p.x},${p.y}`).join(' ')
-              const color = boundaryColor(idx)
+              const color = (b.phase_id && phaseColorMap[b.phase_id]) || UNASSIGNED_COLOR
               const isSelected = b.boundary_id === selectedBoundaryId
               const isTarget = b.boundary_id === splitTargetId
               // Centroid for label
@@ -702,8 +698,8 @@ export default function PdfCanvas({
             {/* ── Boundary vertex edit (edit mode) ── */}
             {inEdit && Object.entries(editBoundaryPoints).map(([bidStr, pts]) => {
               const bid = Number(bidStr)
-              const bidx = boundaries.findIndex(b => b.boundary_id === bid)
-              const color = boundaryColor(bidx >= 0 ? bidx : 0)
+              const bnd = boundaries.find(b => b.boundary_id === bid)
+              const color = (bnd?.phase_id && phaseColorMap[bnd.phase_id]) || UNASSIGNED_COLOR
               const svgPts = pts.map(p => normToScreen(p.x, p.y))
               const polyStr = svgPts.map(p => `${p.x},${p.y}`).join(' ')
               return (

@@ -7,11 +7,11 @@ import PdfCanvas from '../components/SitePlan/PdfCanvas'
 
 const API = '/api'
 
-// Must match BOUNDARY_COLORS in PdfCanvas.jsx
-const BOUNDARY_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#06b6d4', '#84cc16', '#f97316', '#ec4899', '#6366f1',
+const INSTRUMENT_COLORS = [
+  '#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#06b6d4',
+  '#ec4899', '#84cc16', '#eab308', '#ef4444', '#6366f1',
 ]
+const UNASSIGNED_COLOR = '#9ca3af'
 
 export default function SitePlanView() {
   const [entGroups, setEntGroups]             = useState([])
@@ -72,11 +72,11 @@ export default function SitePlanView() {
         const flat = []
         for (const inst of (data.instruments || [])) {
           for (const ph of (inst.phases || [])) {
-            flat.push({ ...ph, dev_name: inst.dev_name })
+            flat.push({ ...ph, dev_name: inst.dev_name, instrument_id: inst.instrument_id })
           }
         }
         for (const ph of (data.unassigned_phases || [])) {
-          flat.push({ ...ph, dev_name: 'Unassigned' })
+          flat.push({ ...ph, dev_name: 'Unassigned', instrument_id: null })
         }
         setPhases(flat)
       })
@@ -240,6 +240,19 @@ export default function SitePlanView() {
   // Build maps for the side panel
   const phaseMap       = Object.fromEntries(phases.map(p => [p.phase_id, p]))
   const assignedPhaseIds = new Set(boundaries.filter(b => b.phase_id).map(b => b.phase_id))
+
+  // Assign one color per instrument_id; build phase_id → color map
+  const instrumentColorMap = {}
+  let colorIdx = 0
+  for (const ph of phases) {
+    if (ph.instrument_id != null && !(ph.instrument_id in instrumentColorMap)) {
+      instrumentColorMap[ph.instrument_id] = INSTRUMENT_COLORS[colorIdx % INSTRUMENT_COLORS.length]
+      colorIdx++
+    }
+  }
+  const phaseColorMap = Object.fromEntries(
+    phases.filter(p => p.instrument_id != null).map(p => [p.phase_id, instrumentColorMap[p.instrument_id]])
+  )
   const selectedBoundary = selectedBoundaryId
     ? boundaries.find(b => b.boundary_id === selectedBoundaryId)
     : null
@@ -356,6 +369,7 @@ export default function SitePlanView() {
               onParcelSaved={points => setPlan(p => ({ ...p, parcel_json: JSON.stringify(points) }))}
               boundaries={boundaries}
               selectedBoundaryId={selectedBoundaryId}
+              phaseColorMap={phaseColorMap}
               onBoundarySelect={onBoundarySelect}
               onSplitConfirm={onSplitConfirm}
               onBoundaryUpdated={updated => setBoundaries(bs => bs.map(b => b.boundary_id === updated.boundary_id ? updated : b))}
@@ -370,6 +384,7 @@ export default function SitePlanView() {
             boundaries={boundaries}
             phases={phases}
             phaseMap={phaseMap}
+            phaseColorMap={phaseColorMap}
             selectedBoundaryId={selectedBoundaryId}
             selectedBoundary={selectedBoundary}
             assignedPhaseIds={assignedPhaseIds}
@@ -387,7 +402,7 @@ export default function SitePlanView() {
 // ─── Phase Side Panel ─────────────────────────────────────────────────────────
 
 function PhasePanel({
-  boundaries, phases, phaseMap,
+  boundaries, phases, phaseMap, phaseColorMap,
   selectedBoundaryId, selectedBoundary, assignedPhaseIds,
   onSelectBoundary, onAssign, onUnassign, mode,
 }) {
@@ -423,9 +438,10 @@ function PhasePanel({
 
       {/* Boundary list */}
       <div style={{ borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
-        {boundaries.map((b, i) => {
+        {boundaries.map((b) => {
           const ap = b.phase_id ? phaseMap[b.phase_id] : null
           const isSel = b.boundary_id === selectedBoundaryId
+          const swatchColor = (b.phase_id && phaseColorMap[b.phase_id]) || UNASSIGNED_COLOR
           return (
             <div
               key={b.boundary_id}
@@ -440,7 +456,7 @@ function PhasePanel({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{
                   width: 10, height: 10, borderRadius: 2, flexShrink: 0,
-                  background: BOUNDARY_COLORS[i % BOUNDARY_COLORS.length],
+                  background: swatchColor,
                 }} />
                 <span style={{ fontSize: 11, color: '#374151', fontWeight: isSel ? 600 : 400 }}>
                   Region {i + 1}
