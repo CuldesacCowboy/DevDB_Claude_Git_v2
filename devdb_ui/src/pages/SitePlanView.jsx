@@ -95,12 +95,21 @@ export default function SitePlanView() {
 
         {/* Parcel controls — only when a plan is loaded */}
         {plan && mode === 'view' && (
-          <button
-            onClick={() => setMode('trace')}
-            style={toolbarBtn('#2563eb', '#eff6ff', '#bfdbfe')}
-          >
-            {plan.parcel_json ? 'Retrace Parcel' : 'Trace Parcel'}
-          </button>
+          <>
+            <button onClick={() => setMode('trace')} style={toolbarBtn('#2563eb', '#eff6ff', '#bfdbfe')}>
+              {plan.parcel_json ? 'Retrace Parcel' : 'Trace Parcel'}
+            </button>
+            {plan.parcel_json && (
+              <button onClick={() => setMode('edit')} style={toolbarBtn('#374151', '#f9fafb', '#e5e7eb')}>
+                Edit Parcel
+              </button>
+            )}
+            {plan.parcel_json && (
+              <button onClick={clearParcel} style={toolbarBtn('#dc2626', '#fef2f2', '#fecaca')}>
+                Clear Parcel
+              </button>
+            )}
+          </>
         )}
 
         {plan && mode === 'trace' && (
@@ -108,22 +117,21 @@ export default function SitePlanView() {
             <span style={{ fontSize: 12, color: '#92400e', fontWeight: 500 }}>
               Click to place vertices · click first vertex or Close to finish
             </span>
-            <button
-              onClick={() => setMode('view')}
-              style={toolbarBtn('#374151', '#f9fafb', '#e5e7eb')}
-            >
+            <button onClick={() => setMode('view')} style={toolbarBtn('#374151', '#f9fafb', '#e5e7eb')}>
               Cancel
             </button>
           </>
         )}
 
-        {plan && plan.parcel_json && mode === 'view' && (
-          <button
-            onClick={clearParcel}
-            style={toolbarBtn('#dc2626', '#fef2f2', '#fecaca')}
-          >
-            Clear Parcel
-          </button>
+        {plan && mode === 'edit' && (
+          <>
+            <span style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 500 }}>
+              Drag vertices to move · click edge to add · right-click vertex to delete
+            </span>
+            <button onClick={() => setMode('view')} style={toolbarBtn('#1d4ed8', '#eff6ff', '#bfdbfe')}>
+              Done Editing
+            </button>
+          </>
         )}
 
         {/* Divider */}
