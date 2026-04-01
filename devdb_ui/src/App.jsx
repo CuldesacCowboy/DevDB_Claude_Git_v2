@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import LotPhaseView from './pages/LotPhaseView'
+import SitePlanView from './pages/SitePlanView'
 
 export default function App() {
   return (
@@ -22,10 +23,21 @@ export default function App() {
         })}>
           Lot · Phase
         </NavLink>
+        <NavLink to="/site-plan" style={({ isActive }) => ({
+          padding: '0 16px', height: '44px',
+          display: 'flex', alignItems: 'center',
+          fontSize: 13, fontWeight: 500,
+          color: isActive ? '#2563eb' : '#6b7280',
+          borderBottom: isActive ? '2px solid #2563eb' : '2px solid transparent',
+          textDecoration: 'none',
+        })}>
+          Site Plan
+        </NavLink>
       </nav>
 
       <Routes>
         <Route path="/" element={<LotPhaseView />} />
+        <Route path="/site-plan" element={<SitePlanView />} />
       </Routes>
     </BrowserRouter>
   )
