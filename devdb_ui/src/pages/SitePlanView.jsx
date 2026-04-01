@@ -292,6 +292,7 @@ export default function SitePlanView() {
               selectedBoundaryId={selectedBoundaryId}
               onBoundarySelect={onBoundarySelect}
               onSplitConfirm={onSplitConfirm}
+              onBoundaryUpdated={updated => setBoundaries(bs => bs.map(b => b.boundary_id === updated.boundary_id ? updated : b))}
             />
           )}
         </div>

@@ -57,7 +57,7 @@ export default function PdfCanvas({
   boundaries = [],
   selectedBoundaryId,
   mode, onModeChange,
-  onParcelSaved, onSplitConfirm, onBoundarySelect,
+  onParcelSaved, onSplitConfirm, onBoundarySelect, onBoundaryUpdated,
 }) {
   const canvasRef    = useRef(null)
   const containerRef = useRef(null)
@@ -74,9 +74,10 @@ export default function PdfCanvas({
   const [tracePoints, setTracePoints] = useState([])
   const [cursorNorm, setCursorNorm]   = useState(null)
 
-  // Parcel edit
-  const [editPoints, setEditPoints]   = useState(null)
-  const [hoverTarget, setHoverTarget] = useState(null)
+  // Parcel + boundary edit
+  const [editPoints, setEditPoints]           = useState(null)
+  const [editBoundaryPoints, setEditBoundaryPoints] = useState({}) // {boundaryId: [{x,y}]}
+  const [hoverTarget, setHoverTarget]         = useState(null)
 
   // Split
   // phase: 'idle' | 'drawing' | 'review'
@@ -96,11 +97,16 @@ export default function PdfCanvas({
   // Reset mode-local state on mode change
   useEffect(() => {
     setTracePoints([]); setCursorNorm(null); traceRef.current = null
-    setEditPoints(null); setHoverTarget(null); editRef.current = null
+    setEditPoints(null); setEditBoundaryPoints({}); setHoverTarget(null); editRef.current = null
     setSplitPhase('idle'); setSplitLine([]); setSplitCursorSvg(null)
     setSplitSnapSvg(null); setSplitTargetId(null)
 
-    if (mode === 'edit') setEditPoints(savedParcel ? [...savedParcel] : null)
+    if (mode === 'edit') {
+      setEditPoints(savedParcel ? [...savedParcel] : null)
+      const bpts = {}
+      for (const b of boundaries) bpts[b.boundary_id] = JSON.parse(b.polygon_json)
+      setEditBoundaryPoints(bpts)
+    }
   }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── PDF load ────────────────────────────────────────────────────────────────
@@ -224,47 +230,94 @@ export default function PdfCanvas({
   // ─── Parcel edit ──────────────────────────────────────────────────────────────
   const editSvgPts = cssDims && editPoints ? editPoints.map(p => normToScreen(p.x, p.y)) : []
 
+  // Hit test parcel + all boundary polygons. Returns target with `source` field.
+  function getEditTargetAll(sx, sy) {
+    if (editPoints) {
+      const t = getEditTarget(sx, sy, editSvgPts)
+      if (t) return { ...t, source: 'parcel' }
+    }
+    for (const [bidStr, pts] of Object.entries(editBoundaryPoints)) {
+      const svgPts = pts.map(p => normToScreen(p.x, p.y))
+      const t = getEditTarget(sx, sy, svgPts)
+      if (t) return { ...t, source: 'boundary', boundaryId: Number(bidStr), svgPts }
+    }
+    return null
+  }
+
   function handleEditDown(e) {
     if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
     const { sx, sy } = svgXY(e)
-    editRef.current = { target: getEditTarget(sx, sy, editSvgPts), startX: e.clientX, startY: e.clientY, startPanX: pan.x, startPanY: pan.y, startPts: editPoints ? [...editPoints] : [], moved: false }
+    const target = getEditTargetAll(sx, sy)
+    editRef.current = {
+      target,
+      startX: e.clientX, startY: e.clientY,
+      startPanX: pan.x, startPanY: pan.y,
+      startPts: editPoints ? [...editPoints] : [],
+      startBndPts: target?.source === 'boundary'
+        ? [...(editBoundaryPoints[target.boundaryId] || [])]
+        : [],
+      moved: false,
+    }
   }
   function handleEditMove(e) {
     const ref = editRef.current
     const { sx, sy } = svgXY(e)
-    if (!ref?.moved) setHoverTarget(getEditTarget(sx, sy, editSvgPts))
+    if (!ref?.moved) setHoverTarget(getEditTargetAll(sx, sy))
     if (!ref) return
     const dx = e.clientX - ref.startX, dy = e.clientY - ref.startY
     if (Math.hypot(dx, dy) <= DRAG_THRESHOLD) return
     ref.moved = true
     if (ref.target?.type === 'vertex') {
       const n = screenToNorm(sx, sy); if (!n) return
-      const np = [...ref.startPts]; np[ref.target.idx] = n; setEditPoints(np)
+      if (ref.target.source === 'parcel') {
+        const np = [...ref.startPts]; np[ref.target.idx] = n; setEditPoints(np)
+      } else {
+        const np = [...ref.startBndPts]; np[ref.target.idx] = n
+        setEditBoundaryPoints(prev => ({ ...prev, [ref.target.boundaryId]: np }))
+      }
     } else { setPan({ x: ref.startPanX + dx, y: ref.startPanY + dy }) }
   }
   async function handleEditUp(e) {
     const ref = editRef.current; editRef.current = null; if (!ref) return
     if (ref.target?.type === 'vertex' && ref.moved) {
-      await saveParcel(editPoints)
+      if (ref.target.source === 'parcel') {
+        await saveParcel(editPoints)
+      } else {
+        await saveBoundaryPoints(ref.target.boundaryId, editBoundaryPoints[ref.target.boundaryId])
+      }
     } else if (!ref.moved) {
       const { sx, sy } = svgXY(e)
-      const t = getEditTarget(sx, sy, editSvgPts)
+      const t = getEditTargetAll(sx, sy)
       if (t?.type === 'edge') {
         const n = screenToNorm(t.point.x, t.point.y); if (!n) return
-        const np = [...(editPoints || [])]; np.splice(t.idx + 1, 0, n)
-        setEditPoints(np); await saveParcel(np)
+        if (t.source === 'parcel') {
+          const np = [...(editPoints || [])]; np.splice(t.idx + 1, 0, n)
+          setEditPoints(np); await saveParcel(np)
+        } else {
+          const np = [...(editBoundaryPoints[t.boundaryId] || [])]; np.splice(t.idx + 1, 0, n)
+          setEditBoundaryPoints(prev => ({ ...prev, [t.boundaryId]: np }))
+          await saveBoundaryPoints(t.boundaryId, np)
+        }
       }
     }
   }
   async function handleEditContextMenu(e) {
     e.preventDefault()
-    if (!editPoints || editPoints.length <= 3) return
     const { sx, sy } = svgXY(e)
-    const t = getEditTarget(sx, sy, editSvgPts)
+    const t = getEditTargetAll(sx, sy)
     if (t?.type === 'vertex') {
-      const np = editPoints.filter((_, i) => i !== t.idx)
-      setEditPoints(np); await saveParcel(np)
+      if (t.source === 'parcel' && editPoints && editPoints.length > 3) {
+        const np = editPoints.filter((_, i) => i !== t.idx)
+        setEditPoints(np); await saveParcel(np)
+      } else if (t.source === 'boundary') {
+        const pts = editBoundaryPoints[t.boundaryId] || []
+        if (pts.length > 3) {
+          const np = pts.filter((_, i) => i !== t.idx)
+          setEditBoundaryPoints(prev => ({ ...prev, [t.boundaryId]: np }))
+          await saveBoundaryPoints(t.boundaryId, np)
+        }
+      }
     }
   }
   async function saveParcel(pts) {
@@ -273,6 +326,13 @@ export default function PdfCanvas({
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parcel_json: JSON.stringify(pts) }),
     }).catch(console.error)
+  }
+  async function saveBoundaryPoints(boundaryId, pts) {
+    const res = await fetch(`/api/phase-boundaries/${boundaryId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ polygon_json: JSON.stringify(pts) }),
+    }).catch(console.error)
+    if (res?.ok) onBoundaryUpdated?.(await res.json())
   }
 
   // ─── Split mode ────────────────────────────────────────────────────────────────
@@ -469,17 +529,41 @@ export default function PdfCanvas({
               <>
                 <polygon points={editSvgPts.map(p=>`${p.x},${p.y}`).join(' ')}
                   fill="rgba(37,99,235,0.08)" stroke="#2563eb" strokeWidth={2} />
-                {hoverTarget?.type === 'edge' && (
+                {hoverTarget?.source === 'parcel' && hoverTarget.type === 'edge' && (
                   <circle cx={hoverTarget.point.x} cy={hoverTarget.point.y} r={5}
                     fill="#fff" stroke="#2563eb" strokeWidth={2} strokeDasharray="2 2" />
                 )}
                 {editSvgPts.map((p, i) => {
-                  const hov = hoverTarget?.type==='vertex' && hoverTarget.idx===i
+                  const hov = hoverTarget?.source==='parcel' && hoverTarget.type==='vertex' && hoverTarget.idx===i
                   return <circle key={i} cx={p.x} cy={p.y} r={hov?9:6}
                     fill="#fff" stroke={hov?'#1d4ed8':'#2563eb'} strokeWidth={hov?2.5:2} />
                 })}
               </>
             )}
+
+            {/* ── Boundary vertex edit (edit mode) ── */}
+            {inEdit && Object.entries(editBoundaryPoints).map(([bidStr, pts]) => {
+              const bid = Number(bidStr)
+              const bidx = boundaries.findIndex(b => b.boundary_id === bid)
+              const color = boundaryColor(bidx >= 0 ? bidx : 0)
+              const svgPts = pts.map(p => normToScreen(p.x, p.y))
+              const polyStr = svgPts.map(p => `${p.x},${p.y}`).join(' ')
+              return (
+                <g key={bid}>
+                  <polygon points={polyStr} fill={`${color}18`} stroke={color} strokeWidth={2} />
+                  {hoverTarget?.source === 'boundary' && hoverTarget.boundaryId === bid && hoverTarget.type === 'edge' && (
+                    <circle cx={hoverTarget.point.x} cy={hoverTarget.point.y} r={5}
+                      fill="#fff" stroke={color} strokeWidth={2} strokeDasharray="2 2" />
+                  )}
+                  {svgPts.map((p, i) => {
+                    const hov = hoverTarget?.source==='boundary' && hoverTarget.boundaryId===bid && hoverTarget.type==='vertex' && hoverTarget.idx===i
+                    return <circle key={i} cx={p.x} cy={p.y} r={hov?9:6}
+                      fill="#fff" stroke={hov ? color : color} strokeWidth={hov?2.5:2}
+                      style={{ opacity: hov ? 1 : 0.85 }} />
+                  })}
+                </g>
+              )
+            })}
 
             {/* ── Trace ── */}
             {inTrace && svgTrace.length > 0 && (
