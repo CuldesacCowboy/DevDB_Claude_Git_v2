@@ -90,7 +90,14 @@ export function findFirstBoundaryIntersection(p1x, p1y, p2x, p2y, boundaries, no
  * Insert a point onto the closest edge of a polygon boundary.
  * Returns { poly: newPoly, idx: insertedIndex }.
  */
+const EXISTING_VERTEX_TOL = 1e-6
+
 function insertOnBoundary(poly, point) {
+  // If point already coincides with an existing vertex, return it without inserting a duplicate.
+  for (let i = 0; i < poly.length; i++) {
+    if (Math.hypot(poly[i].x - point.x, poly[i].y - point.y) < EXISTING_VERTEX_TOL)
+      return { poly, idx: i }
+  }
   let bestEdge = 0, bestDist = Infinity, bestCx = point.x, bestCy = point.y
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i], b = poly[(i + 1) % poly.length]

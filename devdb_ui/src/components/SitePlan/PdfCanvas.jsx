@@ -626,7 +626,6 @@ export default function PdfCanvas({
             style={{ position: 'absolute', top:0, left:0, width:'100%', height:'100%', overflow:'visible',
               pointerEvents: overlayActive ? 'all' : 'none',
               cursor: inTrace ? (traceSnap ? 'cell' : 'crosshair') : inEdit ? editCursor : inSplit ? splitCursor : 'default' }}
-            onWheel={handleWheel}
             onPointerDown={overlayActive ? onSvgPointerDown : undefined}
             onPointerMove={overlayActive ? onSvgPointerMove : undefined}
             onPointerUp={overlayActive ? onSvgPointerUp : undefined}
