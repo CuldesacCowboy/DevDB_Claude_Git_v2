@@ -1,5 +1,6 @@
 // SitePlanView.jsx
-// Main site plan page. Dev picker in toolbar; upload area or PDF viewer below.
+// Main site plan page. Entitlement group picker in toolbar; upload area or PDF viewer below.
+// Site plans are scoped to an entitlement group (the whole project), not individual developments.
 
 import { useState, useEffect, useRef } from 'react'
 import PdfCanvas from '../components/SitePlan/PdfCanvas'
@@ -7,26 +8,26 @@ import PdfCanvas from '../components/SitePlan/PdfCanvas'
 const API = '/api'
 
 export default function SitePlanView() {
-  const [developments, setDevelopments] = useState([])
-  const [selectedDevId, setSelectedDevId] = useState('')
-  const [plan, setPlan] = useState(null)      // null = none loaded; object = plan record
+  const [entGroups, setEntGroups] = useState([])
+  const [selectedGroupId, setSelectedGroupId] = useState('')
+  const [plan, setPlan] = useState(null)
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
-    fetch(`${API}/developments`)
+    fetch(`${API}/entitlement-groups`)
       .then(r => r.json())
-      .then(devs => setDevelopments(devs.sort((a, b) => a.dev_name.localeCompare(b.dev_name))))
-      .catch(() => setError('Could not load developments'))
+      .then(groups => setEntGroups(groups.sort((a, b) => a.ent_group_name.localeCompare(b.ent_group_name))))
+      .catch(() => setError('Could not load entitlement groups'))
   }, [])
 
   useEffect(() => {
-    if (!selectedDevId) { setPlan(null); return }
+    if (!selectedGroupId) { setPlan(null); return }
     setLoading(true)
     setError(null)
-    fetch(`${API}/site-plans/dev/${selectedDevId}`)
+    fetch(`${API}/site-plans/ent-group/${selectedGroupId}`)
       .then(r => {
         if (r.status === 404) return null
         if (!r.ok) throw new Error('Server error')
@@ -34,13 +35,12 @@ export default function SitePlanView() {
       })
       .then(data => { setPlan(data); setLoading(false) })
       .catch(() => { setError('Could not load site plan'); setLoading(false) })
-  }, [selectedDevId])
+  }, [selectedGroupId])
 
   async function handleFileChange(e) {
     const file = e.target.files?.[0]
     if (!file) return
     await doUpload(file)
-    // Reset so the same file can be re-selected if needed
     e.target.value = ''
   }
 
@@ -50,7 +50,7 @@ export default function SitePlanView() {
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch(`${API}/site-plans?dev_id=${selectedDevId}`, {
+      const res = await fetch(`${API}/site-plans?ent_group_id=${selectedGroupId}`, {
         method: 'POST',
         body: form,
       })
@@ -86,17 +86,17 @@ export default function SitePlanView() {
         display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0,
       }}>
         <select
-          value={selectedDevId}
-          onChange={e => setSelectedDevId(e.target.value)}
+          value={selectedGroupId}
+          onChange={e => setSelectedGroupId(e.target.value)}
           style={{
             fontSize: 13, padding: '4px 8px',
             borderRadius: 4, border: '1px solid #d1d5db',
             minWidth: 220,
           }}
         >
-          <option value=''>Select development...</option>
-          {developments.map(d => (
-            <option key={d.dev_id} value={d.dev_id}>{d.dev_name}</option>
+          <option value=''>Select project...</option>
+          {entGroups.map(g => (
+            <option key={g.ent_group_id} value={g.ent_group_id}>{g.ent_group_name}</option>
           ))}
         </select>
 
@@ -125,21 +125,20 @@ export default function SitePlanView() {
 
       {/* Main area */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {!selectedDevId && (
-          <Placeholder>Select a development to view its site plan</Placeholder>
+        {!selectedGroupId && (
+          <Placeholder>Select a project to view its site plan</Placeholder>
         )}
 
-        {selectedDevId && loading && (
+        {selectedGroupId && loading && (
           <Placeholder>Loading...</Placeholder>
         )}
 
-        {selectedDevId && !loading && !plan && (
+        {selectedGroupId && !loading && !plan && (
           <div
             style={{
               display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'center',
-              height: '100%', gap: 16,
-              background: '#f9fafb',
+              height: '100%', background: '#f9fafb',
             }}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
@@ -150,7 +149,7 @@ export default function SitePlanView() {
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12,
               background: '#fff',
             }}>
-              <span style={{ fontSize: 14, color: '#6b7280' }}>No site plan uploaded for this development</span>
+              <span style={{ fontSize: 14, color: '#6b7280' }}>No site plan uploaded for this project</span>
               <span style={{ fontSize: 12, color: '#9ca3af' }}>Drag and drop a PDF here, or</span>
               <button
                 onClick={() => fileInputRef.current?.click()}
