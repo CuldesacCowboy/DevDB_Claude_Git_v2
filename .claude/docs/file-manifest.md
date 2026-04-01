@@ -78,6 +78,20 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: sim_dev_phases, sim_legal_instruments, ref_lot_types, sim_phase_product_splits, sim_phase_builder_splits, sim_delivery_event_phases, sim_lots (devdb. prefix on DELETE lot-type queries)
 - Last commit: 2026-03-29
 
+### devdb_python/api/routers/site_plans.py
+- Owns: Site plan CRUD; POST /site-plans (upload PDF); GET /site-plans/ent-group/{id}; GET /{plan_id}/file; PATCH /{plan_id}/parcel (saves parcel polygon, auto-seeds first boundary if none exists)
+- Imports: api.deps, fastapi, pydantic
+- Imported by: api/main.py
+- Tables: sim_site_plans, sim_phase_boundaries
+- Last commit: 2026-04-01
+
+### devdb_python/api/routers/phase_boundaries.py
+- Owns: Phase boundary CRUD + split endpoint; GET /plan/{plan_id}; POST; PATCH /{boundary_id} (polygon_json, label, phase_id — uses model_fields_set for null-safe unassign); DELETE; POST /split (delete original, insert two children)
+- Imports: api.deps, fastapi, pydantic
+- Imported by: api/main.py
+- Tables: sim_phase_boundaries
+- Last commit: 2026-04-01
+
 ### devdb_python/services/lot_assignment_service.py
 - Owns: Lot phase reassignment, lot-type change, lot unassignment with validation and audit logging
 - Imports: psycopg2.extras, dataclasses
@@ -129,6 +143,27 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: dnd-kit, react (useState, useCallback, useEffect, useMemo), useTdaData, useTdaDragHandler, LeftPanel, TdaPageHeader, CheckpointBand, TdaCard, TdaDragOverlay, TdaNavBar, ContextMenu
 - Imported by: LotPhaseView.jsx (as tab)
 - Tables: none (API calls via /api/takedown-agreements)
+- Last commit: 2026-04-01
+
+### devdb_ui/src/pages/SitePlanView.jsx
+- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split); phase side panel (boundary list with color swatches + phase assignment); fetches boundaries and lot-phase data; onSplitConfirm POSTs /api/phase-boundaries/split; onBoundaryUpdated patches boundaries state
+- Imports: react, PdfCanvas, PhasePanel
+- Imported by: App.jsx
+- Tables: none (API calls via /api/site-plans, /api/phase-boundaries, /api/entitlement-groups)
+- Last commit: 2026-04-01
+
+### devdb_ui/src/components/SitePlan/PdfCanvas.jsx
+- Owns: PDF rendering canvas; parcel trace mode; parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (click-to-draw polyline, snap to boundaries, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion; buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm
+- Imports: pdfjs-dist, react, splitPolygon (distToSeg, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon)
+- Imported by: SitePlanView.jsx
+- Tables: none (API calls via onParcelSaved, onSplitConfirm, onBoundaryUpdated props)
+- Last commit: 2026-04-01
+
+### devdb_ui/src/components/SitePlan/splitPolygon.js
+- Owns: Polygon split geometry utilities; distToSeg; segIntersect; snapToBoundaries (snap cursor to boundary edge, normPoint via t-interpolation in normalized space); findFirstBoundaryIntersection (normPoint via u-interpolation in normalized space); insertOnBoundary (projects input onto closest edge before inserting — exact topology); splitPolygon (insert start/end on ring, build two arcs + interior)
+- Imports: none
+- Imported by: PdfCanvas.jsx
+- Tables: none
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/components/InstrumentContainer.jsx

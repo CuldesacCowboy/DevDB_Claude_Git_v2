@@ -117,6 +117,21 @@ def update_parcel(plan_id: int, body: ParcelUpdateRequest, conn=Depends(get_db_c
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Plan not found")
+
+        # Auto-seed first phase boundary from the parcel polygon (only if none exist yet)
+        if body.parcel_json:
+            cur.execute(
+                "SELECT COUNT(*) FROM sim_phase_boundaries WHERE plan_id = %s", (plan_id,)
+            )
+            if cur.fetchone()[0] == 0:
+                cur.execute(
+                    """
+                    INSERT INTO sim_phase_boundaries (plan_id, polygon_json, split_order)
+                    VALUES (%s, %s, 0)
+                    """,
+                    (plan_id, body.parcel_json),
+                )
+
         conn.commit()
     return _row_to_plan(row)
 
