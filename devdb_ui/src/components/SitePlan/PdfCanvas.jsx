@@ -48,8 +48,10 @@ function getEditTarget(sx, sy, svgPts) {
   }
   for (let i = 0; i < svgPts.length; i++) {
     const a = svgPts[i], b = svgPts[(i + 1) % svgPts.length]
-    const { dist, cx, cy } = distToSeg(sx, sy, a.x, a.y, b.x, b.y)
-    if (dist < EDGE_HIT_PX) return { type: 'edge', idx: i, point: { x: cx, y: cy } }
+    const { dist, t, cx, cy } = distToSeg(sx, sy, a.x, a.y, b.x, b.y)
+    // t is the parametric position along this edge in SVG space; it equals the
+    // normalized-space t because normToScreen is a linear transform.
+    if (dist < EDGE_HIT_PX) return { type: 'edge', idx: i, t, point: { x: cx, y: cy } }
   }
   return null
 }
@@ -374,16 +376,39 @@ export default function PdfCanvas({
       for (const bid of bids) await saveBoundaryPoints(bid, editBoundaryPoints[bid])
     } else if (!ref.moved) {
       const { sx, sy } = svgXY(e)
-      const t = getEditTargetAll(sx, sy)
-      if (t?.type === 'edge') {
-        const n = screenToNorm(t.point.x, t.point.y); if (!n) return
-        if (t.source === 'parcel') {
-          const np = [...(editPoints || [])]; np.splice(t.idx + 1, 0, n)
+      const tgt = getEditTargetAll(sx, sy)
+      if (tgt?.type === 'edge') {
+        if (tgt.source === 'parcel') {
+          // Interpolate in normalized space using t — avoids lossy screenToNorm
+          const edgeA = editPoints[tgt.idx], edgeB = editPoints[(tgt.idx + 1) % editPoints.length]
+          const n = { x: edgeA.x + tgt.t * (edgeB.x - edgeA.x), y: edgeA.y + tgt.t * (edgeB.y - edgeA.y) }
+          const np = [...editPoints]; np.splice(tgt.idx + 1, 0, n)
           setEditPoints(np); await saveParcel(np)
         } else {
-          const np = [...(editBoundaryPoints[t.boundaryId] || [])]; np.splice(t.idx + 1, 0, n)
-          setEditBoundaryPoints(prev => ({ ...prev, [t.boundaryId]: np }))
-          await saveBoundaryPoints(t.boundaryId, np)
+          const srcPts = editBoundaryPoints[tgt.boundaryId] || []
+          const edgeA = srcPts[tgt.idx], edgeB = srcPts[(tgt.idx + 1) % srcPts.length]
+          const n = { x: edgeA.x + tgt.t * (edgeB.x - edgeA.x), y: edgeA.y + tgt.t * (edgeB.y - edgeA.y) }
+          const np = [...srcPts]; np.splice(tgt.idx + 1, 0, n)
+          // Propagate to any other boundary sharing this exact edge (topology preservation)
+          const updates = { [tgt.boundaryId]: np }
+          for (const [bidStr, pts] of Object.entries(editBoundaryPoints)) {
+            const bid = Number(bidStr)
+            if (bid === tgt.boundaryId) continue
+            for (let i = 0; i < pts.length; i++) {
+              const p = pts[i], q = pts[(i + 1) % pts.length]
+              const fwd = Math.hypot(p.x-edgeA.x,p.y-edgeA.y) < SHARED_VERTEX_TOL && Math.hypot(q.x-edgeB.x,q.y-edgeB.y) < SHARED_VERTEX_TOL
+              const rev = Math.hypot(p.x-edgeB.x,p.y-edgeB.y) < SHARED_VERTEX_TOL && Math.hypot(q.x-edgeA.x,q.y-edgeA.y) < SHARED_VERTEX_TOL
+              if (fwd || rev) {
+                const spts = [...pts]; spts.splice(i + 1, 0, n)
+                updates[bid] = spts
+                break
+              }
+            }
+          }
+          setEditBoundaryPoints(prev => ({ ...prev, ...updates }))
+          for (const [bidStr, updatedPts] of Object.entries(updates)) {
+            await saveBoundaryPoints(Number(bidStr), updatedPts)
+          }
         }
       }
     }
@@ -430,7 +455,11 @@ export default function PdfCanvas({
   function handleSplitMove(e) {
     const { sx, sy } = svgXY(e)
     setSplitCursorSvg({ x: sx, y: sy })
-    const snap = snapToBoundaries(sx, sy, boundaries, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+    // During drawing, snap indicator should match the target-only snap used on click
+    const snapBnds = (splitPhase === 'drawing' && splitTargetId)
+      ? boundaries.filter(b => b.boundary_id === splitTargetId)
+      : boundaries
+    const snap = snapToBoundaries(sx, sy, snapBnds, normToScreen, screenToNorm, SNAP_SPLIT_PX)
     setSplitSnapSvg(snap ? snap.svgPoint : null)
   }
 
@@ -453,15 +482,20 @@ export default function PdfCanvas({
       e.currentTarget.setPointerCapture(e.pointerId)
       const last = splitLineSvg[splitLineSvg.length - 1]
 
-      // Snap to boundary edge → terminate and immediately split
-      const snap = snapToBoundaries(sx, sy, boundaries, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+      // Only snap/intersect against the TARGET boundary — not all boundaries.
+      // Snapping to a neighbor's copy of a shared edge produces a point that
+      // is not exactly on the target polygon, causing gaps and bad splits.
+      const targetBnds = boundaries.filter(b => b.boundary_id === splitTargetId)
+
+      // Snap to target boundary edge → terminate and immediately split
+      const snap = snapToBoundaries(sx, sy, targetBnds, normToScreen, screenToNorm, SNAP_SPLIT_PX)
       if (snap) {
         performSplit([...splitLine, snap.normPoint])
         return
       }
 
-      // Click overshoots a boundary edge → clip to intersection and immediately split
-      const ix = findFirstBoundaryIntersection(last.x, last.y, sx, sy, boundaries, normToScreen)
+      // Click overshoots a target boundary edge → clip to intersection and split
+      const ix = findFirstBoundaryIntersection(last.x, last.y, sx, sy, targetBnds, normToScreen)
       if (ix) {
         performSplit([...splitLine, ix.normPoint])
         return
