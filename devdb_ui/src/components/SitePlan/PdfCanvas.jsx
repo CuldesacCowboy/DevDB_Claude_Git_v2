@@ -1,131 +1,136 @@
 // PdfCanvas.jsx
-// PDF viewer with pan, zoom, rotation, parcel trace, and parcel vertex editing.
+// PDF viewer with pan/zoom/rotation, parcel trace+edit, and phase boundary split.
 //
 // Props:
-//   pdfUrl        — URL to fetch the PDF
-//   planId        — plan_id for saving parcel to the backend
-//   initialParcel — [{x,y}] normalized coords (0–1) loaded from DB, or null
-//   mode          — 'view' | 'trace' | 'edit'
-//   onModeChange  — (newMode) => void
-//   onParcelSaved — (points) => void
+//   pdfUrl          — URL of the PDF
+//   planId          — for saving parcel / split results
+//   initialParcel   — [{x,y}] or null
+//   boundaries      — [{boundary_id, polygon_json, phase_id, label, split_order}]
+//   selectedBoundaryId — boundary highlighted for assignment (controlled by SitePlanView)
+//   mode            — 'view'|'trace'|'edit'|'split'
+//   onModeChange    — (mode) => void
+//   onParcelSaved   — (points) => void
+//   onSplitConfirm  — (originalId, polyA, polyB) => void
+//   onBoundarySelect — (boundary_id | null) => void
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
+import {
+  distToSeg, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon,
+} from './splitPolygon'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
 const RENDER_SCALE   = 2.0
 const MIN_ZOOM       = 0.1
 const MAX_ZOOM       = 8.0
-const SNAP_PX        = 16   // px — snap-to-first ring in trace mode
-const DRAG_THRESHOLD = 5    // px — below this = click, above = drag
-const VERTEX_HIT_PX  = 12  // px — vertex handle hit radius
-const EDGE_HIT_PX    = 8   // px — edge hit radius for add-vertex
+const SNAP_TRACE_PX  = 16   // snap-to-first ring in trace mode
+const DRAG_THRESHOLD = 5
+const VERTEX_HIT_PX  = 12
+const EDGE_HIT_PX    = 8
+const SNAP_SPLIT_PX  = 18   // snap to boundary edge in split mode
 
-// ─── Geometry helpers ─────────────────────────────────────────────────────────
-function distToSeg(px, py, ax, ay, bx, by) {
-  const dx = bx - ax, dy = by - ay
-  const len2 = dx * dx + dy * dy
-  const t = len2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2)) : 0
-  const cx = ax + t * dx, cy = ay + t * dy
-  return { dist: Math.hypot(px - cx, py - cy), t, cx, cy }
+// Colour palette for boundary polygons
+const BOUNDARY_COLORS = [
+  '#3b82f6','#10b981','#f97316','#8b5cf6','#06b6d4',
+  '#ec4899','#84cc16','#eab308','#ef4444','#6366f1',
+]
+function boundaryColor(idx) { return BOUNDARY_COLORS[idx % BOUNDARY_COLORS.length] }
+
+// ─── Parcel edit hit detection (SVG space) ────────────────────────────────────
+function getEditTarget(sx, sy, svgPts) {
+  for (let i = 0; i < svgPts.length; i++) {
+    if (Math.hypot(svgPts[i].x - sx, svgPts[i].y - sy) < VERTEX_HIT_PX)
+      return { type: 'vertex', idx: i }
+  }
+  for (let i = 0; i < svgPts.length; i++) {
+    const a = svgPts[i], b = svgPts[(i + 1) % svgPts.length]
+    const { dist, cx, cy } = distToSeg(sx, sy, a.x, a.y, b.x, b.y)
+    if (dist < EDGE_HIT_PX) return { type: 'edge', idx: i, point: { x: cx, y: cy } }
+  }
+  return null
 }
 
 export default function PdfCanvas({
-  pdfUrl,
-  planId,
-  initialParcel,
-  mode,
-  onModeChange,
-  onParcelSaved,
+  pdfUrl, planId, initialParcel,
+  boundaries = [],
+  selectedBoundaryId,
+  mode, onModeChange,
+  onParcelSaved, onSplitConfirm, onBoundarySelect,
 }) {
   const canvasRef    = useRef(null)
   const containerRef = useRef(null)
 
-  // Pan/zoom state
-  const [cssDims, setCssDims] = useState(null)
-  const [pan, setPan]         = useState({ x: 0, y: 0 })
-  const [zoom, setZoom]       = useState(1.0)
-  const [rotation, setRotation] = useState(0)
+  const [cssDims, setCssDims]       = useState(null)
+  const [pan, setPan]               = useState({ x: 0, y: 0 })
+  const [zoom, setZoom]             = useState(1.0)
+  const [rotation, setRotation]     = useState(0)
 
-  // Parcel state
-  const [savedParcel, setSavedParcel]   = useState(initialParcel || null)
+  // Parcel
+  const [savedParcel, setSavedParcel] = useState(initialParcel || null)
 
-  // Trace mode state
-  const [tracePoints, setTracePoints]   = useState([])
-  const [cursorNorm, setCursorNorm]     = useState(null)
+  // Trace
+  const [tracePoints, setTracePoints] = useState([])
+  const [cursorNorm, setCursorNorm]   = useState(null)
 
-  // Edit mode state
-  const [editPoints, setEditPoints]     = useState(null)
-  const [hoverTarget, setHoverTarget]   = useState(null)  // {type:'vertex'|'edge', idx, point?}
+  // Parcel edit
+  const [editPoints, setEditPoints]   = useState(null)
+  const [hoverTarget, setHoverTarget] = useState(null)
 
-  // Interaction refs (avoid stale closures in pointer handlers)
-  const dragRef  = useRef(null)   // view-mode pan
-  const traceRef = useRef(null)   // trace-mode pointer
-  const editRef  = useRef(null)   // edit-mode pointer
+  // Split
+  // phase: 'idle' | 'drawing' | 'review'
+  const [splitPhase, setSplitPhase]       = useState('idle')
+  const [splitLine, setSplitLine]         = useState([])   // [{x,y}] normalized
+  const [splitCursorSvg, setSplitCursorSvg] = useState(null)
+  const [splitSnapSvg, setSplitSnapSvg]   = useState(null) // snap indicator SVG pos
+  const [splitTargetId, setSplitTargetId] = useState(null) // which boundary being split
 
-  // Keep savedParcel in sync when parent re-provides initialParcel
+  // Interaction refs
+  const dragRef  = useRef(null)
+  const traceRef = useRef(null)
+  const editRef  = useRef(null)
+
   useEffect(() => { setSavedParcel(initialParcel || null) }, [initialParcel])
 
-  // Reset mode-local state when mode changes
+  // Reset mode-local state on mode change
   useEffect(() => {
-    if (mode === 'trace') {
-      setTracePoints([])
-      setCursorNorm(null)
-      setEditPoints(null)
-      setHoverTarget(null)
-      editRef.current = null
-    } else if (mode === 'edit') {
-      setTracePoints([])
-      setCursorNorm(null)
-      traceRef.current = null
-      setEditPoints(savedParcel ? [...savedParcel] : null)
-      setHoverTarget(null)
-    } else {
-      setTracePoints([])
-      setCursorNorm(null)
-      setEditPoints(null)
-      setHoverTarget(null)
-      traceRef.current = null
-      editRef.current = null
-    }
+    setTracePoints([]); setCursorNorm(null); traceRef.current = null
+    setEditPoints(null); setHoverTarget(null); editRef.current = null
+    setSplitPhase('idle'); setSplitLine([]); setSplitCursorSvg(null)
+    setSplitSnapSvg(null); setSplitTargetId(null)
+
+    if (mode === 'edit') setEditPoints(savedParcel ? [...savedParcel] : null)
   }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── PDF load + render ─────────────────────────────────────────────────────
+  // ─── PDF load ────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!pdfUrl) return
     let cancelled = false
-
     async function load() {
-      const pdf      = await pdfjsLib.getDocument(pdfUrl).promise
+      const pdf  = await pdfjsLib.getDocument(pdfUrl).promise
       if (cancelled) return
-      const page     = await pdf.getPage(1)
+      const page = await pdf.getPage(1)
       if (cancelled) return
-      const viewport = page.getViewport({ scale: RENDER_SCALE, rotation })
-      const canvas   = canvasRef.current
-      canvas.width   = viewport.width
-      canvas.height  = viewport.height
-      const ctx      = canvas.getContext('2d')
-      await page.render({ canvasContext: ctx, viewport }).promise
+      const vp   = page.getViewport({ scale: RENDER_SCALE, rotation })
+      const cv   = canvasRef.current
+      cv.width = vp.width; cv.height = vp.height
+      await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise
       if (cancelled) return
-
-      const w = viewport.width  / RENDER_SCALE
-      const h = viewport.height / RENDER_SCALE
+      const w = vp.width / RENDER_SCALE, h = vp.height / RENDER_SCALE
       setCssDims({ width: w, height: h })
-      const cont = containerRef.current
-      if (cont) {
-        const fit = Math.min(cont.clientWidth / w, cont.clientHeight / h, 1.0)
+      const el = containerRef.current
+      if (el) {
+        const fit = Math.min(el.clientWidth / w, el.clientHeight / h, 1.0)
         setZoom(fit)
-        setPan({ x: (cont.clientWidth - w * fit) / 2, y: (cont.clientHeight - h * fit) / 2 })
+        setPan({ x: (el.clientWidth - w * fit) / 2, y: (el.clientHeight - h * fit) / 2 })
       }
     }
-
     load()
     return () => { cancelled = true }
   }, [pdfUrl, rotation])
 
-  // ─── Coordinate conversion ────────────────────────────────────────────────
+  // ─── Coord helpers ────────────────────────────────────────────────────────────
   const screenToNorm = useCallback((sx, sy) => {
     if (!cssDims) return null
     return { x: (sx - pan.x) / zoom / cssDims.width, y: (sy - pan.y) / zoom / cssDims.height }
@@ -136,61 +141,29 @@ export default function PdfCanvas({
     return { x: nx * cssDims.width * zoom + pan.x, y: ny * cssDims.height * zoom + pan.y }
   }, [cssDims, pan, zoom])
 
-  // ─── Edit mode hit detection ──────────────────────────────────────────────
-  function getEditTarget(sx, sy, svgPts) {
-    // Vertices have priority over edges
-    for (let i = 0; i < svgPts.length; i++) {
-      if (Math.hypot(svgPts[i].x - sx, svgPts[i].y - sy) < VERTEX_HIT_PX) {
-        return { type: 'vertex', idx: i }
-      }
-    }
-    for (let i = 0; i < svgPts.length; i++) {
-      const a = svgPts[i], b = svgPts[(i + 1) % svgPts.length]
-      const { dist, cx, cy } = distToSeg(sx, sy, a.x, a.y, b.x, b.y)
-      if (dist < EDGE_HIT_PX) {
-        return { type: 'edge', idx: i, point: { x: cx, y: cy } }
-      }
-    }
-    return null
+  function svgXY(e) {
+    const rect = containerRef.current.getBoundingClientRect()
+    return { sx: e.clientX - rect.left, sy: e.clientY - rect.top }
   }
 
-  // ─── Parcel save ──────────────────────────────────────────────────────────
-  async function saveParcel(points) {
-    setSavedParcel(points)
-    onParcelSaved?.(points)
-    try {
-      await fetch(`/api/site-plans/${planId}/parcel`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parcel_json: JSON.stringify(points) }),
-      })
-    } catch (err) {
-      console.error('Failed to save parcel:', err)
-    }
-  }
-
-  // ─── Zoom helpers ─────────────────────────────────────────────────────────
+  // ─── Zoom ─────────────────────────────────────────────────────────────────────
   function handleWheel(e) {
     e.preventDefault()
-    const rect    = containerRef.current.getBoundingClientRect()
-    const cx      = e.clientX - rect.left, cy = e.clientY - rect.top
+    const { sx: cx, sy: cy } = svgXY(e)
     const factor  = e.deltaY < 0 ? 1.12 : 1 / 1.12
-    const newZoom = Math.min(Math.max(zoom * factor, MIN_ZOOM), MAX_ZOOM)
-    const ratio   = newZoom / zoom
-    setPan(p => ({ x: cx - (cx - p.x) * ratio, y: cy - (cy - p.y) * ratio }))
-    setZoom(newZoom)
-  }
-
-  function zoomBy(factor) {
-    if (!containerRef.current) return
-    const rect  = containerRef.current.getBoundingClientRect()
-    const cx    = rect.width / 2, cy = rect.height / 2
-    const nz    = Math.min(Math.max(zoom * factor, MIN_ZOOM), MAX_ZOOM)
-    const ratio = nz / zoom
+    const nz      = Math.min(Math.max(zoom * factor, MIN_ZOOM), MAX_ZOOM)
+    const ratio   = nz / zoom
     setPan(p => ({ x: cx - (cx - p.x) * ratio, y: cy - (cy - p.y) * ratio }))
     setZoom(nz)
   }
-
+  function zoomBy(factor) {
+    if (!containerRef.current) return
+    const { width: cw, height: ch } = containerRef.current.getBoundingClientRect()
+    const nz = Math.min(Math.max(zoom * factor, MIN_ZOOM), MAX_ZOOM)
+    const r  = nz / zoom
+    setPan(p => ({ x: cw/2 - (cw/2 - p.x) * r, y: ch/2 - (ch/2 - p.y) * r }))
+    setZoom(nz)
+  }
   function resetView() {
     if (!cssDims || !containerRef.current) return
     const { clientWidth: cw, clientHeight: ch } = containerRef.current
@@ -199,7 +172,7 @@ export default function PdfCanvas({
     setPan({ x: (cw - cssDims.width * fit) / 2, y: (ch - cssDims.height * fit) / 2 })
   }
 
-  // ─── View-mode pan ────────────────────────────────────────────────────────
+  // ─── View pan ─────────────────────────────────────────────────────────────────
   function handlePointerDown(e) {
     if (e.button !== 0 || mode !== 'view') return
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -211,161 +184,221 @@ export default function PdfCanvas({
   }
   function handlePointerUp() { dragRef.current = null }
 
-  // ─── Trace-mode handlers ──────────────────────────────────────────────────
-  function handleTracePointerDown(e) {
+  // ─── Trace ────────────────────────────────────────────────────────────────────
+  function handleTraceDown(e) {
     if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
     traceRef.current = { startX: e.clientX, startY: e.clientY, startPanX: pan.x, startPanY: pan.y, moved: false }
   }
-
-  function handleTracePointerMove(e) {
-    const ref  = traceRef.current
-    const rect = containerRef.current.getBoundingClientRect()
-    setCursorNorm(screenToNorm(e.clientX - rect.left, e.clientY - rect.top))
+  function handleTraceMove(e) {
+    const ref = traceRef.current
+    const { sx, sy } = svgXY(e)
+    setCursorNorm(screenToNorm(sx, sy))
     if (!ref) return
     const dx = e.clientX - ref.startX, dy = e.clientY - ref.startY
-    if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
-      ref.moved = true
-      setPan({ x: ref.startPanX + dx, y: ref.startPanY + dy })
-    }
+    if (Math.hypot(dx, dy) > DRAG_THRESHOLD) { ref.moved = true; setPan({ x: ref.startPanX + dx, y: ref.startPanY + dy }) }
   }
-
-  function handleTracePointerUp(e) {
-    const ref = traceRef.current
-    traceRef.current = null
+  function handleTraceUp(e) {
+    const ref = traceRef.current; traceRef.current = null
     if (!ref || ref.moved) return
-    const rect  = containerRef.current.getBoundingClientRect()
-    const sx    = e.clientX - rect.left, sy = e.clientY - rect.top
-    const norm  = screenToNorm(sx, sy)
+    const { sx, sy } = svgXY(e)
+    const norm = screenToNorm(sx, sy)
     if (!norm) return
-
     if (tracePoints.length >= 3) {
       const first = normToScreen(tracePoints[0].x, tracePoints[0].y)
-      if (Math.hypot(first.x - sx, first.y - sy) < SNAP_PX) { closePolygon(); return }
+      if (Math.hypot(first.x - sx, first.y - sy) < SNAP_TRACE_PX) { closeTrace(); return }
     }
     setTracePoints(pts => [...pts, norm])
   }
-
-  async function closePolygon() {
+  async function closeTrace() {
     if (tracePoints.length < 3) return
-    const points = tracePoints
-    setTracePoints([])
-    setCursorNorm(null)
-    onModeChange('view')
-    await saveParcel(points)
+    const pts = tracePoints
+    setTracePoints([]); setCursorNorm(null); onModeChange('view')
+    setSavedParcel(pts); onParcelSaved?.(pts)
+    await fetch(`/api/site-plans/${planId}/parcel`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parcel_json: JSON.stringify(pts) }),
+    }).catch(console.error)
   }
 
-  // ─── Edit-mode handlers ───────────────────────────────────────────────────
-  const editSvgPoints = cssDims && editPoints ? editPoints.map(p => normToScreen(p.x, p.y)) : []
+  // ─── Parcel edit ──────────────────────────────────────────────────────────────
+  const editSvgPts = cssDims && editPoints ? editPoints.map(p => normToScreen(p.x, p.y)) : []
 
-  function handleEditPointerDown(e) {
+  function handleEditDown(e) {
     if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
-    const rect   = containerRef.current.getBoundingClientRect()
-    const sx     = e.clientX - rect.left, sy = e.clientY - rect.top
-    const target = getEditTarget(sx, sy, editSvgPoints)
-
-    editRef.current = {
-      target,
-      startX: e.clientX, startY: e.clientY,
-      startPanX: pan.x,  startPanY: pan.y,
-      startPts: editPoints ? [...editPoints] : [],
-      moved: false,
-    }
+    const { sx, sy } = svgXY(e)
+    editRef.current = { target: getEditTarget(sx, sy, editSvgPts), startX: e.clientX, startY: e.clientY, startPanX: pan.x, startPanY: pan.y, startPts: editPoints ? [...editPoints] : [], moved: false }
   }
-
-  function handleEditPointerMove(e) {
-    const ref  = editRef.current
-    const rect = containerRef.current.getBoundingClientRect()
-    const sx   = e.clientX - rect.left, sy = e.clientY - rect.top
-
-    // Update hover target for cursor/visual feedback
-    if (!ref?.moved) setHoverTarget(getEditTarget(sx, sy, editSvgPoints))
-
+  function handleEditMove(e) {
+    const ref = editRef.current
+    const { sx, sy } = svgXY(e)
+    if (!ref?.moved) setHoverTarget(getEditTarget(sx, sy, editSvgPts))
     if (!ref) return
     const dx = e.clientX - ref.startX, dy = e.clientY - ref.startY
     if (Math.hypot(dx, dy) <= DRAG_THRESHOLD) return
     ref.moved = true
-
     if (ref.target?.type === 'vertex') {
-      // Drag vertex to new position
-      const norm = screenToNorm(sx, sy)
-      if (norm) {
-        const newPts = [...ref.startPts]
-        newPts[ref.target.idx] = norm
-        setEditPoints(newPts)
-      }
-    } else {
-      // Pan
-      setPan({ x: ref.startPanX + dx, y: ref.startPanY + dy })
-    }
+      const n = screenToNorm(sx, sy); if (!n) return
+      const np = [...ref.startPts]; np[ref.target.idx] = n; setEditPoints(np)
+    } else { setPan({ x: ref.startPanX + dx, y: ref.startPanY + dy }) }
   }
-
-  function handleEditPointerUp(e) {
-    const ref = editRef.current
-    editRef.current = null
-    if (!ref) return
-
+  async function handleEditUp(e) {
+    const ref = editRef.current; editRef.current = null; if (!ref) return
     if (ref.target?.type === 'vertex' && ref.moved) {
-      // Commit vertex drag
-      saveParcel(editPoints)
+      await saveParcel(editPoints)
     } else if (!ref.moved) {
-      // Click — check for edge add
-      const rect   = containerRef.current.getBoundingClientRect()
-      const sx     = e.clientX - rect.left, sy = e.clientY - rect.top
-      const target = getEditTarget(sx, sy, editSvgPoints)
-      if (target?.type === 'edge') {
-        const norm = screenToNorm(target.point.x, target.point.y)
-        if (norm) {
-          const newPts = [...(editPoints || [])]
-          newPts.splice(target.idx + 1, 0, norm)
-          setEditPoints(newPts)
-          saveParcel(newPts)
-        }
+      const { sx, sy } = svgXY(e)
+      const t = getEditTarget(sx, sy, editSvgPts)
+      if (t?.type === 'edge') {
+        const n = screenToNorm(t.point.x, t.point.y); if (!n) return
+        const np = [...(editPoints || [])]; np.splice(t.idx + 1, 0, n)
+        setEditPoints(np); await saveParcel(np)
       }
     }
   }
-
-  function handleEditContextMenu(e) {
+  async function handleEditContextMenu(e) {
     e.preventDefault()
     if (!editPoints || editPoints.length <= 3) return
-    const rect   = containerRef.current.getBoundingClientRect()
-    const sx     = e.clientX - rect.left, sy = e.clientY - rect.top
-    const target = getEditTarget(sx, sy, editSvgPoints)
-    if (target?.type === 'vertex') {
-      const newPts = editPoints.filter((_, i) => i !== target.idx)
-      setEditPoints(newPts)
-      saveParcel(newPts)
+    const { sx, sy } = svgXY(e)
+    const t = getEditTarget(sx, sy, editSvgPts)
+    if (t?.type === 'vertex') {
+      const np = editPoints.filter((_, i) => i !== t.idx)
+      setEditPoints(np); await saveParcel(np)
+    }
+  }
+  async function saveParcel(pts) {
+    setSavedParcel(pts); onParcelSaved?.(pts)
+    await fetch(`/api/site-plans/${planId}/parcel`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parcel_json: JSON.stringify(pts) }),
+    }).catch(console.error)
+  }
+
+  // ─── Split mode ────────────────────────────────────────────────────────────────
+
+  // Derived: split line in SVG coords (for rendering)
+  const splitLineSvg = splitLine.map(p => normToScreen(p.x, p.y))
+
+  function handleSplitMove(e) {
+    const { sx, sy } = svgXY(e)
+    setSplitCursorSvg({ x: sx, y: sy })
+    const snap = snapToBoundaries(sx, sy, boundaries, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+    setSplitSnapSvg(snap ? snap.svgPoint : null)
+  }
+
+  function handleSplitDown(e) {
+    if (e.button !== 0) return
+    const { sx, sy } = svgXY(e)
+
+    if (splitPhase === 'idle') {
+      // Must start on a boundary edge
+      const snap = snapToBoundaries(sx, sy, boundaries, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+      if (!snap) return
+      e.currentTarget.setPointerCapture(e.pointerId)
+      setSplitTargetId(snap.boundary.boundary_id)
+      setSplitLine([snap.normPoint])
+      setSplitPhase('drawing')
+      return
+    }
+
+    if (splitPhase === 'drawing') {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      const last = splitLineSvg[splitLineSvg.length - 1]
+
+      // Snap to boundary edge → terminate and immediately split
+      const snap = snapToBoundaries(sx, sy, boundaries, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+      if (snap) {
+        performSplit([...splitLine, snap.normPoint])
+        return
+      }
+
+      // Click overshoots a boundary edge → clip to intersection and immediately split
+      const ix = findFirstBoundaryIntersection(last.x, last.y, sx, sy, boundaries, normToScreen)
+      if (ix) {
+        const normIx = screenToNorm(ix.svgPoint.x, ix.svgPoint.y)
+        performSplit([...splitLine, normIx])
+        return
+      }
+
+      // Interior click → add vertex and continue drawing
+      const norm = screenToNorm(sx, sy)
+      if (norm) setSplitLine(l => [...l, norm])
+      return
     }
   }
 
-  // ─── Derived overlay values ───────────────────────────────────────────────
-  const inTrace    = mode === 'trace'
-  const inEdit     = mode === 'edit'
-  const overlayOn  = inTrace || inEdit
+  function performSplit(finalLine) {
+    if (!splitTargetId || finalLine.length < 2) return
+    const target = boundaries.find(b => b.boundary_id === splitTargetId)
+    if (!target) return
+    const poly = JSON.parse(target.polygon_json)
+    const result = splitPolygon(poly, finalLine)
+    if (!result) { cancelSplit(); return }
+    const [polyA, polyB] = result
+    onSplitConfirm?.(splitTargetId, polyA, polyB)
+    setSplitPhase('idle'); setSplitLine([]); setSplitTargetId(null)
+    setSplitCursorSvg(null); setSplitSnapSvg(null)
+  }
 
-  const svgTrace   = cssDims ? tracePoints.map(p => normToScreen(p.x, p.y)) : []
-  const svgSaved   = cssDims && savedParcel ? savedParcel.map(p => normToScreen(p.x, p.y)) : []
-  const svgCursor  = cssDims && cursorNorm ? normToScreen(cursorNorm.x, cursorNorm.y) : null
-  const svgFirst   = svgTrace[0] ?? null
-  const svgLast    = svgTrace[svgTrace.length - 1] ?? null
-  const snapToFirst = svgFirst && svgCursor && tracePoints.length >= 3 &&
-    Math.hypot(svgFirst.x - svgCursor.x, svgFirst.y - svgCursor.y) < SNAP_PX
+  function cancelSplit() {
+    setSplitPhase('idle'); setSplitLine([]); setSplitTargetId(null)
+    setSplitCursorSvg(null); setSplitSnapSvg(null)
+  }
 
-  const tracePoly = svgTrace.map(p => `${p.x},${p.y}`).join(' ')
-  const savedPoly = svgSaved.map(p => `${p.x},${p.y}`).join(' ')
-  const editPoly  = editSvgPoints.map(p => `${p.x},${p.y}`).join(' ')
+  // ─── Overlay event dispatcher ─────────────────────────────────────────────────
+  const inTrace = mode === 'trace'
+  const inEdit  = mode === 'edit'
+  const inSplit = mode === 'split'
+  const overlayActive = inTrace || inEdit || inSplit
+
+  function onSvgPointerDown(e) {
+    if (inTrace) handleTraceDown(e)
+    else if (inEdit) handleEditDown(e)
+    else if (inSplit) {
+      if (splitPhase === 'review') handleSplitDown(e)
+      else handleSplitDown(e)
+    }
+  }
+  function onSvgPointerMove(e) {
+    if (inTrace) handleTraceMove(e)
+    else if (inEdit) handleEditMove(e)
+    else if (inSplit) { handleSplitMove(e) }
+  }
+  function onSvgPointerUp(e) {
+    if (inTrace) handleTraceUp(e)
+    else if (inEdit) handleEditUp(e)
+  }
+  function onSvgPointerLeave() {
+    if (inTrace) setCursorNorm(null)
+    else if (inEdit) setHoverTarget(null)
+    else if (inSplit) { setSplitCursorSvg(null); setSplitSnapSvg(null) }
+  }
+  function onSvgContextMenu(e) {
+    if (inEdit) handleEditContextMenu(e)
+  }
+
+  // ─── Derived SVG values ────────────────────────────────────────────────────────
+  const traceSnap   = tracePoints.length >= 3 && cursorNorm
+    ? (() => { const f = normToScreen(tracePoints[0].x, tracePoints[0].y); const c = normToScreen(cursorNorm.x, cursorNorm.y); return Math.hypot(f.x-c.x, f.y-c.y) < SNAP_TRACE_PX })()
+    : false
+  const svgTrace    = tracePoints.map(p => normToScreen(p.x, p.y))
+  const svgSaved    = cssDims && savedParcel ? savedParcel.map(p => normToScreen(p.x, p.y)) : []
+  const svgCursor   = cssDims && cursorNorm ? normToScreen(cursorNorm.x, cursorNorm.y) : null
+  const svgFirst    = svgTrace[0]
+  const svgLast     = svgTrace[svgTrace.length - 1]
 
   const editCursor = inEdit
-    ? (hoverTarget?.type === 'vertex' ? 'move' : hoverTarget?.type === 'edge' ? 'cell' : dragRef.current ? 'grabbing' : 'grab')
+    ? (hoverTarget?.type === 'vertex' ? 'move' : hoverTarget?.type === 'edge' ? 'cell' : 'grab')
+    : 'default'
+
+  const splitCursor = inSplit
+    ? (splitPhase === 'drawing' || splitSnapSvg ? 'crosshair' : 'default')
     : 'default'
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-
-      {/* Pan/zoom viewport */}
-      <div
-        ref={containerRef}
+      <div ref={containerRef}
         style={{ width: '100%', height: '100%', overflow: 'hidden', background: '#374151',
           cursor: mode === 'view' ? (dragRef.current ? 'grabbing' : 'grab') : 'default' }}
         onWheel={handleWheel}
@@ -375,86 +408,127 @@ export default function PdfCanvas({
         onPointerLeave={handlePointerUp}
       >
         {/* PDF canvas */}
-        <div style={{ position: 'absolute', transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
-          <canvas ref={canvasRef} style={{ display: 'block', width: cssDims ? cssDims.width : 0, height: cssDims ? cssDims.height : 0, boxShadow: '0 4px 24px rgba(0,0,0,0.4)' }} />
+        <div style={{ position: 'absolute', transform: `translate(${pan.x}px,${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}>
+          <canvas ref={canvasRef} style={{ display: 'block', width: cssDims?.width||0, height: cssDims?.height||0, boxShadow: '0 4px 24px rgba(0,0,0,0.4)' }} />
         </div>
 
         {/* SVG overlay */}
         {cssDims && (
           <svg
-            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-              pointerEvents: overlayOn ? 'all' : 'none',
-              cursor: inTrace ? (snapToFirst ? 'cell' : 'crosshair') : inEdit ? editCursor : 'default',
-              overflow: 'visible' }}
+            style={{ position: 'absolute', top:0, left:0, width:'100%', height:'100%', overflow:'visible',
+              pointerEvents: overlayActive ? 'all' : 'none',
+              cursor: inTrace ? (traceSnap ? 'cell' : 'crosshair') : inEdit ? editCursor : inSplit ? splitCursor : 'default' }}
             onWheel={handleWheel}
-            onPointerDown={inTrace ? handleTracePointerDown : inEdit ? handleEditPointerDown : undefined}
-            onPointerMove={inTrace ? handleTracePointerMove : inEdit ? handleEditPointerMove : undefined}
-            onPointerUp={inTrace ? handleTracePointerUp : inEdit ? handleEditPointerUp : undefined}
-            onPointerLeave={inTrace ? () => setCursorNorm(null) : inEdit ? () => setHoverTarget(null) : undefined}
-            onContextMenu={inEdit ? handleEditContextMenu : undefined}
+            onPointerDown={overlayActive ? onSvgPointerDown : undefined}
+            onPointerMove={overlayActive ? onSvgPointerMove : undefined}
+            onPointerUp={overlayActive ? onSvgPointerUp : undefined}
+            onPointerLeave={overlayActive ? onSvgPointerLeave : undefined}
+            onContextMenu={overlayActive ? onSvgContextMenu : undefined}
           >
+            {/* ── Phase boundaries ── */}
+            {boundaries.map((b, idx) => {
+              const pts = JSON.parse(b.polygon_json)
+              const svg = pts.map(p => normToScreen(p.x, p.y))
+              const polyStr = svg.map(p => `${p.x},${p.y}`).join(' ')
+              const color = boundaryColor(idx)
+              const isSelected = b.boundary_id === selectedBoundaryId
+              const isTarget = b.boundary_id === splitTargetId
+              // Centroid for label
+              const cx = svg.reduce((s,p)=>s+p.x,0)/svg.length
+              const cy = svg.reduce((s,p)=>s+p.y,0)/svg.length
+              return (
+                <g key={b.boundary_id}
+                  onClick={inSplit ? undefined : () => onBoundarySelect?.(isSelected ? null : b.boundary_id)}
+                  style={{ cursor: inSplit ? 'inherit' : 'pointer' }}
+                >
+                  <polygon points={polyStr}
+                    fill={isTarget ? `${color}30` : `${color}18`}
+                    stroke={isSelected ? color : color}
+                    strokeWidth={isSelected ? 3 : isTarget ? 2.5 : 1.5}
+                    strokeDasharray={isTarget ? '6 3' : 'none'}
+                  />
+                  {b.label && (
+                    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
+                      fontSize={12 / zoom * 1.2} fill={color} fontWeight="600"
+                      style={{ pointerEvents:'none', userSelect:'none' }}>
+                      {b.label}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
 
-            {/* ── Saved parcel (view mode) ── */}
+            {/* ── Saved parcel (view/split mode: show as subtle outline) ── */}
             {!inEdit && svgSaved.length >= 3 && (
-              <polygon points={savedPoly} fill="rgba(37,99,235,0.08)" stroke="#2563eb" strokeWidth={2} />
+              <polygon points={svgSaved.map(p=>`${p.x},${p.y}`).join(' ')}
+                fill="none" stroke="rgba(37,99,235,0.25)" strokeWidth={1} strokeDasharray="4 4" />
             )}
 
-            {/* ── Edit mode parcel ── */}
-            {inEdit && editSvgPoints.length >= 3 && (
+            {/* ── Parcel edit ── */}
+            {inEdit && editSvgPts.length >= 3 && (
               <>
-                <polygon points={editPoly} fill="rgba(37,99,235,0.08)" stroke="#2563eb" strokeWidth={2} />
-
-                {/* Edge hover indicator */}
+                <polygon points={editSvgPts.map(p=>`${p.x},${p.y}`).join(' ')}
+                  fill="rgba(37,99,235,0.08)" stroke="#2563eb" strokeWidth={2} />
                 {hoverTarget?.type === 'edge' && (
                   <circle cx={hoverTarget.point.x} cy={hoverTarget.point.y} r={5}
                     fill="#fff" stroke="#2563eb" strokeWidth={2} strokeDasharray="2 2" />
                 )}
-
-                {/* Vertex handles */}
-                {editSvgPoints.map((p, i) => {
-                  const isHovered = hoverTarget?.type === 'vertex' && hoverTarget.idx === i
-                  return (
-                    <circle key={i} cx={p.x} cy={p.y} r={isHovered ? 9 : 6}
-                      fill="#fff" stroke={isHovered ? '#1d4ed8' : '#2563eb'}
-                      strokeWidth={isHovered ? 2.5 : 2} style={{ cursor: 'move' }} />
-                  )
+                {editSvgPts.map((p, i) => {
+                  const hov = hoverTarget?.type==='vertex' && hoverTarget.idx===i
+                  return <circle key={i} cx={p.x} cy={p.y} r={hov?9:6}
+                    fill="#fff" stroke={hov?'#1d4ed8':'#2563eb'} strokeWidth={hov?2.5:2} />
                 })}
-
-                {/* Right-click hint — only show when hovering a vertex and enough points to delete */}
-                {hoverTarget?.type === 'vertex' && editPoints?.length > 3 && (() => {
-                  const p = editSvgPoints[hoverTarget.idx]
-                  return <text x={p.x + 12} y={p.y - 8} fontSize={10} fill="#6b7280" style={{ pointerEvents: 'none', userSelect: 'none' }}>right-click to delete</text>
-                })()}
               </>
             )}
 
-            {/* ── Trace mode ── */}
+            {/* ── Trace ── */}
             {inTrace && svgTrace.length > 0 && (
               <>
-                {svgTrace.length >= 2 && (
-                  <polyline points={tracePoly} fill="none" stroke="#f59e0b" strokeWidth={2} strokeLinejoin="round" />
+                {svgTrace.length>=2 && <polyline points={svgTrace.map(p=>`${p.x},${p.y}`).join(' ')} fill="none" stroke="#f59e0b" strokeWidth={2} strokeLinejoin="round"/>}
+                {svgCursor && svgLast && !traceSnap && <line x1={svgLast.x} y1={svgLast.y} x2={svgCursor.x} y2={svgCursor.y} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 4"/>}
+                {traceSnap && svgLast && <>
+                  <line x1={svgLast.x} y1={svgLast.y} x2={svgFirst.x} y2={svgFirst.y} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 4"/>
+                  <polygon points={svgTrace.map(p=>`${p.x},${p.y}`).join(' ')} fill="rgba(245,158,11,0.08)" stroke="none"/>
+                </>}
+                {svgTrace.map((p,i)=><circle key={i} cx={p.x} cy={p.y} r={4} fill="#f59e0b" stroke="#fff" strokeWidth={1.5}/>)}
+                {svgFirst && tracePoints.length>=3 && <circle cx={svgFirst.x} cy={svgFirst.y} r={traceSnap?SNAP_TRACE_PX:7} fill={traceSnap?'rgba(245,158,11,0.25)':'none'} stroke="#f59e0b" strokeWidth={2}/>}
+                {svgCursor && <circle cx={svgCursor.x} cy={svgCursor.y} r={3} fill="#f59e0b" stroke="#fff" strokeWidth={1}/>}
+              </>
+            )}
+
+            {/* ── Split mode overlay ── */}
+            {inSplit && (
+              <>
+                {/* Snap indicator (idle + drawing) */}
+                {splitSnapSvg && (
+                  <circle cx={splitSnapSvg.x} cy={splitSnapSvg.y} r={7}
+                    fill="rgba(16,185,129,0.3)" stroke="#10b981" strokeWidth={2}/>
                 )}
-                {svgCursor && svgLast && !snapToFirst && (
-                  <line x1={svgLast.x} y1={svgLast.y} x2={svgCursor.x} y2={svgCursor.y}
-                    stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 4" />
-                )}
-                {snapToFirst && svgLast && (
+
+                {/* Split line being drawn */}
+                {splitLineSvg.length >= 1 && (
                   <>
-                    <line x1={svgLast.x} y1={svgLast.y} x2={svgFirst.x} y2={svgFirst.y}
-                      stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="5 4" />
-                    <polygon points={tracePoly} fill="rgba(245,158,11,0.08)" stroke="none" />
+                    {splitLineSvg.length >= 2 && (
+                      <polyline points={splitLineSvg.map(p=>`${p.x},${p.y}`).join(' ')}
+                        fill="none" stroke="#10b981" strokeWidth={2} strokeLinejoin="round"/>
+                    )}
+                    {/* Preview line to cursor (drawing phase) */}
+                    {splitPhase === 'drawing' && splitCursorSvg && (() => {
+                      const last = splitLineSvg[splitLineSvg.length - 1]
+                      return <line x1={last.x} y1={last.y} x2={splitCursorSvg.x} y2={splitCursorSvg.y}
+                        stroke="#10b981" strokeWidth={1.5} strokeDasharray="5 4"/>
+                    })()}
+                    {/* Vertex dots on split line */}
+                    {splitLineSvg.map((p, i) => {
+                      const isAnchor = i === 0 || i === splitLineSvg.length - 1
+                      return <circle key={i} cx={p.x} cy={p.y}
+                        r={isAnchor ? 6 : 4}
+                        fill={isAnchor ? '#10b981' : '#fff'}
+                        stroke="#10b981" strokeWidth={2}/>
+                    })}
                   </>
                 )}
-                {svgTrace.map((p, i) => (
-                  <circle key={i} cx={p.x} cy={p.y} r={4} fill="#f59e0b" stroke="#fff" strokeWidth={1.5} />
-                ))}
-                {svgFirst && tracePoints.length >= 3 && (
-                  <circle cx={svgFirst.x} cy={svgFirst.y} r={snapToFirst ? SNAP_PX : 7}
-                    fill={snapToFirst ? 'rgba(245,158,11,0.25)' : 'none'} stroke="#f59e0b" strokeWidth={2} />
-                )}
-                {svgCursor && (
-                  <circle cx={svgCursor.x} cy={svgCursor.y} r={3} fill="#f59e0b" stroke="#fff" strokeWidth={1} />
-                )}
+
               </>
             )}
           </svg>
@@ -463,27 +537,29 @@ export default function PdfCanvas({
 
       {/* Bottom-right controls */}
       {cssDims && (
-        <div style={{ position: 'absolute', bottom: 16, right: 16, display: 'flex', gap: 6 }}>
+        <div style={{ position:'absolute', bottom:16, right:16, display:'flex', gap:6 }}>
           {inTrace && tracePoints.length >= 3 && (
-            <button onClick={closePolygon}
-              style={{ ...btnStyle, width: 'auto', padding: '0 10px', fontSize: 12, color: '#92400e', borderColor: '#f59e0b', background: 'rgba(255,251,235,0.95)' }}>
+            <button onClick={closeTrace} style={{...btn, width:'auto', padding:'0 10px', fontSize:12, color:'#92400e', borderColor:'#f59e0b', background:'rgba(255,251,235,0.95)'}}>
               Close
             </button>
           )}
-          <button onClick={() => zoomBy(1.25)} style={btnStyle}>+</button>
-          <button onClick={() => zoomBy(1 / 1.25)} style={btnStyle}>−</button>
-          <button onClick={resetView} style={btnStyle}>Fit</button>
-          <button onClick={() => setRotation(r => (r + 90) % 360)} style={btnStyle} title="Rotate 90°">↻</button>
+          {inSplit && splitPhase === 'drawing' && (
+            <button onClick={cancelSplit} style={{...btn, width:'auto', padding:'0 10px', fontSize:12}}>
+              Cancel
+            </button>
+          )}
+          <button onClick={()=>zoomBy(1.25)} style={btn}>+</button>
+          <button onClick={()=>zoomBy(1/1.25)} style={btn}>−</button>
+          <button onClick={resetView} style={btn}>Fit</button>
+          <button onClick={()=>setRotation(r=>(r+90)%360)} style={btn} title="Rotate 90°">↻</button>
         </div>
       )}
     </div>
   )
 }
 
-const btnStyle = {
-  width: 32, height: 32,
-  background: 'rgba(255,255,255,0.92)', border: '1px solid #d1d5db',
-  borderRadius: 6, fontSize: 16, fontWeight: 600,
-  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  color: '#374151',
+const btn = {
+  width:32, height:32, background:'rgba(255,255,255,0.92)', border:'1px solid #d1d5db',
+  borderRadius:6, fontSize:16, fontWeight:600, cursor:'pointer',
+  display:'flex', alignItems:'center', justifyContent:'center', color:'#374151',
 }

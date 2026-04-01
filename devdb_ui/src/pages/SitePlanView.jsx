@@ -249,7 +249,7 @@ export default function SitePlanView() {
         {hasPlan && mode === 'split' && (
           <>
             <span style={{ fontSize: 12, color: '#6d28d9', fontWeight: 500 }}>
-              Click a boundary edge to start split line · click to add vertices · snap to any boundary edge to finish
+              Click a boundary edge to start · click to add vertices · last click on/past any boundary edge finalizes the split
             </span>
             <button onClick={() => { setMode('view'); setSelectedBoundaryId(null) }} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
           </>
