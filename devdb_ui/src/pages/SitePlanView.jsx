@@ -2,8 +2,25 @@
 // Main site plan page. Entitlement group picker + mode controls in toolbar.
 // Right panel: phase boundary list + phase assignment when boundaries exist.
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Component } from 'react'
 import PdfCanvas from '../components/SitePlan/PdfCanvas'
+
+class SitePlanErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(err) { return { error: err } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 32, color: '#dc2626', fontFamily: 'monospace', fontSize: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 14 }}>Render error — check console for full stack</div>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{String(this.state.error)}</pre>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: 16, padding: '4px 12px', fontSize: 12 }}>Dismiss</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const API = '/api'
 
@@ -13,7 +30,7 @@ const INSTRUMENT_COLORS = [
 ]
 const UNASSIGNED_COLOR = '#9ca3af'
 
-export default function SitePlanView() {
+function SitePlanViewInner() {
   const [entGroups, setEntGroups]             = useState([])
   const [selectedGroupId, setSelectedGroupId] = useState('')
   const [plan, setPlan]                       = useState(null)
@@ -397,6 +414,10 @@ export default function SitePlanView() {
       </div>
     </div>
   )
+}
+
+export default function SitePlanView() {
+  return <SitePlanErrorBoundary><SitePlanViewInner /></SitePlanErrorBoundary>
 }
 
 // ─── Phase Side Panel ─────────────────────────────────────────────────────────
