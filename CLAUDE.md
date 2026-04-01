@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: April 2026 (2026-04-01) | Architecture v20 | Decision Log: D-001 through D-152 | Next ID: D-153*
+*Last updated: April 2026 (2026-04-02) | Architecture v20 | Decision Log: D-001 through D-152 | Next ID: D-153*
 
 ---
 
@@ -23,7 +23,7 @@
 | Session tooling | Complete | /start and /end Claude Code skills (.claude/skills/). Start_DevDB_Session.bat opens session windows via devdb_open_session_windows.ps1. Stop_DevDB.bat kills backend (uvicorn + detached python.exe), frontend (Vite), and Chrome DevDB windows. End_DevDB_Session.bat, devdb_run_claude.py, devdb_generate_handoff.py, Save_DevDB_Window_Positions.bat, devdb_save_window_positions.ps1 removed. |
 | Postgres migration | Complete | All 35 tables migrated from Databricks to local PostgreSQL 16 (devdb.devdb). migrate_to_postgres.py. 23.5s total. 266,554 schedhousedetail rows. Engine now runs against local Postgres. Run time 0.5s (was 7+ min on Databricks serverless). |
 | React/FastAPI UI | In progress | React + FastAPI is the active UI. Streamlit was a prior prototype and is no longer active. D-149 is superseded. TDA pipeline dates (HC/BLDR/DIG) moved to sim_lots (migration 012). Global master controls, DIG module, reversible sorts, wider pills, text date input added. |
-| Site Plan module | In progress | PDF upload, parcel trace, rotation, phase boundary split/edit all complete. Phase assignment (side panel) complete. Shared-vertex drag with topology enforcement complete. Exact topology fixes (insertOnBoundary projects onto edge; snapToBoundaries and findFirstBoundaryIntersection interpolate in normalized space). Waterton boundaries cleaned up via Union-Find. |
+| Site Plan module | In progress | PDF upload, parcel trace, rotation, phase boundary split/edit all complete. Phase assignment (side panel) complete. Shared-vertex drag with topology enforcement complete. Exact topology fixes (insertOnBoundary projects onto edge; snapToBoundaries and findFirstBoundaryIntersection interpolate in normalized space). Waterton boundaries cleaned up via Union-Find. Boundary coloring: stroke always dark (#1e293b), fill gray until assigned then instrument color. insertOnBoundary duplicate-vertex bug fixed (split corruption). Scroll-wheel zoom double-fire fixed. Error boundary added to SitePlanView. Stonewater regions 4+6 bad polygon data corrected in DB. |
 
 **Update this table at the start of each Claude Code session to reflect actual current state.**
 

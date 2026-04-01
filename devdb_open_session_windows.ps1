@@ -1,4 +1,4 @@
-param([string]$Task)
+﻿param([string]$Task)
 
 $RepoRoot = Split-Path -Parent $PSCommandPath
 
@@ -15,9 +15,9 @@ foreach ($port in @(8765, 5173)) {
     $lines = netstat -aon 2>$null | Select-String ":$port\s"
     foreach ($line in $lines) {
         $parts = ($line.Line.Trim() -split '\s+')
-        $pid   = $parts[-1]
-        if ($pid -match '^\d+$' -and $pid -ne '0') {
-            taskkill /F /PID $pid 2>$null | Out-Null
+        $procId = $parts[-1]
+        if ($procId -match '^\d+$' -and $procId -ne '0') {
+            taskkill /F /PID $procId 2>$null | Out-Null
         }
     }
 }

@@ -146,25 +146,25 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/SitePlanView.jsx
-- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split); phase side panel (boundary list with color swatches + phase assignment); fetches boundaries and lot-phase data; onSplitConfirm POSTs /api/phase-boundaries/split; onBoundaryUpdated patches boundaries state
-- Imports: react, PdfCanvas, PhasePanel
+- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split); phase side panel (boundary list with color swatches + phase assignment); fetches boundaries and lot-phase data; onSplitConfirm POSTs /api/phase-boundaries/split; onBoundaryUpdated patches boundaries state; SitePlanErrorBoundary (class component, wraps SitePlanViewInner); phaseColorMap built from instrument_id grouping (INSTRUMENT_COLORS palette); boundaries gray until assigned, then instrument color
+- Imports: react (useState, useEffect, useRef, useCallback, Component), PdfCanvas, PhasePanel
 - Imported by: App.jsx
 - Tables: none (API calls via /api/site-plans, /api/phase-boundaries, /api/entitlement-groups)
-- Last commit: 2026-04-01
+- Last commit: 2026-04-02
 
 ### devdb_ui/src/components/SitePlan/PdfCanvas.jsx
-- Owns: PDF rendering canvas; parcel trace mode; parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (click-to-draw polyline, snap to boundaries, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion; buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm
+- Owns: PDF rendering canvas; parcel trace mode; parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (click-to-draw polyline, snap to boundaries, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion; buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay
 - Imports: pdfjs-dist, react, splitPolygon (distToSeg, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon)
 - Imported by: SitePlanView.jsx
 - Tables: none (API calls via onParcelSaved, onSplitConfirm, onBoundaryUpdated props)
-- Last commit: 2026-04-01
+- Last commit: 2026-04-02
 
 ### devdb_ui/src/components/SitePlan/splitPolygon.js
-- Owns: Polygon split geometry utilities; distToSeg; segIntersect; snapToBoundaries (snap cursor to boundary edge, normPoint via t-interpolation in normalized space); findFirstBoundaryIntersection (normPoint via u-interpolation in normalized space); insertOnBoundary (projects input onto closest edge before inserting — exact topology); splitPolygon (insert start/end on ring, build two arcs + interior)
+- Owns: Polygon split geometry utilities; distToSeg; segIntersect; snapToBoundaries (snap cursor to boundary edge, normPoint via t-interpolation in normalized space); findFirstBoundaryIntersection (normPoint via u-interpolation in normalized space); insertOnBoundary (projects input onto closest edge before inserting — exact topology; now detects existing vertex within 1e-6 tolerance and returns index instead of inserting duplicate); splitPolygon (insert start/end on ring, build two arcs + interior)
 - Imports: none
 - Imported by: PdfCanvas.jsx
 - Tables: none
-- Last commit: 2026-04-01
+- Last commit: 2026-04-02
 
 ### devdb_ui/src/components/InstrumentContainer.jsx
 - Owns: Draggable/droppable legal instrument card with phase columns, aggregate lot-type totals, inline rename; warm neutral card chrome (#F0EEE8 header, #F7F6F3 body) matching TDA aesthetic; green dashed inline name edit (#3B6D11/#EAF3DE)
