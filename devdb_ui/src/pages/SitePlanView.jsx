@@ -459,7 +459,7 @@ function PhasePanel({
 
       {/* Boundary list */}
       <div style={{ borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
-        {boundaries.map((b) => {
+        {boundaries.map((b, i) => {
           const ap = b.phase_id ? phaseMap[b.phase_id] : null
           const isSel = b.boundary_id === selectedBoundaryId
           const swatchColor = (b.phase_id && phaseColorMap[b.phase_id]) || UNASSIGNED_COLOR
