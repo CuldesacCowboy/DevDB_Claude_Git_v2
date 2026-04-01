@@ -1,6 +1,29 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { fmt, shortLot, parseLot } from '../utils/tdaUtils'
+
+// ── Parse a free-form date string → ISO YYYY-MM-DD (or null) ─────
+// Accepts: MM/DD/YY, MM/DD/YYYY, M/D/YY, YYYY-MM-DD
+function parseDate(str) {
+  if (!str) return null
+  const s = str.trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(s + 'T12:00:00')
+    return isNaN(d.getTime()) ? null : s
+  }
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+  if (m) {
+    let year = parseInt(m[3], 10)
+    if (year < 100) year += 2000
+    const month = parseInt(m[1], 10)
+    const day   = parseInt(m[2], 10)
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null
+    const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    const d = new Date(iso + 'T12:00:00')
+    return isNaN(d.getTime()) ? null : iso
+  }
+  return null
+}
 
 // ── Lock icon (SVG) ───────────────────────────────────────────────
 export function LockIcon({ locked }) {
@@ -35,17 +58,33 @@ export function LockBtn({ locked, onClick }) {
 }
 
 // ── Projected date field ──────────────────────────────────────────
+// Click-to-edit text input. Accepts MM/DD/YY, MM/DD/YYYY, YYYY-MM-DD.
+// Enter or blur commits; Escape cancels. Invalid input is discarded.
 export function ProjectedDateField({ value, locked, onChange }) {
-  const inputRef = useRef(null)
-  const [pending, setPending] = useState(value || '')
-  const pendingRef = useRef(value || '')
-  const timerRef = useRef(null)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
 
+  // Keep draft in sync when server value changes while not editing
   useEffect(() => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
-    setPending(value || '')
-    pendingRef.current = value || ''
-  }, [value])
+    if (!editing) setDraft(value ? fmt(value) : '')
+  }, [value, editing])
+
+  function startEdit() {
+    setDraft(value ? fmt(value) : '')
+    setEditing(true)
+  }
+
+  function commit(raw) {
+    const s = (raw || '').trim()
+    if (!s) {
+      onChange(null)
+    } else {
+      const parsed = parseDate(s)
+      if (parsed) onChange(parsed)
+      // invalid input: silently discard (field reverts to server value on next render)
+    }
+    setEditing(false)
+  }
 
   if (locked) {
     return (
@@ -57,19 +96,43 @@ export function ProjectedDateField({ value, locked, onChange }) {
         border: '1px solid #FCD34D',
         borderRadius: 3,
         padding: '2px 4px',
-        pointerEvents: 'none',
         lineHeight: '1.3',
+        whiteSpace: 'nowrap',
       }}>
         {fmt(value) || '—'}
       </div>
     )
   }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="text"
+        placeholder="MM/DD/YY"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={e => commit(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(draft) }
+          if (e.key === 'Escape') setEditing(false)
+        }}
+        style={{
+          fontSize: 12, width: '100%', boxSizing: 'border-box',
+          border: '1px solid #3B6D11',
+          background: '#EAF3DE', color: '#27500A',
+          borderRadius: 3, padding: '2px 4px',
+          outline: 'none', lineHeight: '1.3',
+        }}
+      />
+    )
+  }
+
   return (
     <div
-      style={{ position: 'relative' }}
-      onClick={() => inputRef.current?.showPicker?.()}
-    >
-      <div style={{
+      onClick={startEdit}
+      title="Click to edit date (MM/DD/YY)"
+      style={{
         fontSize: 12, color: '#27500A',
         border: '1px dashed #3B6D11',
         background: '#EAF3DE',
@@ -78,39 +141,10 @@ export function ProjectedDateField({ value, locked, onChange }) {
         lineHeight: '1.3',
         cursor: 'pointer',
         userSelect: 'none',
-        overflow: 'hidden', whiteSpace: 'nowrap',
-      }}>
-        {fmt(pending) || '—'}
-      </div>
-      <input
-        ref={inputRef}
-        type="date"
-        value={pending}
-        onChange={(e) => {
-          const val = e.target.value
-          setPending(val)
-          pendingRef.current = val
-          if (timerRef.current) clearTimeout(timerRef.current)
-          timerRef.current = setTimeout(() => {
-            timerRef.current = null
-            onChange(pendingRef.current || null)
-          }, 350)
-        }}
-        onBlur={() => {
-          if (timerRef.current) {
-            clearTimeout(timerRef.current)
-            timerRef.current = null
-            onChange(pendingRef.current || null)
-          }
-        }}
-        style={{
-          position: 'absolute', inset: 0,
-          width: '100%', height: '100%',
-          opacity: 0, cursor: 'default',
-          border: 'none', padding: 0, margin: 0,
-          pointerEvents: 'none',
-        }}
-      />
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {fmt(value) || '—'}
     </div>
   )
 }
@@ -170,7 +204,7 @@ export function PlaceholderPill({ daysToCP, condensed = false }) {
 
   return (
     <div style={{
-      width: 148, flexShrink: 0, borderRadius: 6,
+      width: 180, flexShrink: 0, borderRadius: 6,
       background: cfg.bg, border: cfg.border,
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
@@ -325,7 +359,7 @@ export default function LotPill({
       ref={setNodeRef}
       onContextMenu={onContextMenu}
       style={{
-        width: 148, flexShrink: 0,
+        width: 180, flexShrink: 0,
         borderRadius: 6, overflow: 'hidden',
         background: isSelected ? '#eff6ff' : isExcess ? '#FFF5F5' : isDelinquent ? '#fef2f2' : isCaution ? '#FFFBEB' : hasNoDates ? '#F7F6F3' : '#fff',
         border: isSelected ? '2px solid #2563eb' : isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',

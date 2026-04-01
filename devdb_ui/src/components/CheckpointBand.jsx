@@ -462,7 +462,7 @@ export default function CheckpointBand({
             ref={gridRef}
             style={{
               display: 'flex', flexWrap: 'wrap', gap: condensed ? 6 : 14, alignItems: 'stretch',
-              maxWidth: 1330,
+              maxWidth: 1560,
               opacity: sortFlash ? 0.5 : 1,
               transition: `opacity ${sortFlash ? '0.06s' : '0.32s'} ease-in-out`,
             }}
