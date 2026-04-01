@@ -35,11 +35,26 @@ class AssignLotRequest(BaseModel):
 class UpdateDatesRequest(BaseModel):
     hc_projected_date: Optional[date_type] = None
     bldr_projected_date: Optional[date_type] = None
+    dig_projected_date: Optional[date_type] = None
 
 
 class UpdateLockRequest(BaseModel):
     hc_is_locked: Optional[bool] = None
     bldr_is_locked: Optional[bool] = None
+    dig_is_locked: Optional[bool] = None
+
+
+# Maps API field names (hc/bldr/dig) to sim_lots DB columns
+_DATE_COL = {
+    'hc_projected_date':   'date_td_hold_projected',
+    'bldr_projected_date': 'date_td_projected',
+    'dig_projected_date':  'date_str_projected',
+}
+_LOCK_COL = {
+    'hc_is_locked':   'date_td_hold_is_locked',
+    'bldr_is_locked': 'date_td_is_locked',
+    'dig_is_locked':  'date_str_is_locked',
+}
 
 
 class RenameTdaRequest(BaseModel):
@@ -273,14 +288,17 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
                     a.assignment_id,
                     a.checkpoint_id,
                     a.lot_id,
-                    a.hc_projected_date,
-                    a.hc_is_locked,
-                    a.bldr_projected_date,
-                    a.bldr_is_locked,
                     l.lot_number,
                     l.building_group_id,
-                    l.date_str   AS hc_marks_date,
-                    l.date_cmp   AS bldr_marks_date
+                    l.date_td_hold          AS hc_marks_date,
+                    l.date_td_hold_projected AS hc_projected_date,
+                    l.date_td_hold_is_locked AS hc_is_locked,
+                    l.date_td               AS bldr_marks_date,
+                    l.date_td_projected     AS bldr_projected_date,
+                    l.date_td_is_locked     AS bldr_is_locked,
+                    l.date_str              AS dig_marks_date,
+                    l.date_str_projected    AS dig_projected_date,
+                    l.date_str_is_locked    AS dig_is_locked
                 FROM devdb.sim_takedown_lot_assignments a
                 JOIN devdb.sim_lots l ON l.lot_id = a.lot_id
                 WHERE a.checkpoint_id = ANY(%s)
@@ -301,6 +319,9 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
                         "bldr_marks_date": row["bldr_marks_date"].isoformat() if row["bldr_marks_date"] else None,
                         "bldr_projected_date": row["bldr_projected_date"].isoformat() if row["bldr_projected_date"] else None,
                         "bldr_is_locked": bool(row["bldr_is_locked"]),
+                        "dig_marks_date": row["dig_marks_date"].isoformat() if row["dig_marks_date"] else None,
+                        "dig_projected_date": row["dig_projected_date"].isoformat() if row["dig_projected_date"] else None,
+                        "dig_is_locked": bool(row["dig_is_locked"]),
                     }
                 )
 
@@ -520,8 +541,8 @@ def assign_lot_to_checkpoint(tda_id: int, lot_id: int, body: AssignLotRequest, c
         cur.execute(
             """
             INSERT INTO devdb.sim_takedown_lot_assignments
-                (checkpoint_id, lot_id, assigned_at, hc_is_locked, bldr_is_locked)
-            VALUES (%s, %s, now(), false, false)
+                (checkpoint_id, lot_id, assigned_at)
+            VALUES (%s, %s, now())
             RETURNING assignment_id
             """,
             (checkpoint_id, lot_id),
@@ -705,22 +726,19 @@ def update_lot_assignment_dates(assignment_id: int, body: UpdateDatesRequest, co
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         # Validate at least one field explicitly provided (null clears the field)
-        updates = {}
-        if "hc_projected_date" in body.model_fields_set:
-            updates["hc_projected_date"] = body.hc_projected_date
-        if "bldr_projected_date" in body.model_fields_set:
-            updates["bldr_projected_date"] = body.bldr_projected_date
-        if not updates:
+        api_updates = {}
+        for api_key in ('hc_projected_date', 'bldr_projected_date', 'dig_projected_date'):
+            if api_key in body.model_fields_set:
+                api_updates[api_key] = getattr(body, api_key)
+        if not api_updates:
             raise HTTPException(status_code=422, detail="At least one date field must be provided.")
 
-        # 1. Look up the assignment row
+        # Map API field names to sim_lots column names
+        db_updates = {_DATE_COL[k]: v for k, v in api_updates.items()}
+
+        # 1. Look up lot_id and checkpoint from assignment row
         cur.execute(
-            """
-            SELECT a.assignment_id, a.checkpoint_id, a.lot_id,
-                   a.hc_projected_date, a.bldr_projected_date
-            FROM devdb.sim_takedown_lot_assignments a
-            WHERE a.assignment_id = %s
-            """,
+            "SELECT assignment_id, checkpoint_id, lot_id FROM devdb.sim_takedown_lot_assignments WHERE assignment_id = %s",
             (assignment_id,),
         )
         asgn = cur.fetchone()
@@ -745,56 +763,48 @@ def update_lot_assignment_dates(assignment_id: int, body: UpdateDatesRequest, co
         cp_row = cur.fetchone()
         tda_id = cp_row["tda_id"] if cp_row else None
 
-        # 3. Build SET clause
-        set_parts = [f"{col} = %s" for col in updates]
-        set_values = list(updates.values())
+        # 3. Build SET clause targeting sim_lots
+        set_parts = [f"{col} = %s" for col in db_updates] + ["updated_at = now()"]
+        set_values = list(db_updates.values())
         set_clause = ", ".join(set_parts)
 
-        # 4. UPDATE the target assignment row first — collect it as the first updated id
+        # 4. UPDATE the primary lot in sim_lots
         cur.execute(
-            f"UPDATE devdb.sim_takedown_lot_assignments SET {set_clause} WHERE assignment_id = %s RETURNING assignment_id",
-            set_values + [assignment_id],
+            f"UPDATE devdb.sim_lots SET {set_clause} WHERE lot_id = %s RETURNING lot_id",
+            set_values + [lot_id],
         )
-        updated_ids = [row["assignment_id"] for row in cur.fetchall()]
+        updated_lot_ids = [row["lot_id"] for row in cur.fetchall()]
 
         # 5. Fan-out to building group mates within the same TDA
         if building_group_id is not None and tda_id is not None:
             cur.execute(
                 f"""
-                UPDATE devdb.sim_takedown_lot_assignments SET {set_clause}
-                WHERE assignment_id != %s
+                UPDATE devdb.sim_lots SET {set_clause}
+                WHERE lot_id != %s
+                  AND building_group_id = %s
                   AND lot_id IN (
-                      SELECT lot_id FROM devdb.sim_lots WHERE building_group_id = %s
+                      SELECT lot_id FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s
                   )
-                  AND checkpoint_id IN (
-                      SELECT checkpoint_id FROM devdb.sim_takedown_checkpoints WHERE tda_id = %s
-                  )
-                RETURNING assignment_id
+                RETURNING lot_id
                 """,
-                set_values + [assignment_id, building_group_id, tda_id],
+                set_values + [lot_id, building_group_id, tda_id],
             )
-            updated_ids += [row["assignment_id"] for row in cur.fetchall()]
+            updated_lot_ids += [row["lot_id"] for row in cur.fetchall()]
 
-        # 6. Audit log — one entry per updated assignment_id
-        for aid in updated_ids:
+        # 6. Audit log — one entry per updated lot_id
+        for lid in updated_lot_ids:
             cur.execute(
                 """
                 INSERT INTO devdb.sim_assignment_log
                     (action, resource_type, resource_id, from_owner_id, to_owner_id,
                      changed_by, changed_at, metadata)
-                VALUES ('update_tda_lot_date', 'tda_assignment', %s, 0, 0, 'ui', now(), %s)
+                VALUES ('update_tda_lot_date', 'lot', %s, 0, 0, 'ui', now(), %s)
                 """,
-                (aid, psycopg2.extras.Json({})),
+                (lid, psycopg2.extras.Json({})),
             )
 
         conn.commit()
-
-        return {
-            "assignment_id": assignment_id,
-            "updated_assignment_ids": updated_ids,
-            "hc_projected_date": updates.get("hc_projected_date", asgn["hc_projected_date"]),
-            "bldr_projected_date": updates.get("bldr_projected_date", asgn["bldr_projected_date"]),
-        }
+        return {"assignment_id": assignment_id, "updated_lot_ids": updated_lot_ids}
 
     except HTTPException:
         conn.rollback()
@@ -815,22 +825,19 @@ def update_lot_assignment_lock(assignment_id: int, body: UpdateLockRequest, conn
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         # Validate at least one field provided
-        updates = {}
-        if body.hc_is_locked is not None:
-            updates["hc_is_locked"] = body.hc_is_locked
-        if body.bldr_is_locked is not None:
-            updates["bldr_is_locked"] = body.bldr_is_locked
-        if not updates:
+        api_updates = {}
+        for api_key in ('hc_is_locked', 'bldr_is_locked', 'dig_is_locked'):
+            if getattr(body, api_key) is not None:
+                api_updates[api_key] = getattr(body, api_key)
+        if not api_updates:
             raise HTTPException(status_code=422, detail="At least one lock field must be provided.")
 
-        # 1. Look up the assignment row
+        # Map API field names to sim_lots column names
+        db_updates = {_LOCK_COL[k]: v for k, v in api_updates.items()}
+
+        # 1. Look up lot_id and checkpoint from assignment row
         cur.execute(
-            """
-            SELECT a.assignment_id, a.checkpoint_id, a.lot_id,
-                   a.hc_is_locked, a.bldr_is_locked
-            FROM devdb.sim_takedown_lot_assignments a
-            WHERE a.assignment_id = %s
-            """,
+            "SELECT assignment_id, checkpoint_id, lot_id FROM devdb.sim_takedown_lot_assignments WHERE assignment_id = %s",
             (assignment_id,),
         )
         asgn = cur.fetchone()
@@ -855,56 +862,48 @@ def update_lot_assignment_lock(assignment_id: int, body: UpdateLockRequest, conn
         cp_row = cur.fetchone()
         tda_id = cp_row["tda_id"] if cp_row else None
 
-        # 3. Build SET clause
-        set_parts = [f"{col} = %s" for col in updates]
-        set_values = list(updates.values())
+        # 3. Build SET clause targeting sim_lots
+        set_parts = [f"{col} = %s" for col in db_updates] + ["updated_at = now()"]
+        set_values = list(db_updates.values())
         set_clause = ", ".join(set_parts)
 
-        # 4. UPDATE the target assignment row
+        # 4. UPDATE the primary lot in sim_lots
         cur.execute(
-            f"UPDATE devdb.sim_takedown_lot_assignments SET {set_clause} WHERE assignment_id = %s RETURNING assignment_id",
-            set_values + [assignment_id],
+            f"UPDATE devdb.sim_lots SET {set_clause} WHERE lot_id = %s RETURNING lot_id",
+            set_values + [lot_id],
         )
-        updated_ids = [row["assignment_id"] for row in cur.fetchall()]
+        updated_lot_ids = [row["lot_id"] for row in cur.fetchall()]
 
         # 5. Fan-out to building group mates within the same TDA
         if building_group_id is not None and tda_id is not None:
             cur.execute(
                 f"""
-                UPDATE devdb.sim_takedown_lot_assignments SET {set_clause}
-                WHERE assignment_id != %s
+                UPDATE devdb.sim_lots SET {set_clause}
+                WHERE lot_id != %s
+                  AND building_group_id = %s
                   AND lot_id IN (
-                      SELECT lot_id FROM devdb.sim_lots WHERE building_group_id = %s
+                      SELECT lot_id FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s
                   )
-                  AND checkpoint_id IN (
-                      SELECT checkpoint_id FROM devdb.sim_takedown_checkpoints WHERE tda_id = %s
-                  )
-                RETURNING assignment_id
+                RETURNING lot_id
                 """,
-                set_values + [assignment_id, building_group_id, tda_id],
+                set_values + [lot_id, building_group_id, tda_id],
             )
-            updated_ids += [row["assignment_id"] for row in cur.fetchall()]
+            updated_lot_ids += [row["lot_id"] for row in cur.fetchall()]
 
-        # 6. Audit log — one entry per updated assignment_id
-        for aid in updated_ids:
+        # 6. Audit log — one entry per updated lot_id
+        for lid in updated_lot_ids:
             cur.execute(
                 """
                 INSERT INTO devdb.sim_assignment_log
                     (action, resource_type, resource_id, from_owner_id, to_owner_id,
                      changed_by, changed_at, metadata)
-                VALUES ('update_tda_lot_lock', 'tda_assignment', %s, 0, 0, 'ui', now(), %s)
+                VALUES ('update_tda_lot_lock', 'lot', %s, 0, 0, 'ui', now(), %s)
                 """,
-                (aid, psycopg2.extras.Json({})),
+                (lid, psycopg2.extras.Json({})),
             )
 
         conn.commit()
-
-        return {
-            "assignment_id": assignment_id,
-            "updated_assignment_ids": updated_ids,
-            "hc_is_locked": updates.get("hc_is_locked", bool(asgn["hc_is_locked"])),
-            "bldr_is_locked": updates.get("bldr_is_locked", bool(asgn["bldr_is_locked"])),
-        }
+        return {"assignment_id": assignment_id, "updated_lot_ids": updated_lot_ids}
 
     except HTTPException:
         conn.rollback()

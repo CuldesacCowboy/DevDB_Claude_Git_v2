@@ -59,17 +59,39 @@ export default function TakedownAgreementsView({ entGroupId }) {
     moveLotToOtherTda,
   })
 
-  // Clear selections when switching TDAs
   useEffect(() => { clearSelectionsForTda() }, [selectedTdaId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Global master controls ────────────────────────────────────────
+  // These broadcast to all CheckpointBand instances via props.
+  // Per-checkpoint controls still work independently (local override after master fires).
+  const [masterShowLots,     setMasterShowLots]     = useState(true)
+  const [masterCondensed,    setMasterCondensed]     = useState(false)
+  const [masterShowTimeline, setMasterShowTimeline]  = useState(false)
+  const [masterShowDig,      setMasterShowDig]       = useState(false)
+
+  // Sort direction + sequence counter. Incrementing seq triggers all bands to re-sort.
+  const [masterDateDir, setMasterDateDir] = useState('desc')
+  const [masterDateSeq, setMasterDateSeq] = useState(0)
+  const [masterUnitDir, setMasterUnitDir] = useState('asc')
+  const [masterUnitSeq, setMasterUnitSeq] = useState(0)
+
+  function handleMasterSortByDate() {
+    const newDir = masterDateDir === 'desc' ? 'asc' : 'desc'
+    setMasterDateDir(newDir)
+    setMasterDateSeq(s => s + 1)
+  }
+
+  function handleMasterSortByUnit() {
+    const newDir = masterUnitDir === 'asc' ? 'desc' : 'asc'
+    setMasterUnitDir(newDir)
+    setMasterUnitSeq(s => s + 1)
+  }
 
   // ── Context menu ──────────────────────────────────────────────────
   const [contextMenu, setContextMenu] = useState(null)
-  // { x, y, type: 'unassigned'|'pool'|'assigned', lotId }
 
   const handleContextMenu = useCallback((e, type, lotId) => {
     e.preventDefault()
-    // If the right-clicked lot is part of a selection of the same type, the
-    // menu applies to the whole selection; otherwise just this lot.
     let lotIds
     if (type === 'unassigned') {
       lotIds = selectedLotIds.has(lotId) && selectedLotIds.size > 1
@@ -158,6 +180,27 @@ export default function TakedownAgreementsView({ entGroupId }) {
     <div style={{ padding: 32, color: '#dc2626', flex: 1 }}>Error: {error}</div>
   )
 
+  // ── Master controls bar button helper ─────────────────────────────
+  function masterBtn(active, label, onClick, activeColor = '#3B6D11', activeBg = '#EAF3DE', activeText = '#27500A') {
+    return (
+      <button
+        onClick={onClick}
+        style={{
+          fontSize: 11, padding: '2px 9px', borderRadius: 4,
+          border: `1px solid ${active ? activeColor : '#D4D2CB'}`,
+          background: active ? activeBg : '#fff',
+          color: active ? activeText : '#6B6B68',
+          cursor: 'pointer',
+        }}
+      >
+        {label}
+      </button>
+    )
+  }
+
+  const dateDirLabel = masterDateDir === 'desc' ? '↓ Date' : '↑ Date'
+  const unitDirLabel = masterUnitDir === 'asc'  ? '↑ Unit' : '↓ Unit'
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', background: '#f9fafb' }}>
       <TdaPageHeader
@@ -166,7 +209,6 @@ export default function TakedownAgreementsView({ entGroupId }) {
         createTda={createTda}
       />
 
-      {/* TDA navigation bar — shows all agreements, replaces OtherTdaTile */}
       <TdaNavBar
         agreements={agreements}
         selectedTdaId={selectedTdaId}
@@ -201,42 +243,74 @@ export default function TakedownAgreementsView({ entGroupId }) {
             dragLot={dragLot}
           />
 
-          {/* TDA card area — only when a TDA is selected */}
+          {/* Right: TDA content */}
           {detail ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
-              <TdaCard
-                detail={detail}
-                onAddCheckpoint={(checkpointDate, lotsRequired) =>
-                  createCheckpoint(detail.tda_id, { checkpointDate, lotsRequired })
-                }
-                onRenameTda={renameTda}
-                selectedPoolLotIds={selectedPoolLotIds}
-                onPoolToggle={togglePoolLotSelection}
-                onPoolToggleDevGroup={togglePoolDevGroupSelection}
-                onRemoveFromPool={() => {
-                  if (!detail || selectedPoolLotIds.size === 0) return
-                  const ids = [...selectedPoolLotIds]
-                  clearPoolLotSelection()
-                  removeLotsFromPool(detail.tda_id, ids)
-                }}
-                onClearPoolSelection={clearPoolLotSelection}
-                onContextMenu={handleContextMenu}
-                dragLot={dragLot}
-              >
-                {(detail.checkpoints || []).map((cp) => (
-                  <CheckpointBand
-                    key={cp.checkpoint_id}
-                    checkpoint={cp}
-                    onDateChange={updateAssignmentDates}
-                    onLockChange={updateAssignmentLock}
-                    selectedAssignedLotIds={selectedAssignedLotIds}
-                    onToggleAssignedLot={toggleAssignedLotSelection}
-                    onToggleCheckpointLots={toggleAssignedCheckpointSelection}
-                    onContextMenu={handleContextMenu}
-                    dragLot={dragLot}
-                  />
-                ))}
-              </TdaCard>
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+              {/* Global master controls bar */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 10px',
+                background: '#F5F5F2',
+                border: '1px solid #E4E2DA',
+                borderRadius: 6,
+                flexWrap: 'wrap',
+              }}>
+                <span style={{ fontSize: 11, color: '#888780', fontWeight: 600, marginRight: 4, whiteSpace: 'nowrap' }}>
+                  All Checkpoints:
+                </span>
+                {masterBtn(masterDateSeq > 0, dateDirLabel, handleMasterSortByDate, '#0f766e', '#ccfbf1', '#0f766e')}
+                {masterBtn(masterUnitSeq > 0, unitDirLabel, handleMasterSortByUnit, '#0f766e', '#ccfbf1', '#0f766e')}
+                {masterBtn(masterShowTimeline, masterShowTimeline ? '▾ Timeline' : '▸ Timeline', () => setMasterShowTimeline(v => !v))}
+                {masterBtn(masterCondensed,    masterCondensed    ? '⊟ Condensed' : '⊞ Condensed', () => setMasterCondensed(v => !v), '#6366f1', '#eef2ff', '#4338ca')}
+                {masterBtn(false, masterShowLots ? '▾ Lots' : '▸ Lots', () => setMasterShowLots(v => !v))}
+                {masterBtn(masterShowDig, masterShowDig ? '▾ DIG' : '▸ DIG', () => setMasterShowDig(v => !v), '#7c3aed', '#ede9fe', '#4c1d95')}
+              </div>
+
+              {/* TDA card + checkpoints */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'flex-start' }}>
+                <TdaCard
+                  detail={detail}
+                  onAddCheckpoint={(checkpointDate, lotsRequired) =>
+                    createCheckpoint(detail.tda_id, { checkpointDate, lotsRequired })
+                  }
+                  onRenameTda={renameTda}
+                  selectedPoolLotIds={selectedPoolLotIds}
+                  onPoolToggle={togglePoolLotSelection}
+                  onPoolToggleDevGroup={togglePoolDevGroupSelection}
+                  onRemoveFromPool={() => {
+                    if (!detail || selectedPoolLotIds.size === 0) return
+                    const ids = [...selectedPoolLotIds]
+                    clearPoolLotSelection()
+                    removeLotsFromPool(detail.tda_id, ids)
+                  }}
+                  onClearPoolSelection={clearPoolLotSelection}
+                  onContextMenu={handleContextMenu}
+                  dragLot={dragLot}
+                >
+                  {(detail.checkpoints || []).map((cp) => (
+                    <CheckpointBand
+                      key={cp.checkpoint_id}
+                      checkpoint={cp}
+                      onDateChange={updateAssignmentDates}
+                      onLockChange={updateAssignmentLock}
+                      selectedAssignedLotIds={selectedAssignedLotIds}
+                      onToggleAssignedLot={toggleAssignedLotSelection}
+                      onToggleCheckpointLots={toggleAssignedCheckpointSelection}
+                      onContextMenu={handleContextMenu}
+                      dragLot={dragLot}
+                      masterShowLots={masterShowLots}
+                      masterCondensed={masterCondensed}
+                      masterShowTimeline={masterShowTimeline}
+                      masterShowDig={masterShowDig}
+                      masterDateDir={masterDateDir}
+                      masterDateSeq={masterDateSeq}
+                      masterUnitDir={masterUnitDir}
+                      masterUnitSeq={masterUnitSeq}
+                    />
+                  ))}
+                </TdaCard>
+              </div>
             </div>
           ) : (
             <div style={{ padding: '32px 0', color: '#9ca3af', fontSize: 15 }}>

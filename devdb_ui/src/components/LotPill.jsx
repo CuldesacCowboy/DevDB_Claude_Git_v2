@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { fmt, shortLot, parseLot } from '../utils/tdaUtils'
 
-// ── Lock icon (SVG) — neutral gray, no amber ─────────────────────
+// ── Lock icon (SVG) ───────────────────────────────────────────────
 export function LockIcon({ locked }) {
-  const color = locked ? '#444441' : '#B4B2A9'
+  const color = locked ? '#D97706' : '#B4B2A9'
   return locked ? (
     <svg width="13" height="15" viewBox="0 0 10 12" fill="none">
       <rect x="1" y="5.5" width="8" height="6" rx="1.5" fill={color} />
@@ -42,7 +42,6 @@ export function ProjectedDateField({ value, locked, onChange }) {
   const timerRef = useRef(null)
 
   useEffect(() => {
-    // When server value changes, cancel any pending commit and sync display
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     setPending(value || '')
     pendingRef.current = value || ''
@@ -51,9 +50,15 @@ export function ProjectedDateField({ value, locked, onChange }) {
   if (locked) {
     return (
       <div style={{
-        fontSize: 12, color: '#444441',
-        pointerEvents: 'none',
+        fontSize: 12,
+        fontWeight: 600,
+        color: '#78350F',
+        background: '#FEF3C7',
+        border: '1px solid #FCD34D',
+        borderRadius: 3,
         padding: '2px 4px',
+        pointerEvents: 'none',
+        lineHeight: '1.3',
       }}>
         {fmt(value) || '—'}
       </div>
@@ -85,8 +90,6 @@ export function ProjectedDateField({ value, locked, onChange }) {
           const val = e.target.value
           setPending(val)
           pendingRef.current = val
-          // Debounce: with pointerEvents:none, blur fires before change in Chrome.
-          // Using onChange as primary commit (350ms) handles that race correctly.
           if (timerRef.current) clearTimeout(timerRef.current)
           timerRef.current = setTimeout(() => {
             timerRef.current = null
@@ -94,7 +97,6 @@ export function ProjectedDateField({ value, locked, onChange }) {
           }, 350)
         }}
         onBlur={() => {
-          // Flush immediately if a debounced commit is pending
           if (timerRef.current) {
             clearTimeout(timerRef.current)
             timerRef.current = null
@@ -114,8 +116,6 @@ export function ProjectedDateField({ value, locked, onChange }) {
 }
 
 // ── Stitch connector between building-group pills ────────────────
-// A narrow panel with a center-track + crossbar SVG pattern that implies
-// units are sewn together.
 export function StitchConnector() {
   const w = 14
   const crossbarSvg = encodeURIComponent(
@@ -139,7 +139,6 @@ export function StitchConnector() {
 }
 
 // ── Placeholder slot pill ─────────────────────────────────────────
-// State: normal (>30d), urgent (≤30d), missed (<0d)
 export function PlaceholderPill({ daysToCP, condensed = false }) {
   let state = 'normal'
   if (daysToCP !== null) {
@@ -190,31 +189,35 @@ export function PlaceholderPill({ daysToCP, condensed = false }) {
 }
 
 // ── Lot pill inside a checkpoint ──────────────────────────────────
-export default function LotPill({ assignment, onDateChange, onLockChange, isExcess = false, checkpointDate = '', condensed = false, isSelected = false, onContextMenu }) {
+export default function LotPill({
+  assignment, onDateChange, onLockChange,
+  isExcess = false, checkpointDate = '',
+  condensed = false, isSelected = false,
+  onContextMenu, showDig = false,
+}) {
   const { attributes, listeners, setNodeRef, isDragging } =
     useDraggable({
       id: `assigned-${assignment.assignment_id}`,
       data: { type: 'assigned-lot', assignment },
     })
 
-  // Local projected date state for instant caution recompute (no refetch needed)
-  const [localHcDate, setLocalHcDate] = useState(assignment.hc_projected_date || '')
+  const [localHcDate,   setLocalHcDate]   = useState(assignment.hc_projected_date   || '')
   const [localBldrDate, setLocalBldrDate] = useState(assignment.bldr_projected_date || '')
-  useEffect(() => { setLocalHcDate(assignment.hc_projected_date || '') }, [assignment.hc_projected_date])
+  const [localDigDate,  setLocalDigDate]  = useState(assignment.dig_projected_date  || '')
+
+  useEffect(() => { setLocalHcDate(assignment.hc_projected_date     || '') }, [assignment.hc_projected_date])
   useEffect(() => { setLocalBldrDate(assignment.bldr_projected_date || '') }, [assignment.bldr_projected_date])
+  useEffect(() => { setLocalDigDate(assignment.dig_projected_date   || '') }, [assignment.dig_projected_date])
 
   const todayStr = new Date().toISOString().slice(0, 10)
   const isFuture = (d) => !!d && d > todayStr
   const cpIsPast = !!checkpointDate && checkpointDate <= todayStr
-  const hcMeetsCP = !!localHcDate && localHcDate <= checkpointDate
+  const hcMeetsCP   = !!localHcDate   && localHcDate   <= checkpointDate
   const bldrMeetsCP = !!localBldrDate && localBldrDate <= checkpointDate
   const neitherMeets = !hcMeetsCP && !bldrMeetsCP
-  // Delinquent: checkpoint passed and this lot has no projected date on/before it
   const isDelinquent = !!checkpointDate && cpIsPast && neitherMeets
-  // Caution: future checkpoint only — if it were past it would be delinquent instead
   const hasAnyFutureDate = isFuture(localHcDate) || isFuture(localBldrDate)
   const isCaution = !!checkpointDate && !cpIsPast && hasAnyFutureDate && neitherMeets
-  // No dates: neither projected date entered (and not already flagged by a higher-priority state)
   const hasNoDates = !localHcDate && !localBldrDate && !isDelinquent && !isCaution
 
   // ── Condensed view ───────────────────────────────────────────────
@@ -243,11 +246,27 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
     )
   }
 
-  function col(label, marksDate, projDate, isLocked, dateKey, lockKey) {
+  // ── Date column helper ────────────────────────────────────────────
+  // setLocal: setter for the local optimistic state for this field
+  function col(label, marksDate, projDate, isLocked, dateKey, lockKey, setLocal) {
     return (
-      <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+      <div style={{
+        flex: 1, minWidth: 0, overflow: 'hidden',
+        // Locked visual treatment: amber column background
+        background: isLocked ? '#FFFBEB' : 'transparent',
+        border: isLocked ? '1px solid #FCD34D' : '1px solid transparent',
+        borderRadius: isLocked ? 4 : 0,
+        padding: isLocked ? '3px 5px 4px' : '0',
+        boxSizing: 'border-box',
+      }}>
+        {/* Label row: label + sync-to-marks button + lock button */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-          <span style={{ fontSize: 11, textTransform: 'uppercase', color: '#888780', letterSpacing: '0.04em' }}>
+          <span style={{
+            fontSize: 11, textTransform: 'uppercase',
+            color: isLocked ? '#92400E' : '#888780',
+            letterSpacing: '0.04em',
+            fontWeight: isLocked ? 700 : 400,
+          }}>
             {label}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -255,9 +274,9 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
               <button
                 title="Set projected date to MARKsystems date and lock"
                 onClick={() => {
-                  if (dateKey === 'hc_projected_date') setLocalHcDate(marksDate)
-                  if (dateKey === 'bldr_projected_date') setLocalBldrDate(marksDate)
-                  onDateChange(dateKey, marksDate); onLockChange(lockKey, true)
+                  setLocal(marksDate)
+                  onDateChange(dateKey, marksDate)
+                  onLockChange(lockKey, true)
                 }}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px', lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
               >
@@ -270,15 +289,24 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
             <LockBtn locked={isLocked} onClick={() => onLockChange(lockKey, !isLocked)} />
           </div>
         </div>
-        <div style={{ fontSize: 12, color: '#B4B2A9', marginBottom: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+
+        {/* MARKS date — paddingLeft:4 aligns left edge with projected date field */}
+        <div style={{
+          fontSize: 12,
+          color: isLocked ? '#92400E' : '#B4B2A9',
+          marginBottom: 4,
+          paddingLeft: 4,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
           {fmt(marksDate)}
         </div>
+
+        {/* User-entry projected date */}
         <ProjectedDateField
           value={projDate}
           locked={isLocked}
           onChange={(val) => {
-            if (dateKey === 'hc_projected_date') setLocalHcDate(val || '')
-            if (dateKey === 'bldr_projected_date') setLocalBldrDate(val || '')
+            setLocal(val || '')
             onDateChange(dateKey, val)
           }}
         />
@@ -286,9 +314,9 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
     )
   }
 
-  // Winning fulfillment date: earlier of HC and BLDR projected dates
+  // Winning fulfillment date: earliest of HC, BLDR, DIG projected dates
   const winningDate = (() => {
-    const dates = [localHcDate, localBldrDate].filter(Boolean)
+    const dates = [localHcDate, localBldrDate, localDigDate].filter(Boolean)
     return dates.length ? dates.reduce((m, d) => d < m ? d : m) : null
   })()
 
@@ -306,6 +334,7 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
         display: 'flex', flexDirection: 'column',
       }}
     >
+      {/* Drag handle / header */}
       <div
         {...attributes}
         {...listeners}
@@ -329,15 +358,29 @@ export default function LotPill({ assignment, onDateChange, onLockChange, isExce
           <div style={{ fontSize: 11, color: '#D4D2CB', marginTop: 2, lineHeight: 1 }}>—</div>
         )}
       </div>
+
+      {/* HC + BLDR columns */}
       <div style={{ display: 'flex', padding: '6px 8px', gap: 4 }}>
         {col('HC',
-          assignment.hc_marks_date, assignment.hc_projected_date,
-          assignment.hc_is_locked, 'hc_projected_date', 'hc_is_locked')}
+          assignment.hc_marks_date,   localHcDate,   assignment.hc_is_locked,
+          'hc_projected_date',   'hc_is_locked',   setLocalHcDate)}
         <div style={{ width: 1, background: '#F0EEE8', flexShrink: 0 }} />
         {col('BLDR',
-          assignment.bldr_marks_date, assignment.bldr_projected_date,
-          assignment.bldr_is_locked, 'bldr_projected_date', 'bldr_is_locked')}
+          assignment.bldr_marks_date, localBldrDate, assignment.bldr_is_locked,
+          'bldr_projected_date', 'bldr_is_locked', setLocalBldrDate)}
       </div>
+
+      {/* DIG expansion — shown when showDig && !condensed */}
+      {showDig && (
+        <>
+          <div style={{ height: 1, background: '#F0EEE8', margin: '0 8px' }} />
+          <div style={{ padding: '4px 8px 6px' }}>
+            {col('DIG',
+              assignment.dig_marks_date,  localDigDate,  assignment.dig_is_locked,
+              'dig_projected_date',  'dig_is_locked',  setLocalDigDate)}
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -55,13 +55,19 @@ export function EditableNumber({ value, onChange, onEditingChange }) {
 }
 
 // ── Droppable checkpoint band ─────────────────────────────────────
-export default function CheckpointBand({ checkpoint, onDateChange, onLockChange, selectedAssignedLotIds, onToggleAssignedLot, onToggleCheckpointLots, onContextMenu, dragLot }) {
+export default function CheckpointBand({
+  checkpoint, onDateChange, onLockChange,
+  selectedAssignedLotIds, onToggleAssignedLot, onToggleCheckpointLots,
+  onContextMenu, dragLot,
+  // Master control props — when these change, local state syncs to match
+  masterShowLots, masterCondensed, masterShowTimeline, masterShowDig,
+  masterDateDir, masterDateSeq, masterUnitDir, masterUnitSeq,
+}) {
   const [localTotal, setLocalTotal] = useState(checkpoint.lots_required_cumulative || 0)
-  const [localDate, setLocalDate] = useState(checkpoint.checkpoint_date || '')
+  const [localDate, setLocalDate]   = useState(checkpoint.checkpoint_date || '')
   const [editingTotal, setEditingTotal] = useState(false)
-  const [editingDate, setEditingDate] = useState(false)
+  const [editingDate,  setEditingDate]  = useState(false)
 
-  // Sync from server when props change — guarded so an in-progress edit is not clobbered.
   useEffect(() => {
     if (!editingTotal) setLocalTotal(checkpoint.lots_required_cumulative || 0)
   }, [checkpoint.lots_required_cumulative, editingTotal])
@@ -77,39 +83,70 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
 
   const lots = checkpoint.lots || []
   const checkpointLotIds = lots.map(l => l.lot_id)
-  const allSelected = checkpointLotIds.length > 0 && checkpointLotIds.every(id => selectedAssignedLotIds?.has(id))
+  const allSelected  = checkpointLotIds.length > 0 && checkpointLotIds.every(id => selectedAssignedLotIds?.has(id))
   const someSelected = !allSelected && checkpointLotIds.some(id => selectedAssignedLotIds?.has(id))
   const selectedCount = checkpointLotIds.filter(id => selectedAssignedLotIds?.has(id)).length
 
-  // Landing zone: highlight when a drag is in progress (any lot type can land on a checkpoint)
   const isValidDrop = !!dragLot && !isOver
 
-  // Display order — follows server order by default; manual sort on demand.
-  // When lots refresh (lock/date change), preserve current order if the set of
-  // assignment_ids is unchanged; only reset to server order when lots are added/removed.
+  // Display order — follows server order; preserves sort when only data changes, resets on membership change
   const [displayLots, setDisplayLots] = useState(lots)
   useEffect(() => {
     setDisplayLots(prev => {
       const newById = Object.fromEntries(lots.map(l => [l.assignment_id, l]))
       const prevIds = prev.map(l => l.assignment_id)
       const newIds  = lots.map(l => l.assignment_id)
-      // Same set of IDs: merge updated fields into existing order
       const sameSet = prevIds.length === newIds.length &&
         prevIds.every(id => newById[id] !== undefined)
       if (sameSet) return prev.map(l => newById[l.assignment_id])
-      // Different set: reset to server order
+      // Different set: reset to server order and clear sort state
+      setDateSortDir(null)
+      setUnitSortDir(null)
       return lots
     })
-  }, [lots])
+  }, [lots]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [showLots, setShowLots] = useState(true)
-  const [lotView, setLotView] = useState('expanded') // 'expanded' | 'condensed'
+  // ── View state ───────────────────────────────────────────────────
+  const [showLots,     setShowLots]     = useState(true)
+  const [lotView,      setLotView]      = useState('expanded') // 'expanded' | 'condensed'
+  const [showTimeline, setShowTimeline] = useState(false)
+  const [showDig,      setShowDig]      = useState(false)
   const condensed = lotView === 'condensed'
 
-  const [showTimeline, setShowTimeline] = useState(false)
+  // ── Sort state ───────────────────────────────────────────────────
+  const [dateSortDir, setDateSortDir] = useState(null) // null | 'desc' | 'asc'
+  const [unitSortDir, setUnitSortDir] = useState(null)
 
-  // Sort animation: briefly dim the grid when a sort is triggered so the
-  // reorder isn't a disorienting instantaneous snap.
+  // ── Master control sync ──────────────────────────────────────────
+  useEffect(() => { if (masterShowLots     !== undefined) setShowLots(masterShowLots) },     [masterShowLots])
+  useEffect(() => { if (masterCondensed    !== undefined) setLotView(masterCondensed ? 'condensed' : 'expanded') }, [masterCondensed])
+  useEffect(() => { if (masterShowTimeline !== undefined) setShowTimeline(masterShowTimeline) }, [masterShowTimeline])
+  useEffect(() => { if (masterShowDig      !== undefined) setShowDig(masterShowDig) },       [masterShowDig])
+
+  // masterDateSeq increments trigger a global sort by date
+  const prevDateSeqRef = useRef(masterDateSeq)
+  useEffect(() => {
+    if (masterDateDir === undefined || masterDateSeq === undefined) return
+    if (masterDateSeq === 0 || masterDateSeq === prevDateSeqRef.current) return
+    prevDateSeqRef.current = masterDateSeq
+    const dir = masterDateDir
+    setDateSortDir(dir)
+    setUnitSortDir(null)
+    triggerSort((a, b) => sortByDateFn(a, b, dir))
+  }, [masterDateSeq]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const prevUnitSeqRef = useRef(masterUnitSeq)
+  useEffect(() => {
+    if (masterUnitDir === undefined || masterUnitSeq === undefined) return
+    if (masterUnitSeq === 0 || masterUnitSeq === prevUnitSeqRef.current) return
+    prevUnitSeqRef.current = masterUnitSeq
+    const dir = masterUnitDir
+    setUnitSortDir(dir)
+    setDateSortDir(null)
+    triggerSort((a, b) => sortByUnitFn(a, b, dir))
+  }, [masterUnitSeq]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Sort animation ───────────────────────────────────────────────
   const [sortFlash, setSortFlash] = useState(false)
   const sortFlashTimer = useRef(null)
 
@@ -123,35 +160,48 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
     }, 380)
   }
 
-  function handleReorderByFulfillment() {
-    triggerSort((a, b) => {
-      const winDate = (l) => {
-        const dates = [l.hc_projected_date, l.bldr_projected_date].filter(Boolean)
-        return dates.length ? dates.reduce((m, d) => d < m ? d : m) : null
-      }
-      const aDate = winDate(a), bDate = winDate(b)
-      if (!aDate && !bDate) return 0
-      if (!aDate) return 1
-      if (!bDate) return -1
-      return aDate.localeCompare(bDate)
-    })
+  // ── Sort comparators ─────────────────────────────────────────────
+  function winDate(l) {
+    const dates = [l.hc_projected_date, l.bldr_projected_date, l.dig_projected_date].filter(Boolean)
+    return dates.length ? dates.reduce((m, d) => d < m ? d : m) : null
   }
 
-  function handleReorderByUnit() {
-    triggerSort((a, b) => {
-      const parse = l => {
-        const m = (l.lot_number || '').match(/^([A-Za-z]+)0*(\d+)$/)
-        return m ? [m[1], parseInt(m[2], 10)] : [l.lot_number || '', 0]
-      }
-      const [ac, an] = parse(a), [bc, bn] = parse(b)
-      if (ac !== bc) return ac.localeCompare(bc)
-      return an - bn
-    })
+  function sortByDateFn(a, b, dir) {
+    const aDate = winDate(a), bDate = winDate(b)
+    if (!aDate && !bDate) return 0
+    if (!aDate) return 1   // nulls always last
+    if (!bDate) return -1
+    return dir === 'desc'
+      ? bDate.localeCompare(aDate)  // newest first
+      : aDate.localeCompare(bDate)  // oldest first
   }
 
-  // C = lots with HC or BLDR projected date in the past (≤ today) — completed
-  // futureP = lots with HC or BLDR projected date in the future — planned
-  // Caution = future projected date exists but it falls after the checkpoint date
+  function sortByUnitFn(a, b, dir) {
+    const parse = l => {
+      const m = (l.lot_number || '').match(/^([A-Za-z]+)0*(\d+)$/)
+      return m ? [m[1], parseInt(m[2], 10)] : [l.lot_number || '', 0]
+    }
+    const [ac, an] = parse(a), [bc, bn] = parse(b)
+    const codeComp = dir === 'asc' ? ac.localeCompare(bc) : bc.localeCompare(ac)
+    if (codeComp !== 0) return codeComp
+    return dir === 'asc' ? an - bn : bn - an
+  }
+
+  function handleSortByDate() {
+    const newDir = dateSortDir === 'desc' ? 'asc' : 'desc'
+    setDateSortDir(newDir)
+    setUnitSortDir(null)
+    triggerSort((a, b) => sortByDateFn(a, b, newDir))
+  }
+
+  function handleSortByUnit() {
+    const newDir = unitSortDir === 'asc' ? 'desc' : 'asc'
+    setUnitSortDir(newDir)
+    setDateSortDir(null)
+    triggerSort((a, b) => sortByUnitFn(a, b, newDir))
+  }
+
+  // ── Counts / progress ────────────────────────────────────────────
   const todayStr = new Date().toISOString().slice(0, 10)
   const isPast = (d) => !!d && d <= todayStr
   const c = lots.filter(l =>
@@ -161,34 +211,30 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
     (l.hc_projected_date && !isPast(l.hc_projected_date)) ||
     (l.bldr_projected_date && !isPast(l.bldr_projected_date))
   ).length
-  const plannedTotal = c + futureP  // used for "+ Planned" bar
-  const t = localTotal
+  const plannedTotal = c + futureP
+  const t     = localTotal
   const total = lots.length
   const excess = Math.max(0, total - t)
   const overTotal = plannedTotal > t
-  const overC = c > t                // completed alone exceeds required
+  const overC     = c > t
 
-  // Placeholder count and urgency
   const slotCount = Math.max(0, t - total)
-  const daysToCP = (() => {
+  const daysToCP  = (() => {
     if (!localDate) return null
     const today = new Date(); today.setHours(0, 0, 0, 0)
     const cpDate = new Date(localDate)
     return Math.floor((cpDate - today) / (1000 * 60 * 60 * 24))
   })()
 
-  const cPct   = t > 0 ? Math.min(100, Math.round((c            / t) * 100)) : 0
-  const cpPct  = t > 0 ? Math.min(100, Math.round((plannedTotal / t) * 100)) : 0
+  const cPct  = t > 0 ? Math.min(100, Math.round((c            / t) * 100)) : 0
+  const cpPct = t > 0 ? Math.min(100, Math.round((plannedTotal / t) * 100)) : 0
 
-  // ── Checkpoint status ──────────────────────────────────────────
-  // metCP = lots where any date (marks or projected) is on/before the checkpoint date
-  // Only user-entered projected dates count — marks dates are system actuals, not "entered"
+  // ── Checkpoint status ────────────────────────────────────────────
   const metCP = localDate ? lots.filter(l => {
     const dates = [l.hc_projected_date, l.bldr_projected_date].filter(Boolean)
     return dates.some(d => d <= localDate)
   }).length : 0
-  // Every assigned lot must have a qualifying date — not just the required count
-  const allMet = total > 0 && metCP >= total
+  const allMet   = total > 0 && metCP >= total
   const cpIsPast = !!localDate && localDate <= todayStr
   const cpStatus = (!localDate || t === 0) ? 'none'
     : cpIsPast
@@ -203,7 +249,7 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
   }
   const statusCfg = STATUS_CFG[cpStatus] || null
 
-  // ── Row height equalization (lots + placeholders) ──────────────
+  // ── Row height equalization ──────────────────────────────────────
   const gridRef = useRef(null)
   useLayoutEffect(() => {
     const grid = gridRef.current
@@ -221,7 +267,23 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
       const maxH = Math.max(...row.els.map(el => el.getBoundingClientRect().height))
       row.els.forEach(el => { el.style.height = `${maxH}px` })
     })
-  }, [displayLots, slotCount, showLots, lotView])
+  }, [displayLots, slotCount, showLots, lotView, showDig])
+
+  // ── Button style helpers ─────────────────────────────────────────
+  function ctrlBtn(active, activeColor = '#3B6D11', activeBg = '#EAF3DE', activeText = '#27500A') {
+    return {
+      fontSize: 11, padding: '2px 9px', borderRadius: 4,
+      border: `1px solid ${active ? activeColor : '#D4D2CB'}`,
+      background: active ? activeBg : '#fff',
+      color: active ? activeText : '#6B6B68',
+      cursor: 'pointer', marginLeft: 2,
+    }
+  }
+
+  const dateSortLabel = dateSortDir === 'desc' ? '↓ Date' : dateSortDir === 'asc' ? '↑ Date' : '↕ Date'
+  const unitSortLabel = unitSortDir === 'asc'  ? '↑ Unit' : unitSortDir === 'desc' ? '↓ Unit' : '↕ Unit'
+  const dateSortActive = dateSortDir !== null
+  const unitSortActive = unitSortDir !== null
 
   return (
     <div
@@ -241,7 +303,7 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
         padding: '10px 14px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14,
       }}>
-        {/* Left: select-all toggle + "{X} required by {date}" — both editable inline */}
+        {/* Left: controls */}
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
           {checkpointLotIds.length > 0 && onToggleCheckpointLots && (
             <button
@@ -266,15 +328,14 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
           )}
           <EditableNumber value={t} onChange={setLocalTotal} onEditingChange={setEditingTotal} />
           <span style={{ fontSize: 15, color: '#6B6B68', fontWeight: 500 }}>required by</span>
-          {/* Editable date — overlay pattern */}
+          {/* Editable date */}
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <div style={{
               fontSize: 15, fontWeight: 700, color: '#27500A',
               border: '1px dashed #3B6D11',
               background: '#EAF3DE',
               borderRadius: 3, padding: '1px 6px',
-              cursor: 'pointer', userSelect: 'none',
-              whiteSpace: 'nowrap',
+              cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
             }}>
               {localDate ? fmt(localDate) : '—'}
             </div>
@@ -292,69 +353,63 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
               }}
             />
           </div>
+
+          {/* Sort by date — only when multiple lots; reversible */}
           {displayLots.length > 1 && (
-            <>
-              <button
-                onClick={handleReorderByFulfillment}
-                title="Sort lots by earliest fulfillment date (HC or BLDR projected)"
-                style={{
-                  fontSize: 11, padding: '2px 8px', borderRadius: 4,
-                  border: '1px solid #D4D2CB', background: '#fff', color: '#6B6B68',
-                  cursor: 'pointer', marginLeft: 2,
-                }}
-              >
-                ↕ Sort by date
-              </button>
-              <button
-                onClick={handleReorderByUnit}
-                title="Sort lots by unit number"
-                style={{
-                  fontSize: 11, padding: '2px 8px', borderRadius: 4,
-                  border: '1px solid #D4D2CB', background: '#fff', color: '#6B6B68',
-                  cursor: 'pointer',
-                }}
-              >
-                ↕ Sort by unit
-              </button>
-            </>
+            <button
+              onClick={handleSortByDate}
+              title="Sort lots by earliest fulfillment date — click again to reverse"
+              style={ctrlBtn(dateSortActive, '#0f766e', '#ccfbf1', '#0f766e')}
+            >
+              {dateSortLabel}
+            </button>
           )}
+          {/* Sort by unit — only when multiple lots; reversible */}
+          {displayLots.length > 1 && (
+            <button
+              onClick={handleSortByUnit}
+              title="Sort lots by unit number — click again to reverse"
+              style={ctrlBtn(unitSortActive, '#0f766e', '#ccfbf1', '#0f766e')}
+            >
+              {unitSortLabel}
+            </button>
+          )}
+
+          {/* Timeline toggle */}
           <button
             onClick={() => setShowTimeline(v => !v)}
-            style={{
-              fontSize: 11, padding: '2px 9px', borderRadius: 4,
-              border: `1px solid ${showTimeline ? '#3B6D11' : '#D4D2CB'}`,
-              background: showTimeline ? '#EAF3DE' : '#fff',
-              color: showTimeline ? '#27500A' : '#6B6B68',
-              cursor: 'pointer', marginLeft: 2,
-            }}
+            style={ctrlBtn(showTimeline)}
           >
             {showTimeline ? '▾ Timeline' : '▸ Timeline'}
           </button>
-          {showLots && (
-            <button
-              onClick={() => setLotView(v => v === 'expanded' ? 'condensed' : 'expanded')}
-              style={{
-                fontSize: 11, padding: '2px 9px', borderRadius: 4,
-                border: `1px solid ${condensed ? '#6366f1' : '#D4D2CB'}`,
-                background: condensed ? '#eef2ff' : '#fff',
-                color: condensed ? '#4338ca' : '#6B6B68',
-                cursor: 'pointer', marginLeft: 2,
-              }}
-            >
-              {condensed ? '⊟ Condensed' : '⊞ Condensed'}
-            </button>
-          )}
+
+          {/* Condensed — always rendered; disabled when lots are hidden (no layout shift) */}
           <button
-            onClick={() => setShowLots(v => !v)}
+            onClick={() => { if (showLots) setLotView(v => v === 'expanded' ? 'condensed' : 'expanded') }}
+            disabled={!showLots}
             style={{
-              fontSize: 11, padding: '2px 9px', borderRadius: 4,
-              border: '1px solid #D4D2CB',
-              background: '#fff',
-              color: '#6B6B68',
-              cursor: 'pointer', marginLeft: 2,
+              ...ctrlBtn(condensed, '#6366f1', '#eef2ff', '#4338ca'),
+              opacity: !showLots ? 0.4 : 1,
+              cursor: !showLots ? 'not-allowed' : 'pointer',
             }}
           >
+            {condensed ? '⊟ Condensed' : '⊞ Condensed'}
+          </button>
+
+          {/* Show / hide lots */}
+          <button
+            onClick={() => setShowLots(v => !v)}
+            style={ctrlBtn(false)}
+          >
             {showLots ? '▾ Lots' : '▸ Lots'}
+          </button>
+
+          {/* DIG toggle */}
+          <button
+            onClick={() => setShowDig(v => !v)}
+            style={ctrlBtn(showDig, '#7c3aed', '#ede9fe', '#4c1d95')}
+          >
+            {showDig ? '▾ DIG' : '▸ DIG'}
           </button>
         </div>
 
@@ -373,9 +428,8 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
           </div>
         )}
 
-        {/* Right: Completed + Completed+Planned bars */}
+        {/* Right: progress bars */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 240 }}>
-          {/* Completed row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 11, color: overC ? '#A32D2D' : '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
               Completed
@@ -387,7 +441,6 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
               {c} of {t}
             </span>
           </div>
-          {/* Completed + Planned For row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 11, color: overTotal ? '#A32D2D' : '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
               + Planned
@@ -402,7 +455,7 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
         </div>
       </div>
 
-      {/* Body — outer pad + inner grid capped at 8 columns (8×148 + 7×8 = 1240px) */}
+      {/* Body */}
       {showLots && (
         <div style={{ padding: 14, minHeight: 60 }}>
           <div
@@ -425,6 +478,7 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
                     isExcess={idx >= total - excess}
                     checkpointDate={localDate}
                     condensed={condensed}
+                    showDig={showDig && !condensed}
                     isSelected={selectedAssignedLotIds?.has(a.lot_id)}
                     onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(e, 'assigned', a.lot_id) } : undefined}
                     onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
@@ -432,7 +486,6 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
                   />
                 )
               }
-              // Building group cluster — stays together on one row, stitched visually
               return (
                 <div key={`grp-${cluster.bgId}`} style={{ display: 'flex', flexShrink: 0, alignItems: 'stretch' }}>
                   {cluster.lots.flatMap((a, pi) => {
@@ -446,6 +499,7 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
                         isExcess={idx >= total - excess}
                         checkpointDate={localDate}
                         condensed={condensed}
+                        showDig={showDig && !condensed}
                         isSelected={selectedAssignedLotIds?.has(a.lot_id)}
                         onContextMenu={onContextMenu ? (e) => { e.preventDefault(); onContextMenu(e, 'assigned', a.lot_id) } : undefined}
                         onDateChange={(key, val) => onDateChange(a.assignment_id, { [key]: val })}
@@ -464,7 +518,7 @@ export default function CheckpointBand({ checkpoint, onDateChange, onLockChange,
         </div>
       )}
 
-      {/* Timeline chart — toggled from checkpoint header */}
+      {/* Timeline */}
       {showTimeline && (
         <CheckpointTimeline lots={displayLots} slotCount={slotCount} checkpointDate={localDate} lotsRequired={t} />
       )}
