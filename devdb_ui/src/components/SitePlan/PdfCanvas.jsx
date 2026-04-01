@@ -652,9 +652,14 @@ export default function PdfCanvas({
               const pts = JSON.parse(b.polygon_json)
               const svg = pts.map(p => normToScreen(p.x, p.y))
               const polyStr = svg.map(p => `${p.x},${p.y}`).join(' ')
-              const color = (b.phase_id && phaseColorMap[b.phase_id]) || UNASSIGNED_COLOR
+              const fillColor = (b.phase_id && phaseColorMap[b.phase_id]) || UNASSIGNED_COLOR
               const isSelected = b.boundary_id === selectedBoundaryId
               const isTarget = b.boundary_id === splitTargetId
+              // Stroke is always the same dark color; only fill changes with assignment
+              const strokeColor = isSelected ? '#1d4ed8' : '#1e293b'
+              const strokeW = isSelected ? 3 : isTarget ? 2.5 : 2
+              // Fill opacity: assigned 45%, unassigned 20%, split target 60%
+              const fillOpacity = isTarget ? 0.6 : b.phase_id ? 0.45 : 0.20
               // Centroid for label
               const cx = svg.reduce((s,p)=>s+p.x,0)/svg.length
               const cy = svg.reduce((s,p)=>s+p.y,0)/svg.length
@@ -663,19 +668,21 @@ export default function PdfCanvas({
                   onClick={inSplit ? undefined : () => onBoundarySelect?.(isSelected ? null : b.boundary_id)}
                   style={{ cursor: inSplit ? 'inherit' : 'pointer' }}
                 >
-                  {/* White backing stroke so boundaries are legible over any PDF background */}
+                  {/* White backing makes dark stroke legible over any PDF background */}
                   <polygon points={polyStr}
-                    fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth={isSelected ? 6 : 5}
+                    fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth={strokeW + 3}
                     style={{ pointerEvents: 'none' }} />
                   <polygon points={polyStr}
-                    fill={isTarget ? `${color}50` : `${color}30`}
-                    stroke={color}
-                    strokeWidth={isSelected ? 3.5 : isTarget ? 3 : 2}
+                    fill={fillColor} fillOpacity={fillOpacity}
+                    stroke={strokeColor}
+                    strokeWidth={strokeW}
                     strokeDasharray={isTarget ? '6 3' : 'none'}
                   />
                   {b.label && (
                     <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
-                      fontSize={12 / zoom * 1.2} fill={color} fontWeight="600"
+                      fontSize={12 / zoom * 1.2} fill="#1e293b" fontWeight="700"
+                      stroke="rgba(255,255,255,0.8)" strokeWidth={3 / zoom}
+                      paintOrder="stroke"
                       style={{ pointerEvents:'none', userSelect:'none' }}>
                       {b.label}
                     </text>
@@ -718,20 +725,21 @@ export default function PdfCanvas({
             {inEdit && Object.entries(editBoundaryPoints).map(([bidStr, pts]) => {
               const bid = Number(bidStr)
               const bnd = boundaries.find(b => b.boundary_id === bid)
-              const color = (bnd?.phase_id && phaseColorMap[bnd.phase_id]) || UNASSIGNED_COLOR
+              const fillColor = (bnd?.phase_id && phaseColorMap[bnd.phase_id]) || UNASSIGNED_COLOR
               const svgPts = pts.map(p => normToScreen(p.x, p.y))
               const polyStr = svgPts.map(p => `${p.x},${p.y}`).join(' ')
               return (
                 <g key={bid}>
-                  <polygon points={polyStr} fill={`${color}18`} stroke={color} strokeWidth={2} />
+                  <polygon points={polyStr} fill={fillColor} fillOpacity={bnd?.phase_id ? 0.45 : 0.20}
+                    stroke="#1e293b" strokeWidth={2} />
                   {hoverTarget?.source === 'boundary' && hoverTarget.boundaryId === bid && hoverTarget.type === 'edge' && (
                     <circle cx={hoverTarget.point.x} cy={hoverTarget.point.y} r={5}
-                      fill="#fff" stroke={color} strokeWidth={2} strokeDasharray="2 2" />
+                      fill="#fff" stroke="#1e293b" strokeWidth={2} strokeDasharray="2 2" />
                   )}
                   {svgPts.map((p, i) => {
                     const hov = hoverTarget?.source==='boundary' && hoverTarget.boundaryId===bid && hoverTarget.type==='vertex' && hoverTarget.idx===i
                     return <circle key={i} cx={p.x} cy={p.y} r={hov?9:6}
-                      fill="#fff" stroke={hov ? color : color} strokeWidth={hov?2.5:2}
+                      fill="#fff" stroke="#1e293b" strokeWidth={hov?2.5:2}
                       style={{ opacity: hov ? 1 : 0.85 }} />
                   })}
                 </g>
