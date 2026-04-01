@@ -463,8 +463,7 @@ export default function PdfCanvas({
       // Click overshoots a boundary edge → clip to intersection and immediately split
       const ix = findFirstBoundaryIntersection(last.x, last.y, sx, sy, boundaries, normToScreen)
       if (ix) {
-        const normIx = screenToNorm(ix.svgPoint.x, ix.svgPoint.y)
-        performSplit([...splitLine, normIx])
+        performSplit([...splitLine, ix.normPoint])
         return
       }
 
