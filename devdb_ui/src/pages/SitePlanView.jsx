@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Component } from 'react'
 import PdfCanvas from '../components/SitePlan/PdfCanvas'
 import LotBank from '../components/SitePlan/LotBank'
+import { normalizeSharedVertices, mergeAdjacentPolygons } from '../components/SitePlan/splitPolygon'
 
 class SitePlanErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null } }
@@ -43,6 +44,8 @@ function SitePlanViewInner() {
   const [selectedBoundaryId, setSelectedBoundaryId] = useState(null)
   const [phases, setPhases]                   = useState([])
   const [undoStack, setUndoStack]             = useState([])
+  const [traceUndoSignal, setTraceUndoSignal] = useState(0)   // increment → PdfCanvas pops last trace point
+  const [placeHistory, setPlaceHistory]       = useState([])  // [{lotId, prevPos}] for undo in place mode
   const [instrumentColors, setInstrumentColors] = useState({})  // {instrument_id: color}
   const [lotBankCollapsed, setLotBankCollapsed]       = useState(false)
   const [phasePanelCollapsed, setPhasePanelCollapsed] = useState(false)
@@ -54,9 +57,11 @@ function SitePlanViewInner() {
   const [isDirty, setIsDirty]             = useState(false)
   const [placeQueue, setPlaceQueue]       = useState([])   // [{lot_id, lot_number,...}] click-to-set queue
 
-  const fileInputRef  = useRef(null)
-  const boundariesRef = useRef(boundaries)
-  useEffect(() => { boundariesRef.current = boundaries }, [boundaries])
+  const fileInputRef      = useRef(null)
+  const boundariesRef     = useRef(boundaries)
+  const lotPositionsRef   = useRef(lotPositions)
+  useEffect(() => { boundariesRef.current   = boundaries   }, [boundaries])
+  useEffect(() => { lotPositionsRef.current = lotPositions }, [lotPositions])
 
   // Load entitlement groups
   useEffect(() => {
@@ -194,11 +199,15 @@ function SitePlanViewInner() {
 
   // ─── Lot placement handlers ─────────────────────────────────────────────────
   const handleLotDrop = useCallback((lotId, normPos) => {
+    const prevPos = lotPositionsRef.current[lotId] || null
+    setPlaceHistory(h => [...h, { lotId, prevPos }])
     setLotPositions(prev => ({ ...prev, [lotId]: normPos }))
     setIsDirty(true)
   }, [])
 
   const handleLotMove = useCallback((lotId, normPos) => {
+    const prevPos = lotPositionsRef.current[lotId] || null
+    setPlaceHistory(h => [...h, { lotId, prevPos }])
     setLotPositions(prev => ({ ...prev, [lotId]: normPos }))
     setIsDirty(true)
   }, [])
@@ -208,6 +217,8 @@ function SitePlanViewInner() {
     setPlaceQueue(prev => {
       if (!prev.length) return prev
       const [current, ...rest] = prev
+      const prevPos = lotPositionsRef.current[current.lot_id] || null
+      setPlaceHistory(h => [...h, { lotId: current.lot_id, prevPos }])
       setLotPositions(lp => ({ ...lp, [current.lot_id]: normPos }))
       setIsDirty(true)
       if (!rest.length) setMode('view')  // exhausted the queue
@@ -261,6 +272,7 @@ function SitePlanViewInner() {
         setSavedPositions(pos)
         setIsDirty(false)
         setPlaceQueue([])
+        setPlaceHistory([])
         setMode('view')
       }
     } catch { /* ignore */ }
@@ -270,6 +282,7 @@ function SitePlanViewInner() {
     setLotPositions(savedPositions)
     setIsDirty(false)
     setPlaceQueue([])
+    setPlaceHistory([])
     setMode('view')
   }
 
@@ -314,11 +327,41 @@ function SitePlanViewInner() {
   }
 
   async function handleDeleteBoundary(boundaryId) {
+    const current = boundariesRef.current
+    const toDelete = current.find(b => b.boundary_id === boundaryId)
+    if (!toDelete) return
+
     try {
+      // Find the best neighbor to absorb the deleted polygon's area.
+      // "Best" = most shared vertices (longest shared boundary).
+      const poly1 = JSON.parse(toDelete.polygon_json)
+      let bestNeighbor = null, bestShared = 0
+      for (const b of current) {
+        if (b.boundary_id === boundaryId) continue
+        const poly2 = JSON.parse(b.polygon_json)
+        const shared = poly1.filter(p1 =>
+          poly2.some(p2 => Math.hypot(p1.x - p2.x, p1.y - p2.y) < 2e-4)
+        ).length
+        if (shared > bestShared) { bestShared = shared; bestNeighbor = b }
+      }
+
+      if (bestNeighbor && bestShared >= 2) {
+        const poly2 = JSON.parse(bestNeighbor.polygon_json)
+        const merged = mergeAdjacentPolygons(poly1, poly2)
+        if (merged) {
+          await fetch(`${API}/phase-boundaries/${bestNeighbor.boundary_id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ polygon_json: JSON.stringify(merged) }),
+          })
+        }
+      }
+
       await fetch(`${API}/phase-boundaries/${boundaryId}`, { method: 'DELETE' })
-      setBoundaries(bs => bs.filter(b => b.boundary_id !== boundaryId))
+      const fresh = await fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
+      setBoundaries(fresh.ok ? await fresh.json() : current.filter(b => b.boundary_id !== boundaryId))
       setSelectedBoundaryId(prev => prev === boundaryId ? null : prev)
-      setUndoStack([])  // delete-phase edits aren't undoable; clear stack to avoid stale undo
+      setUndoStack([])
     } catch { /* ignore */ }
   }
 
@@ -362,6 +405,18 @@ function SitePlanViewInner() {
     const original = originalBoundaryId != null
       ? boundariesRef.current.find(b => b.boundary_id === originalBoundaryId)
       : null
+
+    // Normalize shared vertices between the two new polygons before persisting
+    // to eliminate any floating-point micro-gaps from the split geometry.
+    const synthetic = [
+      { boundary_id: '_a', polygon_json: JSON.stringify(polyA) },
+      { boundary_id: '_b', polygon_json: JSON.stringify(polyB) },
+    ]
+    const normChanges = normalizeSharedVertices(synthetic)
+    const normMap = Object.fromEntries(normChanges.map(n => [n.boundary_id, JSON.parse(n.polygon_json)]))
+    const finalPolyA = normMap['_a'] || polyA
+    const finalPolyB = normMap['_b'] || polyB
+
     try {
       const res = await fetch(`${API}/phase-boundaries/split`, {
         method: 'POST',
@@ -369,8 +424,8 @@ function SitePlanViewInner() {
         body: JSON.stringify({
           plan_id: plan.plan_id,
           original_boundary_id: originalBoundaryId ?? null,
-          polygon_a: JSON.stringify(polyA),
-          polygon_b: JSON.stringify(polyB),
+          polygon_a: JSON.stringify(finalPolyA),
+          polygon_b: JSON.stringify(finalPolyB),
         }),
       })
       if (!res.ok) throw new Error('Split failed')
@@ -398,7 +453,28 @@ function SitePlanViewInner() {
     setUndoStack(prev => [...prev.slice(-19), { type: 'edit', oldStates }])
   }, [])
 
+  function handlePlaceUndo() {
+    setPlaceHistory(h => {
+      if (!h.length) return h
+      const { lotId, prevPos } = h[h.length - 1]
+      if (prevPos === null) {
+        setLotPositions(lp => { const next = { ...lp }; delete next[lotId]; return next })
+      } else {
+        setLotPositions(lp => ({ ...lp, [lotId]: prevPos }))
+      }
+      return h.slice(0, -1)
+    })
+  }
+
   async function handleUndo() {
+    if (mode === 'trace') {
+      setTraceUndoSignal(s => s + 1)
+      return
+    }
+    if (mode === 'place') {
+      handlePlaceUndo()
+      return
+    }
     if (!undoStack.length || !plan) return
     const entry = undoStack[undoStack.length - 1]
     setUndoStack(prev => prev.slice(0, -1))
@@ -436,6 +512,23 @@ function SitePlanViewInner() {
       setError('Undo failed: ' + err.message)
       setUndoStack(prev => [...prev, entry])  // re-push on failure
     }
+  }
+
+  async function handleCleanupPolygons() {
+    if (!plan || !boundaries.length) return
+    const modified = normalizeSharedVertices(boundaries)
+    if (!modified.length) return
+    try {
+      await Promise.all(modified.map(m =>
+        fetch(`${API}/phase-boundaries/${m.boundary_id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ polygon_json: m.polygon_json }),
+        })
+      ))
+      const fresh = await fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
+      setBoundaries(fresh.ok ? await fresh.json() : boundaries)
+    } catch { /* ignore */ }
   }
 
   async function assignPhaseToSelected(phaseId) {
@@ -532,8 +625,9 @@ function SitePlanViewInner() {
 
         {hasPlan && <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />}
 
-        {/* Undo — visible when there's something to undo and not tracing */}
-        {hasPlan && undoStack.length > 0 && mode !== 'trace' && (
+        {/* Undo — visible in trace mode (pops last point), place mode (reverts last placement),
+                  or when undoStack has entries in other modes */}
+        {hasPlan && (mode === 'trace' || (mode === 'place' && placeHistory.length > 0) || (undoStack.length > 0 && mode !== 'trace' && mode !== 'place')) && (
           <button onClick={handleUndo} style={btn('#b45309', '#fffbeb', '#fde68a')}>↩ Undo</button>
         )}
 
@@ -554,6 +648,11 @@ function SitePlanViewInner() {
             {hasBoundaries && (
               <button onClick={() => { setMode('delete-phases'); setSelectedBoundaryId(null) }} style={btn('#b45309', '#fffbeb', '#fde68a')}>
                 Delete Phases
+              </button>
+            )}
+            {hasBoundaries && (
+              <button onClick={handleCleanupPolygons} style={btn('#374151', '#f9fafb', '#e5e7eb')} title="Snap near-coincident vertices to exact shared positions">
+                Clean Up
               </button>
             )}
             {hasParcel && (
@@ -649,6 +748,7 @@ function SitePlanViewInner() {
               onSplitConfirm={onSplitConfirm}
               onBoundaryUpdated={updated => setBoundaries(bs => bs.map(b => b.boundary_id === updated.boundary_id ? updated : b))}
               onVertexEditComplete={onVertexEditComplete}
+              traceUndoSignal={traceUndoSignal}
               lotPositions={lotPositions}
               lotMeta={lotMeta}
               lotColorMap={lotColorMap}

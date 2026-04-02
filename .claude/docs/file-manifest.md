@@ -182,15 +182,15 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/SitePlanView.jsx
-- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split/place); lot bank + positioning state (lotPositions, savedPositions, placeQueue, isDirty); PhasePanel (inline — phase name primary in boundary list, collapsible to 28px strip, stronger selected highlight); LotBank + PhasePanel collapse state (lotBankCollapsed, phasePanelCollapsed); mode instruction overlay (floating pill at canvas top-center); save/discard bar; point-in-polygon phase assignment on save; instrument colors persisted to localStorage per ent-group
-- Imports: react (useState, useEffect, useRef, useCallback, useMemo, Component), PdfCanvas, LotBank
+- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split/place/delete-phases); lot bank + positioning state (lotPositions, savedPositions, placeQueue, placeHistory, isDirty); granular undo: traceUndoSignal (increments to pop trace points in PdfCanvas), placeHistory stack ({lotId, prevPos}) for per-placement undo; delete-with-merge: handleDeleteBoundary finds best neighbor via shared-vertex count, calls mergeAdjacentPolygons before DELETE; normalizeSharedVertices called pre-save after every split; handleCleanupPolygons (toolbar "Clean Up" button); PhasePanel (inline — phase name primary, collapsible 28px strip, × delete per boundary); LotBank + PhasePanel collapse state; mode instruction overlay (floating pill); save/discard bar; point-in-polygon phase assignment on save; instrument colors in localStorage per ent-group
+- Imports: react (useState, useEffect, useRef, useCallback, useMemo, Component), PdfCanvas, LotBank, splitPolygon (normalizeSharedVertices, mergeAdjacentPolygons)
 - Imported by: App.jsx
 - Tables: none (API calls via /api/site-plans, /api/phase-boundaries, /api/entitlement-groups, /api/lot-positions)
 - Last commit: 2026-04-02
 
 ### devdb_ui/src/components/SitePlan/PdfCanvas.jsx
-- Owns: PDF rendering canvas; parcel trace mode; parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (click-to-draw polyline, snap to boundaries, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion; buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay
-- Imports: pdfjs-dist, react, splitPolygon (distToSeg, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon)
+- Owns: PDF rendering canvas; parcel trace mode (traceUndoSignal prop — increment pops last point); parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (bestSplitSnap = vertex snap priority over edge snap; click-to-draw polyline, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion; buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay
+- Imports: pdfjs-dist, react, splitPolygon (distToSeg, snapToVertices, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon, findBestSplit)
 - Imported by: SitePlanView.jsx
 - Tables: none (API calls via onParcelSaved, onSplitConfirm, onBoundaryUpdated props)
 - Last commit: 2026-04-02
@@ -203,9 +203,9 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-04-02
 
 ### devdb_ui/src/components/SitePlan/splitPolygon.js
-- Owns: Polygon split geometry utilities; distToSeg; segIntersect; snapToBoundaries (snap cursor to boundary edge, normPoint via t-interpolation in normalized space); findFirstBoundaryIntersection (normPoint via u-interpolation in normalized space); insertOnBoundary (projects input onto closest edge before inserting — exact topology; now detects existing vertex within 1e-6 tolerance and returns index instead of inserting duplicate); splitPolygon (insert start/end on ring, build two arcs + interior)
+- Owns: Polygon split geometry utilities; distToSeg; segIntersect; snapToVertices (vertex-priority snap — exact corners, same return shape as snapToBoundaries); snapToBoundaries (snap cursor to boundary edge, normPoint via t-interpolation in normalized space); findFirstBoundaryIntersection (normPoint via u-interpolation); insertOnBoundary (projects input onto closest edge, detects existing vertex within 1e-6 to avoid duplicates); splitPolygon (insert start/end on ring, build two arcs + interior); findBestSplit (measures interior polyline length per polygon, returns best split target + clipped line); normalizeSharedVertices (snaps vertices within tol=2e-4 across all boundaries to identical positions — returns only changed entries); mergeAdjacentPolygons (removes shared boundary between two adjacent polygons and returns merged outer polygon — used by delete-with-merge)
 - Imports: none
-- Imported by: PdfCanvas.jsx
+- Imported by: PdfCanvas.jsx, SitePlanView.jsx
 - Tables: none
 - Last commit: 2026-04-02
 

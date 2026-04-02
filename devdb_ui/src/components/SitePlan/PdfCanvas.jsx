@@ -17,7 +17,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import {
-  distToSeg, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon, findBestSplit,
+  distToSeg, snapToVertices, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon, findBestSplit,
 } from './splitPolygon'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
@@ -67,6 +67,7 @@ export default function PdfCanvas({
   mode, onModeChange,
   onParcelSaved, onSplitConfirm, onBoundarySelect, onBoundaryDelete, onBoundaryUpdated,
   onVertexEditComplete,   // ({boundary_id, old_polygon_json}[]) => void — for undo tracking
+  traceUndoSignal = 0,    // increment to pop the last trace point (granular undo)
   // Lot positioning props
   lotPositions = {},    // {lot_id: {x, y}} normalized
   lotMeta = {},         // {lot_id: {lot_number, instrument_id}}
@@ -124,6 +125,12 @@ export default function PdfCanvas({
   const editRef  = useRef(null)
 
   useEffect(() => { setSavedParcel(initialParcel || null) }, [initialParcel])
+
+  // Granular undo for trace mode: pop the last placed point
+  useEffect(() => {
+    if (traceUndoSignal === 0) return
+    setTracePoints(pts => pts.slice(0, -1))
+  }, [traceUndoSignal])
 
   // Reset mode-local state on mode change
   useEffect(() => {
@@ -559,12 +566,19 @@ export default function PdfCanvas({
     return findBestSplit(polyline, getSplitCandidates())
   }
 
+  // Vertex snap takes priority over edge snap in split mode to ensure exact corner alignment.
+  function bestSplitSnap(sx, sy) {
+    const candidates = getSplitCandidates()
+    return snapToVertices(sx, sy, candidates, normToScreen, SNAP_SPLIT_PX)
+        || snapToBoundaries(sx, sy, candidates, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+  }
+
   function handleSplitMove(e) {
     const { sx, sy } = svgXY(e)
     setSplitCursorSvg({ x: sx, y: sy })
 
-    // Snap to any candidate boundary — no target restriction
-    const snap = snapToBoundaries(sx, sy, getSplitCandidates(), normToScreen, screenToNorm, SNAP_SPLIT_PX)
+    // Snap to vertex first, then edge — no target restriction
+    const snap = bestSplitSnap(sx, sy)
     setSplitSnapSvg(snap ? snap.svgPoint : null)
 
     // Live preview: update highlighted target based on where the line would end
@@ -582,8 +596,8 @@ export default function PdfCanvas({
     const { sx, sy } = svgXY(e)
 
     if (splitPhase === 'idle') {
-      // Start drawing — must begin on any boundary edge so geometry is anchored
-      const snap = snapToBoundaries(sx, sy, getSplitCandidates(), normToScreen, screenToNorm, SNAP_SPLIT_PX)
+      // Start drawing — must begin on any boundary vertex or edge
+      const snap = bestSplitSnap(sx, sy)
       if (!snap) return
       e.currentTarget.setPointerCapture(e.pointerId)
       setSplitLine([snap.normPoint])
@@ -596,8 +610,8 @@ export default function PdfCanvas({
       const last = splitLineSvg[splitLineSvg.length - 1]
       const candidates = getSplitCandidates()
 
-      // Snap to any boundary edge → try to auto-detect and complete the split
-      const snap = snapToBoundaries(sx, sy, candidates, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+      // Snap to any boundary vertex or edge → try to auto-detect and complete the split
+      const snap = bestSplitSnap(sx, sy)
       if (snap) {
         const finalLine = [...splitLine, snap.normPoint]
         const result = detectSplit(finalLine)

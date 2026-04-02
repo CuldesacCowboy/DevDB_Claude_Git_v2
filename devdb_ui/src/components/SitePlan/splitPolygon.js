@@ -35,6 +35,27 @@ export function segIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
 // ─── Snap helpers (SVG screen space) ─────────────────────────────────────────
 
 /**
+ * Find the closest polygon VERTEX (corner) to (sx, sy) across all boundaries.
+ * Returns { boundary, edgeIdx, svgPoint, normPoint } or null.
+ * Higher priority than edge snapping — call this first, fall back to snapToBoundaries.
+ */
+export function snapToVertices(sx, sy, boundaries, normToScreen, threshold = 18) {
+  let best = null, bestDist = threshold
+  for (const b of boundaries) {
+    const pts = JSON.parse(b.polygon_json)
+    for (let i = 0; i < pts.length; i++) {
+      const sp = normToScreen(pts[i].x, pts[i].y)
+      const dist = Math.hypot(sx - sp.x, sy - sp.y)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = { boundary: b, edgeIdx: i, svgPoint: sp, normPoint: pts[i] }
+      }
+    }
+  }
+  return best
+}
+
+/**
  * Find the closest point on any boundary polygon edge to (sx, sy).
  * Returns { boundary, edgeIdx, svgPoint, normPoint } or null.
  */
@@ -301,4 +322,116 @@ export function splitPolygon(polygon, splitLine) {
 
   if (polyA.length < 3 || polyB.length < 3) return null
   return [polyA, polyB]
+}
+
+// ─── Topology normalization ────────────────────────────────────────────────────
+
+/**
+ * Snap vertices that are within `tol` of each other across all boundaries to
+ * the exact same position (the first one encountered).  Prevents micro-gaps
+ * caused by floating-point round-trips through screen ↔ normalized space.
+ *
+ * Returns [{boundary_id, polygon_json}] for only the boundaries that changed.
+ * Mutates nothing — operates on copies.
+ */
+export function normalizeSharedVertices(boundaries, tol = 2e-4) {
+  const polys = boundaries.map(b => ({
+    boundary_id: b.boundary_id,
+    pts: JSON.parse(b.polygon_json),
+  }))
+
+  for (let ai = 0; ai < polys.length; ai++) {
+    for (let aj = 0; aj < polys[ai].pts.length; aj++) {
+      const ref = polys[ai].pts[aj]
+      for (let bi = ai; bi < polys.length; bi++) {
+        const startJ = bi === ai ? aj + 1 : 0
+        for (let bj = startJ; bj < polys[bi].pts.length; bj++) {
+          const p = polys[bi].pts[bj]
+          if (Math.hypot(p.x - ref.x, p.y - ref.y) < tol) {
+            polys[bi].pts[bj] = { x: ref.x, y: ref.y }
+          }
+        }
+      }
+    }
+  }
+
+  // Return only boundaries whose vertices actually changed
+  const changed = []
+  for (let i = 0; i < polys.length; i++) {
+    const orig = JSON.parse(boundaries[i].polygon_json)
+    const modified = polys[i].pts.some((p, j) => p.x !== orig[j].x || p.y !== orig[j].y)
+    if (modified) changed.push({ boundary_id: polys[i].boundary_id, polygon_json: JSON.stringify(polys[i].pts) })
+  }
+  return changed
+}
+
+/**
+ * Merge two adjacent polygons by removing their shared boundary.
+ *
+ * The two polygons must share a contiguous sequence of vertices (the split
+ * line between them).  The shared vertices appear in opposite traversal order
+ * in the two polygons (standard winding invariant for adjacent planar regions).
+ *
+ * Algorithm:
+ *   1. Find which poly1 vertices are shared with poly2 (within tol).
+ *   2. Find chain1: the non-shared vertices in poly1, between two junction vertices.
+ *   3. Walk poly2 forward from jAfter (in poly2) to jBefore (in poly2) to collect
+ *      chain2 — the outer boundary of poly2 (non-shared side).
+ *   4. merged = [jBefore, ...chain1, jAfter, ...chain2].
+ *
+ * Returns [{x,y}] or null on failure (topology mismatch, not enough shared vertices).
+ */
+export function mergeAdjacentPolygons(poly1, poly2, tol = 2e-4) {
+  if (!poly1 || !poly2 || poly1.length < 3 || poly2.length < 3) return null
+
+  // For each vertex in poly1, find matching index in poly2 (or -1)
+  const match1to2 = poly1.map(p1 =>
+    poly2.findIndex(p2 => Math.hypot(p1.x - p2.x, p1.y - p2.y) < tol)
+  )
+
+  // Need at least 2 shared vertices (junctions) to form a merge
+  if (match1to2.filter(i => i !== -1).length < 2) return null
+
+  // Find startIdx: first non-shared vertex whose predecessor IS shared
+  let startIdx = -1
+  for (let i = 0; i < poly1.length; i++) {
+    const prev = (i + poly1.length - 1) % poly1.length
+    if (match1to2[i] === -1 && match1to2[prev] !== -1) { startIdx = i; break }
+  }
+  if (startIdx === -1) return null  // entirely overlapping or no non-shared vertices
+
+  // jBefore1: last shared vertex preceding the non-shared chain in poly1
+  const jBefore1Idx = (startIdx + poly1.length - 1) % poly1.length
+  const jBefore1      = poly1[jBefore1Idx]
+  const jBefore1Poly2 = match1to2[jBefore1Idx]
+
+  // Collect chain1 (non-shared run in poly1)
+  const chain1 = []
+  let idx = startIdx
+  while (match1to2[idx] === -1) {
+    chain1.push(poly1[idx])
+    idx = (idx + 1) % poly1.length
+    if (chain1.length > poly1.length) return null
+  }
+
+  // jAfter1: first shared vertex following chain1 in poly1
+  const jAfter1      = poly1[idx]
+  const jAfter1Poly2 = match1to2[idx]
+
+  if (jBefore1Poly2 === -1 || jAfter1Poly2 === -1) return null
+
+  // Walk poly2 FORWARD from jAfter1Poly2 to jBefore1Poly2 — this traverses the
+  // outer (non-shared) boundary of poly2.
+  const chain2 = []
+  let j = (jAfter1Poly2 + 1) % poly2.length
+  let iter = 0
+  while (j !== jBefore1Poly2 && iter < poly2.length) {
+    chain2.push(poly2[j])
+    j = (j + 1) % poly2.length
+    iter++
+  }
+  if (j !== jBefore1Poly2) return null  // topology mismatch — try cannot reach target
+
+  const merged = [jBefore1, ...chain1, jAfter1, ...chain2]
+  return merged.length >= 3 ? merged : null
 }
