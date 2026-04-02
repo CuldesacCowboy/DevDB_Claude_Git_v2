@@ -153,10 +153,10 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/SitePlanView.jsx
-- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split); phase side panel (boundary list with color swatches + phase assignment); fetches boundaries and lot-phase data; onSplitConfirm POSTs /api/phase-boundaries/split; onBoundaryUpdated patches boundaries state; SitePlanErrorBoundary (class component, wraps SitePlanViewInner); phaseColorMap built from instrument_id grouping (INSTRUMENT_COLORS palette); boundaries gray until assigned, then instrument color
-- Imports: react (useState, useEffect, useRef, useCallback, Component), PdfCanvas, PhasePanel
+- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split/place); lot bank + positioning state (lotPositions, savedPositions, placeQueue, isDirty); PhasePanel (inline — phase name primary in boundary list, collapsible to 28px strip, stronger selected highlight); LotBank + PhasePanel collapse state (lotBankCollapsed, phasePanelCollapsed); mode instruction overlay (floating pill at canvas top-center); save/discard bar; point-in-polygon phase assignment on save; instrument colors persisted to localStorage per ent-group
+- Imports: react (useState, useEffect, useRef, useCallback, useMemo, Component), PdfCanvas, LotBank
 - Imported by: App.jsx
-- Tables: none (API calls via /api/site-plans, /api/phase-boundaries, /api/entitlement-groups)
+- Tables: none (API calls via /api/site-plans, /api/phase-boundaries, /api/entitlement-groups, /api/lot-positions)
 - Last commit: 2026-04-02
 
 ### devdb_ui/src/components/SitePlan/PdfCanvas.jsx
@@ -167,7 +167,7 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-04-02
 
 ### devdb_ui/src/components/SitePlan/LotBank.jsx
-- Owns: Left panel on the site plan page showing unpositioned lots grouped by legal instrument; lot pills are draggable (HTML5 DnD) and clickable (enters click-to-set loop); active placing lot highlighted with instrument color; groups use stable insertion order
+- Owns: Left panel on the site plan page showing unpositioned lots grouped by legal instrument; lot pills are draggable (HTML5 DnD) and clickable (enters click-to-set loop); active placing lot highlighted with instrument color; groups use stable insertion order; collapsed prop renders 28px vertical strip with label + expand button
 - Imports: react (useMemo)
 - Imported by: SitePlanView.jsx
 - Tables: none
