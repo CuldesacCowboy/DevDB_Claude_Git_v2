@@ -31,6 +31,48 @@ async def list_lot_types(conn=Depends(get_db_conn)):
         cur.close()
 
 
+@router.get("/{phase_id}/product-splits", response_model=list[dict])
+async def get_product_splits(phase_id: int, conn=Depends(get_db_conn)):
+    """Return all product splits for a phase with lot type labels."""
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """
+            SELECT
+                sps.split_id,
+                sps.phase_id,
+                sps.lot_type_id,
+                rlt.lot_type_short,
+                sps.projected_count,
+                COALESCE(real.real_count, 0)::int AS actual
+            FROM sim_phase_product_splits sps
+            JOIN ref_lot_types rlt ON sps.lot_type_id = rlt.lot_type_id
+            LEFT JOIN (
+                SELECT lot_type_id, COUNT(*) AS real_count
+                FROM sim_lots
+                WHERE phase_id = %s AND lot_source = 'real'
+                GROUP BY lot_type_id
+            ) real ON sps.lot_type_id = real.lot_type_id
+            WHERE sps.phase_id = %s
+            ORDER BY rlt.lot_type_id
+            """,
+            (phase_id, phase_id),
+        )
+        return [
+            {
+                "split_id": r["split_id"],
+                "phase_id": r["phase_id"],
+                "lot_type_id": r["lot_type_id"],
+                "lot_type_short": r["lot_type_short"],
+                "projected_count": r["projected_count"],
+                "actual": r["actual"],
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
 @router.post("", response_model=dict, status_code=201)
 async def create_phase(body: PhaseCreateRequest, conn=Depends(get_db_conn)):
     """Create a new empty phase and attach it to the given instrument."""

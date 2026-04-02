@@ -99,6 +99,14 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: sim_lot_site_positions, sim_lots, sim_site_plans, sim_dev_phases, dim_development, developments, sim_legal_instruments
 - Last commit: 2026-04-02
 
+### devdb_python/api/routers/phases.py (updated)
+- Added: GET /{phase_id}/product-splits — returns all splits with lot type labels and actual counts
+- Last commit: 2026-04-01
+
+### devdb_python/api/routers/entitlement_groups.py (updated)
+- Added: GET /{ent_group_id}/split-check — returns phases with no product splits (pre-run warning for D-100)
+- Last commit: 2026-04-01
+
 ### devdb_python/api/routers/simulations.py
 - Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms
 - Imports: engine.coordinator, fastapi, pydantic, time, traceback

@@ -162,6 +162,45 @@ _STATUS_SQL = """\
     END"""
 
 
+@router.get("/{ent_group_id}/split-check", response_model=list[dict])
+def ent_group_split_check(ent_group_id: int, conn=Depends(get_db_conn)):
+    """
+    Return phases in this entitlement group that have no product splits configured.
+    Used by SimulationView to warn before running — empty list means all phases are ready.
+    """
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """
+            SELECT
+                sdp.phase_id,
+                sdp.phase_name,
+                sli.instrument_name
+            FROM sim_dev_phases sdp
+            JOIN sim_legal_instruments sli ON sdp.instrument_id = sli.instrument_id
+            JOIN sim_ent_group_developments segd ON sli.dev_id = segd.dev_id
+            WHERE segd.ent_group_id = %s
+              AND NOT EXISTS (
+                  SELECT 1 FROM sim_phase_product_splits spps
+                  WHERE spps.phase_id = sdp.phase_id
+              )
+            ORDER BY sli.instrument_name, sdp.sequence_number
+            """,
+            (ent_group_id,),
+        )
+        return [
+            {
+                "phase_id": r["phase_id"],
+                "phase_name": r["phase_name"],
+                "instrument_name": r["instrument_name"],
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
 @router.get("/{ent_group_id}/lot-phase-view", response_model=EntGroupLotPhaseViewResponse)
 def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
     import psycopg2.extras

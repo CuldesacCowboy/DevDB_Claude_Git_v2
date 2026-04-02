@@ -37,6 +37,7 @@ export default function SimulationView() {
   const [runStatus, setRunStatus] = useState(null)   // null | 'running' | { ok, iterations, elapsed_ms, error }
   const [ledger, setLedger] = useState([])
   const [ledgerLoading, setLedgerLoading] = useState(false)
+  const [missingSplits, setMissingSplits] = useState([])  // phases with no product splits
 
   // Load entitlement groups once
   useEffect(() => {
@@ -48,6 +49,19 @@ export default function SimulationView() {
       })
       .catch(() => setEntGroups([]))
   }, [])
+
+  // Check for phases missing splits whenever ent group changes
+  const checkSplits = useCallback((id) => {
+    if (!id) return
+    fetch(`${API}/entitlement-groups/${id}/split-check`)
+      .then(r => r.json())
+      .then(rows => setMissingSplits(Array.isArray(rows) ? rows : []))
+      .catch(() => setMissingSplits([]))
+  }, [])
+
+  useEffect(() => {
+    if (entGroupId) checkSplits(entGroupId)
+  }, [entGroupId, checkSplits])
 
   // Load ledger whenever ent group changes
   const loadLedger = useCallback((id) => {
@@ -81,6 +95,7 @@ export default function SimulationView() {
       const data = await res.json()
       setRunStatus({ ok: true, iterations: data.iterations, elapsed_ms: data.elapsed_ms })
       loadLedger(entGroupId)
+      checkSplits(entGroupId)
     } catch (e) {
       setRunStatus({ ok: false, error: e.message })
     }
@@ -126,6 +141,30 @@ export default function SimulationView() {
           </span>
         )}
       </div>
+
+      {/* Missing splits warning */}
+      {missingSplits.length > 0 && (
+        <div style={{
+          marginBottom: 16, padding: '10px 14px',
+          background: '#fffbeb', border: '1px solid #fbbf24',
+          borderRadius: 6, fontSize: 12,
+        }}>
+          <div style={{ fontWeight: 600, color: '#92400e', marginBottom: 4 }}>
+            {missingSplits.length} phase{missingSplits.length !== 1 ? 's' : ''} have no product splits — temp lot generation will produce zero lots for these phases (D-100):
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, color: '#78350f', lineHeight: 1.7 }}>
+            {missingSplits.map(p => (
+              <li key={p.phase_id}>
+                <span style={{ fontWeight: 500 }}>{p.phase_name}</span>
+                <span style={{ color: '#b45309' }}> — {p.instrument_name}</span>
+              </li>
+            ))}
+          </ul>
+          <div style={{ marginTop: 6, color: '#92400e', fontSize: 11 }}>
+            Add product splits in the Lot · Phase tab before running.
+          </div>
+        </div>
+      )}
 
       {/* Ledger table */}
       {ledgerLoading && (
