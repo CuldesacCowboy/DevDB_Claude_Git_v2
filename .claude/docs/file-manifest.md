@@ -37,18 +37,18 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-28
 
 ### devdb_python/api/routers/developments.py
-- Owns: CRUD for developments table; GET /{dev_id}/lot-phase-view sub-resource
-- Imports: api.deps, api.models.lot_models, psycopg2.extras
+- Owns: CRUD for developments table; GET /{dev_id}/lot-phase-view sub-resource; PUT /{dev_id}/sim-params (upserts sim_dev_params — validates against dim_development, COALESCE seasonal_weight_set to 'balanced_2yr')
+- Imports: api.deps, api.models.lot_models, psycopg2.extras, pydantic
 - Imported by: api/main.py
-- Tables: developments, dim_county, sim_entitlement_groups, sim_dev_phases, sim_lots, dim_projection_groups, sim_phase_product_splits, ref_lot_types
-- Last commit: 2026-03-27
+- Tables: developments, dim_county, dim_development, sim_entitlement_groups, sim_dev_phases, sim_lots, sim_phase_product_splits, ref_lot_types, sim_dev_params
+- Last commit: 2026-04-02
 
 ### devdb_python/api/routers/entitlement_groups.py
-- Owns: CRUD for sim_entitlement_groups; GET /{id}/lot-phase-view aggregating instruments/phases/lots
+- Owns: CRUD for sim_entitlement_groups; GET /{id}/lot-phase-view aggregating instruments/phases/lots; GET /{id}/split-check (phases with no product splits); GET /{id}/param-check (all devs with starts-target status — joins through dim_development)
 - Imports: api.deps, api.models.lot_models, psycopg2.extras
 - Imported by: api/main.py
-- Tables: sim_entitlement_groups, developments, dim_development, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, ref_lot_types, dim_projection_groups
-- Last commit: 2026-03-27
+- Tables: sim_entitlement_groups, developments, dim_development, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, ref_lot_types, sim_ent_group_developments, sim_dev_params
+- Last commit: 2026-04-02
 
 ### devdb_python/api/routers/instruments.py
 - Owns: POST and PATCH for sim_legal_instruments (create, rename)
@@ -108,18 +108,18 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-04-01
 
 ### devdb_python/api/routers/simulations.py
-- Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms
-- Imports: engine.coordinator, fastapi, pydantic, time, traceback
+- Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms, errors[]; looks up dev names for missing_params_devs via dim_development bridge
+- Imports: engine.coordinator, fastapi, pydantic, time, traceback, psycopg2.extras
 - Imported by: api/main.py
-- Tables: none (delegates entirely to engine)
-- Last commit: 2026-04-01
+- Tables: dim_development, developments (for dev_name lookup on missing params)
+- Last commit: 2026-04-02
 
 ### devdb_python/api/routers/ledger.py
-- Owns: GET /ledger/{ent_group_id} — returns monthly ledger rows from v_sim_ledger_monthly filtered to the ent group's projection groups; only non-empty months returned
+- Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates); joins through dim_development for dev_name
 - Imports: api.deps, psycopg2.extras, fastapi
 - Imported by: api/main.py
-- Tables: v_sim_ledger_monthly, dim_projection_groups, sim_ent_group_developments
-- Last commit: 2026-04-01
+- Tables: v_sim_ledger_monthly, sim_ent_group_developments, dim_development, developments, sim_dev_phases, sim_lots, sim_legal_instruments, sim_phase_product_splits, ref_lot_types
+- Last commit: 2026-04-02
 
 ### devdb_python/services/lot_assignment_service.py
 - Owns: Lot phase reassignment, lot-type change, lot unassignment with validation and audit logging
@@ -154,11 +154,11 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/SimulationView.jsx
-- Owns: Simulation run trigger (Run Simulation button → POST /api/simulations/run) and ledger results table (GET /api/ledger/{ent_group_id}); entitlement group picker; monthly pipeline event/status counts grouped by PG
+- Owns: Simulation run trigger, monthly ledger view (by-dev), lot ledger tab (LotLedger with projected-date display in italic blue), phase utilization bars (UtilizationPanel), always-visible starts-target editor (SimParams), run-error warning banner, view toggle (Monthly Ledger / Lot List)
 - Imports: react (useState, useEffect, useCallback)
 - Imported by: App.jsx
-- Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups)
-- Last commit: 2026-04-01
+- Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params)
+- Last commit: 2026-04-02
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker sidebar; add instrument inline form (replaces modal — expands in page header matching TDA pattern)
@@ -509,11 +509,11 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/coordinator.py
-- Owns: Convergence coordinator -- runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10)
-- Imports: engine modules s0100-s1200, p0000-p0800, kernel.plan, kernel.FrozenInput
-- Imported by: tests/test_coordinator.py
-- Tables: reads/writes via all pipeline modules
-- Last commit: 2026-03-27
+- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params (independent of sim-lot capacity); returns (iterations, missing_params_devs)
+- Imports: engine modules s0100-s1200, p0000-p0800, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
+- Imported by: routers/simulations.py, tests/test_coordinator.py
+- Tables: reads/writes via all pipeline modules; sim_lots (projected date columns), sim_dev_params
+- Last commit: 2026-04-02
 
 ### devdb_python/engine/s0100_lot_loader.py
 - Owns: S-0100 -- loads real lots for ent_group from sim_lots into a DataFrame
