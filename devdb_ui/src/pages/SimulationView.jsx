@@ -149,7 +149,7 @@ function LedgerTable({ rows, floors, period }) {
               {period === 'quarterly' ? 'Quarter' : period === 'annual' ? 'Year' : 'Month'}
             </th>
             <th style={{ ...thS('center'), borderRight: '2px solid #d1d5db' }} colSpan={6}>Events</th>
-            <th style={{ ...thS('center'), borderLeft: '2px solid #d1d5db' }} colSpan={7}>End-of-period status</th>
+            <th style={{ ...thS('center'), borderLeft: '2px solid #d1d5db' }} colSpan={8}>End-of-period status</th>
             <th style={thS()}>Closed</th>
           </tr>
           <tr style={{ background: '#f9fafb' }}>
@@ -166,6 +166,7 @@ function LedgerTable({ rows, floors, period }) {
                 {floorMap[c] != null && <span style={{ fontSize: 9, verticalAlign: 'super', marginLeft: 1 }}>≥{floorMap[c]}</span>}
               </th>
             ))}
+            <th style={{ ...thS(), borderLeft: '1px solid #e5e7eb', color: '#374151', fontWeight: 700 }}>Total</th>
             <th style={thS()} />
           </tr>
         </thead>
@@ -191,6 +192,9 @@ function LedgerTable({ rows, floors, period }) {
                   </td>
                 )
               })}
+              <td style={tdS('right', { borderLeft: '1px solid #e5e7eb', fontWeight: 600, color: '#374151' })}>
+                {cell(STATUS_COLS.reduce((s, c) => s + (r[c] || 0), 0) || null)}
+              </td>
               <td style={tdS()}>
                 {r.closed_cumulative > 0 ? r.closed_cumulative : ''}
               </td>
