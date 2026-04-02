@@ -193,7 +193,7 @@ function LedgerTable({ rows, floors, period }) {
                 )
               })}
               <td style={tdS('right', { borderLeft: '1px solid #e5e7eb', fontWeight: 600, color: '#374151' })}>
-                {cell(STATUS_COLS.reduce((s, c) => s + (r[c] || 0), 0) || null)}
+                {cell(STATUS_COLS.reduce((s, c) => s + (r[c] || 0), 0) + (r.closed_cumulative || 0) || null)}
               </td>
               <td style={tdS()}>
                 {r.closed_cumulative > 0 ? r.closed_cumulative : ''}
