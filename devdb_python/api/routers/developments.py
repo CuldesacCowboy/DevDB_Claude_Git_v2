@@ -205,6 +205,60 @@ def patch_development(dev_id: int, body: DevelopmentPatchRequest, conn=Depends(g
 
 
 # ---------------------------------------------------------------------------
+# PUT /developments/{dev_id}/sim-params  — upsert sim_dev_params row
+# ---------------------------------------------------------------------------
+
+class SimParamsPutRequest(BaseModel):
+    annual_starts_target: int
+    max_starts_per_month: int | None = None
+    seasonal_weight_set: str | None = None
+
+
+@router.put("/{dev_id}/sim-params", response_model=dict)
+def upsert_sim_params(dev_id: int, body: SimParamsPutRequest, conn=Depends(get_db_conn)):
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "SELECT dev_id FROM developments WHERE dev_id = %s", (dev_id,)
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Development {dev_id} not found.")
+        if body.annual_starts_target < 1:
+            raise HTTPException(status_code=422, detail="annual_starts_target must be >= 1")
+
+        cur.execute(
+            """
+            INSERT INTO sim_dev_params (dev_id, annual_starts_target, max_starts_per_month, seasonal_weight_set, updated_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (dev_id) DO UPDATE
+                SET annual_starts_target = EXCLUDED.annual_starts_target,
+                    max_starts_per_month  = COALESCE(EXCLUDED.max_starts_per_month, sim_dev_params.max_starts_per_month),
+                    seasonal_weight_set   = COALESCE(EXCLUDED.seasonal_weight_set,  sim_dev_params.seasonal_weight_set),
+                    updated_at            = NOW()
+            RETURNING dev_id, annual_starts_target, max_starts_per_month, seasonal_weight_set, updated_at
+            """,
+            (dev_id, body.annual_starts_target, body.max_starts_per_month, body.seasonal_weight_set),
+        )
+        row = cur.fetchone()
+        conn.commit()
+        return {
+            "dev_id": row["dev_id"],
+            "annual_starts_target": row["annual_starts_target"],
+            "max_starts_per_month": row["max_starts_per_month"],
+            "seasonal_weight_set": row["seasonal_weight_set"],
+            "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
 # GET /developments/{dev_id}/lot-phase-view  (pre-existing endpoint)
 # ---------------------------------------------------------------------------
 

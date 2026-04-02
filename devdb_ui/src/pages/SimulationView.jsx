@@ -155,6 +155,7 @@ export default function SimulationView() {
   const [loading, setLoading]         = useState(false)
   const [missingSplits, setMissingSplits] = useState([])
   const [staleParams, setStaleParams]     = useState([])
+  const [paramEdits, setParamEdits]       = useState({})   // { [dev_id]: { value: string, saving: bool, error: str } }
 
   useEffect(() => {
     fetch(`${API}/entitlement-groups`)
@@ -291,29 +292,62 @@ export default function SimulationView() {
         </div>
       )}
 
-      {/* Stale params warning */}
+      {/* Stale params warning — inline edit */}
       {staleParams.length > 0 && (
         <div style={{
           marginBottom: 16, padding: '10px 14px',
           background: '#fff7ed', border: '1px solid #fb923c', borderRadius: 6, fontSize: 12,
         }}>
-          <div style={{ fontWeight: 600, color: '#9a3412', marginBottom: 4 }}>
-            {staleParams.length} development{staleParams.length !== 1 ? 's' : ''} have missing or outdated starts targets — verify before running:
+          <div style={{ fontWeight: 600, color: '#9a3412', marginBottom: 6 }}>
+            {staleParams.length} development{staleParams.length !== 1 ? 's' : ''} have missing or outdated starts targets:
           </div>
-          <ul style={{ margin: 0, paddingLeft: 18, color: '#7c2d12', lineHeight: 1.7 }}>
-            {staleParams.map(p => (
-              <li key={p.dev_id}>
-                <span style={{ fontWeight: 500 }}>{p.dev_name}</span>
-                {p.status === 'missing'
-                  ? <span style={{ color: '#dc2626' }}> · no starts target configured</span>
-                  : <span style={{ color: '#b45309' }}> · last updated {p.updated_at ? p.updated_at.slice(0, 10) : 'unknown'} ({p.annual_starts_target} starts/yr)</span>
-                }
-              </li>
-            ))}
-          </ul>
-          <div style={{ marginTop: 6, color: '#9a3412', fontSize: 11 }}>
-            Update annual_starts_target in sim_dev_params to reflect current pace.
-          </div>
+          {staleParams.map(p => {
+            const edit = paramEdits[p.dev_id] || {}
+            const val  = edit.value !== undefined ? edit.value : (p.annual_starts_target ?? '')
+            return (
+              <div key={p.dev_id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 500, color: '#7c2d12', minWidth: 180 }}>{p.dev_name}</span>
+                {p.status === 'stale' && (
+                  <span style={{ color: '#b45309', fontSize: 11 }}>
+                    (last updated {p.updated_at ? p.updated_at.slice(0, 10) : 'unknown'})
+                  </span>
+                )}
+                <input
+                  type="number" min="1" placeholder="starts/yr"
+                  value={val}
+                  onChange={e => setParamEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], value: e.target.value } }))}
+                  style={{ width: 80, padding: '2px 6px', border: '1px solid #fb923c', borderRadius: 4, fontSize: 12 }}
+                />
+                <button
+                  disabled={edit.saving || !val}
+                  onClick={async () => {
+                    const n = parseInt(val, 10)
+                    if (!n || n < 1) return
+                    setParamEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], saving: true, error: null } }))
+                    try {
+                      const res = await fetch(`${API}/developments/${p.dev_id}/sim-params`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ annual_starts_target: n }),
+                      })
+                      if (!res.ok) throw new Error(await res.text())
+                      setParamEdits(prev => { const next = { ...prev }; delete next[p.dev_id]; return next })
+                      checkSplits(entGroupId)
+                    } catch (err) {
+                      setParamEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], saving: false, error: String(err) } }))
+                    }
+                  }}
+                  style={{
+                    padding: '2px 10px', fontSize: 12, borderRadius: 4, border: 'none',
+                    background: edit.saving ? '#d1d5db' : '#ea580c', color: '#fff', cursor: edit.saving ? 'default' : 'pointer',
+                  }}
+                >
+                  {edit.saving ? 'Saving…' : 'Save'}
+                </button>
+                {edit.error && <span style={{ color: '#dc2626', fontSize: 11 }}>{edit.error}</span>}
+              </div>
+            )
+          })}
         </div>
       )}
 

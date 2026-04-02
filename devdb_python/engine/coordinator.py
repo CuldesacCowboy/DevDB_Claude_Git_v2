@@ -47,7 +47,7 @@ def _load_build_lag_curves(conn: DBConnection) -> dict:
     """)
     curves = {}
     for _, r in df.iterrows():
-        lt_id = int(r["lot_type_id"]) if r["lot_type_id"] is not None else None
+        lt_id = int(r["lot_type_id"]) if pd.notna(r["lot_type_id"]) else None
         curves[(r["lag_type"], lt_id)] = {
             "p10": int(r["p10"]), "p25": int(r["p25"]), "p50": int(r["p50"]),
             "p75": int(r["p75"]), "p90": int(r["p90"]),
