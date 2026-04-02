@@ -530,6 +530,18 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         builder_splits = _load_builder_splits(conn)
         build_lag_curves = _load_build_lag_curves(conn)
 
+        # Fetch group-level entitlement date — the sole authority for date_ent on
+        # all lots in this group.  Stamped back after each dev's starts pipeline
+        # because s1100 (persistence_writer) inserts fresh sim lots with date_ent=None.
+        _ent_row = conn.read_df(
+            f"SELECT date_ent_actual FROM sim_entitlement_groups WHERE ent_group_id = {ent_group_id}"
+        )
+        _group_date_ent = (
+            _ent_row["date_ent_actual"].iloc[0]
+            if not _ent_row.empty and not pd.isnull(_ent_row["date_ent_actual"].iloc[0])
+            else None
+        )
+
         # Seeded RNG: sim_run_id is date-based (YYYYMMDD), giving reproducibility
         # within a day. Each ent_group run gets its own seed.
         rng = random.Random(sim_run_id * 1000 + ent_group_id)
@@ -555,6 +567,16 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
                                     builder_splits, build_lag_curves, rng)
                 if needs_config:
                     missing_params_devs.add(dev_id)
+                # Re-stamp group entitlement date on all lots for this dev.
+                # s1100 inserts fresh sim lots with date_ent=None; this restores
+                # the group's Entitlements Date as the sole authority for date_ent.
+                if _group_date_ent is not None:
+                    conn.execute(
+                        f"""
+                        UPDATE sim_lots SET date_ent = '{_group_date_ent}'::DATE
+                        WHERE dev_id = {dev_id}
+                        """
+                    )
 
             # Step 2: Run supply pipeline
             print(f"  Running supply pipeline for ent_group_id={ent_group_id}...")

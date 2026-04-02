@@ -212,11 +212,10 @@ def put_ledger_config(
 ):
     """Set date_paper and/or date_ent on the entitlement group.
 
-    When date_ent is provided:
-    - Reverts any previous propagation (clears date_ent on lots where it matches
-      the old group date_ent_actual, so stale writes are cleaned up on each save).
-    - Writes date_ent to true P lots only: lots with ALL date fields null.
-      Lots already in D/U/UC/C status are never touched.
+    When date_ent is provided, it is stamped onto EVERY lot in the group
+    (real and sim, regardless of pipeline status).  This is the sole authority
+    for date_ent -- nothing in the simulation pipeline should modify it.
+    Passing null clears date_ent from all lots in the group.
     """
     from datetime import date
     cur = dict_cursor(conn)
@@ -227,16 +226,6 @@ def put_ledger_config(
                     date.fromisoformat(val)
                 except ValueError:
                     raise HTTPException(status_code=422, detail=f"{field} must be YYYY-MM-DD")
-
-        # Read old date_ent_actual before overwriting (needed to revert prior propagation)
-        cur.execute(
-            "SELECT date_ent_actual FROM sim_entitlement_groups WHERE ent_group_id = %s",
-            (ent_group_id,),
-        )
-        existing = cur.fetchone()
-        if not existing:
-            raise HTTPException(status_code=404, detail="Entitlement group not found")
-        old_date_ent = existing["date_ent_actual"]
 
         cur.execute(
             """
@@ -249,42 +238,23 @@ def put_ledger_config(
             (body.date_paper, body.date_ent, ent_group_id),
         )
         row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Entitlement group not found")
 
-        lots_updated = 0
-        if body.date_ent is not None or old_date_ent is not None:
-            dev_subquery = "SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s"
-
-            # Step 1: Revert previous propagation — clear date_ent on lots where it
-            # equals the old group date_ent_actual (idempotent; no-op if old is null).
-            if old_date_ent is not None:
-                cur.execute(
-                    f"""
-                    UPDATE sim_lots
-                    SET date_ent = NULL
-                    WHERE dev_id IN ({dev_subquery})
-                      AND date_ent = %s
-                    """,
-                    (ent_group_id, old_date_ent),
-                )
-
-            # Step 2: Propagate new date to true P lots only (ALL date fields null).
-            if body.date_ent is not None:
-                cur.execute(
-                    f"""
-                    UPDATE sim_lots
-                    SET date_ent = %s
-                    WHERE dev_id IN ({dev_subquery})
-                      AND date_ent     IS NULL
-                      AND date_dev     IS NULL
-                      AND date_td      IS NULL
-                      AND date_td_hold IS NULL
-                      AND date_str     IS NULL
-                      AND date_cmp     IS NULL
-                      AND date_cls     IS NULL
-                    """,
-                    (body.date_ent, ent_group_id),
-                )
-                lots_updated = cur.rowcount
+        # Stamp date_ent onto every lot in the group (or clear if null).
+        # date_ent = null means the lot is P; date_ent set means it was entitled.
+        cur.execute(
+            """
+            UPDATE sim_lots
+            SET date_ent = %s
+            WHERE dev_id IN (
+                SELECT dev_id FROM sim_ent_group_developments
+                WHERE ent_group_id = %s
+            )
+            """,
+            (body.date_ent, ent_group_id),
+        )
+        lots_updated = cur.rowcount
 
         conn.commit()
         return {
