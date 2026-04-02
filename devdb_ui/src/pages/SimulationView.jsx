@@ -85,7 +85,7 @@ function buildLedgerRows(rawRows, entEvents, selectedDevIds, period, ledgerStart
   const filteredUtil = utilization
     ? (selectedDevIds === null ? utilization : utilization.filter(u => selectedDevIds.includes(u.dev_id)))
     : []
-  const totalPlannedLots = filteredUtil.reduce((s, u) => s + (u.projected_count || 0), 0)
+  const totalPlannedLots = filteredUtil.reduce((s, u) => s + (u.total_count || 0), 0)
   if (totalPlannedLots > 0) {
     let entitledSoFar = 0
     for (const r of sorted) {
