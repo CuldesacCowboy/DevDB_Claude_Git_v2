@@ -1,9 +1,15 @@
-# coordinator.py
-# Convergence coordinator -- wires starts pipeline and supply pipeline.
-# Runs per entitlement group.
-# The coordinator stays dumb: run A, run B, check, repeat.
-# No logic, no exception handling, no domain knowledge here.
-# Max iterations: 10 (safety limit only -- normal convergence is 2-3).
+"""
+coordinator — Convergence coordinator: wires starts pipeline and supply pipeline.
+
+Reads:   all tables read by child modules (delegates entirely)
+Writes:  all tables written by child modules (delegates entirely)
+Input:   ent_group_id: int, conn: DBConnection
+Rules:   Runs per entitlement group. Alternates supply pipeline (P-modules) and
+         starts pipeline (S-modules) until phase delivery dates stabilize.
+         Max iterations: 10 (safety limit — normal convergence is 1-3).
+         The coordinator stays dumb: run A, run B, check convergence, repeat.
+         No domain logic here — all logic lives in the individual pipeline modules.
+"""
 
 import random
 from datetime import date, datetime, timedelta

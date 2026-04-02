@@ -41,34 +41,17 @@
 
 ## Phase 3 — Frontend Patterns
 
-### 3.1 `useApiMutation()` React hook
+### 3.1 `useApiMutation()` React hook ✅ Done
 
-**Problem:** `useTdaData.js` has 8 `useCallback` mutations (lines ~104–302) that all repeat the same fetch/setError/refetch lifecycle. Any change to error handling (e.g., adding retry, changing error extraction from `body.detail`) requires updating 8 places.
-
-**Target:**
-```javascript
-// src/hooks/useApiMutation.js
-export function useApiMutation(url, options = {}) {
-  // handles: fetch, res.ok check, body.detail error, onSuccess callback
-}
-```
-
-**Callers to update:** `useTdaData.js` (8 mutations), potentially `useDragHandler.js` (5 mutations)
+**Result:** `useApiMutation.js` (69 lines) exports `{ mutate, mutateMany, mutationStatus }`.
+`useTdaData.js` 360 → 231 lines (−129). All 10 mutations converted. `useDragHandler.js` uses a different pattern — left as-is.
 
 ---
 
-### 3.2 React context providers for master controls
+### 3.2 React context providers for master controls ✅ Done
 
-**Problem:** `LotPhaseView.jsx` passes ~10 master control flags (`masterShowLots`, `masterCondensed`, `masterDateDir`, etc.) down through `InstrumentContainer` → `PhaseColumn` → children. `CheckpointBand` receives 16 props. Many are forwarded without local use.
-
-**Target:**
-```javascript
-// src/contexts/LotPhaseControlContext.js
-const LotPhaseControlContext = createContext()
-// Provider wraps the instrument list; components useContext() instead of receiving props
-```
-
-**Files affected:** `LotPhaseView.jsx`, `InstrumentContainer.jsx`, `PhaseColumn.jsx`, `CheckpointBand.jsx`, `LotTypePill.jsx`
+**Result:** Master controls live in `TakedownAgreementsView` (not LotPhaseView — gameplan had wrong scope).
+`CheckpointControlContext.js` (17 lines) + `useCheckpointControls()`. Provider wraps TakedownAgreementsView return with memoized value. CheckpointBand removed 8 props from signature; reads from context instead.
 
 ---
 
@@ -106,22 +89,9 @@ const LotPhaseControlContext = createContext()
 
 ## Phase 4 — Engine Layer (Low Priority)
 
-### 4.1 Module docstrings and I/O contracts
+### 4.1 Module docstrings and I/O contracts ✅ Done
 
-**Problem:** Engine modules have no top-level docstring declaring inputs, outputs, and which tables they write. Hard to onboard or debug without reading the coordinator.
-
-**Target:** Add to each `s0*.py` and `p0*.py`:
-```python
-"""
-Module: S-0300 gap_fill_engine
-Reads:  sim_lots (SELECT)
-Writes: sim_lots (UPDATE date_td, date_str, date_cmp, date_cls)
-Input:  FrozenInput with lots DataFrame
-Rules:  True-gap-only per D-084/D-085. Never fills forward from single anchor.
-"""
-```
-
-**Files:** All 15 engine modules
+**Result:** All 24 engine modules (s0100–s1200, p0000–p0800, coordinator.py) converted from `#` comment headers to `"""` module-level docstrings with Reads/Writes/Input/Rules format. Includes Not Own boundaries and D-xxx references.
 
 ---
 

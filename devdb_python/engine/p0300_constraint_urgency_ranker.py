@@ -1,12 +1,13 @@
-# p03_constraint_urgency_ranker.py
-# P-03: Rank eligible delivery events by supply constraint urgency.
-#
-# Owns:     Comparing date_dev_demand_derived across child phases of eligible
-#           events. Ranking by shortest runway (earliest demand_derived first).
-# Not Own:  Setting any dates. Any table modification.
-# Inputs:   conn, eligible_pool (list of delivery_event_ids).
-# Outputs:  Priority-ranked list of delivery_event_ids.
-# Failure:  All child phases null demand_derived: rank that event last.
+"""
+P-0300 constraint_urgency_ranker — Rank eligible delivery events by supply constraint urgency.
+
+Reads:   sim_dev_phases.date_dev_demand_derived (DB)
+Writes:  nothing — returns ranked list
+Input:   conn: DBConnection, eligible_pool: list of delivery_event_ids
+Rules:   Ranks by shortest runway: earliest date_dev_demand_derived across child phases.
+         All child phases null demand_derived → rank that event last.
+         Not Own: setting any dates, any table modification.
+"""
 
 from .connection import DBConnection
 

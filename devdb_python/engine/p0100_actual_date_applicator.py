@@ -1,18 +1,17 @@
-# p01_actual_date_applicator.py
-# P-01: Apply actual delivery dates from sim_delivery_events to all lots
-#   under those events. Lock those events.
-#
-# Owns:     Propagating date_dev_actual from sim_delivery_events to all lots in
-#           child phases where date_dev_actual is set. Marking events as locked.
-#           Writing date_dev_actual to sim_dev_phases.date_dev_projected for
-#           child phases of locked events (so _load_phase_capacity feeds S-08
-#           the correct floor date for locked phases).
-# Not Own:  Setting projected dates on auto-scheduled events. Computing demand-derived dates.
-#           Touching events where date_dev_actual is null.
-# Inputs:   conn, ent_group_id.
-# Outputs:  date_dev updated on lots under actual-dated events.
-#           Locked event list (list of delivery_event_id) returned for P-02.
-# Failure:  Event with actual date but no child phases: log and skip.
+"""
+P-0100 actual_date_applicator — Apply actual delivery dates from locked events to lots.
+
+Reads:   sim_delivery_events, sim_delivery_event_phases, sim_dev_phases (DB)
+Writes:  sim_lots.date_dev (DB, UPDATE), sim_dev_phases.date_dev_projected (DB, UPDATE)
+Input:   conn: DBConnection, ent_group_id: int
+Rules:   Propagates date_dev_actual from locked events to all lots in child phases.
+         Writes date_dev_actual to sim_dev_phases.date_dev_projected for locked phases
+         so S-0800 gets the correct floor date (D-125).
+         Earlier actual dates win when multiple locked events share a phase (D-112).
+         Returns list of locked delivery_event_ids for P-0200.
+         Not Own: setting projected dates on auto-scheduled events, touching events
+         where date_dev_actual is null.
+"""
 #           Actual delivery date is ground truth -- overwrites manual date_dev.
 
 from .connection import DBConnection

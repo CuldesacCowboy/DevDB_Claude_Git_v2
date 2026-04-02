@@ -1,15 +1,14 @@
-# s09_builder_assignment.py
-# S-09: Assign builder_id to temp lots using phase builder split percentages.
-#
-# Owns:     Applying sim_phase_builder_splits to temp lots.
-# Not Own:  Modifying builder_id on real lots. Modifying split percentages.
-#           Creating or modifying lot records beyond builder_id.
-# Inputs:   Temp lot records from S-08, builder_splits dict
-#           {phase_id: [{builder_id, share}]} -- passed as parameter.
-# Outputs:  Same list with builder_id assigned.
-# Failure:  No splits for phase -> null builder_id, warn.
-#           Splits don't sum to 1.0 -> normalize and warn.
-# D-097/D-098: share is DECIMAL in Databricks -- always cast to float() before arithmetic.
+"""
+S-0900 builder_assignment — Assign builder_id to temp lots using phase builder splits.
+
+Reads:   nothing — pure computation
+Writes:  nothing — returns same list with builder_id assigned
+Input:   temp_lots: list of dicts, builder_splits: dict {phase_id: [{builder_id, share}]}
+Rules:   Applies sim_phase_builder_splits proportionally across temp lots per phase.
+         No splits for phase → null builder_id, warn. Splits not summing to 1.0 → normalize.
+         D-098: share is DECIMAL — always cast to float() before arithmetic.
+         Not Own: modifying builder_id on real lots, modifying split percentages.
+"""
 
 import copy
 from collections import defaultdict

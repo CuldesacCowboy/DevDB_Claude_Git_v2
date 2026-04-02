@@ -1,13 +1,15 @@
-# p05_eligibility_updater.py
-# P-05: After a delivery event is resolved, unlock events whose predecessor
-#   conditions are now satisfied.
-#
-# Owns:     Checking whether newly resolved event satisfies predecessor conditions
-#           for waiting events. Adding newly eligible events to pool.
-# Not Own:  Setting any dates. Any table modification.
-# Inputs:   conn, resolved_event_id, sorted_queue, eligible_pool, resolved_so_far.
-# Outputs:  Updated eligible_pool.
-# Failure:  Event cannot be evaluated: leave in queue.
+"""
+P-0500 eligibility_updater — Unlock events whose predecessor conditions are now satisfied.
+
+Reads:   sim_delivery_event_predecessors (DB, column: event_id)
+Writes:  nothing — returns updated eligible_pool
+Input:   conn: DBConnection, resolved_event_id: int, sorted_queue: list,
+         eligible_pool: list, resolved_so_far: set
+Rules:   After a delivery event is resolved, checks waiting events whose predecessors
+         are now all satisfied. Adds newly eligible events to eligible_pool.
+         Event cannot be evaluated → leave in queue.
+         Not Own: setting any dates, any table modification.
+"""
 
 from .connection import DBConnection
 

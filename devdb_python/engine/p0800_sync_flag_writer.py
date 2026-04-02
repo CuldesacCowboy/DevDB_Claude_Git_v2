@@ -1,13 +1,14 @@
-# p08_sync_flag_writer.py
-# P-08: Identify developments whose phase delivery dates changed during this
-#   supply pipeline run.
-#
-# Owns:     Comparing pre-run and post-run date_dev_projected. Returning
-#           the set of affected dev_ids for the coordinator.
-# Not Own:  Clearing needs_rerun. Modifying any other table.
-# Inputs:   conn, pre_run_dates dict {phase_id: date_dev_projected},
-#           post_run_dates dict {phase_id: date_dev_projected}.
-# Outputs:  List of affected dev_ids.
+"""
+P-0800 sync_flag_writer — Identify developments whose delivery dates changed this run.
+
+Reads:   sim_dev_phases (via pre/post dicts passed by coordinator)
+Writes:  nothing — returns list of affected dev_ids
+Input:   conn: DBConnection, pre_run_dates: dict {phase_id: date_dev_projected},
+         post_run_dates: dict {phase_id: date_dev_projected}
+Rules:   Compares pre-run and post-run date_dev_projected per phase.
+         Returns dev_ids of phases where the projected date changed.
+         Not Own: clearing needs_rerun, modifying any table.
+"""
 
 import pandas as pd
 

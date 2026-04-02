@@ -1,23 +1,18 @@
-# s03_gap_fill_engine.py
-# S-03: Fill missing date fields only where a true gap exists (D-084, D-085).
-#
-# Owns:     Assigning engine_filled dates to null date fields. Setting source tags.
-# Not Own:  Validating date order (S-04). Applying actuals (S-02).
-#           Any policy decision on valid sequences.
-# Inputs:   Lot snapshot with actuals applied (from S-02).
-#           phase_delivery_dates: optional {phase_id: date} from coordinator for no-anchor fallback.
-# Outputs:  Lot snapshot with missing dates filled where true gaps exist.
-#           Lots with only date_dev and no downstream dates returned unchanged (D-084).
-#           Lots with zero milestone dates filled from phase delivery date (Scenario 7 fallback).
-#
-# Gap-fill rules (D-084, D-085):
-#   date_td:  only if date_dev set AND at least one of date_str/date_cmp/date_cls exists
-#   date_str: only if date_td set AND at least one of date_cmp/date_cls exists. Never on H lots.
-#   date_cmp: only if date_str set AND date_cls already exists
-#   date_cls: if date_cmp set (forward terminus -- no right anchor needed)
-#
-# H lot = date_td_hold set AND date_td null. Never fill date_str on H lots.
-#
+"""
+S-0300 gap_fill_engine — Fill missing date fields only where a true gap exists (D-084, D-085).
+
+Reads:   lot snapshot DataFrame; phase_delivery_dates: {phase_id: date} optional
+Writes:  lot snapshot DataFrame (date_td, date_str, date_cmp, date_cls, *_source columns)
+Input:   lot_snapshot: DataFrame, phase_delivery_dates: dict = None
+Rules:   True-gap-only per D-084/D-085. Never fill forward from a single anchor.
+         date_td:  only if date_dev AND (date_str OR date_cmp OR date_cls) exist.
+         date_str: only if date_td AND (date_cmp OR date_cls) exist. Never on H lots.
+         date_cmp: only if date_str AND date_cls exist.
+         date_cls: if date_cmp set (forward terminus — no right anchor needed).
+         H lot = date_td_hold set AND date_td null. Fallback: use phase delivery date
+         if lot has zero milestone dates (Scenario 7), tagged engine_filled.
+         Not Own: validating order (S-04), applying actuals (S-02).
+"""
 # No-anchor fallback (Scenario 7):
 #   If a lot has zero milestone dates (date_ent/date_dev/date_td/date_td_hold/date_str/
 #   date_cmp/date_cls all null), use the phase delivery date (date_dev_projected) as anchor.

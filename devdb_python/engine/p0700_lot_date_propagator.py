@@ -1,12 +1,13 @@
-# p07_lot_date_propagator.py
-# P-07: Write phase delivery date to all sim_lots rows in affected phases.
-#
-# Owns:     Writing date_dev to sim_lots rows where phase_id matches updated phase.
-# Not Own:  Writing any other lot date field. Writing to phase or event tables.
-# Inputs:   conn, list of (phase_id, date_dev_projected) tuples from P-06.
-# Outputs:  date_dev updated on lots in affected phases.
-# Failure:  Real lots with date_dev already set (from P-01 actual): do not overwrite.
-#           All other lots: overwrite with new projected date.
+"""
+P-0700 lot_date_propagator — Write phase delivery date to sim_lots rows in affected phases.
+
+Reads:   sim_lots (DB)
+Writes:  sim_lots.date_dev (DB, UPDATE)
+Input:   conn: DBConnection, updated_phases: list of (phase_id, date_dev_projected)
+Rules:   Real lots with date_dev already set (P-01 actuals) are not overwritten (D-113).
+         All other lots (sim + real with null date_dev) receive the projected date.
+         Not Own: writing any other lot date field, writing to phase or event tables.
+"""
 
 from .connection import DBConnection
 

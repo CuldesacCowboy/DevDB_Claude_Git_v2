@@ -1,15 +1,15 @@
-# p04_delivery_date_assigner.py
-# P-04: Assign date_dev_projected to the highest-priority eligible event.
-#
-# Owns:     Computing MIN(date_dev_demand_derived) across all child phases.
-#           Adjusting for delivery window. Writing date_dev_projected to event.
-# Not Own:  Writing to phase or lot tables. Ranking events. Making dates later.
-# Inputs:   conn, delivery_event_id, ent_group_id.
-# Outputs:  date_dev_projected set on the delivery event.
-# Failure:  All phases null demand_derived: skip, leave projected null.
-#           MIN outside window: pull to latest permissible month before MIN.
-#           If none, pull to first permissible month and flag warning.
-#           Date can only move earlier, never later.
+"""
+P-0400 delivery_date_assigner — Assign date_dev_projected to the highest-priority event.
+
+Reads:   sim_dev_phases, sim_delivery_event_phases, sim_entitlement_delivery_config (DB)
+Writes:  sim_delivery_events.date_dev_projected (DB, UPDATE)
+Input:   conn: DBConnection, delivery_event_id: int, ent_group_id: int
+Rules:   Computes MIN(date_dev_demand_derived) across child phases; adjusts for window.
+         Date can only move earlier, never later (D-115).
+         Placeholder guard: never move date_dev_projected earlier than P-0000 wrote (D-141).
+         MIN outside window → latest permissible month before MIN; if none, first permissible.
+         Not Own: writing to phase or lot tables, ranking events.
+"""
 
 from datetime import date
 from dateutil.relativedelta import relativedelta

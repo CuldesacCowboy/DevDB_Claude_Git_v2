@@ -1,16 +1,14 @@
-# s05_takedown_engine.py
-# S-05: Enforce TDA checkpoint obligations for lots in the snapshot.
-#
-# Owns:     Evaluating active TDA agreements. Setting date_td_hold on D lots
-#           to meet checkpoint obligations. Recording residual gaps.
-# Not Own:  Setting date_td (only date_td_hold). Modifying real lot data
-#           beyond date_td_hold. Blocking the run.
-# Inputs:   Lot snapshot (post-S-04), dev_id, conn.
-# Outputs:  (updated_snapshot, residual_gaps)
-#           residual_gaps: list of dicts {tda_id, checkpoint_id,
-#             checkpoint_number, checkpoint_date, required, projected, gap}
-# Per D-087: both date_td AND date_td_hold count toward checkpoint fulfillment.
-# Failure:  Never blocks run. Records gaps. Proceeds.
+"""
+S-0500 takedown_engine — Enforce TDA checkpoint obligations for lots in the snapshot.
+
+Reads:   sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_agreement_lots (DB)
+Writes:  lot snapshot DataFrame (date_td_hold column only)
+Input:   lot_snapshot: DataFrame, dev_id: int, conn: DBConnection
+Rules:   Per D-087: both date_td AND date_td_hold count toward checkpoint fulfillment.
+         Sets date_td_hold on D lots to meet checkpoint obligations.
+         Returns (updated_snapshot, residual_gaps). Never blocks run — records gaps.
+         Not Own: setting date_td, modifying any lot field besides date_td_hold.
+"""
 
 import pandas as pd
 from .connection import DBConnection

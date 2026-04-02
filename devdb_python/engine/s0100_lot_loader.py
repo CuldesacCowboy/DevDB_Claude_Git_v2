@@ -1,12 +1,12 @@
-# s01_lot_loader.py
-# S-01: Load real lots for a development into an immutable snapshot.
-#
-# Owns:     Creating the immutable lot snapshot all downstream modules operate on.
-# Not Own:  Validating dates, filling dates, applying actuals, creating temp lots,
-#           any modification to lot data.
-# Inputs:   sim_lots (real lots only), dev_id
-# Outputs:  Immutable lot snapshot (pandas DataFrame).
-# Failure:  No real lots -> return empty DataFrame and continue.
+"""
+S-0100 lot_loader — Load real lots for a development into an immutable snapshot.
+
+Reads:   sim_lots (DB, WHERE lot_source = 'real' AND dev_id = ?)
+Writes:  lot snapshot DataFrame (read-only input for all downstream S modules)
+Input:   conn: DBConnection, dev_id: int
+Rules:   No date derivation. No status filtering. Empty snapshot on no real lots.
+         Not Own: validating dates, filling dates, applying actuals, creating temp lots.
+"""
 
 import pandas as pd
 from .connection import DBConnection

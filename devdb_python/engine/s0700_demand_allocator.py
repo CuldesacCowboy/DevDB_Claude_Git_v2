@@ -1,16 +1,16 @@
-# s0700_demand_allocator.py
-# S-07: Assign real unstarted lots to monthly demand slots before temp lots are created.
-#
-# Owns:     Matching real lots in U/H/D status to monthly demand slots in order.
-#           Determining unmet demand after real lots exhausted.
-# Not Own:  Creating temp lots (S-08). Assigning builder (S-09).
-#           Validating dates. Reshaping demand series. Modifying lot data.
-# Inputs:   Validated lot snapshot (post-TDA), demand DataFrame from S-06.
-# Outputs:  (allocated_df, unmet_demand_series)
-#           allocated_df: pandas DataFrame {lot_id, assigned_year, assigned_month}
-#           unmet_demand_series: list of (year, month, unmet_count)
-# Design:   Vectorized merge. No carry-forward. No fractional slots.
-#           Unmet is only real when lot_ids are exhausted before flat_assignments.
+"""
+S-0700 demand_allocator — Assign real unstarted lots to monthly demand slots.
+
+Reads:   lot snapshot DataFrame (read-only)
+Writes:  nothing — returns allocation DataFrames
+Input:   lot_snapshot: DataFrame, demand_df: DataFrame
+Rules:   Matches real lots in U/H/D status to monthly demand slots in order.
+         Returns (allocated_df, unmet_demand_series).
+         allocated_df: DataFrame {lot_id, assigned_year, assigned_month}.
+         unmet_demand_series: list of (year, month, unmet_count).
+         Vectorized merge — no carry-forward, no fractional slots.
+         Not Own: creating temp lots (S-0800), assigning builder (S-0900).
+"""
 
 import pandas as pd
 

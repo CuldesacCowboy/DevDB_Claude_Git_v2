@@ -1,12 +1,14 @@
-# s10_demand_derived_date_writer.py
-# S-10: Compute MIN(date_str) per phase from temp lots and write to sim_dev_phases.
-#
-# Owns:     Writing sim_dev_phases.date_dev_demand_derived.
-# Not Own:  Any other field on sim_dev_phases. Any lot table modification.
-# Inputs:   Temp lot records (list of dicts), conn.
-# Outputs:  date_dev_demand_derived updated on sim_dev_phases rows.
-# Failure:  Empty temp lots -> no-op. Null date_str in lot -> skip.
-#           Never writes null. Never overwrites with a null.
+"""
+S-1000 demand_derived_date_writer — Write MIN(date_str) per phase to sim_dev_phases.
+
+Reads:   nothing — uses temp_lots list from S-0800/S-0810/S-0820
+Writes:  sim_dev_phases.date_dev_demand_derived (DB, UPDATE)
+Input:   conn: DBConnection, temp_lots: list of dicts
+Rules:   Computes MIN(date_str) per phase_id across temp lots.
+         Never writes null; skips lots with null date_str.
+         Empty temp lots → no-op.
+         Not Own: any other field on sim_dev_phases, any lot table modification.
+"""
 
 from collections import defaultdict
 from .connection import DBConnection

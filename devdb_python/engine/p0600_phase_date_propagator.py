@@ -1,12 +1,13 @@
-# p06_phase_date_propagator.py
-# P-06: Write resolved delivery event date to all child sim_dev_phases rows.
-#
-# Owns:     Writing date_dev_projected to sim_dev_phases rows under resolved events.
-# Not Own:  Writing date_dev_demand_derived. Writing date_dev_actual.
-#           Writing to lot tables.
-# Inputs:   conn, list of (delivery_event_id, date_dev_projected) tuples.
-# Outputs:  date_dev_projected updated on child sim_dev_phases rows.
-# Failure:  Event has no child phases: log and skip.
+"""
+P-0600 phase_date_propagator — Write resolved delivery event date to child phases.
+
+Reads:   sim_delivery_event_phases (DB)
+Writes:  sim_dev_phases.date_dev_projected (DB, UPDATE, unconditional per D-123)
+Input:   conn: DBConnection, resolved_events: list of (delivery_event_id, date_dev_projected)
+Rules:   Writes date_dev_projected unconditionally to all child phases (D-123).
+         Event has no child phases → log and skip.
+         Not Own: writing date_dev_demand_derived, writing date_dev_actual, writing to lot tables.
+"""
 
 from .connection import DBConnection
 

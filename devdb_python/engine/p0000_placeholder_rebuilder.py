@@ -1,16 +1,16 @@
-# p00_placeholder_rebuilder.py
-# P-00: Delete all placeholder delivery events for the entitlement group and
-#   rebuild them from the current demand signal (date_dev_demand_derived).
-#
-# Owns:     Deleting placeholder events (date_dev_actual IS NULL).
-#           Inserting new auto-scheduled delivery events and phase links.
-# Not Own:  Touching locked events (date_dev_actual IS NOT NULL).
-#           Writing to sim_lots or sim_dev_phases date fields.
-#           Running if auto_schedule_enabled is False.
-# Inputs:   conn, ent_group_id.
-# Outputs:  List of new delivery_event_ids created.
-# Failure:  No undelivered phases: return empty list, log.
-#           All phases have no demand signal: schedule at earliest window dates.
+"""
+P-0000 placeholder_rebuilder — Rebuild placeholder delivery events from demand signal.
+
+Reads:   sim_delivery_events, sim_delivery_event_phases, sim_dev_phases,
+         sim_entitlement_delivery_config (DB)
+Writes:  sim_delivery_events, sim_delivery_event_phases (DB, DELETE + INSERT)
+Input:   conn: DBConnection, ent_group_id: int
+Rules:   Deletes all placeholder events (date_dev_actual IS NULL) for the ent_group.
+         Inserts new auto-scheduled events per D-139 cross-dev bundling logic.
+         No-ops if auto_schedule_enabled is False. Never touches locked events.
+         No undelivered phases → return empty list.
+         Not Own: touching locked events, writing to sim_lots or sim_dev_phases date fields.
+"""
 
 import math
 from datetime import date, timedelta

@@ -1,18 +1,15 @@
-# s0810_building_group_enforcer.py
-# S-0810: Enforce building group constraints on temp lot batch.
-#
-# Owns:   For each building_group_id, collapse all units to MIN(date_str).
-#         Recompute date_cmp and date_cls from the shared date_str.
-#         Set date_td = date_str (D-142).
-# Not Own: Generating temp lots (S-0800). Assigning builders (S-0900).
-#          Writing to sim_lots (S-1100).
-# Inputs:  temp_lots list of dicts from S-0800.
-# Outputs: New list of dicts with building group constraints enforced.
-#
-# Rules:
-#   - All units in a building group get date_str = MIN(date_str) across the group.
-#   - date_cmp = shared date_str + LAG_CMP_FROM_STR (same lag as S-0800 uses).
-#   - date_td  = shared date_str (D-142: sim lots always have date_td = date_str).
+"""
+S-0810 building_group_enforcer — Enforce building group constraints on temp lot batch.
+
+Reads:   nothing — pure computation on temp_lots list
+Writes:  nothing — returns new temp_lots list with constraints applied
+Input:   temp_lots: list of dicts from S-0800
+Rules:   All units in a group get date_str = MIN(date_str) across the group (D-022).
+         date_cmp = shared date_str + LAG_CMP_FROM_STR. date_td = date_str (D-142).
+         date_cls recomputed from new date_cmp. Lots without building_group_id pass through.
+         Not Own: generating temp lots (S-0800), assigning builders (S-0900),
+         writing to sim_lots (S-1100).
+"""
 #   - date_cls is recomputed per unit from the shared date_cmp (D-022/D-075:
 #     independent per unit; with a uniform date_cmp all units compute the same
 #     date_cls, but the computation remains per-unit, not a shared copy).

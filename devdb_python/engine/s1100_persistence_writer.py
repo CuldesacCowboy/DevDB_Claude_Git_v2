@@ -1,14 +1,14 @@
-# s11_persistence_writer.py
-# S-11: Atomically replace previous sim temp lots with new ones for this development.
-#
-# Owns:     Inserting new temp lot rows. Deleting temp lots from previous runs for
-#           this development.
-# Not Own:  Modifying real lot rows. Setting sim_run status. Snapshots.
-# Inputs:   Final temp lot records (list of dicts), dev_id, sim_run_id, conn.
-# Outputs:  Rows written to sim_lots with lot_source='sim' and sim_run_id set.
-# Failure:  Surface error. Never touch real lots. Previous temp lots preserved on failure.
-# D-086: lot_id has no IDENTITY. Assigned via MAX(lot_id) + offset. Delta Lake does
-#   not enforce PRIMARY KEY/UNIQUE -- delete guard ensures idempotency.
+"""
+S-1100 persistence_writer — Atomically replace sim temp lots for this development.
+
+Reads:   sim_lots (MAX lot_id for offset assignment, D-086)
+Writes:  sim_lots (DB, DELETE sim lots for dev + INSERT new temp lot rows)
+Input:   conn: DBConnection, temp_lots: list of dicts, dev_id: int, sim_run_id: int
+Rules:   Atomic delete+insert: deletes lot_source='sim' rows for dev_id, then inserts.
+         lot_id assigned via MAX(lot_id) + offset — no IDENTITY column (D-086).
+         Never touches real lot rows. Previous temp lots preserved on failure.
+         Not Own: modifying real lot rows, setting sim_run status.
+"""
 
 import pandas as pd
 from .connection import DBConnection

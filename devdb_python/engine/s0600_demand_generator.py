@@ -1,15 +1,15 @@
-# s0600_demand_generator.py
-# S-06: Compute monthly starts demand series from development params.
-#
-# Owns:     Translating annual_starts_target + seasonal weights into monthly
-#           demand series. Applying max_starts_per_month cap.
-# Not Own:  Reading or modifying lot data. Determining supply availability.
-# Inputs:   sim_dev_params (via conn), run_start_date, dev_id.
-# Outputs:  DataFrame [year, month, slots] -- integer slots summing exactly to
-#           available_capacity, or (empty DataFrame, True) if no config found.
-# Design:   Vectorized. No loops. No carry-forward. Integers only.
-#           available_capacity = total_capacity - real lots not yet started.
-#           Rounding residual absorbed by the largest-weight month.
+"""
+S-0600 demand_generator — Compute monthly starts demand series from development params.
+
+Reads:   sim_dev_params (DB, WHERE dev_id = ?)
+Writes:  nothing — returns demand DataFrame
+Input:   conn: DBConnection, dev_id: int, run_start_date: date, lot_snapshot: DataFrame
+Rules:   Translates annual_starts_target + seasonal weights into monthly demand slots.
+         Applies max_starts_per_month cap. available_capacity = total_capacity - real
+         lots not yet started. Vectorized — no loops, no carry-forward, integers only.
+         Returns (demand_df, missing_params: bool).
+         Not Own: reading lot data directly, determining supply availability.
+"""
 
 import pandas as pd
 from .connection import DBConnection

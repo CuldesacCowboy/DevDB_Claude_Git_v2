@@ -1,12 +1,14 @@
-# s04_chronology_validator.py
-# S-04: Detect date ordering violations before simulation proceeds.
-#
-# Owns:     Checking date_ent <= date_dev <= date_td <= date_str <= date_cmp <= date_cls.
-#           Logging violations. Setting blocking flag.
-# Not Own:  Fixing violations. Filling dates. Any modification to lot data.
-# Inputs:   Gap-filled lot snapshot (from S-03).
-# Outputs:  (lot_snapshot_unchanged, violations_df, has_violations bool).
-# Failure:  Read-only module. If validator errors, treat as blocking condition.
+"""
+S-0400 chronology_validator — Detect date ordering violations before simulation proceeds.
+
+Reads:   lot snapshot DataFrame (read-only)
+Writes:  nothing — returns snapshot unchanged
+Input:   lot_snapshot: DataFrame
+Rules:   Checks date_ent <= date_dev <= date_td <= date_str <= date_cmp <= date_cls.
+         Returns (lot_snapshot_unchanged, violations_df, has_violations: bool).
+         Read-only — never modifies lot data. Validator error treated as blocking.
+         Not Own: fixing violations (user resolves via UI per Scenario 6).
+"""
 
 import pandas as pd
 

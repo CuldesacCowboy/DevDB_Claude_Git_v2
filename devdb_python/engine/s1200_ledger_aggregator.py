@@ -1,14 +1,15 @@
-# s12_ledger_aggregator.py
-# S-12: Aggregate lot-level dates into the monthly ledger view.
-#
-# Owns:     Creating v_sim_ledger_monthly and month_spine views.
-# Not Own:  Any modification to sim_lots or any other table.
-# Inputs:   conn (reads sim_lots via the view definition).
-# Outputs:  v_sim_ledger_monthly view recreated (grouped by dev_id, builder_id).
-# Failure:  Read-only view definition. If CREATE fails, surface error.
-#           Never return partial or misleading counts.
-# Bucket logic per D-006: highest reached milestone determines status.
-# Buckets are mutually exclusive. P_end requires all milestone dates null/future.
+"""
+S-1200 ledger_aggregator — Aggregate lot-level dates into the monthly ledger view.
+
+Reads:   sim_lots (via view definition — no direct SELECT)
+Writes:  v_sim_ledger_monthly VIEW, month_spine VIEW (DB, CREATE OR REPLACE)
+Input:   conn: DBConnection
+Rules:   Bucket logic per D-006: highest reached milestone determines status.
+         Buckets are mutually exclusive. P_end requires all milestone dates null/future.
+         D_end per D-140: date_dev set AND date_td null or future.
+         Never returns partial or misleading counts.
+         Not Own: any modification to sim_lots or any other table.
+"""
 
 from .connection import DBConnection
 

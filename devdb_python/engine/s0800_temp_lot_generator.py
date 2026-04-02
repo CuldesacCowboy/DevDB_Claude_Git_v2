@@ -1,18 +1,15 @@
-# s0800_temp_lot_generator.py
-# S-08: Create simulated temp lots to fill demand slots real lots could not.
-#
-# Owns:     Generating temp lot records with projected dates for each unmet slot.
-#           Hard stop at sim_phase_product_splits capacity.
-# Not Own:  Assigning builder_id (S-09). Writing to sim_lots (S-11).
-#           Writing demand_derived dates (S-10). Modifying real lots.
-#           Applying build lag curves (coordinator, after plan() returns).
-# Inputs:   unmet_demand_series from S-07, phase_capacity list (from coordinator),
-#           sim_run_id.
-# Outputs:  List of dicts (temp lot records), not yet persisted.
-#           date_cmp and date_cls use default lags; coordinator applies
-#           empirical curves after the kernel returns.
-#
-# date_str = demand slot month. Always. Independent of date_dev.
+"""
+S-0800 temp_lot_generator — Create simulated temp lots to fill unmet demand slots.
+
+Reads:   nothing — pure computation
+Writes:  nothing — returns temp lot records list (not yet persisted)
+Input:   unmet_demand_series: list, phase_capacity: list, sim_run_id: int
+Rules:   date_str = demand slot month always, independent of date_dev (D-137).
+         date_td = date_str for all sim lots (D-142). Hard stop at phase capacity (D-068).
+         date_cmp and date_cls use default lags; coordinator applies empirical curves after.
+         Not Own: assigning builder_id (S-0900), writing to sim_lots (S-1100),
+         writing demand_derived dates (S-1000), modifying real lots.
+"""
 # date_dev = phase delivery date. Always. Independent of date_str.
 # Phase delivery date never gates or overrides date_str.
 # Every unmet demand slot produces exactly one temp lot. No discards. Sellout mandatory.

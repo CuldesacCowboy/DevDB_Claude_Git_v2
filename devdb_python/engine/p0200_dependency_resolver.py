@@ -1,12 +1,14 @@
-# p02_dependency_resolver.py
-# P-02: Topologically sort the delivery event queue. Produce initial eligible pool.
-#
-# Owns:     Reading sim_delivery_event_predecessors. Sorting by dependency order.
-#           Identifying events with no unresolved predecessors. Removing locked events.
-# Not Own:  Setting any dates. Ranking events. Any table modification.
-# Inputs:   conn, ent_group_id, locked_event_ids from P-01.
-# Outputs:  Topologically sorted event queue, initial eligible event pool.
-# Failure:  Dependency cycle: hard error. Surface to user. Do not break cycle.
+"""
+P-0200 dependency_resolver — Topologically sort delivery events; produce eligible pool.
+
+Reads:   sim_delivery_event_predecessors (DB, column: event_id not delivery_event_id)
+Writes:  nothing — returns sorted queue and eligible pool
+Input:   conn: DBConnection, ent_group_id: int, locked_event_ids: list
+Rules:   Reads sim_delivery_event_predecessors to sort by dependency order.
+         Removes locked events from queue. Identifies events with no unresolved predecessors.
+         Dependency cycle → hard error, surface to user, do not break cycle.
+         Not Own: setting any dates, ranking events, any table modification.
+"""
 
 from collections import defaultdict
 from .connection import DBConnection

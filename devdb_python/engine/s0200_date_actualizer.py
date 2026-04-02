@@ -1,18 +1,15 @@
-# s02_date_actualizer.py
-# S-02: Apply MARKsystems actual dates from schedhousedetail to lot snapshot.
-#
-# Owns:     Applying schedhousedetail actual dates using priority hierarchy:
-#             actualfinishdate (if inactive != 'Y') -> rvearlyfinshdate -> earlyfinishdate
-# Not Own:  Filling null dates (S-03). Validating date order (S-04).
-#           Any date not from schedhousedetail.
-# Inputs:   Lot snapshot from S-01, schedhousedetail (via conn, filtered server-side).
-# Outputs:  Updated lot snapshot with actual dates applied. Source tags set.
-# Failure:  No matching record -> leave dates unchanged.
-#           inactive = 'Y' on actualfinishdate -> skip, fall to rvearlyfinshdate.
-#           Never overwrite date_str_source = 'manual'.
-#
-# NOTE: schedhousedetail has 266,554 rows. The JOIN is performed server-side by
-# filtering to dev_codes present in the snapshot before pulling into pandas.
+"""
+S-0200 date_actualizer — Apply MARKsystems actual dates from schedhousedetail to lot snapshot.
+
+Reads:   schedhousedetail (DB, filtered to dev_codes in snapshot, 266,554 rows)
+Writes:  lot snapshot DataFrame (date_str, date_frm, date_cmp, date_cls, date_td,
+         date_td_hold, and corresponding *_source columns)
+Input:   lot_snapshot: DataFrame, conn: DBConnection
+Rules:   Priority per D-029: actualfinishdate (inactive != 'Y') → rvearlyfinshdate →
+         earlyfinishdate. Activity codes: 135→td, 136→td_hold, A05→str, F15→frm,
+         V86→cmp, V96→cls. Never overwrite date_str_source = 'manual'.
+         Not Own: filling nulls (S-03), validating order (S-04).
+"""
 
 import pandas as pd
 from .connection import DBConnection

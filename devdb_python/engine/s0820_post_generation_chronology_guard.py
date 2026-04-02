@@ -1,18 +1,17 @@
-# s0820_post_generation_chronology_guard.py
-# S-0820: Discard temp lots with chronology violations after building group enforcement.
-#
-# Owns:   Checking date_cmp >= date_str and date_cls >= date_cmp on every temp lot.
-#         Discarding (never correcting) any lot that fails either check.
-#         Emitting a supply constraint warning when all lots for a phase_id are discarded.
-# Not Own: Generating temp lots (S-0800). Enforcing building groups (S-0810).
-#          Assigning builders (S-0900). Writing to DB (S-1100).
-# Inputs:  temp_lots list from S-0810.
-# Outputs: (clean_lots, discarded_lots, warnings)
-#
-# Rules:
-#   - null date_cls is valid (lot may close beyond projection window). Never discard for null cls.
-#   - Never blocks the run; warnings are informational only.
-#   - Discarded lots get a 'violation' key added describing the failed check.
+"""
+S-0820 post_generation_chronology_guard — Discard temp lots with chronology violations.
+
+Reads:   nothing — pure computation on temp_lots list
+Writes:  nothing — returns (clean_lots, discarded_lots, warnings)
+Input:   temp_lots: list of dicts from S-0810
+Rules:   Checks date_cmp >= date_str and date_cls >= date_cmp on every temp lot.
+         Discards (never corrects) any lot that fails either check.
+         null date_cls is valid — never discard for null cls.
+         Emits supply constraint warning when all lots for a phase_id are discarded.
+         Never blocks the run; warnings are informational only.
+         Not Own: generating temp lots (S-0800), enforcing building groups (S-0810),
+         assigning builders (S-0900), writing to DB (S-1100).
+"""
 #   - A supply constraint warning is emitted for each phase_id whose entire lot set
 #     is discarded (clean_lots has zero lots for that phase but temp_lots had at least one).
 
