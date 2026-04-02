@@ -27,9 +27,11 @@
 
 import pandas as pd
 
-# System default lags (days) -- used when no curve configured
+# System default lags (days) -- used when no curve or param configured.
+# STR_FROM_TD raised from 14 to 45: takedown closes on the lot, builder still
+# needs permits pulled (2-6 wks depending on jurisdiction) before breaking ground.
 DEFAULT_LAG_TD_FROM_DEV  = 30
-DEFAULT_LAG_STR_FROM_TD  = 14
+DEFAULT_LAG_STR_FROM_TD  = 45
 DEFAULT_LAG_CMP_FROM_STR = 270
 DEFAULT_LAG_CLS_FROM_CMP = 45
 
