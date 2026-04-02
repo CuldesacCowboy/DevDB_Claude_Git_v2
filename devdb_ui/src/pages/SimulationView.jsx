@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 
-const API = 'http://localhost:8000/api'
+const API = '/api'
 
 // Column groups for the ledger table
 const EVENT_COLS = [
@@ -116,7 +116,7 @@ export default function SimulationView() {
         >
           {entGroups.map(g => (
             <option key={g.ent_group_id} value={g.ent_group_id}>
-              {g.group_name ?? `Group ${g.ent_group_id}`}
+              {g.ent_group_name ?? `Group ${g.ent_group_id}`}
             </option>
           ))}
         </select>
