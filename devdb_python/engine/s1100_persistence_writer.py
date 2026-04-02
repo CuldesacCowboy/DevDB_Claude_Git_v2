@@ -54,7 +54,13 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
 
             rows_to_insert = []
             for i, lot in enumerate(temp_lots):
-                row = {col: lot.get(col) for col in table_columns}
+                row = {}
+                for col in table_columns:
+                    val = lot.get(col)
+                    # _is_locked columns are NOT NULL DEFAULT FALSE; sim lots are never locked
+                    if val is None and col.endswith("_is_locked"):
+                        val = False
+                    row[col] = val
                 row["lot_id"] = max_lot_id + i + 1
                 row["sim_run_id"] = sim_run_id
                 rows_to_insert.append(row)
