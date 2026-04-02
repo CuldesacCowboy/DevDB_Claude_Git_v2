@@ -22,16 +22,26 @@ def ledger_aggregator(conn: DBConnection) -> None:
     """
     conn.execute("""
         CREATE OR REPLACE VIEW month_spine AS
-        WITH bounds AS (
+        WITH lot_floor AS (
             SELECT GREATEST(
                 '2020-01-01'::DATE,
                 COALESCE(
                     MIN(LEAST(date_str, date_cmp, date_cls, date_dev)),
                     '2020-01-01'::DATE
                 )
-            ) AS spine_start
+            ) AS start_date
             FROM sim_lots
             WHERE lot_source = 'real'
+        ),
+        ledger_floor AS (
+            SELECT COALESCE(MIN(ledger_start_date), '2999-01-01'::DATE) AS start_date
+            FROM sim_entitlement_groups
+            WHERE ledger_start_date IS NOT NULL
+        ),
+        bounds AS (
+            SELECT LEAST(lf.start_date, lg.start_date) AS spine_start
+            FROM lot_floor lf
+            CROSS JOIN ledger_floor lg
         )
         SELECT generate_series(
             DATE_TRUNC('MONTH', spine_start)::DATE,

@@ -19,7 +19,31 @@ class EntGroupPatchRequest(BaseModel):
 
 
 class DeliveryConfigPutRequest(BaseModel):
-    min_unstarted_inventory: int | None = None
+    min_unstarted_inventory: int | None = None  # legacy — maps to min_d_count
+    min_p_count:  int | None = None
+    min_e_count:  int | None = None
+    min_d_count:  int | None = None
+    min_u_count:  int | None = None
+    min_uc_count: int | None = None
+    min_c_count:  int | None = None
+
+
+class LedgerConfigPutRequest(BaseModel):
+    ledger_start_date: str | None = None   # ISO date string or null
+
+
+class EntitlementEventCreateRequest(BaseModel):
+    dev_id: int
+    event_date: str   # ISO date string
+    lots_entitled: int
+    notes: str | None = None
+
+
+class EntitlementEventUpdateRequest(BaseModel):
+    dev_id: int | None = None
+    event_date: str | None = None
+    lots_entitled: int | None = None
+    notes: str | None = None
 
 router = APIRouter(prefix="/entitlement-groups", tags=["entitlement-groups"])
 
@@ -497,16 +521,17 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
 
 @router.get("/{ent_group_id}/delivery-config")
 def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
-    """Return delivery scheduling config for the entitlement group."""
+    """Return delivery scheduling config and inventory floor tolerances."""
     import psycopg2.extras
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute(
             """
-            SELECT ent_group_id, min_unstarted_inventory,
+            SELECT ent_group_id,
+                   COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count,
+                   min_p_count, min_e_count, min_u_count, min_uc_count, min_c_count,
                    delivery_window_start, delivery_window_end,
-                   max_deliveries_per_year, min_gap_months,
-                   auto_schedule_enabled
+                   max_deliveries_per_year, min_gap_months, auto_schedule_enabled
             FROM sim_entitlement_delivery_config
             WHERE ent_group_id = %s
             """,
@@ -516,11 +541,10 @@ def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
         if not row:
             return {
                 "ent_group_id": ent_group_id,
-                "min_unstarted_inventory": None,
-                "delivery_window_start": None,
-                "delivery_window_end": None,
-                "max_deliveries_per_year": None,
-                "min_gap_months": None,
+                "min_p_count": None, "min_e_count": None, "min_d_count": None,
+                "min_u_count": None, "min_uc_count": None, "min_c_count": None,
+                "delivery_window_start": None, "delivery_window_end": None,
+                "max_deliveries_per_year": None, "min_gap_months": None,
                 "auto_schedule_enabled": None,
             }
         return dict(row)
@@ -534,23 +558,231 @@ def put_delivery_config(
     body: DeliveryConfigPutRequest,
     conn=Depends(get_db_conn),
 ):
-    """Upsert delivery scheduling config for the entitlement group."""
+    """Upsert delivery scheduling config and inventory floor tolerances."""
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        # Resolve legacy field
+        min_d = body.min_d_count if body.min_d_count is not None else body.min_unstarted_inventory
+        cur.execute(
+            """
+            INSERT INTO sim_entitlement_delivery_config
+                (ent_group_id, min_d_count, min_p_count, min_e_count,
+                 min_u_count, min_uc_count, min_c_count, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, current_timestamp)
+            ON CONFLICT (ent_group_id) DO UPDATE
+                SET min_d_count  = EXCLUDED.min_d_count,
+                    min_p_count  = EXCLUDED.min_p_count,
+                    min_e_count  = EXCLUDED.min_e_count,
+                    min_u_count  = EXCLUDED.min_u_count,
+                    min_uc_count = EXCLUDED.min_uc_count,
+                    min_c_count  = EXCLUDED.min_c_count,
+                    updated_at   = current_timestamp
+            RETURNING ent_group_id, min_d_count, min_p_count, min_e_count,
+                      min_u_count, min_uc_count, min_c_count
+            """,
+            (
+                ent_group_id,
+                min_d,
+                body.min_p_count,
+                body.min_e_count,
+                body.min_u_count,
+                body.min_uc_count,
+                body.min_c_count,
+            ),
+        )
+        conn.commit()
+        return dict(cur.fetchone())
+    finally:
+        cur.close()
+
+
+@router.get("/{ent_group_id}/ledger-config")
+def get_ledger_config(ent_group_id: int, conn=Depends(get_db_conn)):
+    """Return ledger_start_date for the entitlement group."""
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            "SELECT ent_group_id, ledger_start_date FROM sim_entitlement_groups WHERE ent_group_id = %s",
+            (ent_group_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Entitlement group not found")
+        return {
+            "ent_group_id": row["ent_group_id"],
+            "ledger_start_date": row["ledger_start_date"].isoformat() if row["ledger_start_date"] else None,
+        }
+    finally:
+        cur.close()
+
+
+@router.put("/{ent_group_id}/ledger-config")
+def put_ledger_config(
+    ent_group_id: int,
+    body: LedgerConfigPutRequest,
+    conn=Depends(get_db_conn),
+):
+    """Set ledger_start_date on the entitlement group."""
+    import psycopg2.extras
+    from datetime import date
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        if body.ledger_start_date is not None:
+            try:
+                date.fromisoformat(body.ledger_start_date)
+            except ValueError:
+                raise HTTPException(status_code=422, detail="ledger_start_date must be YYYY-MM-DD")
+        cur.execute(
+            """
+            UPDATE sim_entitlement_groups
+            SET ledger_start_date = %s
+            WHERE ent_group_id = %s
+            RETURNING ent_group_id, ledger_start_date
+            """,
+            (body.ledger_start_date, ent_group_id),
+        )
+        conn.commit()
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Entitlement group not found")
+        return {
+            "ent_group_id": row["ent_group_id"],
+            "ledger_start_date": row["ledger_start_date"].isoformat() if row["ledger_start_date"] else None,
+        }
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
+# Entitlement events CRUD
+# ---------------------------------------------------------------------------
+
+@router.get("/{ent_group_id}/entitlement-events")
+def list_entitlement_events(ent_group_id: int, conn=Depends(get_db_conn)):
+    """List all entitlement events for an entitlement group."""
     import psycopg2.extras
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
         cur.execute(
             """
-            INSERT INTO sim_entitlement_delivery_config
-                (ent_group_id, min_unstarted_inventory, updated_at)
-            VALUES (%s, %s, current_timestamp)
-            ON CONFLICT (ent_group_id) DO UPDATE
-                SET min_unstarted_inventory = EXCLUDED.min_unstarted_inventory,
-                    updated_at = current_timestamp
-            RETURNING ent_group_id, min_unstarted_inventory
+            SELECT ee.event_id, ee.dev_id, d.dev_name,
+                   ee.event_date, ee.lots_entitled, ee.notes
+            FROM sim_entitlement_events ee
+            JOIN dim_development dd ON dd.development_id = ee.dev_id
+            JOIN developments d ON d.marks_code = dd.dev_code2
+            WHERE ee.ent_group_id = %s
+            ORDER BY ee.event_date, ee.dev_id
             """,
-            (ent_group_id, body.min_unstarted_inventory),
+            (ent_group_id,),
+        )
+        return [
+            {
+                "event_id":      r["event_id"],
+                "dev_id":        r["dev_id"],
+                "dev_name":      r["dev_name"],
+                "event_date":    r["event_date"].isoformat(),
+                "lots_entitled": r["lots_entitled"],
+                "notes":         r["notes"],
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
+@router.post("/{ent_group_id}/entitlement-events", status_code=201)
+def create_entitlement_event(
+    ent_group_id: int,
+    body: EntitlementEventCreateRequest,
+    conn=Depends(get_db_conn),
+):
+    """Create a new entitlement event."""
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute("SELECT COALESCE(MAX(event_id), 0) + 1 AS next_id FROM sim_entitlement_events")
+        next_id = cur.fetchone()["next_id"]
+        cur.execute(
+            """
+            INSERT INTO sim_entitlement_events
+                (event_id, ent_group_id, dev_id, event_date, lots_entitled, notes)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING event_id, dev_id, event_date, lots_entitled, notes
+            """,
+            (next_id, ent_group_id, body.dev_id, body.event_date,
+             body.lots_entitled, body.notes),
         )
         conn.commit()
-        return dict(cur.fetchone())
+        row = cur.fetchone()
+        return {
+            "event_id":      row["event_id"],
+            "dev_id":        row["dev_id"],
+            "event_date":    row["event_date"].isoformat(),
+            "lots_entitled": row["lots_entitled"],
+            "notes":         row["notes"],
+        }
+    finally:
+        cur.close()
+
+
+@router.patch("/{ent_group_id}/entitlement-events/{event_id}")
+def update_entitlement_event(
+    ent_group_id: int,
+    event_id: int,
+    body: EntitlementEventUpdateRequest,
+    conn=Depends(get_db_conn),
+):
+    """Update fields on an entitlement event."""
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        updates = {}
+        if body.dev_id is not None:        updates["dev_id"] = body.dev_id
+        if body.event_date is not None:    updates["event_date"] = body.event_date
+        if body.lots_entitled is not None: updates["lots_entitled"] = body.lots_entitled
+        if body.notes is not None:         updates["notes"] = body.notes
+        if not updates:
+            raise HTTPException(status_code=422, detail="No fields to update")
+        set_clause = ", ".join(f"{k} = %s" for k in updates)
+        cur.execute(
+            f"""
+            UPDATE sim_entitlement_events
+            SET {set_clause}
+            WHERE event_id = %s AND ent_group_id = %s
+            RETURNING event_id, dev_id, event_date, lots_entitled, notes
+            """,
+            (*updates.values(), event_id, ent_group_id),
+        )
+        conn.commit()
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Event not found")
+        return {
+            "event_id":      row["event_id"],
+            "dev_id":        row["dev_id"],
+            "event_date":    row["event_date"].isoformat(),
+            "lots_entitled": row["lots_entitled"],
+            "notes":         row["notes"],
+        }
+    finally:
+        cur.close()
+
+
+@router.delete("/{ent_group_id}/entitlement-events/{event_id}", status_code=204)
+def delete_entitlement_event(
+    ent_group_id: int,
+    event_id: int,
+    conn=Depends(get_db_conn),
+):
+    """Delete an entitlement event."""
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "DELETE FROM sim_entitlement_events WHERE event_id = %s AND ent_group_id = %s",
+            (event_id, ent_group_id),
+        )
+        conn.commit()
     finally:
         cur.close()

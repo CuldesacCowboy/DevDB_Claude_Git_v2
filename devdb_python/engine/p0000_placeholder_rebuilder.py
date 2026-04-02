@@ -122,7 +122,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     config_df = conn.read_df(f"""
         SELECT auto_schedule_enabled, max_deliveries_per_year, min_gap_months,
                delivery_window_start, delivery_window_end,
-               min_unstarted_inventory
+               COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count
         FROM sim_entitlement_delivery_config
         WHERE ent_group_id = {ent_group_id}
     """)
@@ -140,7 +140,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     min_gap = int(row["min_gap_months"] or 0)
     window_start_default = int(row["delivery_window_start"] or 5)
     window_end_default   = int(row["delivery_window_end"]   or 11)
-    min_buffer = int(row["min_unstarted_inventory"] or 0)
+    min_buffer = int(row["min_d_count"] or 0)
 
     # ------------------------------------------------------------------
     # Step 2: Delete existing placeholder events

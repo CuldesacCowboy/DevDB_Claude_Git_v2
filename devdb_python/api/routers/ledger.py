@@ -14,6 +14,7 @@ _LEDGER_FILTER = """
     AND (
         v.ent_plan > 0 OR v.dev_plan > 0 OR v.td_plan > 0
         OR v.str_plan > 0 OR v.cmp_plan > 0 OR v.cls_plan > 0
+        OR v.p_end > 0
         OR v.e_end > 0 OR v.d_end > 0 OR v.h_end > 0
         OR v.u_end > 0 OR v.uc_end > 0 OR v.c_end > 0
     )
@@ -104,9 +105,13 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
 
 
 def _query_ledger_by_dev(conn, ent_group_id: int) -> list:
-    """Shared query for both ledger endpoints (dev-level, builder-level rows)."""
+    """Shared query for both ledger endpoints (dev-level, builder-level rows).
+    Also overlays entitlement events onto ent_plan and prepends a synthetic
+    ledger_start_date row if that month has no activity.
+    """
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        # Main ledger rows
         cur.execute(
             f"""
             SELECT
@@ -131,7 +136,87 @@ def _query_ledger_by_dev(conn, ent_group_id: int) -> list:
             """,
             (ent_group_id,),
         )
-        return [_ledger_row(r) for r in cur.fetchall()]
+        rows = [_ledger_row(r) for r in cur.fetchall()]
+
+        # Overlay entitlement events onto ent_plan
+        cur.execute(
+            """
+            SELECT dev_id, DATE_TRUNC('MONTH', event_date)::DATE AS month,
+                   SUM(lots_entitled) AS cnt
+            FROM sim_entitlement_events
+            WHERE ent_group_id = %s
+            GROUP BY dev_id, DATE_TRUNC('MONTH', event_date)::DATE
+            """,
+            (ent_group_id,),
+        )
+        ent_overlay: dict[tuple, int] = {
+            (r["dev_id"], r["month"].isoformat()): int(r["cnt"])
+            for r in cur.fetchall()
+        }
+        for row in rows:
+            key = (row["dev_id"], row["calendar_month"])
+            if key in ent_overlay:
+                row["ent_plan"] = (row["ent_plan"] or 0) + ent_overlay.pop(key)
+        # Remaining overlay months not yet in the ledger — inject as sparse rows
+        for (dev_id, month_iso), cnt in ent_overlay.items():
+            cur.execute(
+                """
+                SELECT d.dev_name
+                FROM dim_development dd
+                JOIN developments d ON d.marks_code = dd.dev_code2
+                WHERE dd.development_id = %s
+                """,
+                (dev_id,),
+            )
+            name_row = cur.fetchone()
+            rows.append({
+                "dev_id": dev_id,
+                "dev_name": name_row["dev_name"] if name_row else str(dev_id),
+                "builder_id": None,
+                "calendar_month": month_iso,
+                "ent_plan": cnt, "dev_plan": 0, "td_plan": 0,
+                "str_plan": 0, "cmp_plan": 0, "cls_plan": 0,
+                "p_end": 0, "e_end": 0, "d_end": 0, "h_end": 0,
+                "u_end": 0, "uc_end": 0, "c_end": 0,
+                "closed_cumulative": None,
+            })
+
+        # Synthetic ledger_start_date row per dev (if that month isn't present)
+        cur.execute(
+            """
+            SELECT eg.ledger_start_date,
+                   egd.dev_id,
+                   d.dev_name,
+                   COUNT(sl.lot_id)::int AS total_lots
+            FROM sim_entitlement_groups eg
+            JOIN sim_ent_group_developments egd ON egd.ent_group_id = eg.ent_group_id
+            JOIN dim_development dd ON dd.development_id = egd.dev_id
+            JOIN developments d ON d.marks_code = dd.dev_code2
+            LEFT JOIN sim_lots sl ON sl.dev_id = egd.dev_id
+            WHERE eg.ent_group_id = %s
+              AND eg.ledger_start_date IS NOT NULL
+            GROUP BY eg.ledger_start_date, egd.dev_id, d.dev_name
+            """,
+            (ent_group_id,),
+        )
+        for r in cur.fetchall():
+            start_iso = r["ledger_start_date"].isoformat()
+            dev_months = {row["calendar_month"] for row in rows if row["dev_id"] == r["dev_id"]}
+            if start_iso not in dev_months:
+                rows.append({
+                    "dev_id": r["dev_id"],
+                    "dev_name": r["dev_name"],
+                    "builder_id": None,
+                    "calendar_month": start_iso,
+                    "ent_plan": 0, "dev_plan": 0, "td_plan": 0,
+                    "str_plan": 0, "cmp_plan": 0, "cls_plan": 0,
+                    "p_end": r["total_lots"], "e_end": 0, "d_end": 0, "h_end": 0,
+                    "u_end": 0, "uc_end": 0, "c_end": 0,
+                    "closed_cumulative": None,
+                })
+
+        rows.sort(key=lambda r: (r["dev_id"], r["calendar_month"]))
+        return rows
     finally:
         cur.close()
 
