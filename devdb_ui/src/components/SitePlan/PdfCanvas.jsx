@@ -647,8 +647,8 @@ export default function PdfCanvas({
             onPointerLeave={overlayActive ? onSvgPointerLeave : undefined}
             onContextMenu={overlayActive ? onSvgContextMenu : undefined}
           >
-            {/* ── Phase boundaries ── */}
-            {boundaries.map((b) => {
+            {/* ── Phase boundaries — selected rendered last so it is never occluded ── */}
+            {[...boundaries].sort((a, b) => a.boundary_id === selectedBoundaryId ? 1 : b.boundary_id === selectedBoundaryId ? -1 : 0).map((b) => {
               const pts = JSON.parse(b.polygon_json)
               const svg = pts.map(p => normToScreen(p.x, p.y))
               const polyStr = svg.map(p => `${p.x},${p.y}`).join(' ')

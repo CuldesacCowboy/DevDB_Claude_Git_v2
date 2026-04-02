@@ -42,6 +42,7 @@ function SitePlanViewInner() {
   const [selectedBoundaryId, setSelectedBoundaryId] = useState(null)
   const [phases, setPhases]                   = useState([])
   const [undoStack, setUndoStack]             = useState([])
+  const [instrumentColors, setInstrumentColors] = useState({})  // {instrument_id: color}
   const fileInputRef  = useRef(null)
   const boundariesRef = useRef(boundaries)
   useEffect(() => { boundariesRef.current = boundaries }, [boundaries])
@@ -79,6 +80,15 @@ function SitePlanViewInner() {
       .catch(() => setBoundaries([]))
   }, [plan?.plan_id])
 
+  // Load stored instrument colors when group changes
+  useEffect(() => {
+    if (!selectedGroupId) { setInstrumentColors({}); return }
+    try {
+      const stored = localStorage.getItem(`devdb_siteplan_colors_${selectedGroupId}`)
+      setInstrumentColors(stored ? JSON.parse(stored) : {})
+    } catch { setInstrumentColors({}) }
+  }, [selectedGroupId])
+
   // Load phases for the side panel
   useEffect(() => {
     if (!selectedGroupId) { setPhases([]); return }
@@ -89,7 +99,7 @@ function SitePlanViewInner() {
         const flat = []
         for (const inst of (data.instruments || [])) {
           for (const ph of (inst.phases || [])) {
-            flat.push({ ...ph, dev_name: inst.dev_name, instrument_id: inst.instrument_id })
+            flat.push({ ...ph, dev_name: inst.dev_name, instrument_id: inst.instrument_id, instrument_name: inst.instrument_name })
           }
         }
         for (const ph of (data.unassigned_phases || [])) {
@@ -98,6 +108,36 @@ function SitePlanViewInner() {
         setPhases(flat)
       })
       .catch(() => setPhases([]))
+  }, [selectedGroupId])
+
+  // Auto-assign colors for any instrument not yet in instrumentColors
+  useEffect(() => {
+    if (!selectedGroupId || !phases.length) return
+    const ids = [...new Set(phases.filter(p => p.instrument_id != null).map(p => p.instrument_id))]
+    setInstrumentColors(prev => {
+      const next = { ...prev }
+      let changed = false
+      let idx = Object.keys(next).length
+      for (const iid of ids) {
+        if (!(iid in next)) {
+          next[iid] = INSTRUMENT_COLORS[idx % INSTRUMENT_COLORS.length]
+          idx++
+          changed = true
+        }
+      }
+      if (changed) {
+        try { localStorage.setItem(`devdb_siteplan_colors_${selectedGroupId}`, JSON.stringify(next)) } catch {}
+      }
+      return changed ? next : prev
+    })
+  }, [phases, selectedGroupId])
+
+  const handleInstrumentColorChange = useCallback((instrumentId, color) => {
+    setInstrumentColors(prev => {
+      const next = { ...prev, [instrumentId]: color }
+      try { localStorage.setItem(`devdb_siteplan_colors_${selectedGroupId}`, JSON.stringify(next)) } catch {}
+      return next
+    })
   }, [selectedGroupId])
 
   async function handleFileChange(e) {
@@ -258,17 +298,10 @@ function SitePlanViewInner() {
   const phaseMap       = Object.fromEntries(phases.map(p => [p.phase_id, p]))
   const assignedPhaseIds = new Set(boundaries.filter(b => b.phase_id).map(b => b.phase_id))
 
-  // Assign one color per instrument_id; build phase_id → color map
-  const instrumentColorMap = {}
-  let colorIdx = 0
-  for (const ph of phases) {
-    if (ph.instrument_id != null && !(ph.instrument_id in instrumentColorMap)) {
-      instrumentColorMap[ph.instrument_id] = INSTRUMENT_COLORS[colorIdx % INSTRUMENT_COLORS.length]
-      colorIdx++
-    }
-  }
+  // Build phase_id → color map from instrument color state
   const phaseColorMap = Object.fromEntries(
-    phases.filter(p => p.instrument_id != null).map(p => [p.phase_id, instrumentColorMap[p.instrument_id]])
+    phases.filter(p => p.instrument_id != null && instrumentColors[p.instrument_id])
+      .map(p => [p.phase_id, instrumentColors[p.instrument_id]])
   )
   const selectedBoundary = selectedBoundaryId
     ? boundaries.find(b => b.boundary_id === selectedBoundaryId)
@@ -402,12 +435,14 @@ function SitePlanViewInner() {
             phases={phases}
             phaseMap={phaseMap}
             phaseColorMap={phaseColorMap}
+            instrumentColors={instrumentColors}
             selectedBoundaryId={selectedBoundaryId}
             selectedBoundary={selectedBoundary}
             assignedPhaseIds={assignedPhaseIds}
             onSelectBoundary={id => setSelectedBoundaryId(prev => prev === id ? null : id)}
             onAssign={assignPhaseToSelected}
             onUnassign={unassignBoundary}
+            onInstrumentColorChange={handleInstrumentColorChange}
             mode={mode}
           />
         )}
@@ -424,15 +459,20 @@ export default function SitePlanView() {
 
 function PhasePanel({
   boundaries, phases, phaseMap, phaseColorMap,
-  selectedBoundaryId, selectedBoundary, assignedPhaseIds,
-  onSelectBoundary, onAssign, onUnassign, mode,
+  instrumentColors, selectedBoundaryId, selectedBoundary, assignedPhaseIds,
+  onSelectBoundary, onAssign, onUnassign, onInstrumentColorChange, mode,
 }) {
-  // Group phases by dev_name for display
-  const byDev = {}
+  // Group phases by instrument_id; unassigned (null) go into a separate list
+  const byInstrument = []  // [{instrument_id, instrument_name, phases[]}]
+  const instrSeen = {}
+  const unassigned = []
   for (const ph of phases) {
-    const key = ph.dev_name || 'Other'
-    if (!byDev[key]) byDev[key] = []
-    byDev[key].push(ph)
+    if (ph.instrument_id == null) { unassigned.push(ph); continue }
+    if (!(ph.instrument_id in instrSeen)) {
+      instrSeen[ph.instrument_id] = byInstrument.length
+      byInstrument.push({ instrument_id: ph.instrument_id, instrument_name: ph.instrument_name || `Instrument ${ph.instrument_id}`, phases: [] })
+    }
+    byInstrument[instrSeen[ph.instrument_id]].phases.push(ph)
   }
 
   return (
@@ -501,20 +541,79 @@ function PhasePanel({
         </div>
       </div>
 
-      {/* Phase list */}
+      {/* Phase list — grouped by legal instrument */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {phases.length === 0 && (
           <div style={{ padding: '12px', fontSize: 11, color: '#9ca3af' }}>No phases found</div>
         )}
-        {Object.entries(byDev).map(([devName, devPhases]) => (
-          <div key={devName}>
+
+        {byInstrument.map(({ instrument_id, instrument_name, phases: instrPhases }) => {
+          const instrColor = instrumentColors[instrument_id] || UNASSIGNED_COLOR
+          return (
+            <div key={instrument_id}>
+              {/* Instrument header with clickable color swatch */}
+              <div style={{
+                padding: '3px 8px 3px 10px', fontSize: 10, fontWeight: 600,
+                background: '#f3f4f6', display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <div
+                  title="Click to change instrument color"
+                  style={{ position: 'relative', width: 12, height: 12, borderRadius: 2, flexShrink: 0, background: instrColor, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.2)' }}
+                >
+                  <input
+                    type="color"
+                    value={instrColor}
+                    onChange={e => onInstrumentColorChange(instrument_id, e.target.value)}
+                    style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', padding: 0, border: 'none' }}
+                  />
+                </div>
+                <span style={{ color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {instrument_name}
+                </span>
+              </div>
+              {instrPhases.map(ph => {
+                const isAssignedHere  = selectedBoundary?.phase_id === ph.phase_id
+                const isAssignedElsew = assignedPhaseIds.has(ph.phase_id) && !isAssignedHere
+                return (
+                  <div
+                    key={ph.phase_id}
+                    onClick={() => {
+                      if (!selectedBoundaryId) return
+                      if (isAssignedHere) onUnassign(selectedBoundaryId)
+                      else onAssign(ph.phase_id)
+                    }}
+                    style={{
+                      padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 4,
+                      cursor: selectedBoundaryId ? 'pointer' : 'default',
+                      background: isAssignedHere ? '#f5f3ff' : 'transparent',
+                      opacity: isAssignedElsew ? 0.4 : 1,
+                    }}
+                  >
+                    <span style={{
+                      flex: 1, fontSize: 11,
+                      color: isAssignedHere ? '#7c3aed' : '#374151',
+                      fontWeight: isAssignedHere ? 600 : 400,
+                    }}>
+                      {ph.phase_name}
+                    </span>
+                    {isAssignedHere && <span style={{ fontSize: 10, color: '#7c3aed' }}>✓</span>}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })}
+
+        {/* Unassigned phases (no instrument) */}
+        {unassigned.length > 0 && (
+          <div>
             <div style={{
               padding: '3px 12px', fontSize: 10, fontWeight: 600, color: '#9ca3af',
               background: '#f3f4f6', textTransform: 'uppercase', letterSpacing: '0.05em',
             }}>
-              {devName}
+              Unassigned
             </div>
-            {devPhases.map(ph => {
+            {unassigned.map(ph => {
               const isAssignedHere  = selectedBoundary?.phase_id === ph.phase_id
               const isAssignedElsew = assignedPhaseIds.has(ph.phase_id) && !isAssignedHere
               return (
@@ -532,11 +631,7 @@ function PhasePanel({
                     opacity: isAssignedElsew ? 0.4 : 1,
                   }}
                 >
-                  <span style={{
-                    flex: 1, fontSize: 11,
-                    color: isAssignedHere ? '#7c3aed' : '#374151',
-                    fontWeight: isAssignedHere ? 600 : 400,
-                  }}>
+                  <span style={{ flex: 1, fontSize: 11, color: isAssignedHere ? '#7c3aed' : '#374151', fontWeight: isAssignedHere ? 600 : 400 }}>
                     {ph.phase_name}
                   </span>
                   {isAssignedHere && <span style={{ fontSize: 10, color: '#7c3aed' }}>✓</span>}
@@ -544,7 +639,7 @@ function PhasePanel({
               )
             })}
           </div>
-        ))}
+        )}
       </div>
     </div>
   )
