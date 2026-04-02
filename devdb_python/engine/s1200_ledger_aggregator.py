@@ -35,9 +35,9 @@ def ledger_aggregator(conn: DBConnection) -> None:
             WHERE lot_source = 'real'
         ),
         ledger_floor AS (
-            SELECT COALESCE(MIN(ledger_start_date), '2999-01-01'::DATE) AS start_date
+            SELECT COALESCE(MIN(date_paper), '2999-01-01'::DATE) AS start_date
             FROM sim_entitlement_groups
-            WHERE ledger_start_date IS NOT NULL
+            WHERE date_paper IS NOT NULL
         ),
         bounds AS (
             SELECT LEAST(lf.start_date, lg.start_date) AS spine_start
