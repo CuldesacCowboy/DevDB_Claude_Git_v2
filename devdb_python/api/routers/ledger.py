@@ -10,15 +10,9 @@ from api.deps import get_db_conn
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 
-_LEDGER_FILTER = """
-    AND (
-        v.ent_plan > 0 OR v.dev_plan > 0 OR v.td_plan > 0
-        OR v.str_plan > 0 OR v.cmp_plan > 0 OR v.cls_plan > 0
-        OR v.p_end > 0
-        OR v.e_end > 0 OR v.d_end > 0 OR v.h_end > 0
-        OR v.u_end > 0 OR v.uc_end > 0 OR v.c_end > 0
-    )
-"""
+# _LEDGER_FILTER removed — ledger now uses a bounded date range instead so the
+# spine is continuous with no gaps (months where all lots have closed and no new
+# lots have been delivered would otherwise be silently dropped).
 
 
 def _ledger_row(r) -> dict:
@@ -106,14 +100,56 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
 
 def _query_ledger_by_dev(conn, ent_group_id: int) -> list:
     """Shared query for both ledger endpoints (dev-level, builder-level rows).
-    Also overlays entitlement events onto ent_plan and prepends a synthetic
-    ledger_start_date row if that month has no activity.
+    Uses a bounded date range (ledger_start_date → last projected activity) so
+    the spine is continuous with no gaps.  Also overlays entitlement events onto
+    ent_plan and prepends a synthetic ledger_start_date row when needed.
     """
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
-        # Main ledger rows
+        # ── Compute date range bounds ──────────────────────────────────────────
+        # Start: ledger_start_date on the group, else the earliest month in the spine
+        # End: latest projected/actual activity across all lots in the group
         cur.execute(
-            f"""
+            """
+            SELECT
+                eg.ledger_start_date,
+                DATE_TRUNC('MONTH', MAX(GREATEST(
+                    COALESCE(sl.date_cls, sl.date_cls_projected, '2000-01-01'::DATE),
+                    COALESCE(sl.date_cmp, sl.date_cmp_projected, '2000-01-01'::DATE),
+                    COALESCE(sl.date_str, sl.date_str_projected, '2000-01-01'::DATE),
+                    COALESCE(sl.date_td,                         '2000-01-01'::DATE),
+                    COALESCE(sl.date_dev,                        '2000-01-01'::DATE)
+                )))::DATE AS max_activity_month
+            FROM sim_entitlement_groups eg
+            JOIN sim_ent_group_developments egd ON egd.ent_group_id = eg.ent_group_id
+            LEFT JOIN sim_lots sl ON sl.dev_id = egd.dev_id
+            WHERE eg.ent_group_id = %s
+            GROUP BY eg.ledger_start_date
+            """,
+            (ent_group_id,),
+        )
+        bounds = cur.fetchone()
+        if not bounds or bounds["max_activity_month"] is None:
+            return []
+
+        ledger_start = bounds["ledger_start_date"]
+        max_month    = bounds["max_activity_month"]
+
+        # Also consider entitlement event dates for the end bound
+        cur.execute(
+            "SELECT MAX(event_date) AS max_ev FROM sim_entitlement_events WHERE ent_group_id = %s",
+            (ent_group_id,),
+        )
+        ev_max = cur.fetchone()["max_ev"]
+        if ev_max:
+            from datetime import date
+            ev_month = ev_max.replace(day=1) if hasattr(ev_max, 'replace') else date.fromisoformat(str(ev_max)).replace(day=1)
+            if ev_month > max_month:
+                max_month = ev_month
+
+        # Main ledger rows — bounded range, no activity filter
+        cur.execute(
+            """
             SELECT
                 v.dev_id,
                 d.dev_name,
@@ -131,10 +167,11 @@ def _query_ledger_by_dev(conn, ent_group_id: int) -> list:
                 SELECT dev_id FROM sim_ent_group_developments
                 WHERE ent_group_id = %s
             )
-            {_LEDGER_FILTER}
+              AND v.calendar_month <= %s
+              AND (%s IS NULL OR v.calendar_month >= %s)
             ORDER BY d.dev_name, v.calendar_month
             """,
-            (ent_group_id,),
+            (ent_group_id, max_month, ledger_start, ledger_start),
         )
         rows = [_ledger_row(r) for r in cur.fetchall()]
 
