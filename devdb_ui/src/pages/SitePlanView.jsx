@@ -2,8 +2,9 @@
 // Main site plan page. Entitlement group picker + mode controls in toolbar.
 // Right panel: phase boundary list + phase assignment when boundaries exist.
 
-import { useState, useEffect, useRef, useCallback, Component } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, Component } from 'react'
 import PdfCanvas from '../components/SitePlan/PdfCanvas'
+import LotBank from '../components/SitePlan/LotBank'
 
 class SitePlanErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null } }
@@ -43,6 +44,14 @@ function SitePlanViewInner() {
   const [phases, setPhases]                   = useState([])
   const [undoStack, setUndoStack]             = useState([])
   const [instrumentColors, setInstrumentColors] = useState({})  // {instrument_id: color}
+
+  // Lot bank + positioning
+  const [allLots, setAllLots]             = useState([])   // all real lots for this ent_group
+  const [lotPositions, setLotPositions]   = useState({})   // {lot_id: {x,y}} — local (unsaved)
+  const [savedPositions, setSavedPositions] = useState({}) // {lot_id: {x,y}} — last saved
+  const [isDirty, setIsDirty]             = useState(false)
+  const [placeQueue, setPlaceQueue]       = useState([])   // [{lot_id, lot_number,...}] click-to-set queue
+
   const fileInputRef  = useRef(null)
   const boundariesRef = useRef(boundaries)
   useEffect(() => { boundariesRef.current = boundaries }, [boundaries])
@@ -139,6 +148,129 @@ function SitePlanViewInner() {
       return next
     })
   }, [selectedGroupId])
+
+  // Load lot positions when plan changes
+  useEffect(() => {
+    if (!plan) {
+      setAllLots([]); setLotPositions({}); setSavedPositions({}); setIsDirty(false); setPlaceQueue([])
+      return
+    }
+    fetch(`${API}/lot-positions/plan/${plan.plan_id}`)
+      .then(r => r.ok ? r.json() : { positioned: [], bank: [] })
+      .then(data => {
+        const all = [...(data.positioned || []), ...(data.bank || [])]
+        setAllLots(all)
+        const pos = {}
+        for (const l of (data.positioned || [])) pos[l.lot_id] = { x: l.x, y: l.y }
+        setLotPositions(pos)
+        setSavedPositions(pos)
+        setIsDirty(false)
+      })
+      .catch(() => {})
+  }, [plan?.plan_id])
+
+  // ─── Point-in-polygon (ray casting, normalized coords) ─────────────────────
+  function pointInPolygon(px, py, polygon) {
+    let inside = false
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i].x, yi = polygon[i].y
+      const xj = polygon[j].x, yj = polygon[j].y
+      if (((yi > py) !== (yj > py)) && px < ((xj - xi) * (py - yi) / (yj - yi) + xi))
+        inside = !inside
+    }
+    return inside
+  }
+
+  // Returns phase_id (may be null) if inside any boundary, or undefined if outside all.
+  function findPhaseForPosition(x, y) {
+    for (const b of boundaries) {
+      const poly = JSON.parse(b.polygon_json)
+      if (pointInPolygon(x, y, poly)) return b.phase_id  // null if unassigned boundary
+    }
+    return undefined  // outside all polygons
+  }
+
+  // ─── Lot placement handlers ─────────────────────────────────────────────────
+  const handleLotDrop = useCallback((lotId, normPos) => {
+    setLotPositions(prev => ({ ...prev, [lotId]: normPos }))
+    setIsDirty(true)
+  }, [])
+
+  const handleLotMove = useCallback((lotId, normPos) => {
+    setLotPositions(prev => ({ ...prev, [lotId]: normPos }))
+    setIsDirty(true)
+  }, [])
+
+  // Called by PdfCanvas when user clicks in 'place' mode
+  const handlePlaceLot = useCallback((normPos) => {
+    setPlaceQueue(prev => {
+      if (!prev.length) return prev
+      const [current, ...rest] = prev
+      setLotPositions(lp => ({ ...lp, [current.lot_id]: normPos }))
+      setIsDirty(true)
+      if (!rest.length) setMode('view')  // exhausted the queue
+      return rest
+    })
+  }, [])
+
+  function startPlaceFromLot(lot) {
+    // Build queue starting from this lot, continuing through rest of bank in order
+    const idx = bankLots.findIndex(l => l.lot_id === lot.lot_id)
+    const queue = idx >= 0 ? [...bankLots.slice(idx), ...bankLots.slice(0, idx)] : bankLots
+    setPlaceQueue(queue)
+    setMode('place')
+  }
+
+  function endPlaceMode() {
+    setPlaceQueue([])
+    setMode('view')
+  }
+
+  // ─── Save / Discard ────────────────────────────────────────────────────────
+  async function handleSaveLotPositions() {
+    if (!plan) return
+    const updates = [], removes = []
+    for (const [lotIdStr, pos] of Object.entries(lotPositions)) {
+      const lotId = Number(lotIdStr)
+      const phase = findPhaseForPosition(pos.x, pos.y)
+      if (phase === undefined) {
+        removes.push(lotId)  // outside all polygons → back to bank
+      } else {
+        updates.push({ lot_id: lotId, x: pos.x, y: pos.y, phase_id: phase ?? null })
+      }
+    }
+    // Lots removed from plan (were in savedPositions but dropped from lotPositions)
+    for (const lotIdStr of Object.keys(savedPositions)) {
+      const lotId = Number(lotIdStr)
+      if (!(lotId in lotPositions)) removes.push(lotId)
+    }
+    try {
+      const res = await fetch(`${API}/lot-positions/plan/${plan.plan_id}/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates, removes: [...new Set(removes)] }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const all = [...(data.positioned || []), ...(data.bank || [])]
+        setAllLots(all)
+        const pos = {}
+        for (const l of (data.positioned || [])) pos[l.lot_id] = { x: l.x, y: l.y }
+        setLotPositions(pos)
+        setSavedPositions(pos)
+        setIsDirty(false)
+        setPlaceQueue([])
+        setMode('view')
+      }
+    } catch { /* ignore */ }
+  }
+
+  function handleDiscardLotPositions() {
+    setLotPositions(savedPositions)
+    setIsDirty(false)
+    setPlaceQueue([])
+    setMode('view')
+  }
 
   async function handleFileChange(e) {
     const file = e.target.files?.[0]
@@ -307,6 +439,30 @@ function SitePlanViewInner() {
     ? boundaries.find(b => b.boundary_id === selectedBoundaryId)
     : null
 
+  // Lot bank derived state
+  const bankLots = useMemo(
+    () => allLots.filter(l => !(l.lot_id in lotPositions)),
+    [allLots, lotPositions]
+  )
+  const currentPlacingLot = placeQueue[0] || null
+
+  // lot_id → color (by instrument)
+  const lotColorMap = useMemo(() => {
+    const m = {}
+    for (const l of allLots) {
+      if (l.instrument_id && instrumentColors[l.instrument_id])
+        m[l.lot_id] = instrumentColors[l.instrument_id]
+    }
+    return m
+  }, [allLots, instrumentColors])
+
+  // lot_id → metadata for PdfCanvas
+  const lotMeta = useMemo(() => {
+    const m = {}
+    for (const l of allLots) m[l.lot_id] = { lot_number: l.lot_number, instrument_id: l.instrument_id }
+    return m
+  }, [allLots])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 44px)' }}>
 
@@ -396,8 +552,33 @@ function SitePlanViewInner() {
         <input ref={fileInputRef} type='file' accept='.pdf' style={{ display: 'none' }} onChange={handleFileChange} />
       </div>
 
-      {/* Canvas + side panel */}
+      {/* Lot positions unsaved bar */}
+      {isDirty && (
+        <div style={{
+          padding: '6px 16px', background: '#fffbeb', borderBottom: '1px solid #fde68a',
+          display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 12, color: '#92400e', flex: 1 }}>
+            Lot positions have unsaved changes
+          </span>
+          <button onClick={handleSaveLotPositions} style={btn('#15803d', '#f0fdf4', '#bbf7d0')}>Save</button>
+          <button onClick={handleDiscardLotPositions} style={btn('#6b7280', '#f9fafb', '#e5e7eb')}>Discard</button>
+        </div>
+      )}
+
+      {/* Canvas + panels */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
+
+        {/* Lot bank — left panel, visible when a plan is loaded */}
+        {hasPlan && (
+          <LotBank
+            lots={bankLots}
+            instrumentColors={instrumentColors}
+            placingLotId={currentPlacingLot?.lot_id ?? null}
+            onLotDragStart={(e, lot) => e.dataTransfer.setData('lot_id', String(lot.lot_id))}
+            onLotClick={startPlaceFromLot}
+          />
+        )}
 
         {/* Canvas area */}
         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -424,7 +605,43 @@ function SitePlanViewInner() {
               onSplitConfirm={onSplitConfirm}
               onBoundaryUpdated={updated => setBoundaries(bs => bs.map(b => b.boundary_id === updated.boundary_id ? updated : b))}
               onVertexEditComplete={onVertexEditComplete}
+              lotPositions={lotPositions}
+              lotMeta={lotMeta}
+              lotColorMap={lotColorMap}
+              placingLot={currentPlacingLot}
+              onPlaceLot={handlePlaceLot}
+              onLotDrop={handleLotDrop}
+              onLotMove={handleLotMove}
             />
+          )}
+
+          {/* Floating overlay for click-to-set mode */}
+          {mode === 'place' && currentPlacingLot && (
+            <div style={{
+              position: 'absolute', bottom: 20, right: 20, zIndex: 30,
+              background: 'rgba(15,23,42,0.88)', borderRadius: 8, padding: '10px 14px',
+              display: 'flex', flexDirection: 'column', gap: 8, backdropFilter: 'blur(4px)',
+            }}>
+              <div style={{ fontSize: 11, color: '#94a3b8' }}>
+                Click the map to set position
+              </div>
+              <div style={{ fontSize: 13, color: '#f1f5f9', fontWeight: 600 }}>
+                {currentPlacingLot.lot_number}
+              </div>
+              <div style={{ fontSize: 10, color: '#64748b' }}>
+                {placeQueue.length} lot{placeQueue.length !== 1 ? 's' : ''} remaining
+              </div>
+              <button
+                onClick={endPlaceMode}
+                style={{
+                  marginTop: 2, padding: '5px 10px', borderRadius: 5, fontSize: 11,
+                  background: '#334155', color: '#f1f5f9', border: '1px solid #475569',
+                  cursor: 'pointer', fontWeight: 500,
+                }}
+              >
+                End Placing
+              </button>
+            </div>
           )}
         </div>
 
