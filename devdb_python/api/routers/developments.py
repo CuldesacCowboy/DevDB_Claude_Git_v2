@@ -232,7 +232,7 @@ def upsert_sim_params(dev_id: int, body: SimParamsPutRequest, conn=Depends(get_d
         cur.execute(
             """
             INSERT INTO sim_dev_params (dev_id, annual_starts_target, max_starts_per_month, seasonal_weight_set, updated_at)
-            VALUES (%s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, COALESCE(%s, 'balanced_2yr'), NOW())
             ON CONFLICT (dev_id) DO UPDATE
                 SET annual_starts_target = EXCLUDED.annual_starts_target,
                     max_starts_per_month  = COALESCE(EXCLUDED.max_starts_per_month, sim_dev_params.max_starts_per_month),
