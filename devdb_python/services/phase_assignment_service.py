@@ -163,7 +163,7 @@ def _execute(conn, phase_id: int, target_instrument_id: int | None, changed_by: 
                 "from_instrument_id": from_instrument_id if from_instrument_id is not None else 0,
                 "to_instrument_id": target_instrument_id if target_instrument_id is not None else 0,
             },
-            needs_rerun=affected_pg_ids,
+            needs_rerun=[],
         )
 
     except Exception:
