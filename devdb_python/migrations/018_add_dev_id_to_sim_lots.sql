@@ -17,15 +17,9 @@ SET dev_id = sdp.dev_id
 FROM devdb.sim_dev_phases sdp
 WHERE sl.phase_id = sdp.phase_id;
 
--- ── 3. Add FK to developments ────────────────────────────────────────────────
-
-DO $$ BEGIN
-    ALTER TABLE devdb.sim_lots
-        ADD CONSTRAINT fk_sim_lots_dev
-        FOREIGN KEY (dev_id) REFERENCES devdb.developments(dev_id);
-EXCEPTION WHEN duplicate_table OR duplicate_object OR invalid_table_definition THEN NULL; END $$;
-
--- ── 4. Add index for dev-scoped queries ─────────────────────────────────────
+-- ── 3. Add index for dev-scoped queries ─────────────────────────────────────
+-- Note: no FK to developments — sim_dev_phases.dev_id may include legacy devs
+-- (e.g. dev_id=30) not present in the developments table (dim_development gap).
 
 CREATE INDEX IF NOT EXISTS idx_sim_lots_dev_source
     ON devdb.sim_lots (dev_id, lot_source);
