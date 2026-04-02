@@ -122,29 +122,6 @@ def _execute(conn, phase_id: int, target_instrument_id: int | None, changed_by: 
         )
 
         # ----------------------------------------------------------------
-        # Step 3 — Set needs_rerun for all PGs with lots in this phase
-        # ----------------------------------------------------------------
-        cur.execute(
-            """
-            SELECT DISTINCT projection_group_id
-            FROM sim_lots
-            WHERE phase_id = %s
-            """,
-            (phase_id,),
-        )
-        affected_pg_ids = [int(r["projection_group_id"]) for r in cur.fetchall()]
-
-        if affected_pg_ids:
-            cur.execute(
-                """
-                UPDATE dim_projection_groups
-                SET needs_rerun = true
-                WHERE projection_group_id = ANY(%s)
-                """,
-                (affected_pg_ids,),
-            )
-
-        # ----------------------------------------------------------------
         # Step 4 — Audit log
         # ----------------------------------------------------------------
         action = (

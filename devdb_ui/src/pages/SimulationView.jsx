@@ -95,14 +95,12 @@ function UtilizationPanel({ phases }) {
             : '0%'
           return (
             <div key={p.phase_id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {/* Phase name */}
               <div style={{
                 width: 280, fontSize: 11, color: '#374151',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0,
               }} title={p.phase_name}>
                 {p.phase_name}
               </div>
-              {/* Bar */}
               <div style={{
                 flex: 1, height: 14, background: '#f3f4f6', borderRadius: 3,
                 overflow: 'hidden', position: 'relative', minWidth: 80,
@@ -113,14 +111,12 @@ function UtilizationPanel({ phases }) {
                   borderRadius: 3, transition: 'width 0.3s',
                 }} />
               </div>
-              {/* Badge */}
               <div style={{
                 width: 64, flexShrink: 0, textAlign: 'right',
                 fontSize: 11, fontWeight: 600, color: text,
               }}>
                 {label}
               </div>
-              {/* Counts */}
               <div style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0 }}>
                 {p.real_count}r + {p.sim_count}s / {p.projected_count}p
               </div>
@@ -135,10 +131,7 @@ function UtilizationPanel({ phases }) {
   )
 }
 
-function DevSection({ devId, devName, devRows, pgRows, utilRows = [] }) {
-  const [showPg, setShowPg] = useState(false)
-  const pgIds = [...new Set(pgRows.map(r => r.projection_group_id))]
-
+function DevSection({ devId, devName, devRows, utilRows = [] }) {
   return (
     <div style={{ marginBottom: 32 }}>
       <div style={{
@@ -146,30 +139,8 @@ function DevSection({ devId, devName, devRows, pgRows, utilRows = [] }) {
         borderBottom: '2px solid #e5e7eb', paddingBottom: 5, marginBottom: 10,
       }}>
         <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{devName}</span>
-        {pgIds.length > 0 && (
-          <button
-            onClick={() => setShowPg(v => !v)}
-            style={{ fontSize: 11, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-          >
-            {showPg ? 'hide PG detail ▲' : `show PG detail (${pgIds.length}) ▼`}
-          </button>
-        )}
       </div>
-
       <LedgerTable rows={devRows} />
-
-      {showPg && pgIds.map(pgId => (
-        <div key={pgId} style={{ marginTop: 20, paddingLeft: 20, borderLeft: '3px solid #e5e7eb' }}>
-          <div style={{
-            fontSize: 11, fontWeight: 600, color: '#9ca3af',
-            textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6,
-          }}>
-            PG {pgId}
-          </div>
-          <LedgerTable rows={pgRows.filter(r => r.projection_group_id === pgId)} />
-        </div>
-      ))}
-
       <UtilizationPanel phases={utilRows} />
     </div>
   )
@@ -180,7 +151,6 @@ export default function SimulationView() {
   const [entGroupId, setEntGroupId]   = useState(null)
   const [runStatus, setRunStatus]     = useState(null)
   const [byDev, setByDev]             = useState([])
-  const [byPg, setByPg]               = useState([])
   const [utilization, setUtilization] = useState([])
   const [loading, setLoading]         = useState(false)
   const [missingSplits, setMissingSplits] = useState([])
@@ -212,15 +182,13 @@ export default function SimulationView() {
     setLoading(true)
     Promise.all([
       fetch(`${API}/ledger/${id}/by-dev`).then(r => r.json()),
-      fetch(`${API}/ledger/${id}`).then(r => r.json()),
       fetch(`${API}/ledger/${id}/utilization`).then(r => r.json()),
     ])
-      .then(([devRows, pgRows, utilRows]) => {
+      .then(([devRows, utilRows]) => {
         setByDev(Array.isArray(devRows) ? devRows : [])
-        setByPg(Array.isArray(pgRows) ? pgRows : [])
         setUtilization(Array.isArray(utilRows) ? utilRows : [])
       })
-      .catch(() => { setByDev([]); setByPg([]); setUtilization([]) })
+      .catch(() => { setByDev([]); setUtilization([]) })
       .finally(() => setLoading(false))
   }, [])
 
@@ -330,22 +298,21 @@ export default function SimulationView() {
           background: '#fff7ed', border: '1px solid #fb923c', borderRadius: 6, fontSize: 12,
         }}>
           <div style={{ fontWeight: 600, color: '#9a3412', marginBottom: 4 }}>
-            {staleParams.length} projection group{staleParams.length !== 1 ? 's' : ''} have missing or outdated starts targets — verify before running:
+            {staleParams.length} development{staleParams.length !== 1 ? 's' : ''} have missing or outdated starts targets — verify before running:
           </div>
           <ul style={{ margin: 0, paddingLeft: 18, color: '#7c2d12', lineHeight: 1.7 }}>
             {staleParams.map(p => (
-              <li key={p.projection_group_id}>
-                <span style={{ fontWeight: 500 }}>PG {p.projection_group_id}</span>
-                {' — '}{p.dev_name}
+              <li key={p.dev_id}>
+                <span style={{ fontWeight: 500 }}>{p.dev_name}</span>
                 {p.status === 'missing'
-                  ? <span style={{ color: '#dc2626' }}> · no params configured</span>
+                  ? <span style={{ color: '#dc2626' }}> · no starts target configured</span>
                   : <span style={{ color: '#b45309' }}> · last updated {p.updated_at ? p.updated_at.slice(0, 10) : 'unknown'} ({p.annual_starts_target} starts/yr)</span>
                 }
               </li>
             ))}
           </ul>
           <div style={{ marginTop: 6, color: '#9a3412', fontSize: 11 }}>
-            Update annual_starts_target in sim_projection_params to reflect current pace.
+            Update annual_starts_target in sim_dev_params to reflect current pace.
           </div>
         </div>
       )}
@@ -365,7 +332,6 @@ export default function SimulationView() {
           devId={devId}
           devName={devName}
           devRows={byDev.filter(r => r.dev_id === devId)}
-          pgRows={byPg.filter(r => r.dev_id === devId)}
           utilRows={utilization.filter(r => r.dev_id === devId)}
         />
       ))}

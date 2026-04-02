@@ -5,7 +5,7 @@
 #           to meet checkpoint obligations. Recording residual gaps.
 # Not Own:  Setting date_td (only date_td_hold). Modifying real lot data
 #           beyond date_td_hold. Blocking the run.
-# Inputs:   Lot snapshot (post-S-04), projection_group_id, conn.
+# Inputs:   Lot snapshot (post-S-04), dev_id, conn.
 # Outputs:  (updated_snapshot, residual_gaps)
 #           residual_gaps: list of dicts {tda_id, checkpoint_id,
 #             checkpoint_number, checkpoint_date, required, projected, gap}
@@ -19,7 +19,7 @@ _DEFAULT_LEAD_DAYS = 16  # days before checkpoint to schedule hold
 
 
 def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame,
-                    projection_group_id: int):
+                    dev_id: int):
     """
     Enforce TDA checkpoint obligations.
     Only writes date_td_hold -- never date_td.

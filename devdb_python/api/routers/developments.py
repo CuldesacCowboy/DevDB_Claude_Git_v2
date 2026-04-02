@@ -269,11 +269,7 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
             FROM sim_lots
             WHERE lot_source = 'real'
               AND phase_id IS NULL
-              AND projection_group_id IN (
-                  SELECT projection_group_id
-                  FROM dim_projection_groups
-                  WHERE dev_id = %s
-              )
+              AND dev_id = %s
             ORDER BY lot_number ASC NULLS LAST
             """,
             (dev_id,),

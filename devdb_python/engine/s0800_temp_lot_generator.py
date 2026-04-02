@@ -5,15 +5,12 @@
 #           Hard stop at sim_phase_product_splits capacity.
 # Not Own:  Assigning builder_id (S-09). Writing to sim_lots (S-11).
 #           Writing demand_derived dates (S-10). Modifying real lots.
+#           Applying build lag curves (coordinator, after plan() returns).
 # Inputs:   unmet_demand_series from S-07, phase_capacity list (from coordinator),
-#           lot_type_pg_map dict, sim_run_id.
+#           sim_run_id.
 # Outputs:  List of dicts (temp lot records), not yet persisted.
-#
-# CRITICAL: projection_group_id is derived per lot from (dev_id, lot_type_id) via
-# lot_type_pg_map {(dev_id, lot_type_id) -> projection_group_id}. Never inherit
-# from the pipeline's current projection_group_id parameter. Using lot_type_id
-# alone is wrong -- the same lot_type exists in every development with a different PG.
-# The (dev_id, lot_type_id) tuple is the correct key into dim_projection_groups.
+#           date_cmp and date_cls use default lags; coordinator applies
+#           empirical curves after the kernel returns.
 #
 # date_str = demand slot month. Always. Independent of date_dev.
 # date_dev = phase delivery date. Always. Independent of date_str.
@@ -29,8 +26,7 @@ _DEFAULT_LAG_CLS_FROM_CMP = 45
 
 
 def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
-                       lot_type_pg_map: dict, sim_run_id: int,
-                       projection_group_id: int = None) -> list:
+                       sim_run_id: int) -> list:
     """
     Generate temp lot records for each unmet demand slot.
 
@@ -41,16 +37,10 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
 
     Total temp lots written == total unmet demand slots. No exceptions.
     """
-    _debug = (projection_group_id == 317)
-
     if not unmet_demand_series:
         return []
 
     total_unmet = sum(int(c) for _, _, c in unmet_demand_series)
-
-    if _debug:
-        print(f"S-08 DEBUG PG 317: unmet input = {total_unmet} slots "
-              f"across {len(unmet_demand_series)} month(s)")
 
     if not phase_capacity:
         print(f"WARNING: No phase capacity available. {total_unmet} unmet slots unfillable. "
@@ -84,39 +74,34 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
 
         lot_type_id = int(slot["lot_type_id"])
         dev_id      = int(slot["dev_id"])
-        pg_id       = lot_type_pg_map.get((dev_id, lot_type_id))
 
         date_str = date(year, month, 1)
         date_cmp = date_str + timedelta(days=_DEFAULT_LAG_CMP_FROM_STR)
         date_cls = date_cmp + timedelta(days=_DEFAULT_LAG_CLS_FROM_CMP)
 
         temp_lots.append({
-            "lot_id":              None,
-            "projection_group_id": pg_id,
-            "phase_id":            int(slot["phase_id"]),
-            "builder_id":          None,
-            "lot_source":          "sim",
-            "lot_number":          None,
-            "sim_run_id":          sim_run_id,
-            "lot_type_id":         lot_type_id,
-            "building_group_id":   None,
-            "date_ent":            None,
-            "date_dev":            slot["date_dev"],
-            "date_td":             date_str,
-            "date_td_hold":        None,
-            "date_str":            date_str,
-            "date_str_source":     "engine_filled",
-            "date_frm":            None,
-            "date_cmp":            date_cmp,
-            "date_cmp_source":     "engine_filled",
-            "date_cls":            date_cls,
-            "date_cls_source":     "engine_filled",
-            "created_at":          None,
-            "updated_at":          None,
+            "lot_id":          None,
+            "dev_id":          dev_id,
+            "phase_id":        int(slot["phase_id"]),
+            "builder_id":      None,
+            "lot_source":      "sim",
+            "lot_number":      None,
+            "sim_run_id":      sim_run_id,
+            "lot_type_id":     lot_type_id,
+            "building_group_id": None,
+            "date_ent":        None,
+            "date_dev":        slot["date_dev"],
+            "date_td":         date_str,
+            "date_td_hold":    None,
+            "date_str":        date_str,
+            "date_str_source": "engine_filled",
+            "date_frm":        None,
+            "date_cmp":        date_cmp,
+            "date_cmp_source": "engine_filled",
+            "date_cls":        date_cls,
+            "date_cls_source": "engine_filled",
+            "created_at":      None,
+            "updated_at":      None,
         })
-
-    if _debug:
-        print(f"S-08 DEBUG PG 317: capacity exhausted = {max(0, len(demand_slots) - n)}, "
-              f"temp lots generated = {len(temp_lots)}")
 
     return temp_lots

@@ -1,15 +1,13 @@
 # p08_sync_flag_writer.py
-# P-08: Set needs_rerun flags on projection groups whose phase delivery
-#   dates changed during this supply pipeline run.
+# P-08: Identify developments whose phase delivery dates changed during this
+#   supply pipeline run.
 #
-# Owns:     Comparing pre-run and post-run date_dev_projected. Setting needs_rerun
-#           on dim_projection_groups for changed phases.
-# Not Own:  Clearing needs_rerun (persistence_writer). Modifying any other table.
+# Owns:     Comparing pre-run and post-run date_dev_projected. Returning
+#           the set of affected dev_ids for the coordinator.
+# Not Own:  Clearing needs_rerun. Modifying any other table.
 # Inputs:   conn, pre_run_dates dict {phase_id: date_dev_projected},
 #           post_run_dates dict {phase_id: date_dev_projected}.
-# Outputs:  needs_rerun flags set on affected dim_projection_groups rows.
-# Failure:  Cannot identify projection group from phase: log and skip.
-#           Never clear a needs_rerun flag already set.
+# Outputs:  List of affected dev_ids.
 
 import pandas as pd
 
@@ -30,10 +28,7 @@ def sync_flag_writer(conn: DBConnection, pre_run_dates: dict,
                      post_run_dates: dict) -> list:
     """
     Compare pre and post run date_dev_projected per phase.
-    For any phase where the date changed, find the projection group(s)
-    that have lots in that phase and set needs_rerun = true.
-    Never clears needs_rerun.
-    Writer module: writes dim_projection_groups.needs_rerun.
+    Returns list of dev_ids that have lots in changed phases.
     """
     changed_phases = [
         phase_id for phase_id, post_date in post_run_dates.items()
@@ -41,31 +36,22 @@ def sync_flag_writer(conn: DBConnection, pre_run_dates: dict,
     ]
 
     if not changed_phases:
-        print("P-08: No phase dates changed. No needs_rerun flags set.")
+        print("P-08: No phase dates changed.")
         return []
 
     phase_ids_str = ", ".join(str(p) for p in changed_phases)
 
     affected_df = conn.read_df(f"""
-        SELECT DISTINCT projection_group_id
+        SELECT DISTINCT dev_id
         FROM sim_lots
         WHERE phase_id IN ({phase_ids_str})
     """)
 
     if affected_df.empty:
-        print(f"P-08: Changed phases {changed_phases} have no lots. "
-              f"Cannot identify projection groups.")
+        print(f"P-08: Changed phases {changed_phases} have no lots.")
         return []
 
-    pg_ids = [int(r) for r in affected_df["projection_group_id"]]
-    pg_ids_str = ", ".join(str(p) for p in pg_ids)
-
-    conn.execute(f"""
-        UPDATE dim_projection_groups
-        SET needs_rerun = true
-        WHERE projection_group_id IN ({pg_ids_str})
-    """)
-
-    print(f"P-08: Set needs_rerun on {len(pg_ids)} projection groups "
-          f"for {len(changed_phases)} changed phases.")
-    return pg_ids
+    dev_ids = [int(r) for r in affected_df["dev_id"]]
+    print(f"P-08: {len(dev_ids)} development(s) affected by "
+          f"{len(changed_phases)} changed phase(s).")
+    return dev_ids

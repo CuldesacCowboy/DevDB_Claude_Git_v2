@@ -34,9 +34,7 @@ def plan(frozen_input: FrozenInput) -> Proposal:
     temp_lots_raw = temp_lot_generator(
         unmet_demand_series,
         frozen_input.phase_capacity,
-        frozen_input.lot_type_pg_map,
         frozen_input.sim_run_id,
-        frozen_input.projection_group_id,
     )
 
     # S-0810: enforce building group date constraints on the temp lot batch
@@ -59,7 +57,7 @@ def plan(frozen_input: FrozenInput) -> Proposal:
         raise ProposalValidationError(result.failures)
     proposal.warnings = proposal.warnings + result.warnings
 
-    print(f"  Kernel PG {frozen_input.projection_group_id}: "
+    print(f"  Kernel dev {frozen_input.dev_id}: "
           f"allocations={len(allocated_df)}, temp_lots={len(clean_lots)}, "
           f"discarded={len(discarded_lots)}, warnings={len(proposal.warnings)}")
 

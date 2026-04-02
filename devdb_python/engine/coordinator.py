@@ -5,7 +5,8 @@
 # No logic, no exception handling, no domain knowledge here.
 # Max iterations: 10 (safety limit only -- normal convergence is 2-3).
 
-from datetime import date, datetime
+import random
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 
@@ -33,97 +34,102 @@ from .p0700_lot_date_propagator import lot_date_propagator
 from .p0800_sync_flag_writer import sync_flag_writer
 
 
-def _load_phase_capacity(conn: DBConnection, projection_group_id: int) -> list:
+# ── Build lag curve helpers ───────────────────────────────────────────────────
+
+def _load_build_lag_curves(conn: DBConnection) -> dict:
     """
-    Load sim_phase_product_splits joined with date_dev_projected and real lot counts.
-    Scoped to phases belonging to the development that owns this projection group
-    (sdp.dev_id = dim_projection_groups.dev_id for this PG).
-    Includes dev_id from sim_dev_phases so the coordinator can build the correct
-    (dev_id, lot_type_id) -> projection_group_id map via dim_projection_groups.
-    Returns list of dicts with phase_id, dev_id, lot_type_id, available_slots, date_dev.
+    Load sim_build_lag_curves into {(lag_type, lot_type_id): curve_dict}.
+    lot_type_id=None rows are the default fallback.
     """
-    df = conn.read_df(f"""
-        SELECT
-            sps.phase_id,
-            sdp.dev_id,
-            sps.lot_type_id,
-            sps.projected_count,
-            sdp.date_dev_projected,
-            COALESCE(real.real_count, 0) AS real_lot_count
-        FROM sim_phase_product_splits sps
-        JOIN sim_dev_phases sdp ON sps.phase_id = sdp.phase_id
-        LEFT JOIN (
-            SELECT phase_id, lot_type_id, COUNT(*) AS real_count
-            FROM sim_lots
-            WHERE projection_group_id = {projection_group_id}
-              AND lot_source = 'real'
-            GROUP BY phase_id, lot_type_id
-        ) real ON sps.phase_id = real.phase_id AND sps.lot_type_id = real.lot_type_id
-        WHERE sdp.dev_id = (
-            SELECT dev_id FROM dim_projection_groups
-            WHERE projection_group_id = {projection_group_id}
-        )
-        ORDER BY sdp.sequence_number ASC, sdp.phase_id ASC
+    df = conn.read_df("""
+        SELECT lag_type, lot_type_id, p10, p25, p50, p75, p90
+        FROM sim_build_lag_curves
     """)
+    curves = {}
+    for _, r in df.iterrows():
+        lt_id = int(r["lot_type_id"]) if r["lot_type_id"] is not None else None
+        curves[(r["lag_type"], lt_id)] = {
+            "p10": int(r["p10"]), "p25": int(r["p25"]), "p50": int(r["p50"]),
+            "p75": int(r["p75"]), "p90": int(r["p90"]),
+        }
+    return curves
+
+
+def _sample_lag(rng: random.Random, curve: dict) -> int:
+    """
+    Sample lag days from a percentile curve using linear interpolation.
+    Draws a uniform U from rng, interpolates over the 5 knots.
+    """
+    u = rng.random()
+    knots = [
+        (0.10, curve["p10"]),
+        (0.25, curve["p25"]),
+        (0.50, curve["p50"]),
+        (0.75, curve["p75"]),
+        (0.90, curve["p90"]),
+    ]
+    # Extrapolate below p10
+    if u <= knots[0][0]:
+        slope = (knots[1][1] - knots[0][1]) / (knots[1][0] - knots[0][0])
+        return max(1, round(knots[0][1] - slope * (knots[0][0] - u)))
+    # Extrapolate above p90
+    if u >= knots[-1][0]:
+        slope = (knots[-1][1] - knots[-2][1]) / (knots[-1][0] - knots[-2][0])
+        return round(knots[-1][1] + slope * (u - knots[-1][0]))
+    # Interpolate between knots
+    for i in range(len(knots) - 1):
+        lo_u, lo_v = knots[i]
+        hi_u, hi_v = knots[i + 1]
+        if lo_u <= u <= hi_u:
+            frac = (u - lo_u) / (hi_u - lo_u)
+            return round(lo_v + frac * (hi_v - lo_v))
+    return curve["p50"]
+
+
+def _apply_build_lag_curves(temp_lots: list, curves: dict, rng: random.Random) -> list:
+    """
+    Replace default constant lags on temp lots with sampled values from empirical curves.
+    Applied after plan() returns, before builder_assignment.
+    Modifies date_cmp and date_cls in place; preserves date_str (the anchor).
+    Falls back to default lags when no curve available.
+    """
+    DEFAULT_CMP_LAG = 270
+    DEFAULT_CLS_LAG = 45
 
     result = []
-    for _, row in df.iterrows():
-        available = int(row["projected_count"]) - int(row["real_lot_count"])
-        if available > 0:
-            d = row["date_dev_projected"]
-            if d is not None and hasattr(d, 'date'):
-                d = d.date()
-            result.append({
-                "phase_id":      int(row["phase_id"]),
-                "dev_id":        int(row["dev_id"]),
-                "lot_type_id":   int(row["lot_type_id"]),
-                "available_slots": available,
-                "date_dev":      d,
-            })
+    for lot in temp_lots:
+        lot = lot.copy()
+        lot_type_id = lot.get("lot_type_id")
+        date_str = lot.get("date_str")
+
+        if date_str is None:
+            result.append(lot)
+            continue
+
+        # Resolve str_to_cmp curve: prefer lot-type-specific, fall back to None (default)
+        str_cmp_curve = (
+            curves.get(("str_to_cmp", lot_type_id))
+            or curves.get(("str_to_cmp", None))
+        )
+        cmp_cls_curve = (
+            curves.get(("cmp_to_cls", lot_type_id))
+            or curves.get(("cmp_to_cls", None))
+        )
+
+        lag_str_cmp = _sample_lag(rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
+        date_cmp = date_str + timedelta(days=lag_str_cmp)
+
+        lag_cmp_cls = _sample_lag(rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+        date_cls = date_cmp + timedelta(days=lag_cmp_cls)
+
+        lot["date_cmp"] = date_cmp
+        lot["date_cls"] = date_cls
+        result.append(lot)
+
     return result
 
 
-def _build_lot_type_pg_map(conn: DBConnection, phase_capacity: list) -> dict:
-    """
-    Build {(dev_id, phase_lot_type_id): projection_group_id} via the correct join:
-      sim_phase_product_splits.lot_type_id
-        -> ref_lot_types.proj_lot_type_group_id  (bridges phase type to PG type)
-        -> dim_projection_groups.lot_type_id -> projection_group_id
-
-    Phase lot types (e.g. 101=SF) and PG lot types (e.g. 201=SF-PG) are distinct
-    but share the same proj_lot_type_group_id in ref_lot_types. A flat
-    (dev_id, lot_type_id) lookup against dim_projection_groups would fail because
-    dim_projection_groups carries the PG-level type, not the phase-level type.
-
-    Key is (dev_id, phase_lot_type_id) so the same phase lot type in different
-    developments resolves to distinct projection groups.
-    """
-    if not phase_capacity:
-        return {}
-
-    pairs = {(pc["dev_id"], pc["lot_type_id"]) for pc in phase_capacity}
-    conditions = " OR ".join(
-        f"(sdp.dev_id = {dev_id} AND sps.lot_type_id = {lt_id})"
-        for dev_id, lt_id in pairs
-    )
-    df = conn.read_df(f"""
-        SELECT DISTINCT sdp.dev_id, sps.lot_type_id AS phase_lot_type_id,
-               dpg.projection_group_id
-        FROM sim_dev_phases sdp
-        JOIN sim_phase_product_splits sps ON sdp.phase_id = sps.phase_id
-        JOIN ref_lot_types rlt_phase ON sps.lot_type_id = rlt_phase.lot_type_id
-        JOIN dim_projection_groups dpg ON sdp.dev_id = dpg.dev_id
-        JOIN ref_lot_types rlt_pg
-          ON dpg.lot_type_id = rlt_pg.lot_type_id
-          AND rlt_phase.proj_lot_type_group_id = rlt_pg.proj_lot_type_group_id
-        WHERE {conditions}
-    """)
-
-    return {
-        (int(r["dev_id"]), int(r["phase_lot_type_id"])): int(r["projection_group_id"])
-        for _, r in df.iterrows()
-    }
-
+# ── Coordinator helpers ───────────────────────────────────────────────────────
 
 def _load_builder_splits(conn: DBConnection) -> dict:
     """
@@ -143,20 +149,21 @@ def _load_builder_splits(conn: DBConnection) -> dict:
     return splits
 
 
-def _load_phase_delivery_dates(conn: DBConnection, projection_group_id: int) -> dict:
+def _load_phase_delivery_dates(conn: DBConnection, dev_id: int) -> dict:
     """
-    Load {phase_id: date} for all phases associated with lots in this projection group.
+    Load {phase_id: date} for all phases in this development.
     Used by S-03 no-anchor fallback (Scenario 7): lots with zero milestone dates
     get date_dev = phase delivery date as anchor.
     """
     df = conn.read_df(f"""
         SELECT DISTINCT sdp.phase_id, sdp.date_dev_projected
         FROM sim_dev_phases sdp
-        WHERE sdp.phase_id IN (
-            SELECT DISTINCT phase_id FROM sim_lots
-            WHERE projection_group_id = {projection_group_id}
-              AND lot_source = 'real'
-        )
+        WHERE sdp.dev_id = {dev_id}
+          AND sdp.phase_id IN (
+              SELECT DISTINCT phase_id FROM sim_lots
+              WHERE dev_id = {dev_id}
+                AND lot_source = 'real'
+          )
     """)
     result = {}
     for _, r in df.iterrows():
@@ -167,19 +174,18 @@ def _load_phase_delivery_dates(conn: DBConnection, projection_group_id: int) -> 
     return result
 
 
-def _persist_violations(conn: DBConnection, violations_df, projection_group_id: int,
+def _persist_violations(conn: DBConnection, violations_df, dev_id: int,
                         sim_run_id: int) -> None:
     """
-    Clear stale violations for this projection group, then write current violations
+    Clear stale violations for this development, then write current violations
     from S-04 to sim_lot_date_violations.
     resolution = 'pending' for all new rows (Path A/B UI resolution deferred).
     """
-    # Clear stale violations scoped to this projection group's lots
     conn.execute(f"""
         DELETE FROM sim_lot_date_violations
         WHERE lot_id IN (
             SELECT lot_id FROM sim_lots
-            WHERE projection_group_id = {projection_group_id}
+            WHERE dev_id = {dev_id}
         )
     """)
 
@@ -210,47 +216,49 @@ def _persist_violations(conn: DBConnection, violations_df, projection_group_id: 
         })
 
     conn.executemany_insert("sim_lot_date_violations", rows)
-    print(f"  S-04: Persisted {len(rows)} violation(s) for PG {projection_group_id} "
+    print(f"  S-04: Persisted {len(rows)} violation(s) for dev {dev_id} "
           f"(sim_run_id={sim_run_id}).")
 
 
-def run_starts_pipeline(conn: DBConnection, projection_group_id: int,
+def run_starts_pipeline(conn: DBConnection, dev_id: int,
                         sim_run_id: int, run_start_date: date,
-                        builder_splits: dict) -> list:
+                        builder_splits: dict,
+                        build_lag_curves: dict,
+                        rng: random.Random) -> list:
     """
-    Run all 12 starts pipeline modules in order for one projection group.
-    Coordinator calls this once per PG per iteration.
+    Run all 12 starts pipeline modules in order for one development.
+    Coordinator calls this once per dev per iteration.
     Returns temp_lots list.
     """
     # S-01
-    snapshot = lot_loader(conn, projection_group_id)
+    snapshot = lot_loader(conn, dev_id)
 
     # S-02
     snapshot = date_actualizer(conn, snapshot)
 
     # S-03 (load phase delivery dates for no-anchor fallback, Scenario 7)
-    phase_delivery_dates = _load_phase_delivery_dates(conn, projection_group_id)
+    phase_delivery_dates = _load_phase_delivery_dates(conn, dev_id)
     snapshot = gap_fill_engine(snapshot, phase_delivery_dates)
 
     # S-04
     snapshot, violations, has_violations = chronology_validator(snapshot)
     if has_violations:
         vcount = len(violations) if hasattr(violations, '__len__') else violations.shape[0]
-        print(f"  WARNING: {vcount} chronology violations in PG {projection_group_id}. Run continues.")
-    _persist_violations(conn, violations, projection_group_id, sim_run_id)
+        print(f"  WARNING: {vcount} chronology violations in dev {dev_id}. Run continues.")
+    _persist_violations(conn, violations, dev_id, sim_run_id)
 
     # S-05
-    snapshot, residual_gaps = takedown_engine(conn, snapshot, projection_group_id)
+    snapshot, residual_gaps = takedown_engine(conn, snapshot, dev_id)
 
     # S-06
-    demand_series, needs_config = demand_generator(conn, projection_group_id, run_start_date)
+    demand_series, needs_config = demand_generator(conn, dev_id, run_start_date)
     if needs_config:
-        print(f"  WARNING: PG {projection_group_id} has no sim_projection_params. No demand generated.")
+        print(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
         demand_series = []
 
     # S-07 through S-0820: kernel planning pass
     frozen = build_frozen_input(
-        conn, projection_group_id, snapshot, demand_series, sim_run_id
+        conn, dev_id, snapshot, demand_series, sim_run_id
     )
 
     proposal = plan(frozen)
@@ -258,8 +266,8 @@ def run_starts_pipeline(conn: DBConnection, projection_group_id: int,
         for w in proposal.warnings:
             print(f"  {w}")
 
-    # Resume shell — S-0900 receives proposal.temp_lots
-    temp_lots = proposal.temp_lots
+    # Apply empirical build lag curves to temp lots (replaces constant lags)
+    temp_lots = _apply_build_lag_curves(proposal.temp_lots, build_lag_curves, rng)
 
     # S-09
     temp_lots = builder_assignment(temp_lots, builder_splits)
@@ -268,7 +276,7 @@ def run_starts_pipeline(conn: DBConnection, projection_group_id: int,
     demand_derived_date_writer(conn, temp_lots)
 
     # S-11
-    persistence_writer(conn, temp_lots, projection_group_id, sim_run_id,
+    persistence_writer(conn, temp_lots, dev_id, sim_run_id,
                        _proposal=proposal)
 
     # S-12
@@ -280,7 +288,7 @@ def run_starts_pipeline(conn: DBConnection, projection_group_id: int,
 def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
     """
     Run all 8 supply pipeline modules in order for the entitlement group.
-    Returns (post_run_phases dict, affected_pg_ids list).
+    Returns (post_run_phases dict, affected_dev_ids list).
     """
     # Snapshot pre-run delivery dates -- scoped to phases in this ent_group
     pre_df = conn.read_df(f"""
@@ -351,9 +359,9 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
     """)
     post_run_phases = {int(r["phase_id"]): r["date_dev_projected"]
                        for _, r in post_df.iterrows()}
-    affected_pgs = sync_flag_writer(conn, pre_run_phases, post_run_phases)
+    affected_devs = sync_flag_writer(conn, pre_run_phases, post_run_phases)
 
-    return post_run_phases, affected_pgs
+    return post_run_phases, affected_devs
 
 
 def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
@@ -368,24 +376,29 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
     sim_run_id = int(date.today().strftime("%Y%m%d"))
 
     with DBConnection() as conn:
-        # Get all projection groups for this entitlement group
-        pg_df = conn.read_df(f"""
-            SELECT DISTINCT dpg.projection_group_id
-            FROM sim_ent_group_developments segd
-            JOIN dim_projection_groups dpg ON segd.dev_id = dpg.dev_id
-            WHERE segd.ent_group_id = {ent_group_id}
+        # Get all developments for this entitlement group
+        dev_df = conn.read_df(f"""
+            SELECT dev_id
+            FROM sim_ent_group_developments
+            WHERE ent_group_id = {ent_group_id}
+            ORDER BY dev_id
         """)
 
-        if pg_df.empty:
-            print(f"No projection groups found for ent_group_id={ent_group_id}. Aborting.")
+        if dev_df.empty:
+            print(f"No developments found for ent_group_id={ent_group_id}. Aborting.")
             return 0
 
-        projection_group_ids = [int(r) for r in pg_df["projection_group_id"]]
+        dev_ids = [int(r) for r in dev_df["dev_id"]]
         print(f"Convergence coordinator: ent_group_id={ent_group_id}, "
-              f"{len(projection_group_ids)} projection groups: {projection_group_ids}")
+              f"{len(dev_ids)} development(s): {dev_ids}")
 
         # Load shared config once (does not change per iteration)
         builder_splits = _load_builder_splits(conn)
+        build_lag_curves = _load_build_lag_curves(conn)
+
+        # Seeded RNG: sim_run_id is date-based (YYYYMMDD), giving reproducibility
+        # within a day. Each ent_group run gets its own seed.
+        rng = random.Random(sim_run_id * 1000 + ent_group_id)
 
         for iteration in range(1, max_iterations + 1):
             print(f"\n--- Iteration {iteration} ---")
@@ -399,15 +412,15 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
             pre_iter_dates = {int(r["delivery_event_id"]): r["date_dev_projected"]
                               for _, r in pre_df.iterrows()}
 
-            # Step 1: Run starts pipeline for ALL projection groups
-            for pg_id in projection_group_ids:
-                print(f"  Running starts pipeline for PG {pg_id}...")
-                run_starts_pipeline(conn, pg_id, sim_run_id, run_start_date,
-                                    builder_splits)
+            # Step 1: Run starts pipeline for ALL developments
+            for dev_id in dev_ids:
+                print(f"  Running starts pipeline for dev {dev_id}...")
+                run_starts_pipeline(conn, dev_id, sim_run_id, run_start_date,
+                                    builder_splits, build_lag_curves, rng)
 
             # Step 2: Run supply pipeline
             print(f"  Running supply pipeline for ent_group_id={ent_group_id}...")
-            _, affected_pgs = run_supply_pipeline(conn, ent_group_id)
+            _, affected_devs = run_supply_pipeline(conn, ent_group_id)
 
             # Step 3: Check if any delivery event projected dates changed
             post_df = conn.read_df(f"""

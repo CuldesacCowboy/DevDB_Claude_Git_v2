@@ -226,12 +226,9 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         SELECT MAX(sl.date_cls) AS sellout_date
         FROM sim_lots sl
         WHERE sl.lot_source = 'sim'
-          AND sl.projection_group_id IN (
-              SELECT DISTINCT dpg.projection_group_id
-              FROM dim_projection_groups dpg
-              JOIN sim_ent_group_developments egd
-                   ON egd.dev_id = dpg.dev_id
-              WHERE egd.ent_group_id = {ent_group_id}
+          AND sl.dev_id IN (
+              SELECT dev_id FROM sim_ent_group_developments
+              WHERE ent_group_id = {ent_group_id}
           )
     """)
     import pandas as pd
@@ -287,13 +284,12 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # ------------------------------------------------------------------
     phase_ids_str = ", ".join(str(p["phase_id"]) for p in undelivered)
 
-    # Delivery window is ent-group level (D-135); annual_starts_target is still per-PG.
+    # Delivery window is ent-group level (D-135); annual_starts_target is per-dev.
     pg_annual_df = conn.read_df(f"""
-        SELECT DISTINCT l.phase_id, pp.annual_starts_target
-        FROM sim_lots l
-        JOIN sim_projection_params pp
-             ON pp.projection_group_id = l.projection_group_id
-        WHERE l.phase_id IN ({phase_ids_str})
+        SELECT DISTINCT sdp.phase_id, sdvp.annual_starts_target
+        FROM sim_dev_phases sdp
+        JOIN sim_dev_params sdvp ON sdvp.dev_id = sdp.dev_id
+        WHERE sdp.phase_id IN ({phase_ids_str})
     """)
 
     # All phases share the ent-group-level window (D-135)
@@ -330,26 +326,19 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     if locked_phase_ids:
         locked_ids_str = ", ".join(str(p) for p in locked_phase_ids)
 
-        # Per-phase: delivery date, projected_count, and annual_starts_target from PG.
-        # Use a DISTINCT subquery on sim_lots to get one projection_group_id per
-        # phase — avoids inflating projected_count by fanning out across every lot row.
+        # Per-phase: delivery date, projected_count, and annual_starts_target from dev params.
         locked_phase_df = conn.read_df(f"""
             SELECT sdp.phase_id,
                    sdp.dev_id,
                    sde.date_dev_actual,
                    sps.projected_count,
-                   pp.annual_starts_target
+                   sdvp.annual_starts_target
             FROM sim_delivery_events sde
             JOIN sim_delivery_event_phases dep
                  ON sde.delivery_event_id = dep.delivery_event_id
             JOIN sim_dev_phases sdp ON dep.phase_id = sdp.phase_id
             JOIN sim_phase_product_splits sps ON sps.phase_id = sdp.phase_id
-            JOIN (
-                SELECT DISTINCT phase_id, projection_group_id
-                FROM sim_lots
-            ) phase_pg ON phase_pg.phase_id = sdp.phase_id
-            JOIN sim_projection_params pp
-                 ON pp.projection_group_id = phase_pg.projection_group_id
+            JOIN sim_dev_params sdvp ON sdvp.dev_id = sdp.dev_id
             WHERE sde.ent_group_id = {ent_group_id}
               AND sde.date_dev_actual IS NOT NULL
         """)

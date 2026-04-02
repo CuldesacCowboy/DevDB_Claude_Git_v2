@@ -1,10 +1,10 @@
 # s0600_demand_generator.py
-# S-06: Compute monthly starts demand series from projection group params.
+# S-06: Compute monthly starts demand series from development params.
 #
 # Owns:     Translating annual_starts_target + seasonal weights into monthly
 #           demand series. Applying max_starts_per_month cap.
 # Not Own:  Reading or modifying lot data. Determining supply availability.
-# Inputs:   sim_projection_params (via conn), run_start_date, projection_group_id.
+# Inputs:   sim_dev_params (via conn), run_start_date, dev_id.
 # Outputs:  DataFrame [year, month, slots] -- integer slots summing exactly to
 #           available_capacity, or (empty DataFrame, True) if no config found.
 # Design:   Vectorized. No loops. No carry-forward. Integers only.
@@ -21,20 +21,20 @@ SEASONAL_WEIGHTS_BALANCED_2YR = {
 }
 
 
-def demand_generator(conn: DBConnection, projection_group_id: int,
+def demand_generator(conn: DBConnection, dev_id: int,
                      run_start_date, horizon_months: int = 360):
     """
-    Generate monthly demand DataFrame for a projection group.
+    Generate monthly demand DataFrame for a development.
     Returns (demand_df, needs_config).
       demand_df:    DataFrame [year, month, slots] -- integers, sum == available_capacity.
-      needs_config: True if no sim_projection_params row found.
+      needs_config: True if no sim_dev_params row found.
     """
     from dateutil.relativedelta import relativedelta
 
     params_df = conn.read_df(f"""
         SELECT annual_starts_target, max_starts_per_month, seasonal_weight_set
-        FROM sim_projection_params
-        WHERE projection_group_id = {projection_group_id}
+        FROM sim_dev_params
+        WHERE dev_id = {dev_id}
         LIMIT 1
     """)
 
@@ -48,8 +48,8 @@ def demand_generator(conn: DBConnection, projection_group_id: int,
 
     if weight_set != "balanced_2yr":
         raise ValueError(
-            f"PG {projection_group_id}: seasonal_weight_set='{weight_set}' is not supported. "
-            f"Only 'balanced_2yr' is implemented. Update sim_projection_params."
+            f"Dev {dev_id}: seasonal_weight_set='{weight_set}' is not supported. "
+            f"Only 'balanced_2yr' is implemented. Update sim_dev_params."
         )
 
     # Step 1: available_capacity = total planned lots minus all real lots.
@@ -64,22 +64,19 @@ def demand_generator(conn: DBConnection, projection_group_id: int,
             COALESCE((
                 SELECT COUNT(*)
                 FROM sim_lots
-                WHERE projection_group_id = {projection_group_id}
+                WHERE dev_id = {dev_id}
                   AND lot_source = 'real'
             ), 0) AS real_lots
         FROM sim_phase_product_splits sps
         JOIN sim_dev_phases sdp ON sps.phase_id = sdp.phase_id
-        WHERE sdp.dev_id = (
-            SELECT dev_id FROM dim_projection_groups
-            WHERE projection_group_id = {projection_group_id}
-        )
+        WHERE sdp.dev_id = {dev_id}
     """)
     total_capacity     = int(avail_df.iloc[0]["total_capacity"])
     real_lots          = int(avail_df.iloc[0]["real_lots"])
     available_capacity = max(0, total_capacity - real_lots)
 
     if available_capacity == 0:
-        print(f"S-06: PG {projection_group_id} available_capacity=0. No demand generated.")
+        print(f"S-06: Dev {dev_id} available_capacity=0. No demand generated.")
         return pd.DataFrame(columns=["year", "month", "slots"]), False
 
     # Step 2a: Demand starts no earlier than the last locked delivery date.
@@ -88,10 +85,8 @@ def demand_generator(conn: DBConnection, projection_group_id: int,
         FROM sim_delivery_events
         WHERE ent_group_id = (
             SELECT ent_group_id FROM sim_ent_group_developments
-            WHERE dev_id = (
-                SELECT dev_id FROM dim_projection_groups
-                WHERE projection_group_id = {projection_group_id}
-            )
+            WHERE dev_id = {dev_id}
+            LIMIT 1
         )
         AND date_dev_actual IS NOT NULL
     """)
@@ -131,7 +126,7 @@ def demand_generator(conn: DBConnection, projection_group_id: int,
     # Step 5: Drop zero-slot months to keep output lean.
     df = df[df["slots"] > 0].reset_index(drop=True)
 
-    print(f"S-06: PG {projection_group_id} demand={available_capacity} slots "
+    print(f"S-06: Dev {dev_id} demand={available_capacity} slots "
           f"across {len(df)} months "
           f"(total_capacity={total_capacity}, real_lots={real_lots}, "
           f"demand_start={demand_start}).")

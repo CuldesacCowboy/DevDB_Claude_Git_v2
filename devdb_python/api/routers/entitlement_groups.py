@@ -204,8 +204,8 @@ def ent_group_split_check(ent_group_id: int, conn=Depends(get_db_conn)):
 @router.get("/{ent_group_id}/param-check", response_model=list[dict])
 def ent_group_param_check(ent_group_id: int, conn=Depends(get_db_conn)):
     """
-    Return projection groups in this entitlement group that have missing or stale
-    sim_projection_params. Stale = updated_at older than 180 days, or row absent.
+    Return developments in this entitlement group that have missing or stale
+    sim_dev_params. Stale = updated_at older than 180 days, or row absent.
     Used by SimulationView to warn before running.
     """
     import psycopg2.extras
@@ -214,35 +214,34 @@ def ent_group_param_check(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.execute(
             """
             SELECT
-                dpg.projection_group_id,
+                segd.dev_id,
                 d.dev_name,
-                spp.annual_starts_target,
-                spp.updated_at,
+                sdp.annual_starts_target,
+                sdp.updated_at,
                 CASE
-                    WHEN spp.projection_group_id IS NULL THEN 'missing'
-                    WHEN spp.updated_at < NOW() - INTERVAL '180 days' THEN 'stale'
+                    WHEN sdp.dev_id IS NULL THEN 'missing'
+                    WHEN sdp.updated_at < NOW() - INTERVAL '180 days' THEN 'stale'
                     ELSE 'ok'
                 END AS status
-            FROM dim_projection_groups dpg
-            JOIN sim_ent_group_developments segd ON dpg.dev_id = segd.dev_id
-            JOIN developments d ON d.dev_id = dpg.dev_id
-            LEFT JOIN sim_projection_params spp ON spp.projection_group_id = dpg.projection_group_id
+            FROM sim_ent_group_developments segd
+            JOIN developments d ON d.dev_id = segd.dev_id
+            LEFT JOIN sim_dev_params sdp ON sdp.dev_id = segd.dev_id
             WHERE segd.ent_group_id = %s
               AND (
-                  spp.projection_group_id IS NULL
-                  OR spp.updated_at < NOW() - INTERVAL '180 days'
+                  sdp.dev_id IS NULL
+                  OR sdp.updated_at < NOW() - INTERVAL '180 days'
               )
-            ORDER BY d.dev_name, dpg.projection_group_id
+            ORDER BY d.dev_name
             """,
             (ent_group_id,),
         )
         return [
             {
-                "projection_group_id": r["projection_group_id"],
-                "dev_name":            r["dev_name"],
+                "dev_id":               r["dev_id"],
+                "dev_name":             r["dev_name"],
                 "annual_starts_target": r["annual_starts_target"],
-                "updated_at":          r["updated_at"].isoformat() if r["updated_at"] else None,
-                "status":              r["status"],
+                "updated_at":           r["updated_at"].isoformat() if r["updated_at"] else None,
+                "status":               r["status"],
             }
             for r in cur.fetchall()
         ]
@@ -373,7 +372,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
         )
         splits_raw = list(cur.fetchall())
 
-        # Load unassigned real lots for this ent_group (phase_id IS NULL, linked via PG → dev_id)
+        # Load unassigned real lots for this ent_group (phase_id IS NULL)
         cur.execute(
             f"""
             SELECT
@@ -387,11 +386,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
             FROM sim_lots
             WHERE lot_source = 'real'
               AND phase_id IS NULL
-              AND projection_group_id IN (
-                  SELECT projection_group_id
-                  FROM dim_projection_groups
-                  WHERE dev_id = ANY(%s)
-              )
+              AND dev_id = ANY(%s)
             ORDER BY lot_number ASC NULLS LAST
             """,
             (dev_ids,),

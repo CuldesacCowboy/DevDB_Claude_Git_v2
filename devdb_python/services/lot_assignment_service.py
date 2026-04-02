@@ -149,7 +149,7 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         cur.execute(
             """
             SELECT lot_id, phase_id, lot_source, lot_number, lot_type_id,
-                   projection_group_id, date_str, date_cmp, date_cls,
+                   dev_id, date_str, date_cmp, date_cls,
                    building_group_id
             FROM sim_lots
             WHERE lot_id = %s
@@ -225,7 +225,7 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         if building_group_id is not None:
             cur.execute(
                 """
-                SELECT lot_id, lot_number, lot_type_id, projection_group_id,
+                SELECT lot_id, lot_number, lot_type_id, dev_id,
                        phase_id, date_str, date_cmp, date_cls
                 FROM sim_lots
                 WHERE building_group_id = %s
@@ -282,30 +282,6 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
         all_from_phase_ids.discard(None)
         for pid in all_from_phase_ids | {target_phase_id}:
             _maintain_splits(cur, pid)
-
-        # ----------------------------------------------------------------
-        # Step 3 — Set needs_rerun across all affected phases
-        # ----------------------------------------------------------------
-        phase_filter = list(all_from_phase_ids | {target_phase_id})
-        cur.execute(
-            """
-            SELECT DISTINCT projection_group_id
-            FROM sim_lots
-            WHERE phase_id = ANY(%s)
-            """,
-            (phase_filter,),
-        )
-        affected_pg_ids = [int(r["projection_group_id"]) for r in cur.fetchall()]
-
-        if affected_pg_ids:
-            cur.execute(
-                """
-                UPDATE dim_projection_groups
-                SET needs_rerun = true
-                WHERE projection_group_id = ANY(%s)
-                """,
-                (affected_pg_ids,),
-            )
 
         # ----------------------------------------------------------------
         # Step 6 — Audit log (one entry per moved lot)
@@ -614,7 +590,7 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
         if building_group_id is not None:
             cur.execute(
                 """
-                SELECT lot_id, lot_number, lot_type_id, projection_group_id,
+                SELECT lot_id, lot_number, lot_type_id, dev_id,
                        phase_id, date_str, date_cmp, date_cls
                 FROM sim_lots
                 WHERE building_group_id = %s
@@ -665,39 +641,6 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
         all_from_phase_ids = {lot["phase_id"]} | {s["phase_id"] for s in sibling_lots if s["phase_id"]}
         for pid in all_from_phase_ids:
             _maintain_splits(cur, pid)
-
-        # ----------------------------------------------------------------
-        # Step 4 — Set needs_rerun
-        # ----------------------------------------------------------------
-        cur.execute(
-            """
-            SELECT DISTINCT projection_group_id
-            FROM sim_lots
-            WHERE phase_id = ANY(%s)
-            """,
-            (list(all_from_phase_ids),),
-        )
-        affected_pg_ids = [int(r["projection_group_id"]) for r in cur.fetchall()]
-
-        # Include PGs from all moved lots (may be last in their phases)
-        cur.execute(
-            "SELECT DISTINCT projection_group_id FROM sim_lots WHERE lot_id = ANY(%s)",
-            (all_lot_ids,),
-        )
-        for r in cur.fetchall():
-            pg = int(r["projection_group_id"])
-            if pg not in affected_pg_ids:
-                affected_pg_ids.append(pg)
-
-        if affected_pg_ids:
-            cur.execute(
-                """
-                UPDATE dim_projection_groups
-                SET needs_rerun = true
-                WHERE projection_group_id = ANY(%s)
-                """,
-                (affected_pg_ids,),
-            )
 
         # ----------------------------------------------------------------
         # Step 5 — Audit log (one entry per unassigned lot)
