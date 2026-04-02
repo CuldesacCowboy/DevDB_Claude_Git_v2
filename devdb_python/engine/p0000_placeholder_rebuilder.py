@@ -95,6 +95,16 @@ def _first_window_month_in_year(year: int, window_start: int) -> date:
     return date(year, window_start, 1)
 
 
+def _snap_to_window(d: date, ws: int, we: int) -> date:
+    """Latest first-of-month within [ws, we] that is <= d. If d.month < ws, go to prior year we."""
+    m = d.month
+    if m > we:
+        m = we
+    if m < ws:
+        return date(d.year - 1, we, 1)
+    return date(d.year, m, 1)
+
+
 # ---------------------------------------------------------------------------
 # Main module
 # ---------------------------------------------------------------------------
@@ -311,24 +321,82 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         p["window_end"] = we
 
     # ------------------------------------------------------------------
-    # Step 4b: Compute latest viable delivery date per dev from locked
-    #          event inventory exhaustion.
+    # Step 4b: Compute latest viable delivery date per dev.
     #
-    # Each locked phase depletes independently at its own PG's pace.
-    # For each locked phase:
-    #   monthly_pace    = annual_starts_target for that phase's PG / 12
-    #   exhaustion_date = date_dev_actual + ceil(projected_count / monthly_pace) months
-    #   latest_viable   = snap_to_window(exhaustion - 1 month)
+    # Primary signal: actual projected D-balance from sim_lots.
+    #   Count lots in D status (date_dev set, not yet taken down) per dev
+    #   per future month. Find the first month where d_end < min_buffer.
+    #   latest_viable = snap_to_window(violation_month - 1 month).
+    #   This is the authoritative signal when sim lots exist.
     #
-    # dev_latest_viable[dev_id] = earliest latest_viable across all locked
-    # phases for that dev (most urgent phase drives the deadline).
+    # Fallback: locked phase projected_count / pace formula.
+    #   Used only for devs where the D-balance query found no violation
+    #   (e.g., first run with no sim lots yet).
+    #
+    # dev_latest_viable[dev_id] = most urgent deadline across both signals.
     # ------------------------------------------------------------------
     dev_latest_viable = {}  # dev_id -> date
 
-    if locked_phase_ids:
-        locked_ids_str = ", ".join(str(p) for p in locked_phase_ids)
+    ws_default = window_start_default
+    we_default = window_end_default
 
-        # Per-phase: delivery date, projected_count, and annual_starts_target from dev params.
+    # --- Primary: D-balance projection from sim_lots ---
+    if min_buffer > 0:
+        all_dev_ids_for_query = [int(d) for d in all_phases_df["dev_id"].unique()]
+        dev_ids_str = ", ".join(str(d) for d in all_dev_ids_for_query)
+
+        if dev_ids_str:
+            d_proj_df = conn.read_df(f"""
+                WITH future AS (
+                    SELECT generate_series(
+                        DATE_TRUNC('MONTH', CURRENT_DATE)::DATE,
+                        (DATE_TRUNC('MONTH', CURRENT_DATE) + INTERVAL '6 years')::DATE,
+                        INTERVAL '1 month'
+                    )::DATE AS m
+                )
+                SELECT sl.dev_id, f.m AS calendar_month,
+                       COUNT(sl.lot_id) AS d_end
+                FROM future f
+                CROSS JOIN sim_lots sl
+                WHERE sl.dev_id IN ({dev_ids_str})
+                  AND sl.date_dev IS NOT NULL
+                  AND sl.date_dev <= f.m
+                  AND (sl.date_td IS NULL OR sl.date_td > f.m)
+                  AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
+                GROUP BY sl.dev_id, f.m
+                ORDER BY sl.dev_id, f.m
+            """)
+
+            if not d_proj_df.empty:
+                import pandas as pd  # noqa: F811
+                for dev_id_val in d_proj_df["dev_id"].unique():
+                    dev_rows = (
+                        d_proj_df[d_proj_df["dev_id"] == dev_id_val]
+                        .sort_values("calendar_month")
+                    )
+                    violation_month = None
+                    for _, dr in dev_rows.iterrows():
+                        m = dr["calendar_month"]
+                        m = m.date() if hasattr(m, "date") else m
+                        if m < today_first:
+                            continue  # ignore past months
+                        if int(dr["d_end"]) < min_buffer:
+                            violation_month = m
+                            break
+                    if violation_month is not None:
+                        prev_month = _add_months(violation_month, -1)
+                        lv = _snap_to_window(prev_month, ws_default, we_default)
+                        if lv < today_first:
+                            lv = _next_window_month_from(today_first, ws_default, we_default)
+                        dev_id_int = int(dev_id_val)
+                        if dev_id_int not in dev_latest_viable or lv < dev_latest_viable[dev_id_int]:
+                            dev_latest_viable[dev_id_int] = lv
+                        print(f"P-00: Dev {dev_id_int}: D-balance drops below "
+                              f"{min_buffer} in {violation_month}, lv={lv}")
+
+    # --- Fallback: locked phase projected_count / pace formula ---
+    # Only applied for devs where D-balance found no violation.
+    if locked_phase_ids:
         locked_phase_df = conn.read_df(f"""
             SELECT sdp.phase_id,
                    sdp.dev_id,
@@ -348,6 +416,9 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         for _, r in locked_phase_df.iterrows():
             dev_id_r = int(r["dev_id"])
             ph_id_r  = int(r["phase_id"])
+            # Skip if D-balance already provided a deadline for this dev
+            if dev_id_r in dev_latest_viable:
+                continue
             d = r["date_dev_actual"]
             d = d.date() if hasattr(d, "date") else d
             lot_count = int(r["projected_count"])
@@ -355,26 +426,18 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             if annual_target is None or float(annual_target) <= 0:
                 continue
             monthly_pace = float(annual_target) / 12.0
-            # Apply min_buffer: schedule next delivery when 'min_buffer' lots remain,
-            # not at full exhaustion. Effective lot count for scheduling = lot_count - buffer.
             effective_lot_count = max(0, lot_count - min_buffer)
             months_to_exhaust = math.ceil(effective_lot_count / monthly_pace) if effective_lot_count > 0 else 0
             exhaustion_date = _add_months(d.replace(day=1), months_to_exhaust)
             lv = _add_months(exhaustion_date, -1)
-            # Skip phases whose inventory is already exhausted
             if lv < today_first:
-                print(f"P-00: Dev {dev_id_r} phase {ph_id_r}: lot_count={lot_count}, "
-                      f"buffer={min_buffer}, effective={effective_lot_count}, "
-                      f"pace={monthly_pace:.1f}/mo, exhausts={exhaustion_date}, "
-                      f"lv={lv} (expired — skipped)")
+                print(f"P-00: Dev {dev_id_r} phase {ph_id_r}: fallback lv={lv} (expired — skipped)")
                 continue
-            # dev_latest_viable = earliest non-expired lv across locked phases (most urgent)
             if dev_id_r not in dev_latest_viable or lv < dev_latest_viable[dev_id_r]:
                 dev_latest_viable[dev_id_r] = lv
-            print(f"P-00: Dev {dev_id_r} phase {ph_id_r}: lot_count={lot_count}, "
-                  f"buffer={min_buffer}, effective={effective_lot_count}, "
-                  f"pace={monthly_pace:.1f}/mo, exhausts={exhaustion_date}, "
-                  f"lv={lv}")
+            print(f"P-00: Dev {dev_id_r} phase {ph_id_r}: fallback formula "
+                  f"lot_count={lot_count}, buffer={min_buffer}, "
+                  f"pace={monthly_pace:.1f}/mo, lv={lv}")
 
     # ------------------------------------------------------------------
     # Step 5: Schedule delivery events
@@ -435,16 +498,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         return d
 
     # Build per-dev state for cross-dev scheduling
-    from collections import OrderedDict
-
-    def _snap_to_window(d, ws, we):
-        """Latest window month <= d. If d.month < ws, go to prior year we."""
-        m = d.month
-        if m > we:
-            m = we
-        if m < ws:
-            return date(d.year - 1, we, 1)
-        return date(d.year, m, 1)
+    from collections import OrderedDict  # noqa: F401
 
     # Group undelivered phases by dev, sorted by sequence_number
     dev_phases = defaultdict(list)
