@@ -72,7 +72,8 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
                 END AS utilization_pct
             FROM sim_dev_phases sdp
             JOIN sim_ent_group_developments segd ON sdp.dev_id = segd.dev_id
-            JOIN developments d ON d.dev_id = sdp.dev_id
+            JOIN dim_development dd ON dd.development_id = sdp.dev_id
+            JOIN developments d ON d.marks_code = dd.dev_code2
             JOIN sim_legal_instruments sli ON sdp.instrument_id = sli.instrument_id
             LEFT JOIN sim_phase_product_splits sps ON sps.phase_id = sdp.phase_id
             LEFT JOIN sim_lots sl ON sl.phase_id = sdp.phase_id
@@ -119,7 +120,8 @@ def _query_ledger_by_dev(conn, ent_group_id: int) -> list:
                 v.u_end, v.uc_end, v.c_end,
                 v.closed_cumulative
             FROM v_sim_ledger_monthly v
-            JOIN developments d ON d.dev_id = v.dev_id
+            JOIN dim_development dd ON dd.development_id = v.dev_id
+            JOIN developments d ON d.marks_code = dd.dev_code2
             WHERE v.dev_id IN (
                 SELECT dev_id FROM sim_ent_group_developments
                 WHERE ent_group_id = %s
