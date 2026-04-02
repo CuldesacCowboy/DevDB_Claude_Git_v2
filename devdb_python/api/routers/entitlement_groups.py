@@ -204,9 +204,8 @@ def ent_group_split_check(ent_group_id: int, conn=Depends(get_db_conn)):
 @router.get("/{ent_group_id}/param-check", response_model=list[dict])
 def ent_group_param_check(ent_group_id: int, conn=Depends(get_db_conn)):
     """
-    Return developments in this entitlement group that have missing or stale
-    sim_dev_params. Stale = updated_at older than 180 days, or row absent.
-    Used by SimulationView to warn before running.
+    Return ALL developments in this entitlement group with their current
+    sim_dev_params. status = 'ok' | 'missing' | 'stale' (stale = >180 days).
     """
     import psycopg2.extras
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -228,10 +227,6 @@ def ent_group_param_check(ent_group_id: int, conn=Depends(get_db_conn)):
             JOIN developments d ON d.marks_code = dd.dev_code2
             LEFT JOIN sim_dev_params sdp ON sdp.dev_id = segd.dev_id
             WHERE segd.ent_group_id = %s
-              AND (
-                  sdp.dev_id IS NULL
-                  OR sdp.updated_at < NOW() - INTERVAL '180 days'
-              )
             ORDER BY d.dev_name
             """,
             (ent_group_id,),
