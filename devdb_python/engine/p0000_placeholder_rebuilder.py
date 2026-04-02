@@ -386,18 +386,43 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 ORDER BY devs.dev_id, f.m
             """)
 
+            # Per-dev: last locked delivery date — violations before this are
+            # pre-delivery zeros, not real inventory shortfalls.
+            last_locked_per_dev: dict[int, date] = {}
+            if locked_phase_ids:
+                llpd_df = conn.read_df(f"""
+                    SELECT sdp.dev_id,
+                           MAX(sde.date_dev_actual) AS last_locked
+                    FROM sim_delivery_events sde
+                    JOIN sim_delivery_event_phases dep
+                         ON dep.delivery_event_id = sde.delivery_event_id
+                    JOIN sim_dev_phases sdp ON sdp.phase_id = dep.phase_id
+                    WHERE sde.ent_group_id = {ent_group_id}
+                      AND sde.date_dev_actual IS NOT NULL
+                    GROUP BY sdp.dev_id
+                """)
+                for _, llr in llpd_df.iterrows():
+                    d_raw = llr["last_locked"]
+                    if d_raw is not None:
+                        d_val = d_raw.date() if hasattr(d_raw, "date") else d_raw
+                        last_locked_per_dev[int(llr["dev_id"])] = d_val
+
             if not d_proj_df.empty:
                 for dev_id_val in d_proj_df["dev_id"].unique():
                     dev_rows = (
                         d_proj_df[d_proj_df["dev_id"] == dev_id_val]
                         .sort_values("calendar_month")
                     )
+                    dev_id_int = int(dev_id_val)
+                    # Only scan months after the last locked delivery for this dev
+                    # (pre-delivery zeros are expected and not a scheduling signal)
+                    scan_floor = last_locked_per_dev.get(dev_id_int, today_first)
                     violation_month = None
                     for _, dr in dev_rows.iterrows():
                         m = dr["calendar_month"]
                         m = m.date() if hasattr(m, "date") else m
-                        if m < today_first:
-                            continue  # ignore past months
+                        if m <= scan_floor:
+                            continue  # skip months at or before last delivery
                         if int(dr["d_end"]) < min_buffer:
                             violation_month = m
                             break
@@ -406,7 +431,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                         lv = _snap_to_window(prev_month, ws_default, we_default)
                         if lv < today_first:
                             lv = _next_window_month_from(today_first, ws_default, we_default)
-                        dev_id_int = int(dev_id_val)
                         if dev_id_int not in dev_latest_viable or lv < dev_latest_viable[dev_id_int]:
                             dev_latest_viable[dev_id_int] = lv
                         print(f"P-00: Dev {dev_id_int}: D-balance drops below "
