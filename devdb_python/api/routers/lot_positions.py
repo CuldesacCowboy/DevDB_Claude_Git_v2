@@ -6,11 +6,11 @@
 
 from typing import Optional
 
-import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.deps import get_db_conn
+from api.db import dict_cursor
 
 router = APIRouter(prefix="/lot-positions", tags=["lot-positions"])
 
@@ -115,7 +115,7 @@ def _split_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
 
 @router.get("/plan/{plan_id}")
 def get_lot_positions(plan_id: int, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         ent_group_id = _ent_group_id_for_plan(cur, plan_id)
         rows = _fetch_lots(cur, plan_id, ent_group_id)
@@ -129,7 +129,7 @@ def get_lot_positions(plan_id: int, conn=Depends(get_db_conn)):
 def save_lot_positions(
     plan_id: int, body: SavePositionsRequest, conn=Depends(get_db_conn)
 ):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         ent_group_id = _ent_group_id_for_plan(cur, plan_id)
 

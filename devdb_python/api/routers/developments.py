@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.deps import get_db_conn
+from api.db import dict_cursor
 from api.models.lot_models import DevLotPhaseViewResponse
 from api.sql_fragments import lot_status_sql
 
@@ -82,8 +83,7 @@ def _row_to_dict(r) -> dict:
 
 @router.get("", response_model=list[dict])
 def list_developments(conn=Depends(get_db_conn)):
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(_SELECT_SQL + " ORDER BY d.dev_name ASC")
         return [_row_to_dict(r) for r in cur.fetchall()]
@@ -97,11 +97,10 @@ def list_developments(conn=Depends(get_db_conn)):
 
 @router.post("", response_model=dict, status_code=201)
 def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)):
-    import psycopg2.extras
     name = (body.dev_name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="dev_name is required")
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             """
@@ -139,8 +138,7 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
 
 @router.get("/{dev_id}", response_model=dict)
 def get_development(dev_id: int, conn=Depends(get_db_conn)):
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(_SELECT_SQL + " WHERE d.dev_id = %s", (dev_id,))
         row = cur.fetchone()
@@ -157,7 +155,6 @@ def get_development(dev_id: int, conn=Depends(get_db_conn)):
 
 @router.patch("/{dev_id}", response_model=dict)
 def patch_development(dev_id: int, body: DevelopmentPatchRequest, conn=Depends(get_db_conn)):
-    import psycopg2.extras
 
     # Build SET clause from non-None fields only
     updatable: dict[str, Any] = {}
@@ -186,7 +183,7 @@ def patch_development(dev_id: int, body: DevelopmentPatchRequest, conn=Depends(g
     set_clause = ", ".join(f"{col} = %s" for col in updatable)
     values = list(updatable.values()) + [dev_id]
 
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(f"UPDATE developments SET {set_clause}, updated_at = NOW() WHERE dev_id = %s", values)
         if cur.rowcount == 0:
@@ -217,8 +214,7 @@ class SimParamsPutRequest(BaseModel):
 
 @router.put("/{dev_id}/sim-params", response_model=dict)
 def upsert_sim_params(dev_id: int, body: SimParamsPutRequest, conn=Depends(get_db_conn)):
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # dev_id here is dim_development.development_id (same space used by
         # sim_ent_group_developments and sim_dev_phases), NOT developments.dev_id.
@@ -270,9 +266,8 @@ _STATUS_SQL = lot_status_sql()
 
 @router.get("/{dev_id}/lot-phase-view", response_model=DevLotPhaseViewResponse)
 def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
-    import psycopg2.extras
 
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # Verify dev exists (at least one phase)
         cur.execute(

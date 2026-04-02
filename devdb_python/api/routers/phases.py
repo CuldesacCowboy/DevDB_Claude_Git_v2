@@ -1,10 +1,10 @@
 # routers/phases.py
 # Phase management endpoints.
 
-import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from api.deps import get_db_conn
+from api.db import dict_cursor
 from api.models.phase_models import (
     PhaseCreateRequest,
     PhaseInstrumentReassignRequest,
@@ -19,8 +19,7 @@ router = APIRouter(prefix="/phases", tags=["phases"])
 @router.get("/lot-types", response_model=list[dict])
 async def list_lot_types(conn=Depends(get_db_conn)):
     """Return all lot types for the add-product-type dropdown."""
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             "SELECT lot_type_id, lot_type_short FROM ref_lot_types ORDER BY lot_type_id"
@@ -34,7 +33,7 @@ async def list_lot_types(conn=Depends(get_db_conn)):
 @router.get("/{phase_id}/product-splits", response_model=list[dict])
 async def get_product_splits(phase_id: int, conn=Depends(get_db_conn)):
     """Return all product splits for a phase with lot type labels."""
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             """
@@ -76,12 +75,11 @@ async def get_product_splits(phase_id: int, conn=Depends(get_db_conn)):
 @router.post("", response_model=dict, status_code=201)
 async def create_phase(body: PhaseCreateRequest, conn=Depends(get_db_conn)):
     """Create a new empty phase and attach it to the given instrument."""
-    import psycopg2.extras
     name = (body.phase_name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="phase_name is required")
 
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # Verify instrument exists and get its dev_id
         cur.execute(
@@ -162,8 +160,7 @@ async def delete_lot_type_from_phase(
     Requires projected_count = 0 AND actual (real lots) = 0.
     Returns 204 No Content on success.
     """
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # 1. Verify the lot type exists on this phase
         cur.execute(
@@ -236,7 +233,7 @@ async def update_lot_type_projected(
     if body.projected_count < 0:
         raise HTTPException(status_code=422, detail="projected_count must be >= 0")
 
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     cur.execute(
         "SELECT split_id FROM sim_phase_product_splits WHERE phase_id = %s AND lot_type_id = %s",
         (phase_id, lot_type_id),
@@ -287,8 +284,7 @@ async def update_lot_type_projected(
 @router.delete("/{phase_id}", response_model=dict)
 async def delete_phase(phase_id: int, conn=Depends(get_db_conn)):
     """Delete a phase: unassign all lots, remove splits, then delete the phase row."""
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # Verify phase exists and get its name for the response
         cur.execute(
@@ -343,7 +339,7 @@ async def update_phase(
     if body.projected_count is None and not body.phase_name:
         raise HTTPException(status_code=422, detail="No updatable field provided")
 
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
 
     # Handle phase_name rename
     if body.phase_name is not None:

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.deps import get_db_conn
+from api.db import dict_cursor
 from api.models.lot_models import EntGroupLotPhaseViewResponse
 from api.sql_fragments import lot_status_sql
 
@@ -51,8 +52,7 @@ router = APIRouter(prefix="/entitlement-groups", tags=["entitlement-groups"])
 
 @router.get("", response_model=list[dict])
 def list_entitlement_groups(conn=Depends(get_db_conn)):
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # r/p/t rollup per community using developments.community_id as source of truth.
         # Join path: developments → dim_development (bridge for legacy dev_id) →
@@ -106,11 +106,10 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
 
 @router.post("", response_model=dict, status_code=201)
 def create_entitlement_group(body: EntGroupCreateRequest, conn=Depends(get_db_conn)):
-    import psycopg2.extras
     name = (body.ent_group_name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="ent_group_name is required")
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute("SELECT COALESCE(MAX(ent_group_id), 0) + 1 AS new_id FROM sim_entitlement_groups")
         new_id = int(cur.fetchone()["new_id"])
@@ -129,11 +128,10 @@ def create_entitlement_group(body: EntGroupCreateRequest, conn=Depends(get_db_co
 
 @router.patch("/{ent_group_id}", response_model=dict)
 def patch_entitlement_group(ent_group_id: int, body: EntGroupPatchRequest, conn=Depends(get_db_conn)):
-    import psycopg2.extras
     name = (body.ent_group_name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="ent_group_name cannot be empty")
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             "UPDATE sim_entitlement_groups SET ent_group_name = %s WHERE ent_group_id = %s",
@@ -187,8 +185,7 @@ def ent_group_split_check(ent_group_id: int, conn=Depends(get_db_conn)):
     Return phases in this entitlement group that have no product splits configured.
     Used by SimulationView to warn before running — empty list means all phases are ready.
     """
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             """
@@ -226,8 +223,7 @@ def ent_group_param_check(ent_group_id: int, conn=Depends(get_db_conn)):
     Return ALL developments in this entitlement group with their current
     sim_dev_params. status = 'ok' | 'missing' | 'stale' (stale = >180 days).
     """
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             """
@@ -266,9 +262,8 @@ def ent_group_param_check(ent_group_id: int, conn=Depends(get_db_conn)):
 
 @router.get("/{ent_group_id}/lot-phase-view", response_model=EntGroupLotPhaseViewResponse)
 def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
-    import psycopg2.extras
 
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # Verify ent_group exists
         cur.execute(
@@ -513,8 +508,7 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
 @router.get("/{ent_group_id}/delivery-config")
 def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
     """Return delivery scheduling config and inventory floor tolerances."""
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             """
@@ -550,8 +544,7 @@ def put_delivery_config(
     conn=Depends(get_db_conn),
 ):
     """Upsert delivery scheduling config and inventory floor tolerances."""
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # Resolve legacy field
         min_d = body.min_d_count if body.min_d_count is not None else body.min_unstarted_inventory
@@ -591,8 +584,7 @@ def put_delivery_config(
 @router.get("/{ent_group_id}/ledger-config")
 def get_ledger_config(ent_group_id: int, conn=Depends(get_db_conn)):
     """Return ledger_start_date for the entitlement group."""
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             "SELECT ent_group_id, ledger_start_date FROM sim_entitlement_groups WHERE ent_group_id = %s",
@@ -616,9 +608,8 @@ def put_ledger_config(
     conn=Depends(get_db_conn),
 ):
     """Set ledger_start_date on the entitlement group."""
-    import psycopg2.extras
     from datetime import date
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         if body.ledger_start_date is not None:
             try:
@@ -653,8 +644,7 @@ def put_ledger_config(
 @router.get("/{ent_group_id}/entitlement-events")
 def list_entitlement_events(ent_group_id: int, conn=Depends(get_db_conn)):
     """List all entitlement events for an entitlement group."""
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             """
@@ -690,8 +680,7 @@ def create_entitlement_event(
     conn=Depends(get_db_conn),
 ):
     """Create a new entitlement event."""
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute("SELECT COALESCE(MAX(event_id), 0) + 1 AS next_id FROM sim_entitlement_events")
         next_id = cur.fetchone()["next_id"]
@@ -726,8 +715,7 @@ def update_entitlement_event(
     conn=Depends(get_db_conn),
 ):
     """Update fields on an entitlement event."""
-    import psycopg2.extras
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         updates = {}
         if body.dev_id is not None:        updates["dev_id"] = body.dev_id

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.deps import get_db_conn
+from api.db import dict_cursor
 from engine.coordinator import convergence_coordinator
 
 router = APIRouter(prefix="/simulations", tags=["simulations"])
@@ -37,8 +38,7 @@ def run_simulation(req: SimulationRunRequest, conn=Depends(get_db_conn)):
 
         errors: list[str] = []
         if missing_params_devs:
-            import psycopg2.extras
-            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur = dict_cursor(conn)
             try:
                 ids = list(missing_params_devs)
                 cur.execute(

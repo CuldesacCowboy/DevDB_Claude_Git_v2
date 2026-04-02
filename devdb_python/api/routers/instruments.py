@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import List
 
 from api.deps import get_db_conn
+from api.db import dict_cursor
 
 router = APIRouter(prefix="/instruments", tags=["instruments"])
 
@@ -31,7 +32,6 @@ class PhaseOrderRequest(BaseModel):
 
 @router.post("", response_model=dict, status_code=201)
 def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
-    import psycopg2.extras
 
     name = (body.instrument_name or "").strip()
     if not name:
@@ -42,7 +42,7 @@ def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
             detail=f"instrument_type must be one of: {', '.join(sorted(VALID_INSTRUMENT_TYPES))}",
         )
 
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # Resolve modern developments.dev_id → legacy dim_development.development_id.
         # sim_legal_instruments.dev_id must hold the legacy ID used by the simulation
@@ -97,11 +97,10 @@ def rename_instrument(
     conn=Depends(get_db_conn),
 ):
     """Rename a legal instrument."""
-    import psycopg2.extras
     name = (body.name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="name cannot be empty")
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             "UPDATE sim_legal_instruments SET instrument_name = %s WHERE instrument_id = %s",
@@ -128,9 +127,8 @@ def update_phase_order(
     conn=Depends(get_db_conn),
 ):
     """Persist a user-defined phase display order by writing display_order to sim_dev_phases."""
-    import psycopg2.extras
 
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         for i, phase_id in enumerate(body.phase_ids):
             cur.execute(
@@ -150,9 +148,8 @@ def update_phase_order(
 def auto_sort_phases(instrument_id: int, conn=Depends(get_db_conn)):
     """Auto-sort phases alphabetically by prefix, then numerically by ph. N suffix.
     Writes the result to display_order on sim_dev_phases and returns the ordered phase_ids."""
-    import psycopg2.extras
 
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             "SELECT phase_id, phase_name FROM sim_dev_phases WHERE instrument_id = %s",

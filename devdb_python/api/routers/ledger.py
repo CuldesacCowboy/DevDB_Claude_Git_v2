@@ -3,10 +3,10 @@
 # GET /{ent_group_id}        -- by development (summary)
 # GET /{ent_group_id}/by-dev -- by development (alias, same query)
 
-import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.deps import get_db_conn
+from api.db import dict_cursor
 from api.sql_fragments import lot_status_sql
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
@@ -46,7 +46,7 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
     utilization_pct = (real_count + sim_count) / projected_count.
     Phases with zero projected_count are returned with utilization_pct = null.
     """
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             """
@@ -105,7 +105,7 @@ def _query_ledger_by_dev(conn, ent_group_id: int) -> list:
     the spine is continuous with no gaps.  Also overlays entitlement events onto
     ent_plan and prepends a synthetic ledger_start_date row when needed.
     """
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # ── Compute date range bounds ──────────────────────────────────────────
         # Start: ledger_start_date on the group, else the earliest month in the spine
@@ -266,7 +266,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
     Status is derived from date fields (never stored).
     """
     _STATUS_SQL = lot_status_sql("sl")
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             f"""

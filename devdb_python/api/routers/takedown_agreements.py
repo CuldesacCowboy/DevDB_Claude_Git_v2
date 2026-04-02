@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api.deps import get_db_conn
+from api.db import dict_cursor
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +67,7 @@ router = APIRouter(tags=["takedown-agreements"])
 @router.get("/entitlement-groups/{ent_group_id}/tda-unassigned-lots")
 def get_tda_unassigned_lots(ent_group_id: int, conn=Depends(get_db_conn)):
     """Real lots for this community not yet in any TDA."""
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             """
@@ -98,7 +99,7 @@ def get_tda_unassigned_lots(ent_group_id: int, conn=Depends(get_db_conn)):
 
 @router.get("/entitlement-groups/{ent_group_id}/takedown-agreements")
 def list_takedown_agreements(ent_group_id: int, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # 1. Look up ent_group
         cur.execute(
@@ -177,7 +178,7 @@ def list_takedown_agreements(ent_group_id: int, conn=Depends(get_db_conn)):
 
 @router.post("/takedown-agreements")
 def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         if not body.tda_name or not body.tda_name.strip():
             raise HTTPException(status_code=422, detail="tda_name must not be empty.")
@@ -223,7 +224,7 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
 
 @router.patch("/takedown-agreements/{tda_id}")
 def rename_takedown_agreement(tda_id: int, body: RenameTdaRequest, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         name = body.tda_name.strip()
         if not name:
@@ -254,7 +255,7 @@ def rename_takedown_agreement(tda_id: int, body: RenameTdaRequest, conn=Depends(
 
 @router.get("/takedown-agreements/{tda_id}/detail")
 def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # 1. Look up TDA
         cur.execute(
@@ -427,7 +428,7 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
 
 @router.post("/takedown-agreements/{tda_id}/checkpoints")
 def create_checkpoint(tda_id: int, body: CreateCheckpointRequest, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             "SELECT tda_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
@@ -481,7 +482,7 @@ def create_checkpoint(tda_id: int, body: CreateCheckpointRequest, conn=Depends(g
 
 @router.patch("/takedown-agreements/{tda_id}/lots/{lot_id}/assign")
 def assign_lot_to_checkpoint(tda_id: int, lot_id: int, body: AssignLotRequest, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         checkpoint_id = body.checkpoint_id
 
@@ -579,7 +580,7 @@ def assign_lot_to_checkpoint(tda_id: int, lot_id: int, body: AssignLotRequest, c
 
 @router.delete("/takedown-agreements/{tda_id}/lots/{lot_id}/assign")
 def unassign_lot_from_checkpoint(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # 1. Look up assignment_id, confirm checkpoint belongs to this tda_id
         cur.execute(
@@ -639,7 +640,7 @@ def unassign_lot_from_checkpoint(tda_id: int, lot_id: int, conn=Depends(get_db_c
 
 @router.post("/takedown-agreements/{tda_id}/lots/{lot_id}/pool")
 def add_lot_to_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         cur.execute(
             "SELECT tda_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
@@ -686,7 +687,7 @@ def add_lot_to_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
 
 @router.delete("/takedown-agreements/{tda_id}/lots/{lot_id}/pool")
 def remove_lot_from_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # Clear any checkpoint assignment first (may or may not exist)
         cur.execute(
@@ -723,7 +724,7 @@ def remove_lot_from_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
 
 @router.patch("/tda-lot-assignments/{assignment_id}/dates")
 def update_lot_assignment_dates(assignment_id: int, body: UpdateDatesRequest, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # Validate at least one field explicitly provided (null clears the field)
         api_updates = {}
@@ -822,7 +823,7 @@ def update_lot_assignment_dates(assignment_id: int, body: UpdateDatesRequest, co
 
 @router.patch("/tda-lot-assignments/{assignment_id}/lock")
 def update_lot_assignment_lock(assignment_id: int, body: UpdateLockRequest, conn=Depends(get_db_conn)):
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = dict_cursor(conn)
     try:
         # Validate at least one field provided
         api_updates = {}
