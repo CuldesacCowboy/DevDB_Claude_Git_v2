@@ -55,7 +55,7 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: api.deps, psycopg2.extras
 - Imported by: api/main.py
 - Tables: developments, dim_development, sim_legal_instruments
-- Last commit: 2026-03-28
+- Last commit: 2026-04-02
 
 ### devdb_python/api/routers/lots.py
 - Owns: PATCH /{id}/phase, PATCH /{id}/lot-type, DELETE /{id}/phase -- all delegating to lot_assignment_service
@@ -69,14 +69,14 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: api.deps, psycopg2.extras, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments, sim_lots, sim_entitlement_groups
-- Last commit: 2026-04-01
+- Last commit: 2026-04-02
 
 ### devdb_python/api/routers/phases.py
 - Owns: Phase CRUD, lot-type split management; DELETE /{phase_id}/lot-type registered BEFORE DELETE /{phase_id} (route ordering is intentional)
 - Imports: api.deps, api.models.phase_models, services.phase_assignment_service, psycopg2.extras
 - Imported by: api/main.py
 - Tables: sim_dev_phases, sim_legal_instruments, ref_lot_types, sim_phase_product_splits, sim_phase_builder_splits, sim_delivery_event_phases, sim_lots (devdb. prefix on DELETE lot-type queries)
-- Last commit: 2026-03-29
+- Last commit: 2026-04-02
 
 ### devdb_python/api/routers/site_plans.py
 - Owns: Site plan CRUD; POST /site-plans (upload PDF); GET /site-plans/ent-group/{id}; GET /{plan_id}/file; PATCH /{plan_id}/parcel (saves parcel polygon, auto-seeds first boundary if none exists)
@@ -119,6 +119,27 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: api.deps, psycopg2.extras, fastapi
 - Imported by: api/main.py
 - Tables: v_sim_ledger_monthly, sim_ent_group_developments, dim_development, developments, sim_dev_phases, sim_lots, sim_legal_instruments, sim_phase_product_splits, ref_lot_types
+- Last commit: 2026-04-02
+
+### devdb_python/api/db.py
+- Owns: Database utility helpers shared across routers; dict_cursor(conn) replaces repeated conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) boilerplate
+- Imports: psycopg2.extras
+- Imported by: all routers, services/ledger_service.py
+- Tables: none
+- Last commit: 2026-04-02
+
+### devdb_python/api/sql_fragments.py
+- Owns: Shared SQL fragment helpers; lot_status_sql(alias) returns the lot pipeline-status CASE expression (OUT > C > UC > H > U > D > E > P) for use in f-string queries
+- Imports: none
+- Imported by: routers/developments.py, routers/entitlement_groups.py, routers/ledger.py
+- Tables: none
+- Last commit: 2026-04-02
+
+### devdb_python/services/ledger_service.py
+- Owns: Ledger query logic extracted from routers/ledger.py; query_ledger_by_dev(conn, ent_group_id) — bounded date range, entitlement event overlay, synthetic start-date rows; _ledger_row() dict serializer
+- Imports: api.db.dict_cursor
+- Imported by: routers/ledger.py
+- Tables: v_sim_ledger_monthly, sim_entitlement_groups, sim_ent_group_developments, sim_lots, sim_entitlement_events, dim_development, developments
 - Last commit: 2026-04-02
 
 ### devdb_python/services/lot_assignment_service.py
@@ -165,7 +186,7 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: dnd-kit, react, hooks (useLotPhaseData, useDragHandler, usePhaseEqualization), components, CommunityDevelopmentsView
 - Imported by: App.jsx
 - Tables: none (API calls via /api/entitlement-groups, /api/developments, /api/instruments, /api/phases)
-- Last commit: 2026-04-01
+- Last commit: 2026-04-02
 
 ### devdb_ui/src/pages/CommunityDevelopmentsView.jsx
 - Owns: Community-development assignment view; unassigned dev panel; community pills; alphabet slider; drag-to-create-community
