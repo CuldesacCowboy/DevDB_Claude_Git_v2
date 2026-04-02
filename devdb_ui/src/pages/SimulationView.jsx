@@ -29,6 +29,31 @@ function cell(v) {
   return v > 0 ? v : <span style={{ color: '#e5e7eb' }}>—</span>
 }
 
+const NUMERIC_LEDGER_COLS = [
+  'ent_plan','dev_plan','td_plan','str_plan','cmp_plan','cls_plan',
+  'p_end','e_end','d_end','h_end','u_end','uc_end','c_end',
+]
+
+function aggregateByMonth(rows) {
+  const monthMap = new Map()
+  for (const r of rows) {
+    const key = r.calendar_month
+    if (!monthMap.has(key)) {
+      monthMap.set(key, { calendar_month: key, dev_id: r.dev_id, dev_name: r.dev_name })
+      for (const col of NUMERIC_LEDGER_COLS) monthMap.get(key)[col] = 0
+    }
+    const agg = monthMap.get(key)
+    for (const col of NUMERIC_LEDGER_COLS) agg[col] += (r[col] || 0)
+  }
+  const sorted = [...monthMap.values()].sort((a, b) => a.calendar_month.localeCompare(b.calendar_month))
+  let cumul = 0
+  for (const row of sorted) {
+    cumul += row.cls_plan
+    row.closed_cumulative = cumul || null
+  }
+  return sorted
+}
+
 function LedgerTable({ rows }) {
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -132,6 +157,7 @@ function UtilizationPanel({ phases }) {
 }
 
 function DevSection({ devId, devName, devRows, utilRows = [] }) {
+  const aggregated = aggregateByMonth(devRows)
   return (
     <div style={{ marginBottom: 32 }}>
       <div style={{
@@ -140,7 +166,7 @@ function DevSection({ devId, devName, devRows, utilRows = [] }) {
       }}>
         <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{devName}</span>
       </div>
-      <LedgerTable rows={devRows} />
+      <LedgerTable rows={aggregated} />
       <UtilizationPanel phases={utilRows} />
     </div>
   )
