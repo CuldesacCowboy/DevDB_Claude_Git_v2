@@ -11,6 +11,65 @@ from api.deps import get_db_conn
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 
 
+@router.get("/{ent_group_id}/utilization")
+def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
+    """
+    Return phase utilization for all phases in the entitlement group.
+    utilization_pct = (real_count + sim_count) / projected_count.
+    Phases with zero projected_count are returned with utilization_pct = null.
+    """
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """
+            SELECT
+                sdp.phase_id,
+                sdp.phase_name,
+                sdp.dev_id,
+                d.dev_name,
+                sli.instrument_name,
+                COALESCE(SUM(sps.projected_count), 0)::int                              AS projected_count,
+                COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'sim')::int              AS sim_count,
+                COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'real')::int             AS real_count,
+                (COUNT(sl.lot_id)::int)                                                  AS total_count,
+                CASE
+                    WHEN COALESCE(SUM(sps.projected_count), 0) = 0 THEN NULL
+                    ELSE ROUND(
+                        COUNT(sl.lot_id)::numeric / SUM(sps.projected_count) * 100, 1
+                    )
+                END AS utilization_pct
+            FROM sim_dev_phases sdp
+            JOIN sim_ent_group_developments segd ON sdp.dev_id = segd.dev_id
+            JOIN developments d ON d.dev_id = sdp.dev_id
+            JOIN sim_legal_instruments sli ON sdp.instrument_id = sli.instrument_id
+            LEFT JOIN sim_phase_product_splits sps ON sps.phase_id = sdp.phase_id
+            LEFT JOIN sim_lots sl ON sl.phase_id = sdp.phase_id
+            WHERE segd.ent_group_id = %s
+            GROUP BY sdp.phase_id, sdp.phase_name, sdp.dev_id, d.dev_name,
+                     sli.instrument_name, sdp.sequence_number
+            ORDER BY sdp.dev_id, sdp.sequence_number
+            """,
+            (ent_group_id,),
+        )
+        return [
+            {
+                "phase_id":        r["phase_id"],
+                "phase_name":      r["phase_name"],
+                "dev_id":          r["dev_id"],
+                "dev_name":        r["dev_name"],
+                "instrument_name": r["instrument_name"],
+                "projected_count": r["projected_count"],
+                "sim_count":       r["sim_count"],
+                "real_count":      r["real_count"],
+                "total_count":     r["total_count"],
+                "utilization_pct": float(r["utilization_pct"]) if r["utilization_pct"] is not None else None,
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
 @router.get("/{ent_group_id}/by-dev")
 def get_ledger_by_dev(ent_group_id: int, conn=Depends(get_db_conn)):
     """

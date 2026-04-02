@@ -70,7 +70,72 @@ function LedgerTable({ rows }) {
   )
 }
 
-function DevSection({ devId, devName, devRows, pgRows }) {
+function utilColor(pct) {
+  if (pct === null) return { bg: '#f3f4f6', text: '#9ca3af', label: 'no splits' }
+  if (pct > 95)    return { bg: '#fee2e2', text: '#991b1b', label: `${pct}%` }
+  if (pct < 70)    return { bg: '#fef9c3', text: '#854d0e', label: `${pct}%` }
+  return               { bg: '#dcfce7', text: '#166534', label: `${pct}%` }
+}
+
+function UtilizationPanel({ phases }) {
+  if (!phases.length) return null
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{
+        fontSize: 11, fontWeight: 600, color: '#9ca3af',
+        textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6,
+      }}>
+        Phase utilization
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {phases.map(p => {
+          const { bg, text, label } = utilColor(p.utilization_pct)
+          const barWidth = p.utilization_pct !== null
+            ? `${Math.min(p.utilization_pct, 100)}%`
+            : '0%'
+          return (
+            <div key={p.phase_id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {/* Phase name */}
+              <div style={{
+                width: 280, fontSize: 11, color: '#374151',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0,
+              }} title={p.phase_name}>
+                {p.phase_name}
+              </div>
+              {/* Bar */}
+              <div style={{
+                flex: 1, height: 14, background: '#f3f4f6', borderRadius: 3,
+                overflow: 'hidden', position: 'relative', minWidth: 80,
+              }}>
+                <div style={{
+                  width: barWidth, height: '100%',
+                  background: bg === '#dcfce7' ? '#86efac' : bg === '#fef9c3' ? '#fde047' : '#fca5a5',
+                  borderRadius: 3, transition: 'width 0.3s',
+                }} />
+              </div>
+              {/* Badge */}
+              <div style={{
+                width: 64, flexShrink: 0, textAlign: 'right',
+                fontSize: 11, fontWeight: 600, color: text,
+              }}>
+                {label}
+              </div>
+              {/* Counts */}
+              <div style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                {p.real_count}r + {p.sim_count}s / {p.projected_count}p
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <div style={{ marginTop: 6, fontSize: 10, color: '#d1d5db' }}>
+        green 70–95% · yellow &lt;70% (demand risk) · red &gt;95% (supply risk)
+      </div>
+    </div>
+  )
+}
+
+function DevSection({ devId, devName, devRows, pgRows, utilRows = [] }) {
   const [showPg, setShowPg] = useState(false)
   const pgIds = [...new Set(pgRows.map(r => r.projection_group_id))]
 
@@ -104,6 +169,8 @@ function DevSection({ devId, devName, devRows, pgRows }) {
           <LedgerTable rows={pgRows.filter(r => r.projection_group_id === pgId)} />
         </div>
       ))}
+
+      <UtilizationPanel phases={utilRows} />
     </div>
   )
 }
@@ -114,6 +181,7 @@ export default function SimulationView() {
   const [runStatus, setRunStatus]     = useState(null)
   const [byDev, setByDev]             = useState([])
   const [byPg, setByPg]               = useState([])
+  const [utilization, setUtilization] = useState([])
   const [loading, setLoading]         = useState(false)
   const [missingSplits, setMissingSplits] = useState([])
 
@@ -139,12 +207,14 @@ export default function SimulationView() {
     Promise.all([
       fetch(`${API}/ledger/${id}/by-dev`).then(r => r.json()),
       fetch(`${API}/ledger/${id}`).then(r => r.json()),
+      fetch(`${API}/ledger/${id}/utilization`).then(r => r.json()),
     ])
-      .then(([devRows, pgRows]) => {
+      .then(([devRows, pgRows, utilRows]) => {
         setByDev(Array.isArray(devRows) ? devRows : [])
         setByPg(Array.isArray(pgRows) ? pgRows : [])
+        setUtilization(Array.isArray(utilRows) ? utilRows : [])
       })
-      .catch(() => { setByDev([]); setByPg([]) })
+      .catch(() => { setByDev([]); setByPg([]); setUtilization([]) })
       .finally(() => setLoading(false))
   }, [])
 
@@ -263,6 +333,7 @@ export default function SimulationView() {
           devName={devName}
           devRows={byDev.filter(r => r.dev_id === devId)}
           pgRows={byPg.filter(r => r.dev_id === devId)}
+          utilRows={utilization.filter(r => r.dev_id === devId)}
         />
       ))}
     </div>
