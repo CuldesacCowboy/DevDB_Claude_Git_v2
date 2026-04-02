@@ -343,9 +343,14 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # --- Primary: D-balance projection from sim_lots ---
     if min_buffer > 0:
         all_dev_ids_for_query = [int(d) for d in all_phases_df["dev_id"].unique()]
-        dev_ids_str = ", ".join(str(d) for d in all_dev_ids_for_query)
 
-        if dev_ids_str:
+        if all_dev_ids_for_query:
+            # VALUES list for inline devs CTE — avoids circular dependency with
+            # auto-delivery sim lots by only counting real lots and lots whose
+            # phase belongs to a LOCKED delivery event.  The outer CROSS JOIN +
+            # LEFT JOIN ensures months with d_end=0 are included (a plain
+            # WHERE-filtered CROSS JOIN drops those rows entirely).
+            dev_values = ", ".join(f"({d})" for d in all_dev_ids_for_query)
             d_proj_df = conn.read_df(f"""
                 WITH future AS (
                     SELECT generate_series(
@@ -353,22 +358,35 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                         (DATE_TRUNC('MONTH', CURRENT_DATE) + INTERVAL '6 years')::DATE,
                         INTERVAL '1 month'
                     )::DATE AS m
+                ),
+                devs (dev_id) AS (
+                    VALUES {dev_values}
+                ),
+                locked_phases AS (
+                    SELECT DISTINCT dep.phase_id
+                    FROM sim_delivery_event_phases dep
+                    JOIN sim_delivery_events sde
+                         ON sde.delivery_event_id = dep.delivery_event_id
+                    WHERE sde.ent_group_id = {ent_group_id}
+                      AND sde.date_dev_actual IS NOT NULL
                 )
-                SELECT sl.dev_id, f.m AS calendar_month,
+                SELECT devs.dev_id, f.m AS calendar_month,
                        COUNT(sl.lot_id) AS d_end
                 FROM future f
-                CROSS JOIN sim_lots sl
-                WHERE sl.dev_id IN ({dev_ids_str})
-                  AND sl.date_dev IS NOT NULL
-                  AND sl.date_dev <= f.m
-                  AND (sl.date_td IS NULL OR sl.date_td > f.m)
-                  AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
-                GROUP BY sl.dev_id, f.m
-                ORDER BY sl.dev_id, f.m
+                CROSS JOIN devs
+                LEFT JOIN sim_lots sl
+                    ON  sl.dev_id = devs.dev_id
+                    AND sl.date_dev IS NOT NULL
+                    AND sl.date_dev <= f.m
+                    AND (sl.date_td     IS NULL OR sl.date_td     > f.m)
+                    AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
+                    AND (sl.lot_source = 'real'
+                         OR sl.phase_id IN (SELECT phase_id FROM locked_phases))
+                GROUP BY devs.dev_id, f.m
+                ORDER BY devs.dev_id, f.m
             """)
 
             if not d_proj_df.empty:
-                import pandas as pd  # noqa: F811
                 for dev_id_val in d_proj_df["dev_id"].unique():
                     dev_rows = (
                         d_proj_df[d_proj_df["dev_id"] == dev_id_val]
