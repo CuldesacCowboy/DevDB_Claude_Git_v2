@@ -136,6 +136,86 @@ def _query_ledger_by_dev(conn, ent_group_id: int) -> list:
         cur.close()
 
 
+@router.get("/{ent_group_id}/lots")
+def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
+    """
+    Return lot-level rows for all developments in the entitlement group.
+    Status is derived from date fields (never stored).
+    """
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    _STATUS_SQL = """
+        CASE
+            WHEN sl.date_cls IS NOT NULL                                   THEN 'OUT'
+            WHEN sl.date_cmp IS NOT NULL                                   THEN 'C'
+            WHEN sl.date_str IS NOT NULL                                   THEN 'UC'
+            WHEN sl.date_td_hold IS NOT NULL AND sl.date_td IS NULL        THEN 'H'
+            WHEN sl.date_td IS NOT NULL                                    THEN 'U'
+            WHEN sl.date_dev IS NOT NULL                                   THEN 'D'
+            WHEN sl.date_ent IS NOT NULL                                   THEN 'E'
+            ELSE 'P'
+        END
+    """
+    try:
+        cur.execute(
+            f"""
+            SELECT
+                sl.lot_id,
+                sl.lot_number,
+                sl.lot_source,
+                sl.lot_type_id,
+                rlt.lot_type_short,
+                sdp.phase_name,
+                sl.dev_id,
+                d.dev_name,
+                {_STATUS_SQL}           AS status,
+                sl.date_ent,
+                sl.date_dev,
+                sl.date_td_hold,
+                sl.date_td,
+                sl.date_str,
+                sl.date_cmp,
+                sl.date_cls
+            FROM sim_lots sl
+            JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
+            JOIN dim_development dd ON dd.development_id = sl.dev_id
+            JOIN developments d ON d.marks_code = dd.dev_code2
+            LEFT JOIN ref_lot_types rlt ON rlt.lot_type_id = sl.lot_type_id
+            WHERE sl.dev_id IN (
+                SELECT dev_id FROM sim_ent_group_developments
+                WHERE ent_group_id = %s
+            )
+            ORDER BY d.dev_name, sdp.sequence_number, sl.lot_number NULLS LAST
+            """,
+            (ent_group_id,),
+        )
+
+        def _d(v):
+            return v.isoformat() if v else None
+
+        return [
+            {
+                "lot_id":         r["lot_id"],
+                "lot_number":     r["lot_number"],
+                "lot_source":     r["lot_source"],
+                "lot_type_short": r["lot_type_short"],
+                "phase_name":     r["phase_name"],
+                "dev_id":         r["dev_id"],
+                "dev_name":       r["dev_name"],
+                "status":         r["status"],
+                "date_ent":       _d(r["date_ent"]),
+                "date_dev":       _d(r["date_dev"]),
+                "date_td_hold":   _d(r["date_td_hold"]),
+                "date_td":        _d(r["date_td"]),
+                "date_str":       _d(r["date_str"]),
+                "date_cmp":       _d(r["date_cmp"]),
+                "date_cls":       _d(r["date_cls"]),
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
 @router.get("/{ent_group_id}/by-dev")
 def get_ledger_by_dev(ent_group_id: int, conn=Depends(get_db_conn)):
     """

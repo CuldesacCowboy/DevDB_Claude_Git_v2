@@ -4,9 +4,10 @@
 import time
 import traceback
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from api.deps import get_db_conn
 from engine.coordinator import convergence_coordinator
 
 router = APIRouter(prefix="/simulations", tags=["simulations"])
@@ -24,20 +25,44 @@ class SimulationRunResponse(BaseModel):
 
 
 @router.post("/run", response_model=SimulationRunResponse)
-def run_simulation(req: SimulationRunRequest):
+def run_simulation(req: SimulationRunRequest, conn=Depends(get_db_conn)):
     """
     Trigger a full convergence run for the given entitlement group.
     Runs synchronously — typically completes in under 1 second.
     """
     t0 = time.monotonic()
     try:
-        iterations = convergence_coordinator(req.ent_group_id)
+        iterations, missing_params_devs = convergence_coordinator(req.ent_group_id)
         elapsed_ms = int((time.monotonic() - t0) * 1000)
+
+        errors: list[str] = []
+        if missing_params_devs:
+            import psycopg2.extras
+            cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            try:
+                ids = list(missing_params_devs)
+                cur.execute(
+                    """
+                    SELECT dd.development_id, d.dev_name
+                    FROM dim_development dd
+                    JOIN developments d ON d.marks_code = dd.dev_code2
+                    WHERE dd.development_id = ANY(%s)
+                    ORDER BY d.dev_name
+                    """,
+                    (ids,),
+                )
+                for r in cur.fetchall():
+                    errors.append(
+                        f"{r['dev_name']}: no starts target — add annual_starts_target in sim_dev_params to generate projected lots"
+                    )
+            finally:
+                cur.close()
+
         return SimulationRunResponse(
             status="ok",
             iterations=iterations,
             elapsed_ms=elapsed_ms,
-            errors=[],
+            errors=errors,
         )
     except Exception as exc:
         elapsed_ms = int((time.monotonic() - t0) * 1000)

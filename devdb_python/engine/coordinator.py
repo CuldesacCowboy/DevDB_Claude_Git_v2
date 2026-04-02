@@ -224,7 +224,7 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
                         sim_run_id: int, run_start_date: date,
                         builder_splits: dict,
                         build_lag_curves: dict,
-                        rng: random.Random) -> list:
+                        rng: random.Random) -> tuple[list, bool]:
     """
     Run all 12 starts pipeline modules in order for one development.
     Coordinator calls this once per dev per iteration.
@@ -254,7 +254,7 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     demand_series, needs_config = demand_generator(conn, dev_id, run_start_date)
     if needs_config:
         print(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
-        demand_series = []
+        demand_series = pd.DataFrame(columns=["year", "month", "slots"])
 
     # S-07 through S-0820: kernel planning pass
     frozen = build_frozen_input(
@@ -282,7 +282,7 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     # S-12
     ledger_aggregator(conn)
 
-    return temp_lots
+    return temp_lots, needs_config
 
 
 def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
@@ -386,7 +386,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
 
         if dev_df.empty:
             print(f"No developments found for ent_group_id={ent_group_id}. Aborting.")
-            return 0
+            return 0, set()
 
         dev_ids = [int(r) for r in dev_df["dev_id"]]
         print(f"Convergence coordinator: ent_group_id={ent_group_id}, "
@@ -399,6 +399,8 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         # Seeded RNG: sim_run_id is date-based (YYYYMMDD), giving reproducibility
         # within a day. Each ent_group run gets its own seed.
         rng = random.Random(sim_run_id * 1000 + ent_group_id)
+
+        missing_params_devs: set[int] = set()
 
         for iteration in range(1, max_iterations + 1):
             print(f"\n--- Iteration {iteration} ---")
@@ -415,8 +417,10 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
             # Step 1: Run starts pipeline for ALL developments
             for dev_id in dev_ids:
                 print(f"  Running starts pipeline for dev {dev_id}...")
-                run_starts_pipeline(conn, dev_id, sim_run_id, run_start_date,
+                _, needs_config = run_starts_pipeline(conn, dev_id, sim_run_id, run_start_date,
                                     builder_splits, build_lag_curves, rng)
+                if needs_config:
+                    missing_params_devs.add(dev_id)
 
             # Step 2: Run supply pipeline
             print(f"  Running supply pipeline for ent_group_id={ent_group_id}...")
@@ -447,9 +451,9 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
 
             if not changed:
                 print(f"\nConvergence reached after {iteration} iteration(s).")
-                return iteration
+                return iteration, missing_params_devs
 
             print(f"  {len(changed)} delivery event date(s) changed: {changed}. Re-running.")
 
     print(f"WARNING: Max iterations ({max_iterations}) reached without convergence.")
-    return max_iterations
+    return max_iterations, missing_params_devs

@@ -156,6 +156,10 @@ export default function SimulationView() {
   const [missingSplits, setMissingSplits] = useState([])
   const [staleParams, setStaleParams]     = useState([])
   const [paramEdits, setParamEdits]       = useState({})   // { [dev_id]: { value: string, saving: bool, error: str } }
+  const [view, setView]                   = useState('ledger')   // 'ledger' | 'lots'
+  const [lots, setLots]                   = useState([])
+  const [lotsLoading, setLotsLoading]     = useState(false)
+  const [runErrors, setRunErrors]         = useState([])
 
   useEffect(() => {
     fetch(`${API}/entitlement-groups`)
@@ -193,8 +197,20 @@ export default function SimulationView() {
       .finally(() => setLoading(false))
   }, [])
 
+  const loadLots = useCallback((id) => {
+    setLotsLoading(true)
+    fetch(`${API}/ledger/${id}/lots`).then(r => r.json())
+      .then(data => setLots(Array.isArray(data) ? data : []))
+      .catch(() => setLots([]))
+      .finally(() => setLotsLoading(false))
+  }, [])
+
   useEffect(() => {
-    if (entGroupId) { checkSplits(entGroupId); loadLedger(entGroupId) }
+    if (entGroupId) {
+      checkSplits(entGroupId)
+      loadLedger(entGroupId)
+      setRunErrors([])
+    }
   }, [entGroupId, checkSplits, loadLedger])
 
   async function handleRun() {
@@ -212,7 +228,9 @@ export default function SimulationView() {
       }
       const data = await res.json()
       setRunStatus({ ok: true, iterations: data.iterations, elapsed_ms: data.elapsed_ms })
+      setRunErrors(data.errors || [])
       loadLedger(entGroupId)
+      if (view === 'lots') loadLots(entGroupId)
       checkSplits(entGroupId)
     } catch (e) {
       setRunStatus({ ok: false, error: e.message })
@@ -351,24 +369,49 @@ export default function SimulationView() {
         </div>
       )}
 
-      {/* Ledger */}
-      {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
-
-      {!loading && !hasData && (
-        <div style={{ color: '#9ca3af', fontSize: 12 }}>
-          No ledger data. Run a simulation to populate results.
+      {/* Run errors (missing params) */}
+      {runErrors.length > 0 && (
+        <div style={{ marginBottom: 14, padding: '8px 14px', background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 6, fontSize: 12 }}>
+          <div style={{ fontWeight: 600, color: '#92400e', marginBottom: 4 }}>Simulation ran with warnings:</div>
+          <ul style={{ margin: 0, paddingLeft: 18, color: '#78350f', lineHeight: 1.7 }}>
+            {runErrors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
         </div>
       )}
 
-      {!loading && hasData && devList.map(({ id: devId, name: devName }) => (
-        <DevSection
-          key={devId}
-          devId={devId}
-          devName={devName}
-          devRows={byDev.filter(r => r.dev_id === devId)}
-          utilRows={utilization.filter(r => r.dev_id === devId)}
-        />
-      ))}
+      {/* View toggle */}
+      <div style={{ display: 'flex', gap: 2, marginBottom: 14 }}>
+        {[['ledger', 'Monthly Ledger'], ['lots', 'Lot List']].map(([v, label]) => (
+          <button key={v} onClick={() => { setView(v); if (v === 'lots' && entGroupId) loadLots(entGroupId) }}
+            style={{
+              padding: '4px 14px', fontSize: 12, borderRadius: 4, border: '1px solid #d1d5db', cursor: 'pointer',
+              background: view === v ? '#1e40af' : '#f9fafb', color: view === v ? '#fff' : '#374151', fontWeight: view === v ? 600 : 400,
+            }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Monthly Ledger */}
+      {view === 'ledger' && (
+        <>
+          {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
+          {!loading && !hasData && (
+            <div style={{ color: '#9ca3af', fontSize: 12 }}>No ledger data. Run a simulation to populate results.</div>
+          )}
+          {!loading && hasData && devList.map(({ id: devId, name: devName }) => (
+            <DevSection key={devId} devId={devId} devName={devName}
+              devRows={byDev.filter(r => r.dev_id === devId)}
+              utilRows={utilization.filter(r => r.dev_id === devId)}
+            />
+          ))}
+        </>
+      )}
+
+      {/* Lot List */}
+      {view === 'lots' && (
+        <LotLedger lots={lots} loading={lotsLoading} />
+      )}
     </div>
   )
 }
@@ -385,4 +428,83 @@ function tdS(isMonth = false) {
     borderBottom: '1px solid #f3f4f6', fontVariantNumeric: 'tabular-nums',
     color: isMonth ? '#374151' : '#111827', fontWeight: isMonth ? 500 : 400,
   }
+}
+
+const STATUS_COLOR = {
+  OUT: '#6b7280', C: '#059669', UC: '#0284c7', H: '#d97706',
+  U: '#7c3aed', D: '#374151', E: '#b45309', P: '#9ca3af',
+}
+
+function LotLedger({ lots, loading }) {
+  const [devFilter, setDevFilter] = useState('all')
+  const [srcFilter, setSrcFilter] = useState('all')
+
+  if (loading) return <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>
+  if (!lots.length) return <div style={{ color: '#9ca3af', fontSize: 12 }}>No lots. Run a simulation first.</div>
+
+  const devNames = [...new Set(lots.map(l => l.dev_name))].sort()
+  const filtered = lots.filter(l =>
+    (devFilter === 'all' || l.dev_name === devFilter) &&
+    (srcFilter === 'all' || l.lot_source === srcFilter)
+  )
+
+  const LOT_COLS = [
+    { key: 'lot_number',   label: 'Lot #',   left: true },
+    { key: 'lot_type_short', label: 'Type',  left: true },
+    { key: 'phase_name',   label: 'Phase',   left: true },
+    { key: 'lot_source',   label: 'Src',     left: true },
+    { key: 'status',       label: 'Status',  left: true },
+    { key: 'date_ent',     label: 'ENT' },
+    { key: 'date_dev',     label: 'DEV' },
+    { key: 'date_td',      label: 'TD' },
+    { key: 'date_str',     label: 'STR' },
+    { key: 'date_cmp',     label: 'CMP' },
+    { key: 'date_cls',     label: 'CLS' },
+  ]
+
+  return (
+    <div>
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select value={devFilter} onChange={e => setDevFilter(e.target.value)}
+          style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}>
+          <option value="all">All developments</option>
+          {devNames.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <select value={srcFilter} onChange={e => setSrcFilter(e.target.value)}
+          style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}>
+          <option value="all">All sources</option>
+          <option value="real">Real</option>
+          <option value="sim">Sim</option>
+        </select>
+        <span style={{ fontSize: 11, color: '#6b7280' }}>{filtered.length} lots</span>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
+          <thead>
+            <tr style={{ background: '#f9fafb' }}>
+              {devFilter === 'all' && <th style={thS('left')}>Development</th>}
+              {LOT_COLS.map(c => <th key={c.key} style={thS(c.left ? 'left' : 'right')}>{c.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(l => (
+              <tr key={l.lot_id}>
+                {devFilter === 'all' && <td style={tdS(true)}>{l.dev_name}</td>}
+                <td style={tdS(true)}>{l.lot_number ?? '—'}</td>
+                <td style={tdS(true)}>{l.lot_type_short ?? '—'}</td>
+                <td style={tdS(true)}>{l.phase_name}</td>
+                <td style={{ ...tdS(true), color: '#6b7280', fontSize: 11 }}>{l.lot_source}</td>
+                <td style={{ ...tdS(true), fontWeight: 600, color: STATUS_COLOR[l.status] ?? '#374151' }}>{l.status}</td>
+                {['date_ent','date_dev','date_td','date_str','date_cmp','date_cls'].map(k => (
+                  <td key={k} style={tdS()}>{l[k] ? fmt(l[k]) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
 }
