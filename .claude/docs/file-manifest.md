@@ -17,10 +17,10 @@ touches before making changes. Keep this section updated when files are added or
 
 ### devdb_python/api/main.py
 - Owns: FastAPI app init, CORS middleware, schema migration runner on startup, router registration
-- Imports: psycopg2, fastapi, dotenv, all six routers
+- Imports: psycopg2, fastapi, dotenv, all routers (developments, entitlement_groups, instruments, lots, phases, takedown_agreements, site_plans, phase_boundaries, lot_positions)
 - Imported by: uvicorn (entry point)
 - Tables: devdb.schema_migrations (reads/inserts applied versions)
-- Last commit: 2026-03-31
+- Last commit: 2026-04-02
 
 ### devdb_python/api/models/lot_models.py
 - Owns: Pydantic request/response models for lot and phase-view endpoints
@@ -92,6 +92,13 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: sim_phase_boundaries
 - Last commit: 2026-04-01
 
+### devdb_python/api/routers/lot_positions.py
+- Owns: Lot site-plan positioning endpoints; GET /lot-positions/plan/{plan_id} returns {positioned, bank}; POST /lot-positions/plan/{plan_id}/save bulk-upserts positions and applies phase assignments (client point-in-polygon); removes lots from plan when phase_id absent
+- Imports: api.deps, psycopg2.extras, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_lot_site_positions, sim_lots, sim_site_plans, sim_dev_phases, dim_development, developments, sim_legal_instruments
+- Last commit: 2026-04-02
+
 ### devdb_python/services/lot_assignment_service.py
 - Owns: Lot phase reassignment, lot-type change, lot unassignment with validation and audit logging
 - Imports: psycopg2.extras, dataclasses
@@ -157,6 +164,13 @@ touches before making changes. Keep this section updated when files are added or
 - Imports: pdfjs-dist, react, splitPolygon (distToSeg, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon)
 - Imported by: SitePlanView.jsx
 - Tables: none (API calls via onParcelSaved, onSplitConfirm, onBoundaryUpdated props)
+- Last commit: 2026-04-02
+
+### devdb_ui/src/components/SitePlan/LotBank.jsx
+- Owns: Left panel on the site plan page showing unpositioned lots grouped by legal instrument; lot pills are draggable (HTML5 DnD) and clickable (enters click-to-set loop); active placing lot highlighted with instrument color; groups use stable insertion order
+- Imports: react (useMemo)
+- Imported by: SitePlanView.jsx
+- Tables: none
 - Last commit: 2026-04-02
 
 ### devdb_ui/src/components/SitePlan/splitPolygon.js
@@ -428,6 +442,11 @@ touches before making changes. Keep this section updated when files are added or
 - Owns: Implements D-151/D-152 system-wide pattern — adds projected date and is_locked companion columns for all 7 pipeline dates to sim_lots; migrates HC/BLDR projected+lock data from sim_takedown_lot_assignments to sim_lots; drops the old columns from sim_takedown_lot_assignments
 - Tables: sim_lots (ADD COLUMNS), sim_takedown_lot_assignments (UPDATE/DROP COLUMNS)
 - Last commit: 2026-04-01
+
+### devdb_python/migrations/016_lot_site_positions.sql
+- Owns: Creates devdb.sim_lot_site_positions table (lot_id PK, plan_id, x, y DOUBLE PRECISION, updated_at); creates index on plan_id; wrapped in DO $$ IF NOT EXISTS guard
+- Tables: sim_lot_site_positions (CREATE TABLE + INDEX)
+- Last commit: 2026-04-02
 
 ### devdb_python/migrations/create_developments.py
 - Owns: Standalone one-time migration — creates developments table; adds PKs to dim_county, dim_state, dim_municipality (migrated without constraints per D-086). Idempotent.
