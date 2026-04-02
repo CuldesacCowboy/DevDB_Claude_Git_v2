@@ -44,12 +44,29 @@ def _ent_group_id_for_plan(cur, plan_id: int) -> int:
 
 def _fetch_lots(cur, plan_id: int, ent_group_id: int) -> list[dict]:
     """
-    All real lots for this ent_group's phases, joined to current site positions.
-    Join path: sim_lots → sim_dev_phases → dim_development → developments
-    Developments.community_id = ent_group_id.
+    All real lots for this ent_group, joined to current site positions.
+
+    Uses a union CTE so that lots whose phase_id was cleared to NULL (placed in an
+    unassigned polygon) are still returned — they remain findable via the position
+    record even when the normal community-chain JOIN produces no match.
     """
     cur.execute(
         """
+        WITH community_lot_ids AS (
+            -- Lots reachable through the full community chain (phase_id not null)
+            SELECT sl.lot_id
+            FROM devdb.sim_lots sl
+            JOIN devdb.sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
+            JOIN devdb.dim_development dd  ON dd.development_id = sdp.dev_id
+            JOIN devdb.developments d      ON d.marks_code = dd.dev_code2
+            WHERE sl.lot_source = 'real'
+              AND d.community_id = %s
+            UNION
+            -- Also include any lot currently positioned on this plan (phase may be NULL)
+            SELECT lsp.lot_id
+            FROM devdb.sim_lot_site_positions lsp
+            WHERE lsp.plan_id = %s
+        )
         SELECT
             sl.lot_id,
             sl.lot_number,
@@ -59,18 +76,15 @@ def _fetch_lots(cur, plan_id: int, ent_group_id: int) -> list[dict]:
             li.instrument_name,
             lsp.x,
             lsp.y
-        FROM devdb.sim_lots sl
-        JOIN devdb.sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
-        JOIN devdb.dim_development dd ON dd.development_id = sdp.dev_id
-        JOIN devdb.developments d     ON d.marks_code = dd.dev_code2
+        FROM community_lot_ids cli
+        JOIN devdb.sim_lots sl              ON sl.lot_id = cli.lot_id
+        LEFT JOIN devdb.sim_dev_phases sdp  ON sdp.phase_id = sl.phase_id
         LEFT JOIN devdb.sim_legal_instruments li ON li.instrument_id = sdp.instrument_id
         LEFT JOIN devdb.sim_lot_site_positions lsp
                ON lsp.lot_id = sl.lot_id AND lsp.plan_id = %s
-        WHERE sl.lot_source = 'real'
-          AND d.community_id = %s
         ORDER BY sl.lot_number
         """,
-        (plan_id, ent_group_id),
+        (ent_group_id, plan_id, plan_id),
     )
     return cur.fetchall()
 
@@ -119,16 +133,13 @@ def save_lot_positions(
     try:
         ent_group_id = _ent_group_id_for_plan(cur, plan_id)
 
-        # Remove lots that fell outside all phase polygons.
-        # Clear their phase assignments so they return cleanly to the bank.
+        # Remove position records for lots explicitly taken off the map.
+        # Do NOT clear phase_id — the lot returns to the bank with its assignment intact,
+        # and the community-chain query can still find it.
         if body.removes:
             cur.execute(
                 "DELETE FROM devdb.sim_lot_site_positions WHERE lot_id = ANY(%s) AND plan_id = %s",
                 (body.removes, plan_id),
-            )
-            cur.execute(
-                "UPDATE devdb.sim_lots SET phase_id = NULL WHERE lot_id = ANY(%s)",
-                (body.removes,),
             )
 
         # Upsert positions and apply phase assignments determined by spatial containment.

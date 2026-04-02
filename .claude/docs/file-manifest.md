@@ -472,6 +472,16 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: sim_lots (ADD COLUMNS), sim_takedown_lot_assignments (UPDATE/DROP COLUMNS)
 - Last commit: 2026-04-01
 
+### devdb_python/migrations/020_min_unstarted_inventory.sql
+- Owns: Adds min_unstarted_inventory column (INTEGER NULL) to sim_entitlement_delivery_config; P-00 uses this to schedule deliveries before full exhaustion to maintain a buffer
+- Tables: sim_entitlement_delivery_config (ADD COLUMN IF NOT EXISTS)
+- Last commit: 2026-04-02
+
+### devdb_python/migrations/021_ledger_features.sql
+- Owns: (1) Adds ledger_start_date (DATE NULL) to sim_entitlement_groups; (2) Creates sim_entitlement_events table (event_id, ent_group_id, dev_id, event_date, lots_entitled); (3) Adds per-status floor columns (min_p/e/d/u/uc/c_count) to sim_entitlement_delivery_config; migrates min_unstarted_inventory → min_d_count
+- Tables: sim_entitlement_groups, sim_entitlement_events (CREATE), sim_entitlement_delivery_config (ADD COLUMNS)
+- Last commit: 2026-04-02
+
 ### devdb_python/migrations/016_lot_site_positions.sql
 - Owns: Creates devdb.sim_lot_site_positions table (lot_id PK, plan_id, x, y DOUBLE PRECISION, updated_at); creates index on plan_id; wrapped in DO $$ IF NOT EXISTS guard
 - Tables: sim_lot_site_positions (CREATE TABLE + INDEX)
@@ -597,13 +607,13 @@ touches before making changes. Keep this section updated when files are added or
 - Owns: S-1200 -- creates/replaces v_sim_ledger_monthly view; COUNT-based pipeline stage counts
 - Imported by: coordinator.py
 - Tables: v_sim_ledger_monthly (CREATE OR REPLACE VIEW over sim_lots)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-02
 
 ### devdb_python/engine/p0000_placeholder_rebuilder.py
-- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule
+- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config
 - Imported by: coordinator.py
-- Tables: sim_delivery_events, sim_delivery_event_phases, sim_dev_phases (SELECT/INSERT/UPDATE)
-- Last commit: 2026-03-27
+- Tables: sim_delivery_events, sim_delivery_event_phases, sim_dev_phases, sim_entitlement_delivery_config (SELECT/INSERT/UPDATE)
+- Last commit: 2026-04-02
 
 ### devdb_python/engine/p0100_actual_date_applicator.py
 - Owns: P-0100 -- applies locked delivery event dates to sim_dev_phases.date_dev_projected per D-112/D-125

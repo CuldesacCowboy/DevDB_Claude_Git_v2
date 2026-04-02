@@ -17,7 +17,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import {
-  distToSeg, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon,
+  distToSeg, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon, findBestSplit,
 } from './splitPolygon'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
@@ -65,7 +65,7 @@ export default function PdfCanvas({
   selectedBoundaryId,
   phaseColorMap = {},   // {phase_id: color} — assigned by instrument in SitePlanView
   mode, onModeChange,
-  onParcelSaved, onSplitConfirm, onBoundarySelect, onBoundaryUpdated,
+  onParcelSaved, onSplitConfirm, onBoundarySelect, onBoundaryDelete, onBoundaryUpdated,
   onVertexEditComplete,   // ({boundary_id, old_polygon_json}[]) => void — for undo tracking
   // Lot positioning props
   lotPositions = {},    // {lot_id: {x, y}} normalized
@@ -115,6 +115,9 @@ export default function PdfCanvas({
   const [splitSnapSvg, setSplitSnapSvg]   = useState(null) // snap indicator SVG pos
   const [splitTargetId, setSplitTargetId] = useState(null) // which boundary being split
 
+  // Delete-phases mode hover
+  const [hoveredDeleteBndId, setHoveredDeleteBndId] = useState(null)
+
   // Interaction refs
   const dragRef  = useRef(null)
   const traceRef = useRef(null)
@@ -128,6 +131,7 @@ export default function PdfCanvas({
     setEditPoints(null); setEditBoundaryPoints({}); setHoverTarget(null); setEditSnapSvg(null); editRef.current = null
     setSplitPhase('idle'); setSplitLine([]); setSplitCursorSvg(null)
     setSplitSnapSvg(null); setSplitTargetId(null)
+    setHoveredDeleteBndId(null)
 
     if (mode === 'edit') {
       setEditPoints(savedParcel ? [...savedParcel] : null)
@@ -539,15 +543,38 @@ export default function PdfCanvas({
   // Derived: split line in SVG coords (for rendering)
   const splitLineSvg = splitLine.map(p => normToScreen(p.x, p.y))
 
+  // When no phase boundaries exist yet, treat the saved parcel as the initial split target.
+  const PARCEL_BOUNDARY_ID = '__parcel__'
+  const parcelAsBoundary = savedParcel && boundaries.length === 0
+    ? [{ boundary_id: PARCEL_BOUNDARY_ID, polygon_json: JSON.stringify(savedParcel) }]
+    : null
+
+  function getSplitCandidates() {
+    return boundaries.length > 0 ? boundaries : (parcelAsBoundary || [])
+  }
+
+  // Detect the best split from a completed polyline.
+  // Returns { boundary, clippedLine } or null.
+  function detectSplit(polyline) {
+    return findBestSplit(polyline, getSplitCandidates())
+  }
+
   function handleSplitMove(e) {
     const { sx, sy } = svgXY(e)
     setSplitCursorSvg({ x: sx, y: sy })
-    // During drawing, snap indicator should match the target-only snap used on click
-    const snapBnds = (splitPhase === 'drawing' && splitTargetId)
-      ? boundaries.filter(b => b.boundary_id === splitTargetId)
-      : boundaries
-    const snap = snapToBoundaries(sx, sy, snapBnds, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+
+    // Snap to any candidate boundary — no target restriction
+    const snap = snapToBoundaries(sx, sy, getSplitCandidates(), normToScreen, screenToNorm, SNAP_SPLIT_PX)
     setSplitSnapSvg(snap ? snap.svgPoint : null)
+
+    // Live preview: update highlighted target based on where the line would end
+    if (splitPhase === 'drawing' && splitLine.length >= 1) {
+      const tentativeEnd = snap ? snap.normPoint : screenToNorm(sx, sy)
+      if (tentativeEnd) {
+        const result = detectSplit([...splitLine, tentativeEnd])
+        setSplitTargetId(result ? result.boundary.boundary_id : null)
+      }
+    }
   }
 
   function handleSplitDown(e) {
@@ -555,11 +582,10 @@ export default function PdfCanvas({
     const { sx, sy } = svgXY(e)
 
     if (splitPhase === 'idle') {
-      // Must start on a boundary edge
-      const snap = snapToBoundaries(sx, sy, boundaries, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+      // Start drawing — must begin on any boundary edge so geometry is anchored
+      const snap = snapToBoundaries(sx, sy, getSplitCandidates(), normToScreen, screenToNorm, SNAP_SPLIT_PX)
       if (!snap) return
       e.currentTarget.setPointerCapture(e.pointerId)
-      setSplitTargetId(snap.boundary.boundary_id)
       setSplitLine([snap.normPoint])
       setSplitPhase('drawing')
       return
@@ -568,42 +594,45 @@ export default function PdfCanvas({
     if (splitPhase === 'drawing') {
       e.currentTarget.setPointerCapture(e.pointerId)
       const last = splitLineSvg[splitLineSvg.length - 1]
+      const candidates = getSplitCandidates()
 
-      // Only snap/intersect against the TARGET boundary — not all boundaries.
-      // Snapping to a neighbor's copy of a shared edge produces a point that
-      // is not exactly on the target polygon, causing gaps and bad splits.
-      const targetBnds = boundaries.filter(b => b.boundary_id === splitTargetId)
-
-      // Snap to target boundary edge → terminate and immediately split
-      const snap = snapToBoundaries(sx, sy, targetBnds, normToScreen, screenToNorm, SNAP_SPLIT_PX)
+      // Snap to any boundary edge → try to auto-detect and complete the split
+      const snap = snapToBoundaries(sx, sy, candidates, normToScreen, screenToNorm, SNAP_SPLIT_PX)
       if (snap) {
-        performSplit([...splitLine, snap.normPoint])
+        const finalLine = [...splitLine, snap.normPoint]
+        const result = detectSplit(finalLine)
+        if (result) { performSplit(result); return }
+        // Snapped but no valid bisection yet — add the vertex and continue
+        setSplitLine(l => [...l, snap.normPoint])
         return
       }
 
-      // Click overshoots a target boundary edge → clip to intersection and split
-      const ix = findFirstBoundaryIntersection(last.x, last.y, sx, sy, targetBnds, normToScreen)
+      // Cursor overshot a boundary → clip to the crossing point and try to split
+      const ix = findFirstBoundaryIntersection(last.x, last.y, sx, sy, candidates, normToScreen)
       if (ix) {
-        performSplit([...splitLine, ix.normPoint])
-        return
+        const finalLine = [...splitLine, ix.normPoint]
+        const result = detectSplit(finalLine)
+        if (result) { performSplit(result); return }
       }
 
       // Interior click → add vertex and continue drawing
       const norm = screenToNorm(sx, sy)
       if (norm) setSplitLine(l => [...l, norm])
-      return
     }
   }
 
-  function performSplit(finalLine) {
-    if (!splitTargetId || finalLine.length < 2) return
-    const target = boundaries.find(b => b.boundary_id === splitTargetId)
-    if (!target) return
-    const poly = JSON.parse(target.polygon_json)
-    const result = splitPolygon(poly, finalLine)
+  function performSplit(detection) {
+    // detection = { boundary, clippedLine }
+    const { boundary, clippedLine } = detection
+    const poly = boundary.boundary_id === PARCEL_BOUNDARY_ID
+      ? savedParcel
+      : JSON.parse(boundary.polygon_json)
+    if (!poly) { cancelSplit(); return }
+    const result = splitPolygon(poly, clippedLine)
     if (!result) { cancelSplit(); return }
     const [polyA, polyB] = result
-    onSplitConfirm?.(splitTargetId, polyA, polyB)
+    const originalId = boundary.boundary_id === PARCEL_BOUNDARY_ID ? null : boundary.boundary_id
+    onSplitConfirm?.(originalId, polyA, polyB)
     setSplitPhase('idle'); setSplitLine([]); setSplitTargetId(null)
     setSplitCursorSvg(null); setSplitSnapSvg(null)
   }
@@ -635,11 +664,12 @@ export default function PdfCanvas({
   }
 
   // ─── Overlay event dispatcher ─────────────────────────────────────────────────
-  const inTrace = mode === 'trace'
-  const inEdit  = mode === 'edit'
-  const inSplit = mode === 'split'
-  const inPlace = mode === 'place'
-  const overlayActive = inTrace || inEdit || inSplit || inPlace
+  const inTrace        = mode === 'trace'
+  const inEdit         = mode === 'edit'
+  const inSplit        = mode === 'split'
+  const inPlace        = mode === 'place'
+  const inDeletePhases = mode === 'delete-phases'
+  const overlayActive  = inTrace || inEdit || inSplit || inPlace || inDeletePhases
 
   function onSvgPointerDown(e) {
     if (inTrace) handleTraceDown(e)
@@ -689,6 +719,10 @@ export default function PdfCanvas({
     ? (splitPhase === 'drawing' || splitSnapSvg ? 'crosshair' : 'default')
     : 'default'
 
+  const deleteCursor = inDeletePhases
+    ? (hoveredDeleteBndId !== null ? 'pointer' : 'default')
+    : 'default'
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       {pdfError && (
@@ -734,7 +768,7 @@ export default function PdfCanvas({
           <svg
             style={{ position: 'absolute', top:0, left:0, width:'100%', height:'100%', overflow:'visible',
               pointerEvents: overlayActive ? 'all' : 'none',
-              cursor: inTrace ? (traceSnap ? 'cell' : 'crosshair') : inEdit ? editCursor : inSplit ? splitCursor : inPlace ? 'crosshair' : 'default' }}
+              cursor: inTrace ? (traceSnap ? 'cell' : 'crosshair') : inEdit ? editCursor : inSplit ? splitCursor : inDeletePhases ? deleteCursor : inPlace ? 'crosshair' : 'default' }}
             onPointerDown={overlayActive ? onSvgPointerDown : undefined}
             onPointerMove={overlayActive ? onSvgPointerMove : undefined}
             onPointerUp={overlayActive ? onSvgPointerUp : undefined}
@@ -749,28 +783,35 @@ export default function PdfCanvas({
               const fillColor = (b.phase_id && phaseColorMap[b.phase_id]) || UNASSIGNED_COLOR
               const isSelected = b.boundary_id === selectedBoundaryId
               const isTarget = b.boundary_id === splitTargetId
-              // Stroke is always the same dark color; only fill changes with assignment
-              const strokeColor = isSelected ? '#1d4ed8' : '#1e293b'
-              const strokeW = isSelected ? 3 : isTarget ? 2.5 : 2
-              // Fill opacity: assigned 45%, unassigned 20%, split target 60%
-              const fillOpacity = isTarget ? 0.6 : b.phase_id ? 0.45 : 0.20
+              const isDeleteHover = inDeletePhases && b.boundary_id === hoveredDeleteBndId
+              // Stroke / fill styling
+              const strokeColor = isDeleteHover ? '#dc2626' : isSelected ? '#1d4ed8' : '#1e293b'
+              const strokeW = isDeleteHover ? 3 : isSelected ? 3 : isTarget ? 2.5 : 2
+              const fillOpacity = isDeleteHover ? 0.55 : isTarget ? 0.6 : b.phase_id ? 0.45 : 0.20
+              const fillActual = isDeleteHover ? '#ef4444' : fillColor
               // Centroid for label
               const cx = svg.reduce((s,p)=>s+p.x,0)/svg.length
               const cy = svg.reduce((s,p)=>s+p.y,0)/svg.length
               return (
                 <g key={b.boundary_id}
-                  onClick={inSplit ? undefined : () => onBoundarySelect?.(isSelected ? null : b.boundary_id)}
-                  style={{ cursor: inSplit ? 'inherit' : 'pointer' }}
+                  onClick={inDeletePhases
+                    ? () => onBoundaryDelete?.(b.boundary_id)
+                    : inSplit ? undefined
+                    : () => onBoundarySelect?.(isSelected ? null : b.boundary_id)}
+                  onPointerEnter={inDeletePhases ? () => setHoveredDeleteBndId(b.boundary_id) : undefined}
+                  onPointerLeave={inDeletePhases ? () => setHoveredDeleteBndId(null) : undefined}
+                  style={{ cursor: inDeletePhases ? 'pointer' : inSplit ? 'inherit' : 'pointer' }}
                 >
                   {/* White backing makes dark stroke legible over any PDF background */}
                   <polygon points={polyStr}
                     fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth={strokeW + 3}
                     style={{ pointerEvents: 'none' }} />
                   <polygon points={polyStr}
-                    fill={fillColor} fillOpacity={fillOpacity}
+                    fill={fillActual} fillOpacity={fillOpacity}
                     stroke={strokeColor}
                     strokeWidth={strokeW}
                     strokeDasharray={isTarget ? '6 3' : 'none'}
+                    style={{ pointerEvents: 'fill' }}
                   />
                   {b.label && (
                     <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
@@ -786,10 +827,25 @@ export default function PdfCanvas({
             })}
 
             {/* ── Saved parcel (view/split mode: show as subtle outline) ── */}
-            {!inEdit && svgSaved.length >= 3 && (
-              <polygon points={svgSaved.map(p=>`${p.x},${p.y}`).join(' ')}
-                fill="none" stroke="rgba(37,99,235,0.25)" strokeWidth={1} strokeDasharray="4 4" />
-            )}
+            {!inEdit && svgSaved.length >= 3 && (() => {
+              // In split mode with no phase boundaries yet, highlight the parcel edge so
+              // the user knows it is the snappable split target.
+              const splitTarget = inSplit && parcelAsBoundary
+              return (
+                <>
+                  {splitTarget && (
+                    <polygon points={svgSaved.map(p=>`${p.x},${p.y}`).join(' ')}
+                      fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth={5}
+                      style={{ pointerEvents: 'none' }} />
+                  )}
+                  <polygon points={svgSaved.map(p=>`${p.x},${p.y}`).join(' ')}
+                    fill={splitTarget ? 'rgba(37,99,235,0.08)' : 'none'}
+                    stroke={splitTarget ? 'rgba(37,99,235,0.85)' : 'rgba(37,99,235,0.25)'}
+                    strokeWidth={splitTarget ? 2.5 : 1}
+                    strokeDasharray={splitTarget ? '6 3' : '4 4'} />
+                </>
+              )
+            })()}
 
             {/* ── Vertex snap indicator (edit mode drag) ── */}
             {inEdit && editSnapSvg && (

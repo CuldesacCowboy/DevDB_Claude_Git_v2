@@ -38,7 +38,7 @@ class BoundaryPatchRequest(BaseModel):
 
 class SplitRequest(BaseModel):
     plan_id: int
-    original_boundary_id: int
+    original_boundary_id: Optional[int] = None  # null = first split from parcel (no existing boundary to replace)
     polygon_a: str   # JSON string — [{x,y}] for child polygon A
     polygon_b: str   # JSON string — [{x,y}] for child polygon B
 
@@ -116,17 +116,20 @@ def delete_boundary(boundary_id: int, conn=Depends(get_db_conn)):
 def split_boundary(body: SplitRequest, conn=Depends(get_db_conn)):
     """
     Replace original_boundary_id with two child polygons (polygon_a and polygon_b).
+    When original_boundary_id is None, creates two new boundaries from the parcel
+    without deleting anything (first-split case).
     Returns the two newly created boundaries.
     """
     with conn.cursor() as cur:
-        # Verify original exists
-        cur.execute(
-            f"{_SELECT} FROM sim_phase_boundaries WHERE boundary_id = %s",
-            (body.original_boundary_id,),
-        )
-        original = cur.fetchone()
-        if not original:
-            raise HTTPException(status_code=404, detail="Original boundary not found")
+        if body.original_boundary_id is not None:
+            # Verify original exists
+            cur.execute(
+                f"{_SELECT} FROM sim_phase_boundaries WHERE boundary_id = %s",
+                (body.original_boundary_id,),
+            )
+            original = cur.fetchone()
+            if not original:
+                raise HTTPException(status_code=404, detail="Original boundary not found")
 
         # Determine next split_order
         cur.execute(
@@ -135,8 +138,9 @@ def split_boundary(body: SplitRequest, conn=Depends(get_db_conn)):
         )
         next_order = cur.fetchone()[0] + 1
 
-        # Delete original
-        cur.execute("DELETE FROM sim_phase_boundaries WHERE boundary_id = %s", (body.original_boundary_id,))
+        if body.original_boundary_id is not None:
+            # Delete original
+            cur.execute("DELETE FROM sim_phase_boundaries WHERE boundary_id = %s", (body.original_boundary_id,))
 
         # Insert two children
         rows = []

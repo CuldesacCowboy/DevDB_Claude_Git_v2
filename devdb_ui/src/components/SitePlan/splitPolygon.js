@@ -84,6 +84,145 @@ export function findFirstBoundaryIntersection(p1x, p1y, p2x, p2y, boundaries, no
   return earliest
 }
 
+// ─── Auto split target detection ─────────────────────────────────────────────
+//
+// findBestSplit(polyline, boundaries) finds the polygon that the drawn polyline
+// most significantly bisects — measured by how much of the polyline travels
+// through each polygon's interior — and returns the portion of the polyline
+// clipped to that polygon's boundary (ready to pass into splitPolygon).
+
+const _ON_TOL = 1e-4
+
+function _onBoundary(p, polygon) {
+  for (let j = 0; j < polygon.length; j++) {
+    const a = polygon[j], b = polygon[(j + 1) % polygon.length]
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx * dx + dy * dy
+    if (len2 === 0) continue
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+    if (Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)) < _ON_TOL) return true
+  }
+  return false
+}
+
+function _pip(px, py, polygon) {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y, xj = polygon[j].x, yj = polygon[j].y
+    if (((yi > py) !== (yj > py)) && px < ((xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside
+  }
+  return inside
+}
+
+function _inOrOn(p, polygon) {
+  return _onBoundary(p, polygon) || _pip(p.x, p.y, polygon)
+}
+
+function _polyLen(pts) {
+  let s = 0
+  for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y)
+  return s
+}
+
+/**
+ * Clip the drawn polyline to the interior of a single polygon.
+ * Returns [{x,y}] from boundary-entry to boundary-exit, or null if the
+ * polyline doesn't actually bisect the polygon.
+ */
+function _clipPolylineTo(polyline, polygon) {
+  const totalLen = _polyLen(polyline)
+  if (totalLen < 1e-8) return null
+
+  // Cumulative t ∈ [0,1] at each vertex
+  const vt = [0]
+  for (let i = 1; i < polyline.length; i++)
+    vt.push(vt[i-1] + Math.hypot(polyline[i].x - polyline[i-1].x, polyline[i].y - polyline[i-1].y) / totalLen)
+
+  // Collect boundary-crossing events: snapped endpoints + segment↔edge intersections
+  const events = []
+  if (_onBoundary(polyline[0], polygon))
+    events.push({ t: 0, point: polyline[0] })
+  for (let i = 0; i < polyline.length - 1; i++) {
+    const a = polyline[i], b = polyline[i + 1]
+    const sl = Math.hypot(b.x - a.x, b.y - a.y)
+    for (let j = 0; j < polygon.length; j++) {
+      const c = polygon[j], d = polygon[(j + 1) % polygon.length]
+      const ix = segIntersect(a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y)
+      if (!ix) continue
+      events.push({
+        t: vt[i] + ix.t * (sl / totalLen),
+        point: { x: c.x + ix.u * (d.x - c.x), y: c.y + ix.u * (d.y - c.y) },
+      })
+    }
+  }
+  if (_onBoundary(polyline[polyline.length - 1], polygon))
+    events.push({ t: 1, point: polyline[polyline.length - 1] })
+
+  events.sort((a, b) => a.t - b.t)
+  const evts = events.filter((e, i) => i === 0 || e.t - events[i-1].t > 1e-6)
+  if (evts.length < 2) return null
+
+  // Interpolate a world-space point at global t along the polyline
+  function ptAtT(t) {
+    const target = t * totalLen
+    let cum = 0
+    for (let i = 0; i < polyline.length - 1; i++) {
+      const a = polyline[i], b = polyline[i + 1]
+      const sl = Math.hypot(b.x - a.x, b.y - a.y)
+      if (cum + sl >= target - 1e-10) {
+        const s = sl > 0 ? (target - cum) / sl : 0
+        return { x: a.x + s * (b.x - a.x), y: a.y + s * (b.y - a.y) }
+      }
+      cum += sl
+    }
+    return polyline[polyline.length - 1]
+  }
+
+  // Find the pair of events that bracket the longest interior span where
+  // every sub-interval between them also lies inside the polygon.
+  let bestEntry = -1, bestExit = -1, bestSpan = 0
+  for (let i = 0; i < evts.length - 1; i++) {
+    for (let j = i + 1; j < evts.length; j++) {
+      // Verify every sub-interval is inside
+      let ok = true
+      for (let k = i; k < j; k++) {
+        if (!_inOrOn(ptAtT((evts[k].t + evts[k+1].t) / 2), polygon)) { ok = false; break }
+      }
+      if (!ok) continue
+      const span = evts[j].t - evts[i].t
+      if (span > bestSpan) { bestSpan = span; bestEntry = i; bestExit = j }
+    }
+  }
+  if (bestEntry === -1) return null
+
+  const entryT = evts[bestEntry].t
+  const exitT  = evts[bestExit].t
+  const interior = polyline.filter((_, i) => vt[i] > entryT + 1e-6 && vt[i] < exitT - 1e-6)
+  return [evts[bestEntry].point, ...interior, evts[bestExit].point]
+}
+
+/**
+ * Given a drawn polyline (normalized coords), find the boundary polygon it
+ * most significantly bisects and return the line clipped to that polygon.
+ *
+ * "Most significantly" = the polygon through which the polyline travels the
+ * greatest interior distance.  This lets the user draw from any boundary to
+ * any other boundary and have the correct region auto-detected.
+ *
+ * Returns { boundary, clippedLine: [{x,y}] } or null.
+ */
+export function findBestSplit(polyline, boundaries) {
+  if (!polyline || polyline.length < 2 || !boundaries?.length) return null
+  let best = null, bestLen = 0
+  for (const b of boundaries) {
+    const polygon = JSON.parse(b.polygon_json)
+    const clipped = _clipPolylineTo(polyline, polygon)
+    if (!clipped || clipped.length < 2) continue
+    const len = _polyLen(clipped)
+    if (len > bestLen) { bestLen = len; best = { boundary: b, clippedLine: clipped } }
+  }
+  return best
+}
+
 // ─── Polygon split algorithm (normalized space) ───────────────────────────────
 
 /**

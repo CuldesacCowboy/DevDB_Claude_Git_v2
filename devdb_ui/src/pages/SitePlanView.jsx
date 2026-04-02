@@ -235,13 +235,12 @@ function SitePlanViewInner() {
     for (const [lotIdStr, pos] of Object.entries(lotPositions)) {
       const lotId = Number(lotIdStr)
       const phase = findPhaseForPosition(pos.x, pos.y)
-      if (phase === undefined) {
-        removes.push(lotId)  // outside all polygons → back to bank
-      } else {
-        updates.push({ lot_id: lotId, x: pos.x, y: pos.y, phase_id: phase ?? null })
-      }
+      // Always keep the lot at its position. If outside all polygons or inside an
+      // unassigned polygon, phase_id is null — the lot stays on the map, unassigned.
+      updates.push({ lot_id: lotId, x: pos.x, y: pos.y, phase_id: phase ?? null })
     }
-    // Lots removed from plan (were in savedPositions but dropped from lotPositions)
+    // Only remove lots the user explicitly took off the map (present in savedPositions
+    // but absent from current lotPositions — i.e., dragged back to the bank).
     for (const lotIdStr of Object.keys(savedPositions)) {
       const lotId = Number(lotIdStr)
       if (!(lotId in lotPositions)) removes.push(lotId)
@@ -314,16 +313,62 @@ function SitePlanViewInner() {
     } catch { /* ignore */ }
   }
 
+  async function handleDeleteBoundary(boundaryId) {
+    try {
+      await fetch(`${API}/phase-boundaries/${boundaryId}`, { method: 'DELETE' })
+      setBoundaries(bs => bs.filter(b => b.boundary_id !== boundaryId))
+      setSelectedBoundaryId(prev => prev === boundaryId ? null : prev)
+      setUndoStack([])  // delete-phase edits aren't undoable; clear stack to avoid stale undo
+    } catch { /* ignore */ }
+  }
+
+  async function handleDeleteAllBoundaries() {
+    if (!plan || !boundaries.length) return
+    try {
+      await Promise.all(boundaries.map(b =>
+        fetch(`${API}/phase-boundaries/${b.boundary_id}`, { method: 'DELETE' })
+      ))
+      setBoundaries([])
+      setSelectedBoundaryId(null)
+      setUndoStack([])
+      setMode('view')
+    } catch { /* ignore */ }
+  }
+
+  async function handleDeleteCommunityBoundary() {
+    if (!plan) return
+    if (!window.confirm('Delete the community boundary and all phases? This cannot be undone.')) return
+    try {
+      // Delete all boundaries from DB
+      await Promise.all(boundaries.map(b =>
+        fetch(`${API}/phase-boundaries/${b.boundary_id}`, { method: 'DELETE' })
+      ))
+      // Clear parcel from DB
+      await fetch(`${API}/site-plans/${plan.plan_id}/parcel`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parcel_json: null }),
+      })
+      setPlan(p => ({ ...p, parcel_json: null }))
+      setBoundaries([])
+      setSelectedBoundaryId(null)
+      setUndoStack([])
+      setMode('view')
+    } catch { /* ignore */ }
+  }
+
   const onSplitConfirm = useCallback(async (originalBoundaryId, polyA, polyB) => {
     if (!plan) return
-    const original = boundariesRef.current.find(b => b.boundary_id === originalBoundaryId)
+    const original = originalBoundaryId != null
+      ? boundariesRef.current.find(b => b.boundary_id === originalBoundaryId)
+      : null
     try {
       const res = await fetch(`${API}/phase-boundaries/split`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           plan_id: plan.plan_id,
-          original_boundary_id: originalBoundaryId,
+          original_boundary_id: originalBoundaryId ?? null,
           polygon_a: JSON.stringify(polyA),
           polygon_b: JSON.stringify(polyB),
         }),
@@ -506,9 +551,14 @@ function SitePlanViewInner() {
             <button onClick={() => { setMode('split'); setSelectedBoundaryId(null) }} style={btn('#7c3aed', '#f5f3ff', '#ddd6fe')}>
               Split Region
             </button>
+            {hasBoundaries && (
+              <button onClick={() => { setMode('delete-phases'); setSelectedBoundaryId(null) }} style={btn('#b45309', '#fffbeb', '#fde68a')}>
+                Delete Phases
+              </button>
+            )}
             {hasParcel && (
-              <button onClick={clearParcel} style={btn('#dc2626', '#fef2f2', '#fecaca')}>
-                Clear Parcel
+              <button onClick={handleDeleteCommunityBoundary} style={btn('#dc2626', '#fef2f2', '#fecaca')}>
+                Delete Community Boundary
               </button>
             )}
           </>
@@ -523,6 +573,12 @@ function SitePlanViewInner() {
         )}
         {hasPlan && mode === 'split' && (
           <button onClick={() => { setMode('view'); setSelectedBoundaryId(null) }} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
+        )}
+        {hasPlan && mode === 'delete-phases' && (
+          <>
+            <button onClick={handleDeleteAllBoundaries} style={btn('#dc2626', '#fef2f2', '#fecaca')}>Delete All</button>
+            <button onClick={() => setMode('view')} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
+          </>
         )}
 
         {hasPlan && <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />}
@@ -589,6 +645,7 @@ function SitePlanViewInner() {
               selectedBoundaryId={selectedBoundaryId}
               phaseColorMap={phaseColorMap}
               onBoundarySelect={onBoundarySelect}
+              onBoundaryDelete={handleDeleteBoundary}
               onSplitConfirm={onSplitConfirm}
               onBoundaryUpdated={updated => setBoundaries(bs => bs.map(b => b.boundary_id === updated.boundary_id ? updated : b))}
               onVertexEditComplete={onVertexEditComplete}
@@ -612,9 +669,10 @@ function SitePlanViewInner() {
               whiteSpace: 'nowrap',
             }}>
               <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 500 }}>
-                {mode === 'trace' && 'Click to place vertices · click first vertex to close'}
-                {mode === 'edit'  && 'Drag vertices · click edge to add point · right-click to remove'}
-                {mode === 'split' && 'Click boundary edge to begin · draw across · click opposite edge to finalize'}
+                {mode === 'trace'          && 'Click to place vertices · click first vertex to close'}
+                {mode === 'edit'           && 'Drag vertices · click edge to add point · right-click to remove'}
+                {mode === 'split'          && 'Click any boundary edge to begin · draw across the region · click any boundary edge to split'}
+                {mode === 'delete-phases'  && 'Click a phase region to delete it · or use Delete All in the toolbar'}
               </span>
             </div>
           )}
@@ -661,6 +719,7 @@ function SitePlanViewInner() {
             selectedBoundary={selectedBoundary}
             assignedPhaseIds={assignedPhaseIds}
             onSelectBoundary={id => setSelectedBoundaryId(prev => prev === id ? null : id)}
+            onDeleteBoundary={handleDeleteBoundary}
             onAssign={assignPhaseToSelected}
             onUnassign={unassignBoundary}
             onInstrumentColorChange={handleInstrumentColorChange}
@@ -690,7 +749,7 @@ const panelCollapseBtn = {
 function PhasePanel({
   boundaries, phases, phaseMap, phaseColorMap,
   instrumentColors, selectedBoundaryId, selectedBoundary, assignedPhaseIds,
-  onSelectBoundary, onAssign, onUnassign, onInstrumentColorChange, mode,
+  onSelectBoundary, onDeleteBoundary, onAssign, onUnassign, onInstrumentColorChange, mode,
   collapsed, onCollapseToggle,
 }) {
   // Group phases by instrument_id; unassigned (null) go into a separate list
@@ -768,31 +827,48 @@ function PhasePanel({
               key={b.boundary_id}
               onClick={() => onSelectBoundary(b.boundary_id)}
               style={{
-                padding: '5px 12px 5px 8px', cursor: 'pointer',
+                padding: '5px 8px 5px 8px', cursor: 'pointer',
                 borderBottom: '1px solid #f3f4f6',
                 background: isSel ? '#ede9fe' : 'transparent',
                 borderLeft: `4px solid ${isSel ? '#7c3aed' : 'transparent'}`,
+                display: 'flex', alignItems: 'center', gap: 4,
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{
-                  width: 10, height: 10, borderRadius: 2, flexShrink: 0,
-                  background: swatchColor,
-                  outline: isSel ? '2px solid #c4b5fd' : 'none',
-                  outlineOffset: 1,
-                }} />
-                {/* Phase name is primary */}
-                <span style={{
-                  fontSize: 11, fontWeight: isSel ? 700 : ap ? 500 : 400,
-                  color: ap ? '#1e293b' : '#9ca3af',
-                }}>
-                  {ap ? ap.phase_name : 'Unassigned'}
-                </span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{
+                    width: 10, height: 10, borderRadius: 2, flexShrink: 0,
+                    background: swatchColor,
+                    outline: isSel ? '2px solid #c4b5fd' : 'none',
+                    outlineOffset: 1,
+                  }} />
+                  <span style={{
+                    fontSize: 11, fontWeight: isSel ? 700 : ap ? 500 : 400,
+                    color: ap ? '#1e293b' : '#9ca3af',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {ap ? ap.phase_name : 'Unassigned'}
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, marginTop: 1, paddingLeft: 16, color: '#d1d5db' }}>
+                  Region {i + 1}
+                </div>
               </div>
-              {/* Region number is secondary context */}
-              <div style={{ fontSize: 10, marginTop: 1, paddingLeft: 16, color: '#d1d5db' }}>
-                Region {i + 1}
-              </div>
+              {onDeleteBoundary && (
+                <button
+                  onClick={e => { e.stopPropagation(); onDeleteBoundary(b.boundary_id) }}
+                  title="Delete region"
+                  style={{
+                    flexShrink: 0, width: 18, height: 18, borderRadius: 3,
+                    border: '1px solid #fecaca', background: '#fff5f5',
+                    color: '#ef4444', cursor: 'pointer', fontSize: 12,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    lineHeight: 1, padding: 0,
+                  }}
+                >
+                  ×
+                </button>
+              )}
             </div>
           )
         })}
