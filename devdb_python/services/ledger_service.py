@@ -86,48 +86,10 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
         )
         rows = [_ledger_row(r) for r in cur.fetchall()]
 
-        # Overlay entitlement events onto ent_plan
-        cur.execute(
-            """
-            SELECT dev_id, DATE_TRUNC('MONTH', event_date)::DATE AS month,
-                   SUM(lots_entitled) AS cnt
-            FROM sim_entitlement_events
-            WHERE ent_group_id = %s
-            GROUP BY dev_id, DATE_TRUNC('MONTH', event_date)::DATE
-            """,
-            (ent_group_id,),
-        )
-        ent_overlay: dict[tuple, int] = {
-            (r["dev_id"], r["month"].isoformat()): int(r["cnt"])
-            for r in cur.fetchall()
-        }
-        for row in rows:
-            key = (row["dev_id"], row["calendar_month"])
-            if key in ent_overlay:
-                row["ent_plan"] = (row["ent_plan"] or 0) + ent_overlay.pop(key)
-        # Remaining overlay months not yet in the ledger — inject as sparse rows
-        for (dev_id, month_iso), cnt in ent_overlay.items():
-            cur.execute(
-                """
-                SELECT d.dev_name
-                FROM dim_development dd
-                JOIN developments d ON d.marks_code = dd.dev_code2
-                WHERE dd.development_id = %s
-                """,
-                (dev_id,),
-            )
-            name_row = cur.fetchone()
-            rows.append({
-                "dev_id": dev_id,
-                "dev_name": name_row["dev_name"] if name_row else str(dev_id),
-                "builder_id": None,
-                "calendar_month": month_iso,
-                "ent_plan": cnt, "dev_plan": 0, "td_plan": 0,
-                "str_plan": 0, "cmp_plan": 0, "cls_plan": 0,
-                "p_end": 0, "e_end": 0, "d_end": 0, "h_end": 0,
-                "u_end": 0, "uc_end": 0, "c_end": 0,
-                "closed_cumulative": None,
-            })
+        # ent_plan is now sourced entirely from date_ent on sim_lots via the DB view.
+        # The sim_entitlement_events overlay was the old per-dev counting mechanism
+        # and is no longer used — the group-level Entitlements Date writes date_ent
+        # directly to every lot, so the DB view already counts correctly.
 
         # Synthetic date_paper row per dev (if that month isn't present)
         cur.execute(
