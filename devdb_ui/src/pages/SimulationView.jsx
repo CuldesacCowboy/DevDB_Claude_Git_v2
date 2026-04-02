@@ -40,7 +40,7 @@ function periodLabel(key, period) {
 
 /** Collapse raw API rows (multiple builder_ids per month) into one row per month,
  *  overlay entitlement-event additions, then group into the chosen period. */
-function buildLedgerRows(rawRows, entEvents, selectedDevIds, period, ledgerStartDate) {
+function buildLedgerRows(rawRows, entEvents, selectedDevIds, period, ledgerStartDate, utilization) {
   // 1. Filter by selected devs
   const filtered = selectedDevIds === null
     ? rawRows
@@ -76,6 +76,22 @@ function buildLedgerRows(rawRows, entEvents, selectedDevIds, period, ledgerStart
   // 5. Filter to ledger_start_date if set
   if (ledgerStartDate) {
     sorted = sorted.filter(r => r.calendar_month >= ledgerStartDate)
+  }
+
+  // 5b. Recompute p_end: all lots start in P at ledger_start_date and drain
+  //     as entitlement events fire.  p_end = totalPlannedLots - cumulativeEntitled.
+  //     This replaces the DB view's "all dates null" test which fails for real
+  //     lots that already have MARKsystems dates.
+  const filteredUtil = utilization
+    ? (selectedDevIds === null ? utilization : utilization.filter(u => selectedDevIds.includes(u.dev_id)))
+    : []
+  const totalPlannedLots = filteredUtil.reduce((s, u) => s + (u.projected_count || 0), 0)
+  if (totalPlannedLots > 0) {
+    let entitledSoFar = 0
+    for (const r of sorted) {
+      entitledSoFar += (r.ent_plan || 0)
+      r.p_end = Math.max(0, totalPlannedLots - entitledSoFar)
+    }
   }
 
   // 6. Running closed_cumulative
@@ -707,8 +723,8 @@ export default function SimulationView() {
   // ── Build ledger rows ──────────────────────────────────────────────────────
 
   const ledgerRows = useMemo(() => buildLedgerRows(
-    byDev, entEvents, selectedDevIds, period, ledgerConfig?.ledger_start_date ?? null,
-  ), [byDev, entEvents, selectedDevIds, period, ledgerConfig])
+    byDev, entEvents, selectedDevIds, period, ledgerConfig?.ledger_start_date ?? null, utilization,
+  ), [byDev, entEvents, selectedDevIds, period, ledgerConfig, utilization])
 
   const filteredUtilization = useMemo(() => {
     if (selectedDevIds === null) return utilization
