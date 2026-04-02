@@ -5,6 +5,7 @@
 
 ## Phase 1 — Quick Wins ✅ COMPLETE (2026-04-02)
 
+
 | # | Task | Files | Status |
 |---|---|---|---|
 | 1.1 | Remove dead `hideOutdatedWarning` constant; enable needs-rerun banner | `LotPhaseView.jsx` | ✅ Done |
@@ -16,44 +17,25 @@
 
 ---
 
-## Phase 2 — Structural Splits
+## Phase 2 — Structural Splits ✅ COMPLETE (2026-04-02)
 
-### 2.1 Split `takedown_agreements.py` (915 lines)
+### 2.1 Split `takedown_agreements.py` (916 lines) ✅ Done
 
 **Problem:** One file handles TDA CRUD, checkpoint CRUD, lot assignment, date/lock editing, and building-group fan-out. Four distinct domains.
 
 **Target split:**
 
-| New file | Owns | Est. lines |
-|---|---|---|
-| `routers/tda_crud.py` | TDA create, rename, list (`GET /`, `POST /`, `PATCH /{id}`) | ~180 |
-| `routers/tda_checkpoints.py` | Checkpoint CRUD (`POST /checkpoints`, `PATCH`, `DELETE`) | ~250 |
-| `routers/tda_assignments.py` | Lot assignment, unassignment, reorder, date/lock editing | ~400 |
-| `services/tda_service.py` | (Optional) shared query helpers if any emerge | — |
-
-**Notes:**
-- Keep all routers mounted under the same `/takedown-agreements` prefix
-- Register all three sub-routers in `main.py`
-- No API contract changes — pure structural split
+**Result:** `tda_crud.py` (369), `tda_checkpoints.py` (70), `tda_assignments.py` (435). All mounted under `/takedown-agreements`. No API contract changes.
 
 ---
 
-### 2.2 Split `entitlement_groups.py` (788 lines)
+### 2.2 Split `entitlement_groups.py` (767 lines) ✅ Done
 
 **Problem:** CRUD, split-check, param-check, lot-phase-view (complex 500-line function), delivery config, ledger config, and entitlement events — all in one file.
 
 **Target split:**
 
-| New file | Owns | Est. lines |
-|---|---|---|
-| `routers/eg_crud.py` | EG list, create, patch | ~100 |
-| `routers/eg_validation.py` | split-check, param-check, delivery-config, ledger-config | ~200 |
-| `routers/eg_views.py` | lot-phase-view (complex aggregation), entitlement-events CRUD | ~400 |
-| `services/eg_lot_phase_service.py` | Extract the 500-line lot-phase-view query logic | ~300 |
-
-**Notes:**
-- The `ent_group_lot_phase_view()` function alone is ~230 lines; it should move to a service
-- `_sort_phases_by_display_order()` helper stays with whichever module uses it
+**Result:** `eg_crud.py` (120), `eg_validation.py` (238), `eg_views.py` (158), `services/eg_lot_phase_service.py` (281). `_sort_phases_for_display()` moved to service. No API contract changes.
 
 ---
 

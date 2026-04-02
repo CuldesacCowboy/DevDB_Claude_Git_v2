@@ -43,11 +43,25 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: developments, dim_county, dim_development, sim_entitlement_groups, sim_dev_phases, sim_lots, sim_phase_product_splits, ref_lot_types, sim_dev_params
 - Last commit: 2026-04-02
 
-### devdb_python/api/routers/entitlement_groups.py
-- Owns: CRUD for sim_entitlement_groups; GET /{id}/lot-phase-view aggregating instruments/phases/lots; GET /{id}/split-check (phases with no product splits); GET /{id}/param-check (all devs with starts-target status — joins through dim_development)
-- Imports: api.deps, api.models.lot_models, psycopg2.extras
+### devdb_python/api/routers/eg_crud.py
+- Owns: Entitlement-group list, create, patch (GET/POST/PATCH on /entitlement-groups)
+- Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
-- Tables: sim_entitlement_groups, developments, dim_development, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, ref_lot_types, sim_ent_group_developments, sim_dev_params
+- Tables: sim_entitlement_groups, developments, dim_development, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits
+- Last commit: 2026-04-02
+
+### devdb_python/api/routers/eg_validation.py
+- Owns: split-check, param-check, delivery-config GET/PUT, ledger-config GET/PUT
+- Imports: api.deps, api.db, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_dev_phases, sim_legal_instruments, sim_ent_group_developments, sim_phase_product_splits, sim_ent_group_developments, sim_dev_params, sim_entitlement_delivery_config, sim_entitlement_groups
+- Last commit: 2026-04-02
+
+### devdb_python/api/routers/eg_views.py
+- Owns: lot-phase-view route (delegates to eg_lot_phase_service), entitlement events CRUD
+- Imports: api.deps, api.db, api.models.lot_models, services.eg_lot_phase_service, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_entitlement_events, dim_development, developments (via service for lot-phase-view)
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/instruments.py
@@ -64,11 +78,25 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: delegated to lot_assignment_service
 - Last commit: 2026-03-27
 
-### devdb_python/api/routers/takedown_agreements.py
-- Owns: TDA read and write endpoints (Slice A + Slice B); agreement list, checkpoint detail, lot assignment, HC/BLDR/DIG projected date editing; PATCH rename endpoint; sequence-based assignment_id (no MAX+1 race)
-- Imports: api.deps, psycopg2.extras, pydantic, fastapi
+### devdb_python/api/routers/tda_crud.py
+- Owns: TDA list, create, rename, detail view (GET/POST/PATCH on /takedown-agreements)
+- Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments, sim_lots, sim_entitlement_groups
+- Last commit: 2026-04-02
+
+### devdb_python/api/routers/tda_checkpoints.py
+- Owns: Checkpoint create (POST /takedown-agreements/{tda_id}/checkpoints)
+- Imports: api.deps, api.db, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_takedown_agreements, sim_takedown_checkpoints
+- Last commit: 2026-04-02
+
+### devdb_python/api/routers/tda_assignments.py
+- Owns: Lot assignment/unassignment, pool management, HC/BLDR/DIG date and lock editing with building-group fan-out
+- Imports: api.deps, api.db, psycopg2.extras, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_takedown_agreement_lots, sim_takedown_lot_assignments, sim_takedown_checkpoints, sim_lots, sim_assignment_log
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/phases.py
@@ -99,13 +127,6 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: sim_lot_site_positions, sim_lots, sim_site_plans, sim_dev_phases, dim_development, developments, sim_legal_instruments
 - Last commit: 2026-04-02
 
-### devdb_python/api/routers/phases.py (updated)
-- Added: GET /{phase_id}/product-splits — returns all splits with lot type labels and actual counts
-- Last commit: 2026-04-01
-
-### devdb_python/api/routers/entitlement_groups.py (updated)
-- Added: GET /{ent_group_id}/split-check — returns phases with no product splits (pre-run warning for D-100)
-- Last commit: 2026-04-01
 
 ### devdb_python/api/routers/simulations.py
 - Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms, errors[]; looks up dev names for missing_params_devs via dim_development bridge
@@ -131,8 +152,15 @@ touches before making changes. Keep this section updated when files are added or
 ### devdb_python/api/sql_fragments.py
 - Owns: Shared SQL fragment helpers; lot_status_sql(alias) returns the lot pipeline-status CASE expression (OUT > C > UC > H > U > D > E > P) for use in f-string queries
 - Imports: none
-- Imported by: routers/developments.py, routers/entitlement_groups.py, routers/ledger.py
+- Imported by: routers/developments.py, services/eg_lot_phase_service.py, routers/ledger.py
 - Tables: none
+- Last commit: 2026-04-02
+
+### devdb_python/services/eg_lot_phase_service.py
+- Owns: query_lot_phase_view(ent_group_id, conn) — full lot-phase-view query logic extracted from eg_views.py; _sort_phases_for_display() helper
+- Imports: api.db, api.models.lot_models, api.sql_fragments, fastapi, re
+- Imported by: routers/eg_views.py
+- Tables: sim_entitlement_groups, developments, dim_development, sim_legal_instruments, sim_dev_phases, sim_lots, ref_lot_types, sim_phase_product_splits
 - Last commit: 2026-04-02
 
 ### devdb_python/services/ledger_service.py
