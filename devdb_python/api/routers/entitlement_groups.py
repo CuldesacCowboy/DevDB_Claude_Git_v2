@@ -224,7 +224,8 @@ def ent_group_param_check(ent_group_id: int, conn=Depends(get_db_conn)):
                     ELSE 'ok'
                 END AS status
             FROM sim_ent_group_developments segd
-            JOIN developments d ON d.dev_id = segd.dev_id
+            JOIN dim_development dd ON dd.development_id = segd.dev_id
+            JOIN developments d ON d.marks_code = dd.dev_code2
             LEFT JOIN sim_dev_params sdp ON sdp.dev_id = segd.dev_id
             WHERE segd.ent_group_id = %s
               AND (

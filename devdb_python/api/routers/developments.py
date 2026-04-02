@@ -219,8 +219,10 @@ def upsert_sim_params(dev_id: int, body: SimParamsPutRequest, conn=Depends(get_d
     import psycopg2.extras
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     try:
+        # dev_id here is dim_development.development_id (same space used by
+        # sim_ent_group_developments and sim_dev_phases), NOT developments.dev_id.
         cur.execute(
-            "SELECT dev_id FROM developments WHERE dev_id = %s", (dev_id,)
+            "SELECT development_id FROM dim_development WHERE development_id = %s", (dev_id,)
         )
         if cur.fetchone() is None:
             raise HTTPException(status_code=404, detail=f"Development {dev_id} not found.")
