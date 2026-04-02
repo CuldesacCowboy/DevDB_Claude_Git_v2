@@ -2,44 +2,121 @@ import { useState, useEffect, useCallback } from 'react'
 
 const API = '/api'
 
-// Column groups for the ledger table
 const EVENT_COLS = [
   { key: 'ent_plan', label: 'ENT' },
   { key: 'dev_plan', label: 'DEV' },
-  { key: 'td_plan',  label: 'TD' },
+  { key: 'td_plan',  label: 'TD'  },
   { key: 'str_plan', label: 'STR' },
   { key: 'cmp_plan', label: 'CMP' },
   { key: 'cls_plan', label: 'CLS' },
 ]
 const STATUS_COLS = [
-  { key: 'p_end',  label: 'P' },
-  { key: 'e_end',  label: 'E' },
-  { key: 'd_end',  label: 'D' },
-  { key: 'h_end',  label: 'H' },
-  { key: 'u_end',  label: 'U' },
+  { key: 'p_end',  label: 'P'  },
+  { key: 'e_end',  label: 'E'  },
+  { key: 'd_end',  label: 'D'  },
+  { key: 'h_end',  label: 'H'  },
+  { key: 'u_end',  label: 'U'  },
   { key: 'uc_end', label: 'UC' },
-  { key: 'c_end',  label: 'C' },
+  { key: 'c_end',  label: 'C'  },
 ]
 
-function formatMonth(iso) {
+function fmt(iso) {
   if (!iso) return ''
-  const d = new Date(iso + 'T00:00:00')
-  return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
 }
 
-function cell(val) {
-  return val > 0 ? val : <span style={{ color: '#d1d5db' }}>—</span>
+function cell(v) {
+  return v > 0 ? v : <span style={{ color: '#e5e7eb' }}>—</span>
+}
+
+function LedgerTable({ rows }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
+        <thead>
+          <tr style={{ background: '#f9fafb' }}>
+            <th style={thS('left')}>Month</th>
+            <th style={{ ...thS(), borderRight: '2px solid #d1d5db' }} colSpan={6}>Events</th>
+            <th style={thS()} colSpan={7}>End-of-month status</th>
+            <th style={thS()}>CLS cumul.</th>
+          </tr>
+          <tr style={{ background: '#f9fafb' }}>
+            <th style={thS('left')} />
+            {EVENT_COLS.map(c => <th key={c.key} style={thS()}>{c.label}</th>)}
+            {STATUS_COLS.map((c, i) => (
+              <th key={c.key} style={{ ...thS(), ...(i === 0 ? { borderLeft: '2px solid #d1d5db' } : {}) }}>
+                {c.label}
+              </th>
+            ))}
+            <th style={thS()} />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.calendar_month} style={{ background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
+              <td style={tdS(true)}>{fmt(r.calendar_month)}</td>
+              {EVENT_COLS.map(c => <td key={c.key} style={tdS()}>{cell(r[c.key])}</td>)}
+              {STATUS_COLS.map((c, j) => (
+                <td key={c.key} style={{ ...tdS(), ...(j === 0 ? { borderLeft: '2px solid #d1d5db' } : {}) }}>
+                  {cell(r[c.key])}
+                </td>
+              ))}
+              <td style={tdS()}>{r.closed_cumulative > 0 ? r.closed_cumulative : ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function DevSection({ devId, devName, devRows, pgRows }) {
+  const [showPg, setShowPg] = useState(false)
+  const pgIds = [...new Set(pgRows.map(r => r.projection_group_id))]
+
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <div style={{
+        display: 'flex', alignItems: 'baseline', gap: 10,
+        borderBottom: '2px solid #e5e7eb', paddingBottom: 5, marginBottom: 10,
+      }}>
+        <span style={{ fontWeight: 700, fontSize: 14, color: '#111827' }}>{devName}</span>
+        {pgIds.length > 0 && (
+          <button
+            onClick={() => setShowPg(v => !v)}
+            style={{ fontSize: 11, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+          >
+            {showPg ? 'hide PG detail ▲' : `show PG detail (${pgIds.length}) ▼`}
+          </button>
+        )}
+      </div>
+
+      <LedgerTable rows={devRows} />
+
+      {showPg && pgIds.map(pgId => (
+        <div key={pgId} style={{ marginTop: 20, paddingLeft: 20, borderLeft: '3px solid #e5e7eb' }}>
+          <div style={{
+            fontSize: 11, fontWeight: 600, color: '#9ca3af',
+            textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6,
+          }}>
+            PG {pgId}
+          </div>
+          <LedgerTable rows={pgRows.filter(r => r.projection_group_id === pgId)} />
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export default function SimulationView() {
-  const [entGroups, setEntGroups] = useState([])
-  const [entGroupId, setEntGroupId] = useState(null)
-  const [runStatus, setRunStatus] = useState(null)   // null | 'running' | { ok, iterations, elapsed_ms, error }
-  const [ledger, setLedger] = useState([])
-  const [ledgerLoading, setLedgerLoading] = useState(false)
-  const [missingSplits, setMissingSplits] = useState([])  // phases with no product splits
+  const [entGroups, setEntGroups]     = useState([])
+  const [entGroupId, setEntGroupId]   = useState(null)
+  const [runStatus, setRunStatus]     = useState(null)
+  const [byDev, setByDev]             = useState([])
+  const [byPg, setByPg]               = useState([])
+  const [loading, setLoading]         = useState(false)
+  const [missingSplits, setMissingSplits] = useState([])
 
-  // Load entitlement groups once
   useEffect(() => {
     fetch(`${API}/entitlement-groups`)
       .then(r => r.json())
@@ -47,36 +124,33 @@ export default function SimulationView() {
         setEntGroups(data)
         if (data.length > 0) setEntGroupId(data[0].ent_group_id)
       })
-      .catch(() => setEntGroups([]))
+      .catch(() => {})
   }, [])
 
-  // Check for phases missing splits whenever ent group changes
   const checkSplits = useCallback((id) => {
-    if (!id) return
     fetch(`${API}/entitlement-groups/${id}/split-check`)
       .then(r => r.json())
       .then(rows => setMissingSplits(Array.isArray(rows) ? rows : []))
       .catch(() => setMissingSplits([]))
   }, [])
 
-  useEffect(() => {
-    if (entGroupId) checkSplits(entGroupId)
-  }, [entGroupId, checkSplits])
-
-  // Load ledger whenever ent group changes
   const loadLedger = useCallback((id) => {
-    if (!id) return
-    setLedgerLoading(true)
-    fetch(`${API}/ledger/${id}`)
-      .then(r => r.json())
-      .then(rows => setLedger(Array.isArray(rows) ? rows : []))
-      .catch(() => setLedger([]))
-      .finally(() => setLedgerLoading(false))
+    setLoading(true)
+    Promise.all([
+      fetch(`${API}/ledger/${id}/by-dev`).then(r => r.json()),
+      fetch(`${API}/ledger/${id}`).then(r => r.json()),
+    ])
+      .then(([devRows, pgRows]) => {
+        setByDev(Array.isArray(devRows) ? devRows : [])
+        setByPg(Array.isArray(pgRows) ? pgRows : [])
+      })
+      .catch(() => { setByDev([]); setByPg([]) })
+      .finally(() => setLoading(false))
   }, [])
 
   useEffect(() => {
-    if (entGroupId) loadLedger(entGroupId)
-  }, [entGroupId, loadLedger])
+    if (entGroupId) { checkSplits(entGroupId); loadLedger(entGroupId) }
+  }, [entGroupId, checkSplits, loadLedger])
 
   async function handleRun() {
     if (!entGroupId) return
@@ -88,8 +162,7 @@ export default function SimulationView() {
         body: JSON.stringify({ ent_group_id: entGroupId }),
       })
       if (!res.ok) {
-        const text = await res.text()
-        setRunStatus({ ok: false, error: text })
+        setRunStatus({ ok: false, error: await res.text() })
         return
       }
       const data = await res.json()
@@ -101,17 +174,20 @@ export default function SimulationView() {
     }
   }
 
-  // Group ledger rows by projection_group_id
-  const pgIds = [...new Set(ledger.map(r => r.projection_group_id))]
+  // Build ordered dev list from byDev (preserves sort order from API)
+  const devList = [...new Map(byDev.map(r => [r.dev_id, r.dev_name])).entries()]
+    .map(([id, name]) => ({ id, name }))
+
+  const hasData = byDev.length > 0
 
   return (
-    <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', fontSize: 13 }}>
+    <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', fontSize: 13, maxWidth: 1200 }}>
 
-      {/* Controls row */}
+      {/* Controls */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <select
           value={entGroupId ?? ''}
-          onChange={e => setEntGroupId(Number(e.target.value))}
+          onChange={e => { setEntGroupId(Number(e.target.value)); setRunStatus(null) }}
           style={{ fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}
         >
           {entGroups.map(g => (
@@ -134,10 +210,16 @@ export default function SimulationView() {
         </button>
 
         {runStatus && runStatus !== 'running' && (
-          <span style={{ color: runStatus.ok ? '#16a34a' : '#dc2626', fontSize: 12 }}>
+          <span style={{ fontSize: 12, color: runStatus.ok ? '#16a34a' : '#dc2626' }}>
             {runStatus.ok
               ? `Done — ${runStatus.iterations} iteration(s), ${runStatus.elapsed_ms}ms`
               : `Error: ${runStatus.error}`}
+          </span>
+        )}
+
+        {hasData && (
+          <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9ca3af', fontStyle: 'italic' }}>
+            Plan scenario · units view
           </span>
         )}
       </div>
@@ -146,8 +228,7 @@ export default function SimulationView() {
       {missingSplits.length > 0 && (
         <div style={{
           marginBottom: 16, padding: '10px 14px',
-          background: '#fffbeb', border: '1px solid #fbbf24',
-          borderRadius: 6, fontSize: 12,
+          background: '#fffbeb', border: '1px solid #fbbf24', borderRadius: 6, fontSize: 12,
         }}>
           <div style={{ fontWeight: 600, color: '#92400e', marginBottom: 4 }}>
             {missingSplits.length} phase{missingSplits.length !== 1 ? 's' : ''} have no product splits — temp lot generation will produce zero lots for these phases (D-100):
@@ -166,83 +247,38 @@ export default function SimulationView() {
         </div>
       )}
 
-      {/* Ledger table */}
-      {ledgerLoading && (
-        <div style={{ color: '#6b7280', fontSize: 12 }}>Loading ledger…</div>
-      )}
+      {/* Ledger */}
+      {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
 
-      {!ledgerLoading && ledger.length === 0 && (
+      {!loading && !hasData && (
         <div style={{ color: '#9ca3af', fontSize: 12 }}>
           No ledger data. Run a simulation to populate results.
         </div>
       )}
 
-      {!ledgerLoading && pgIds.map(pgId => {
-        const rows = ledger.filter(r => r.projection_group_id === pgId)
-        return (
-          <div key={pgId} style={{ marginBottom: 32 }}>
-            <div style={{
-              fontWeight: 700, fontSize: 12, color: '#374151',
-              marginBottom: 6, letterSpacing: '0.04em', textTransform: 'uppercase',
-            }}>
-              PG {pgId}
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
-                <thead>
-                  <tr style={{ background: '#f9fafb' }}>
-                    <th style={th()}>Month</th>
-                    <th style={{ ...th(), borderRight: '2px solid #d1d5db' }} colSpan={6}>Events</th>
-                    <th style={th()} colSpan={7}>End-of-month status</th>
-                    <th style={th()}>CLS cumul.</th>
-                  </tr>
-                  <tr style={{ background: '#f9fafb' }}>
-                    <th style={th()}></th>
-                    {EVENT_COLS.map(c => <th key={c.key} style={th()}>{c.label}</th>)}
-                    {STATUS_COLS.map((c, i) => (
-                      <th key={c.key} style={{ ...th(), ...(i === 0 ? { borderLeft: '2px solid #d1d5db' } : {}) }}>
-                        {c.label}
-                      </th>
-                    ))}
-                    <th style={th()}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, i) => (
-                    <tr key={r.calendar_month} style={{ background: i % 2 === 0 ? '#fff' : '#f9fafb' }}>
-                      <td style={td(true)}>{formatMonth(r.calendar_month)}</td>
-                      {EVENT_COLS.map(c => <td key={c.key} style={td()}>{cell(r[c.key])}</td>)}
-                      {STATUS_COLS.map((c, j) => (
-                        <td key={c.key} style={{ ...td(), ...(j === 0 ? { borderLeft: '2px solid #d1d5db' } : {}) }}>
-                          {cell(r[c.key])}
-                        </td>
-                      ))}
-                      <td style={td()}>{r.closed_cumulative > 0 ? r.closed_cumulative : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )
-      })}
+      {!loading && hasData && devList.map(({ id: devId, name: devName }) => (
+        <DevSection
+          key={devId}
+          devId={devId}
+          devName={devName}
+          devRows={byDev.filter(r => r.dev_id === devId)}
+          pgRows={byPg.filter(r => r.dev_id === devId)}
+        />
+      ))}
     </div>
   )
 }
 
-function th() {
+function thS(align = 'right') {
   return {
-    padding: '4px 10px', textAlign: 'right', fontWeight: 600,
+    padding: '4px 10px', textAlign: align, fontWeight: 600,
     borderBottom: '1px solid #e5e7eb', color: '#6b7280', fontSize: 11,
   }
 }
-
-function td(isMonth = false) {
+function tdS(isMonth = false) {
   return {
     padding: '3px 10px', textAlign: isMonth ? 'left' : 'right',
-    borderBottom: '1px solid #f3f4f6',
-    fontVariantNumeric: 'tabular-nums',
-    color: isMonth ? '#374151' : '#111827',
-    fontWeight: isMonth ? 500 : 400,
+    borderBottom: '1px solid #f3f4f6', fontVariantNumeric: 'tabular-nums',
+    color: isMonth ? '#374151' : '#111827', fontWeight: isMonth ? 500 : 400,
   }
 }

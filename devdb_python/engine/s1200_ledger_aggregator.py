@@ -103,4 +103,43 @@ def ledger_aggregator(conn: DBConnection) -> None:
         GROUP BY l.projection_group_id, l.builder_id, m.calendar_month
     """)
 
-    print("S-12: v_sim_ledger_monthly and month_spine views created.")
+    conn.execute("""
+        CREATE OR REPLACE VIEW v_sim_ledger_monthly_by_dev AS
+        WITH base AS (
+            SELECT
+                d.dev_id,
+                d.dev_name,
+                v.calendar_month,
+                SUM(v.ent_plan)  AS ent_plan,
+                SUM(v.dev_plan)  AS dev_plan,
+                SUM(v.td_plan)   AS td_plan,
+                SUM(v.str_plan)  AS str_plan,
+                SUM(v.cmp_plan)  AS cmp_plan,
+                SUM(v.cls_plan)  AS cls_plan,
+                SUM(v.p_end)     AS p_end,
+                SUM(v.e_end)     AS e_end,
+                SUM(v.d_end)     AS d_end,
+                SUM(v.h_end)     AS h_end,
+                SUM(v.u_end)     AS u_end,
+                SUM(v.uc_end)    AS uc_end,
+                SUM(v.c_end)     AS c_end
+            FROM v_sim_ledger_monthly v
+            JOIN dim_projection_groups dpg ON v.projection_group_id = dpg.projection_group_id
+            JOIN developments d ON dpg.dev_id = d.dev_id
+            GROUP BY d.dev_id, d.dev_name, v.calendar_month
+        )
+        SELECT
+            dev_id,
+            dev_name,
+            calendar_month,
+            ent_plan, dev_plan, td_plan, str_plan, cmp_plan, cls_plan,
+            p_end, e_end, d_end, h_end, u_end, uc_end, c_end,
+            SUM(cls_plan) OVER (
+                PARTITION BY dev_id
+                ORDER BY calendar_month
+                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+            ) AS closed_cumulative
+        FROM base
+    """)
+
+    print("S-12: v_sim_ledger_monthly, v_sim_ledger_monthly_by_dev, and month_spine views created.")
