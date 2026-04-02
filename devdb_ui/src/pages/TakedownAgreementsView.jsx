@@ -3,6 +3,7 @@ import { DndContext, pointerWithin } from '@dnd-kit/core'
 import { useTdaData } from '../hooks/useTdaData'
 import { useTdaDragHandler } from '../hooks/useTdaDragHandler'
 import CheckpointBand from '../components/CheckpointBand'
+import { CheckpointControlContext } from '../contexts/CheckpointControlContext'
 import TdaCard from '../components/TdaCard'
 import TdaPageHeader from '../components/TdaPageHeader'
 import TdaDragOverlay from '../components/TdaDragOverlay'
@@ -76,6 +77,12 @@ export default function TakedownAgreementsView({ entGroupId }) {
   const [masterUnitDir, setMasterUnitDir] = useState('asc')
   const [masterUnitSeq, setMasterUnitSeq] = useState(0)
 
+  const checkpointControls = useMemo(() => ({
+    masterShowLots, masterCondensed, masterShowTimeline, masterShowDig,
+    masterDateDir, masterDateSeq, masterUnitDir, masterUnitSeq,
+  }), [masterShowLots, masterCondensed, masterShowTimeline, masterShowDig,
+       masterDateDir, masterDateSeq, masterUnitDir, masterUnitSeq])
+
   function handleMasterSortByDate() {
     const newDir = masterDateDir === 'desc' ? 'asc' : 'desc'
     setMasterDateDir(newDir)
@@ -146,6 +153,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
   const unitDirLabel = masterUnitDir === 'asc'  ? '↑ Unit' : '↓ Unit'
 
   return (
+    <CheckpointControlContext.Provider value={checkpointControls}>
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', background: '#f9fafb' }}>
       <TdaPageHeader
         entGroupName={entGroupName}
@@ -243,14 +251,6 @@ export default function TakedownAgreementsView({ entGroupId }) {
                       onToggleCheckpointLots={toggleAssignedCheckpointSelection}
                       onContextMenu={handleContextMenu}
                       dragLot={dragLot}
-                      masterShowLots={masterShowLots}
-                      masterCondensed={masterCondensed}
-                      masterShowTimeline={masterShowTimeline}
-                      masterShowDig={masterShowDig}
-                      masterDateDir={masterDateDir}
-                      masterDateSeq={masterDateSeq}
-                      masterUnitDir={masterUnitDir}
-                      masterUnitSeq={masterUnitSeq}
                     />
                   ))}
                 </TdaCard>
@@ -280,5 +280,6 @@ export default function TakedownAgreementsView({ entGroupId }) {
         />
       )}
     </div>
+    </CheckpointControlContext.Provider>
   )
 }

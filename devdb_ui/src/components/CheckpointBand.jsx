@@ -3,6 +3,7 @@ import { useDroppable } from '@dnd-kit/core'
 import LotPill, { StitchConnector, PlaceholderPill } from './LotPill'
 import CheckpointTimeline from './CheckpointTimeline'
 import { fmt, buildClusters } from '../utils/tdaUtils'
+import { useCheckpointControls } from '../contexts/CheckpointControlContext'
 
 // ── Editable inline value (green dashed style) ───────────────────
 export function EditableNumber({ value, onChange, onEditingChange }) {
@@ -59,10 +60,11 @@ export default function CheckpointBand({
   checkpoint, onDateChange, onLockChange,
   selectedAssignedLotIds, onToggleAssignedLot, onToggleCheckpointLots,
   onContextMenu, dragLot,
-  // Master control props — when these change, local state syncs to match
-  masterShowLots, masterCondensed, masterShowTimeline, masterShowDig,
-  masterDateDir, masterDateSeq, masterUnitDir, masterUnitSeq,
 }) {
+  const {
+    masterShowLots, masterCondensed, masterShowTimeline, masterShowDig,
+    masterDateDir, masterDateSeq, masterUnitDir, masterUnitSeq,
+  } = useCheckpointControls()
   const [localTotal, setLocalTotal] = useState(checkpoint.lots_required_cumulative || 0)
   const [localDate, setLocalDate]   = useState(checkpoint.checkpoint_date || '')
   const [editingTotal, setEditingTotal] = useState(false)
