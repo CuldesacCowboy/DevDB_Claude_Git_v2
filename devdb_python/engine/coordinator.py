@@ -23,6 +23,7 @@ from .s0300_gap_fill_engine import gap_fill_engine
 from .s0400_chronology_validator import chronology_validator
 from .s0500_takedown_engine import takedown_engine
 from .s0600_demand_generator import demand_generator
+from .s0820_post_generation_chronology_guard import post_generation_chronology_guard
 from .s0900_builder_assignment import builder_assignment
 from kernel import plan, FrozenInput
 from kernel.frozen_input_builder import build_frozen_input
@@ -92,44 +93,58 @@ def _sample_lag(rng: random.Random, curve: dict) -> int:
     return curve["p50"]
 
 
-def _apply_build_lag_curves(temp_lots: list, curves: dict, rng: random.Random) -> list:
+def _expand_timing(temp_lots: list, curves: dict, rng: random.Random) -> list:
     """
-    Replace default constant lags on temp lots with sampled values from empirical curves.
-    Applied after plan() returns, before builder_assignment.
-    Modifies date_cmp and date_cls in place; preserves date_str (the anchor).
-    Falls back to default lags when no curve available.
+    Shell timing expansion stage — derives date_cmp and date_cls from date_str
+    using empirical build lag curves. Runs after plan() returns, before S-0820.
+
+    Building groups share the same str_to_cmp lag (D-022): the lag is sampled once
+    per group using the first unit's lot_type_id, then applied uniformly to all units
+    in the group so they receive identical date_cmp. date_cls is derived per unit
+    independently (D-012/D-075).
+
+    Falls back to default constant lags when no empirical curve is available.
     """
     DEFAULT_CMP_LAG = 270
     DEFAULT_CLS_LAG = 45
 
+    # Sample str_to_cmp lag once per building group (shared date_cmp, D-022).
+    bg_cmp_lag: dict[int, int] = {}
+    for lot in temp_lots:
+        bg_id = lot.get("building_group_id")
+        if bg_id is not None and bg_id not in bg_cmp_lag:
+            curve = curves_for(curves, "str_to_cmp", lot.get("lot_type_id"))
+            bg_cmp_lag[bg_id] = _sample_lag(rng, curve) if curve else DEFAULT_CMP_LAG
+
     result = []
     for lot in temp_lots:
         lot = lot.copy()
-        lot_type_id = lot.get("lot_type_id")
         date_str = lot.get("date_str")
-
         if date_str is None:
             result.append(lot)
             continue
 
-        # Resolve str_to_cmp curve: prefer lot-type-specific, fall back to None (default)
-        str_cmp_curve = (
-            curves.get(("str_to_cmp", lot_type_id))
-            or curves.get(("str_to_cmp", None))
-        )
-        cmp_cls_curve = (
-            curves.get(("cmp_to_cls", lot_type_id))
-            or curves.get(("cmp_to_cls", None))
-        )
+        lot_type_id = lot.get("lot_type_id")
+        bg_id = lot.get("building_group_id")
 
-        lag_str_cmp = _sample_lag(rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
+        # str_to_cmp: shared within building group, independent otherwise.
+        if bg_id is not None:
+            lag_str_cmp = bg_cmp_lag[bg_id]
+        else:
+            curve = curves_for(curves, "str_to_cmp", lot_type_id)
+            lag_str_cmp = _sample_lag(rng, curve) if curve else DEFAULT_CMP_LAG
+
         date_cmp = date_str + timedelta(days=lag_str_cmp)
 
+        # cmp_to_cls: always per unit (D-012/D-022/D-075).
+        cmp_cls_curve = curves_for(curves, "cmp_to_cls", lot_type_id)
         lag_cmp_cls = _sample_lag(rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
         date_cls = date_cmp + timedelta(days=lag_cmp_cls)
 
         lot["date_cmp"] = date_cmp
+        lot["date_cmp_source"] = "engine_filled"
         lot["date_cls"] = date_cls
+        lot["date_cls_source"] = "engine_filled"
         result.append(lot)
 
     return result
@@ -397,8 +412,16 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
         for w in proposal.warnings:
             print(f"  {w}")
 
-    # Apply empirical build lag curves to temp lots (replaces constant lags)
-    temp_lots = _apply_build_lag_curves(proposal.temp_lots, build_lag_curves, rng)
+    # Shell timing expansion: derive date_cmp and date_cls from assignment anchors.
+    # Building groups get a shared date_cmp lag (D-022); date_cls is per unit (D-012).
+    temp_lots = _expand_timing(proposal.temp_lots, build_lag_curves, rng)
+
+    # S-0820 (shell stage): discard temp lots with chronology violations post-expansion.
+    temp_lots, discarded_lots, guard_warnings = post_generation_chronology_guard(temp_lots)
+    for w in guard_warnings:
+        print(f"  {w}")
+    if discarded_lots:
+        print(f"  S-0820: {len(discarded_lots)} temp lot(s) discarded for chronology violations.")
 
     # S-09
     temp_lots = builder_assignment(temp_lots, builder_splits)

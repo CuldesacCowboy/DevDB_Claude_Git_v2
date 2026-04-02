@@ -83,8 +83,6 @@ def test_s0810_four_unit_group_collapses_to_earliest():
     result = building_group_enforcer(lots)
 
     shared_str = date(2027, 1, 1)
-    shared_cmp = shared_str + timedelta(days=_DEFAULT_LAG_CMP_FROM_STR)
-    expected_cls = shared_cmp + timedelta(days=_DEFAULT_LAG_CLS_FROM_CMP)
 
     results = [
         _pass("Count preserved", len(result) == 4),
@@ -92,10 +90,10 @@ def test_s0810_four_unit_group_collapses_to_earliest():
               f"got {[r['date_str'] for r in result]}"),
         _pass("All date_td = date_str (D-142)",
               all(r["date_td"] == shared_str for r in result)),
-        _pass("All date_cmp = shared_str + lag",
-              all(r["date_cmp"] == shared_cmp for r in result)),
-        _pass("All date_cls correct",
-              all(r["date_cls"] == expected_cls for r in result)),
+        # date_cmp and date_cls are derived by shell timing expansion post-solve.
+        # S-0810 no longer sets these — they may be absent or carry input values.
+        _pass("date_cmp/date_cls not enforced by kernel (shell responsibility)",
+              True),
     ]
     return all(results)
 

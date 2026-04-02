@@ -35,21 +35,19 @@ def _make_frozen_input(
     lot_snapshot,
     demand_series,
     phase_capacity,
-    lot_type_pg_map=None,
     building_group_memberships=None,
     tda_hold_lot_ids=None,
     sim_run_id=1,
-    projection_group_id=998,   # != 317 to avoid S-08 debug prints
+    dev_id=1,
 ):
     return FrozenInput(
         lot_snapshot=lot_snapshot,
         demand_series=demand_series,
         phase_capacity=phase_capacity,
-        lot_type_pg_map=lot_type_pg_map if lot_type_pg_map is not None else {(1, 101): 998},
         building_group_memberships=building_group_memberships if building_group_memberships is not None else {},
         tda_hold_lot_ids=tda_hold_lot_ids if tda_hold_lot_ids is not None else set(),
         sim_run_id=sim_run_id,
-        projection_group_id=projection_group_id,
+        dev_id=dev_id,
     )
 
 
@@ -237,7 +235,9 @@ def test_phase_capacity_hard_stop():
 def test_building_group_coupling():
     """
     Verifies S-0810: all lots in a building group collapse to MIN(date_str),
-    date_cmp is recomputed from the shared date_str, and date_td == date_str (D-142).
+    and date_td == date_str (D-142). date_cmp/date_cls are NOT set by S-0810 —
+    they are derived by the shell timing expansion (_expand_timing) after plan()
+    returns. This test verifies the kernel boundary is correctly respected.
 
     IMPORTANT — WHY THIS DOES NOT GO THROUGH plan():
     S-0800 hardcodes building_group_id = None on every generated temp lot.
@@ -251,9 +251,6 @@ def test_building_group_coupling():
     (planned for WT-CD/WV-CD condo PG setup), rewrite this test to call plan()
     end-to-end and assert on proposal.temp_lots.
     """
-    cmp_lag = timedelta(days=_DEFAULT_LAG_CMP_FROM_STR)
-    cls_lag = timedelta(days=_DEFAULT_LAG_CLS_FROM_CMP)
-
     # 4 temp lots all in building_group_id=1 with spread date_str values.
     # MIN(date_str) is date(2026, 1, 1) — all 4 should collapse to it.
     base = date(2026, 1, 1)
@@ -262,7 +259,6 @@ def test_building_group_coupling():
         ds = base + timedelta(days=offset_days)
         raw_lots.append({
             "lot_id": None,
-            "projection_group_id": 998,
             "phase_id": 1,
             "builder_id": None,
             "lot_source": "sim",
@@ -277,10 +273,6 @@ def test_building_group_coupling():
             "date_str": ds,
             "date_str_source": "engine_filled",
             "date_frm": None,
-            "date_cmp": ds + cmp_lag,
-            "date_cmp_source": "engine_filled",
-            "date_cls": ds + cmp_lag + cls_lag,
-            "date_cls_source": "engine_filled",
             "created_at": None,
             "updated_at": None,
         })
@@ -289,19 +281,22 @@ def test_building_group_coupling():
 
     assert len(enforced) == 4
 
-    expected_str = base                   # MIN of the four date_str values
-    expected_cmp = expected_str + cmp_lag
+    expected_str = base   # MIN of the four date_str values
 
     for i, lot in enumerate(enforced):
         assert lot["date_str"] == expected_str, (
             f"Lot {i}: date_str not collapsed to MIN — got {lot['date_str']}, expected {expected_str}"
         )
-        assert lot["date_cmp"] == expected_cmp, (
-            f"Lot {i}: date_cmp not recomputed from shared date_str — "
-            f"got {lot['date_cmp']}, expected {expected_cmp}"
-        )
         assert lot["date_td"] == lot["date_str"], (
             f"Lot {i}: D-142 violated — date_td={lot['date_td']} != date_str={lot['date_str']}"
+        )
+        # date_cmp and date_cls are derived post-solve by the shell (_expand_timing).
+        # S-0810 must not set them — confirm they are absent from the output.
+        assert "date_cmp" not in lot, (
+            f"Lot {i}: S-0810 must not set date_cmp (shell boundary violation)"
+        )
+        assert "date_cls" not in lot, (
+            f"Lot {i}: S-0810 must not set date_cls (shell boundary violation)"
         )
 
 
@@ -365,7 +360,7 @@ def test_persistence_writer_rejects_raw_temp_lots():
     Guards against callers bypassing plan() and passing raw temp_lots directly.
     """
     try:
-        persistence_writer(conn=None, temp_lots=[], projection_group_id=1, sim_run_id=1)
+        persistence_writer(conn=None, temp_lots=[], dev_id=1, sim_run_id=1)
         assert False, "Expected TypeError was not raised"
     except TypeError as e:
         assert "validated Proposal" in str(e), (

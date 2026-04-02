@@ -6,9 +6,13 @@ Writes:  nothing — returns temp lot records list (not yet persisted)
 Input:   unmet_demand_series: list, phase_capacity: list, sim_run_id: int
 Rules:   date_str = demand slot month always, independent of date_dev (D-137).
          date_td = date_str for all sim lots (D-142). Hard stop at phase capacity (D-068).
-         date_cmp and date_cls use default lags; coordinator applies empirical curves after.
+         date_cmp and date_cls are NOT set here — the shell timing expansion stage
+         (coordinator._expand_timing) derives them after plan() returns using empirical
+         build lag curves. This is the kernel boundary: the kernel owns assignment
+         decisions; the shell owns timing derivation.
          Not Own: assigning builder_id (S-0900), writing to sim_lots (S-1100),
-         writing demand_derived dates (S-1000), modifying real lots.
+         writing demand_derived dates (S-1000), modifying real lots,
+         computing date_cmp or date_cls.
 """
 # date_dev = phase delivery date. Always. Independent of date_str.
 # Phase delivery date never gates or overrides date_str.
@@ -16,8 +20,11 @@ Rules:   date_str = demand slot month always, independent of date_dev (D-137).
 #
 # Phase assignment: fill phase capacity slots in order before moving to next phase.
 
-from datetime import date, timedelta
+from datetime import date
 
+# Default lag constants — exported for reference only. The shell timing expansion
+# in coordinator._expand_timing uses these as fallbacks when no empirical curve
+# is available. S-0800 itself does not use these in lot creation.
 _DEFAULT_LAG_CMP_FROM_STR = 270
 _DEFAULT_LAG_CLS_FROM_CMP = 45
 
@@ -73,9 +80,10 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
         dev_id      = int(slot["dev_id"])
 
         date_str = date(year, month, 1)
-        date_cmp = date_str + timedelta(days=_DEFAULT_LAG_CMP_FROM_STR)
-        date_cls = date_cmp + timedelta(days=_DEFAULT_LAG_CLS_FROM_CMP)
 
+        # date_cmp and date_cls are intentionally absent here.
+        # The shell timing expansion stage (coordinator._expand_timing) derives
+        # them after plan() returns. Kernel boundary: assignment decisions only.
         temp_lots.append({
             "lot_id":          None,
             "dev_id":          dev_id,
@@ -93,10 +101,6 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
             "date_str":        date_str,
             "date_str_source": "engine_filled",
             "date_frm":        None,
-            "date_cmp":        date_cmp,
-            "date_cmp_source": "engine_filled",
-            "date_cls":        date_cls,
-            "date_cls_source": "engine_filled",
             "created_at":      None,
             "updated_at":      None,
         })
