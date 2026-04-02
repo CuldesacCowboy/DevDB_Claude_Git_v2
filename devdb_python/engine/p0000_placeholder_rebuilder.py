@@ -121,7 +121,8 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # ------------------------------------------------------------------
     config_df = conn.read_df(f"""
         SELECT auto_schedule_enabled, max_deliveries_per_year, min_gap_months,
-               delivery_window_start, delivery_window_end
+               delivery_window_start, delivery_window_end,
+               min_unstarted_inventory
         FROM sim_entitlement_delivery_config
         WHERE ent_group_id = {ent_group_id}
     """)
@@ -139,6 +140,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     min_gap = int(row["min_gap_months"] or 0)
     window_start_default = int(row["delivery_window_start"] or 5)
     window_end_default   = int(row["delivery_window_end"]   or 11)
+    min_buffer = int(row["min_unstarted_inventory"] or 0)
 
     # ------------------------------------------------------------------
     # Step 2: Delete existing placeholder events
@@ -353,12 +355,16 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             if annual_target is None or float(annual_target) <= 0:
                 continue
             monthly_pace = float(annual_target) / 12.0
-            months_to_exhaust = math.ceil(lot_count / monthly_pace)
+            # Apply min_buffer: schedule next delivery when 'min_buffer' lots remain,
+            # not at full exhaustion. Effective lot count for scheduling = lot_count - buffer.
+            effective_lot_count = max(0, lot_count - min_buffer)
+            months_to_exhaust = math.ceil(effective_lot_count / monthly_pace) if effective_lot_count > 0 else 0
             exhaustion_date = _add_months(d.replace(day=1), months_to_exhaust)
             lv = _add_months(exhaustion_date, -1)
             # Skip phases whose inventory is already exhausted
             if lv < today_first:
                 print(f"P-00: Dev {dev_id_r} phase {ph_id_r}: lot_count={lot_count}, "
+                      f"buffer={min_buffer}, effective={effective_lot_count}, "
                       f"pace={monthly_pace:.1f}/mo, exhausts={exhaustion_date}, "
                       f"lv={lv} (expired — skipped)")
                 continue
@@ -366,6 +372,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             if dev_id_r not in dev_latest_viable or lv < dev_latest_viable[dev_id_r]:
                 dev_latest_viable[dev_id_r] = lv
             print(f"P-00: Dev {dev_id_r} phase {ph_id_r}: lot_count={lot_count}, "
+                  f"buffer={min_buffer}, effective={effective_lot_count}, "
                   f"pace={monthly_pace:.1f}/mo, exhausts={exhaustion_date}, "
                   f"lv={lv}")
 
@@ -504,7 +511,9 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                     sum(sps_lot_count for sps_lot_count in _get_phase_lots(conn, p["phase_id"]))
                     for p in batch
                 )
-                months_to_exhaust = math.ceil(total_lots / pace) if pace > 0 else 999
+                # Apply min_buffer to batch total: deliver earlier to keep buffer in reserve
+                effective_lots = max(0, total_lots - min_buffer)
+                months_to_exhaust = math.ceil(effective_lots / pace) if (pace > 0 and effective_lots > 0) else 0
                 exh = _add_months(event_date, months_to_exhaust)
                 new_lv = _snap_to_window(_add_months(exh, -1), ws, we)
                 if new_lv >= next_allowed:
@@ -517,7 +526,8 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 sum(sps_lot_count for sps_lot_count in _get_phase_lots(conn, p["phase_id"]))
                 for p in batch
             )
-            months_to_exhaust = math.ceil(total_lots / pace) if pace > 0 else 999
+            effective_lots = max(0, total_lots - min_buffer)
+            months_to_exhaust = math.ceil(effective_lots / pace) if (pace > 0 and effective_lots > 0) else 0
             exh = _add_months(event_date, months_to_exhaust)
             dev_lv[dev_id] = _snap_to_window(_add_months(exh, -1), ws, we)
 

@@ -186,6 +186,10 @@ export default function SimulationView() {
   const [lots, setLots]                   = useState([])
   const [lotsLoading, setLotsLoading]     = useState(false)
   const [runErrors, setRunErrors]         = useState([])
+  const [deliveryConfig, setDeliveryConfig]           = useState(null)
+  const [minBufferEdit, setMinBufferEdit]             = useState(null)   // null = not editing
+  const [minBufferSaving, setMinBufferSaving]         = useState(false)
+  const [minBufferError, setMinBufferError]           = useState(null)
 
   useEffect(() => {
     fetch(`${API}/entitlement-groups`)
@@ -231,13 +235,21 @@ export default function SimulationView() {
       .finally(() => setLotsLoading(false))
   }, [])
 
+  const loadDeliveryConfig = useCallback((id) => {
+    fetch(`${API}/entitlement-groups/${id}/delivery-config`)
+      .then(r => r.json())
+      .then(data => { setDeliveryConfig(data); setMinBufferEdit(null) })
+      .catch(() => setDeliveryConfig(null))
+  }, [])
+
   useEffect(() => {
     if (entGroupId) {
       checkSplits(entGroupId)
       loadLedger(entGroupId)
+      loadDeliveryConfig(entGroupId)
       setRunErrors([])
     }
-  }, [entGroupId, checkSplits, loadLedger])
+  }, [entGroupId, checkSplits, loadLedger, loadDeliveryConfig])
 
   async function handleRun() {
     if (!entGroupId) return
@@ -312,6 +324,72 @@ export default function SimulationView() {
           </span>
         )}
       </div>
+
+      {/* Delivery settings — always visible when config is loaded */}
+      {deliveryConfig !== null && (
+        <div style={{
+          marginBottom: 14, padding: '10px 14px',
+          background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12,
+        }}>
+          <div style={{ fontWeight: 600, color: '#374151', marginBottom: 8 }}>Delivery settings</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: '#374151', minWidth: 200 }}>Min. unstarted inventory</span>
+            <input
+              type="number" min="0" placeholder="0 (no minimum)"
+              value={minBufferEdit !== null ? minBufferEdit : (deliveryConfig.min_unstarted_inventory ?? '')}
+              onChange={e => { setMinBufferEdit(e.target.value); setMinBufferError(null) }}
+              style={{
+                width: 100, padding: '2px 6px', fontSize: 12, borderRadius: 4,
+                border: `1px solid ${minBufferEdit !== null ? '#2563eb' : '#d1d5db'}`,
+              }}
+            />
+            <span style={{ color: '#6b7280', fontSize: 11 }}>lots</span>
+            {minBufferEdit !== null && (
+              <button
+                disabled={minBufferSaving}
+                onClick={async () => {
+                  const val = minBufferEdit === '' ? null : parseInt(minBufferEdit, 10)
+                  if (val !== null && (isNaN(val) || val < 0)) {
+                    setMinBufferError('Must be 0 or a positive integer')
+                    return
+                  }
+                  setMinBufferSaving(true)
+                  setMinBufferError(null)
+                  try {
+                    const res = await fetch(`${API}/entitlement-groups/${entGroupId}/delivery-config`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ min_unstarted_inventory: val }),
+                    })
+                    if (!res.ok) throw new Error(await res.text())
+                    loadDeliveryConfig(entGroupId)
+                  } catch (err) {
+                    setMinBufferError(String(err))
+                  } finally {
+                    setMinBufferSaving(false)
+                  }
+                }}
+                style={{
+                  padding: '2px 10px', fontSize: 11, borderRadius: 4, border: 'none',
+                  background: minBufferSaving ? '#d1d5db' : '#2563eb',
+                  color: '#fff', cursor: minBufferSaving ? 'default' : 'pointer',
+                }}
+              >
+                {minBufferSaving ? 'Saving…' : 'Save'}
+              </button>
+            )}
+            {minBufferError && <span style={{ color: '#dc2626', fontSize: 11 }}>{minBufferError}</span>}
+            {minBufferEdit === null && deliveryConfig.min_unstarted_inventory != null && (
+              <span style={{ fontSize: 11, color: '#9ca3af' }}>
+                Engine will schedule deliveries to maintain ≥{deliveryConfig.min_unstarted_inventory} unstarted lots
+              </span>
+            )}
+            {minBufferEdit === null && deliveryConfig.min_unstarted_inventory == null && (
+              <span style={{ fontSize: 11, color: '#9ca3af' }}>No minimum set — deliveries scheduled at exhaustion</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Missing splits warning */}
       {missingSplits.length > 0 && (

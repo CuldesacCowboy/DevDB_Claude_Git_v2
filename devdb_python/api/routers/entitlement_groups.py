@@ -17,6 +17,10 @@ class EntGroupCreateRequest(BaseModel):
 class EntGroupPatchRequest(BaseModel):
     ent_group_name: str
 
+
+class DeliveryConfigPutRequest(BaseModel):
+    min_unstarted_inventory: int | None = None
+
 router = APIRouter(prefix="/entitlement-groups", tags=["entitlement-groups"])
 
 
@@ -487,5 +491,66 @@ def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
             unassigned_phases=unassigned_phases_out,
         )
 
+    finally:
+        cur.close()
+
+
+@router.get("/{ent_group_id}/delivery-config")
+def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
+    """Return delivery scheduling config for the entitlement group."""
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """
+            SELECT ent_group_id, min_unstarted_inventory,
+                   delivery_window_start, delivery_window_end,
+                   max_deliveries_per_year, min_gap_months,
+                   auto_schedule_enabled
+            FROM sim_entitlement_delivery_config
+            WHERE ent_group_id = %s
+            """,
+            (ent_group_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return {
+                "ent_group_id": ent_group_id,
+                "min_unstarted_inventory": None,
+                "delivery_window_start": None,
+                "delivery_window_end": None,
+                "max_deliveries_per_year": None,
+                "min_gap_months": None,
+                "auto_schedule_enabled": None,
+            }
+        return dict(row)
+    finally:
+        cur.close()
+
+
+@router.put("/{ent_group_id}/delivery-config")
+def put_delivery_config(
+    ent_group_id: int,
+    body: DeliveryConfigPutRequest,
+    conn=Depends(get_db_conn),
+):
+    """Upsert delivery scheduling config for the entitlement group."""
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """
+            INSERT INTO sim_entitlement_delivery_config
+                (ent_group_id, min_unstarted_inventory, updated_at)
+            VALUES (%s, %s, current_timestamp)
+            ON CONFLICT (ent_group_id) DO UPDATE
+                SET min_unstarted_inventory = EXCLUDED.min_unstarted_inventory,
+                    updated_at = current_timestamp
+            RETURNING ent_group_id, min_unstarted_inventory
+            """,
+            (ent_group_id, body.min_unstarted_inventory),
+        )
+        conn.commit()
+        return dict(cur.fetchone())
     finally:
         cur.close()
