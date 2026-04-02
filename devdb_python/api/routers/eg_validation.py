@@ -19,7 +19,8 @@ class DeliveryConfigPutRequest(BaseModel):
 
 
 class LedgerConfigPutRequest(BaseModel):
-    ledger_start_date: str | None = None   # ISO date string or null
+    date_paper: str | None = None       # ISO date string or null — "First Paper Lots" anchor
+    date_ent:   str | None = None       # ISO date string or null — propagated to all lots as date_ent
 
 
 router = APIRouter(prefix="/entitlement-groups", tags=["entitlement-groups"])
@@ -184,11 +185,11 @@ def put_delivery_config(
 
 @router.get("/{ent_group_id}/ledger-config")
 def get_ledger_config(ent_group_id: int, conn=Depends(get_db_conn)):
-    """Return ledger_start_date for the entitlement group."""
+    """Return date_paper (First Paper Lots) and date_ent_actual (Entitlements Date) for the group."""
     cur = dict_cursor(conn)
     try:
         cur.execute(
-            "SELECT ent_group_id, ledger_start_date FROM sim_entitlement_groups WHERE ent_group_id = %s",
+            "SELECT ent_group_id, date_paper, date_ent_actual FROM sim_entitlement_groups WHERE ent_group_id = %s",
             (ent_group_id,),
         )
         row = cur.fetchone()
@@ -196,7 +197,8 @@ def get_ledger_config(ent_group_id: int, conn=Depends(get_db_conn)):
             raise HTTPException(status_code=404, detail="Entitlement group not found")
         return {
             "ent_group_id": row["ent_group_id"],
-            "ledger_start_date": row["ledger_start_date"].isoformat() if row["ledger_start_date"] else None,
+            "date_paper":   row["date_paper"].isoformat()      if row["date_paper"]      else None,
+            "date_ent":     row["date_ent_actual"].isoformat() if row["date_ent_actual"] else None,
         }
     finally:
         cur.close()
@@ -208,31 +210,58 @@ def put_ledger_config(
     body: LedgerConfigPutRequest,
     conn=Depends(get_db_conn),
 ):
-    """Set ledger_start_date on the entitlement group."""
+    """Set date_paper and/or date_ent on the entitlement group.
+
+    When date_ent is provided, it is written to sim_lots.date_ent for all
+    lots in this group that currently have date_ent IS NULL (P → E conversion).
+    """
     from datetime import date
     cur = dict_cursor(conn)
     try:
-        if body.ledger_start_date is not None:
-            try:
-                date.fromisoformat(body.ledger_start_date)
-            except ValueError:
-                raise HTTPException(status_code=422, detail="ledger_start_date must be YYYY-MM-DD")
+        for field, val in [("date_paper", body.date_paper), ("date_ent", body.date_ent)]:
+            if val is not None:
+                try:
+                    date.fromisoformat(val)
+                except ValueError:
+                    raise HTTPException(status_code=422, detail=f"{field} must be YYYY-MM-DD")
+
         cur.execute(
             """
             UPDATE sim_entitlement_groups
-            SET ledger_start_date = %s
+            SET date_paper     = %s,
+                date_ent_actual = %s
             WHERE ent_group_id = %s
-            RETURNING ent_group_id, ledger_start_date
+            RETURNING ent_group_id, date_paper, date_ent_actual
             """,
-            (body.ledger_start_date, ent_group_id),
+            (body.date_paper, body.date_ent, ent_group_id),
         )
-        conn.commit()
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Entitlement group not found")
+
+        # Propagate date_ent to all P lots (date_ent IS NULL) in this group
+        lots_updated = 0
+        if body.date_ent is not None:
+            cur.execute(
+                """
+                UPDATE sim_lots
+                SET date_ent = %s
+                WHERE dev_id IN (
+                    SELECT dev_id FROM sim_ent_group_developments
+                    WHERE ent_group_id = %s
+                )
+                  AND date_ent IS NULL
+                """,
+                (body.date_ent, ent_group_id),
+            )
+            lots_updated = cur.rowcount
+
+        conn.commit()
         return {
-            "ent_group_id": row["ent_group_id"],
-            "ledger_start_date": row["ledger_start_date"].isoformat() if row["ledger_start_date"] else None,
+            "ent_group_id":  row["ent_group_id"],
+            "date_paper":    row["date_paper"].isoformat()      if row["date_paper"]      else None,
+            "date_ent":      row["date_ent_actual"].isoformat() if row["date_ent_actual"] else None,
+            "lots_entitled": lots_updated,
         }
     finally:
         cur.close()

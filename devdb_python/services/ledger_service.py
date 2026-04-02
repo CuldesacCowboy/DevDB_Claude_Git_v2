@@ -23,7 +23,7 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
         cur.execute(
             """
             SELECT
-                eg.ledger_start_date,
+                eg.date_paper,
                 DATE_TRUNC('MONTH', MAX(GREATEST(
                     COALESCE(sl.date_cls, sl.date_cls_projected, '2000-01-01'::DATE),
                     COALESCE(sl.date_cmp, sl.date_cmp_projected, '2000-01-01'::DATE),
@@ -35,7 +35,7 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
             JOIN sim_ent_group_developments egd ON egd.ent_group_id = eg.ent_group_id
             LEFT JOIN sim_lots sl ON sl.dev_id = egd.dev_id
             WHERE eg.ent_group_id = %s
-            GROUP BY eg.ledger_start_date
+            GROUP BY eg.date_paper
             """,
             (ent_group_id,),
         )
@@ -43,7 +43,7 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
         if not bounds or bounds["max_activity_month"] is None:
             return []
 
-        ledger_start = bounds["ledger_start_date"]
+        ledger_start = bounds["date_paper"]
         max_month    = bounds["max_activity_month"]
 
         # Also consider entitlement event dates for the end bound
@@ -129,10 +129,10 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
                 "closed_cumulative": None,
             })
 
-        # Synthetic ledger_start_date row per dev (if that month isn't present)
+        # Synthetic date_paper row per dev (if that month isn't present)
         cur.execute(
             """
-            SELECT eg.ledger_start_date,
+            SELECT eg.date_paper,
                    egd.dev_id,
                    d.dev_name,
                    COUNT(sl.lot_id)::int AS total_lots
@@ -142,13 +142,13 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
             JOIN developments d ON d.marks_code = dd.dev_code2
             LEFT JOIN sim_lots sl ON sl.dev_id = egd.dev_id
             WHERE eg.ent_group_id = %s
-              AND eg.ledger_start_date IS NOT NULL
-            GROUP BY eg.ledger_start_date, egd.dev_id, d.dev_name
+              AND eg.date_paper IS NOT NULL
+            GROUP BY eg.date_paper, egd.dev_id, d.dev_name
             """,
             (ent_group_id,),
         )
         for r in cur.fetchall():
-            start_iso = r["ledger_start_date"].isoformat()
+            start_iso = r["date_paper"].isoformat()
             dev_months = {row["calendar_month"] for row in rows if row["dev_id"] == r["dev_id"]}
             if start_iso not in dev_months:
                 rows.append({

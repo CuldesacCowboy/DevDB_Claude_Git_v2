@@ -73,12 +73,12 @@ function buildLedgerRows(rawRows, entEvents, selectedDevIds, period, ledgerStart
   // 4. Sort months
   let sorted = [...monthMap.values()].sort((a, b) => a.calendar_month.localeCompare(b.calendar_month))
 
-  // 5. Filter to ledger_start_date if set
+  // 5. Filter to date_paper (First Paper Lots) if set
   if (ledgerStartDate) {
     sorted = sorted.filter(r => r.calendar_month >= ledgerStartDate)
   }
 
-  // 5b. Recompute p_end: all lots start in P at ledger_start_date and drain
+  // 5b. Recompute p_end: all lots start in P at date_paper and drain
   //     as entitlement events fire.  p_end = totalPlannedLots - cumulativeEntitled.
   //     This replaces the DB view's "all dates null" test which fails for real
   //     lots that already have MARKsystems dates.
@@ -244,45 +244,74 @@ function UtilizationPanel({ phases }) {
 
 // ─── Settings panel subcomponents ────────────────────────────────────────────
 
-function LedgerStartSection({ entGroupId, ledgerStartDate, onSaved }) {
-  const [val, setVal] = useState(ledgerStartDate ?? '')
-  const [saving, setSaving] = useState(false)
-  const [err, setErr]       = useState(null)
-  useEffect(() => { setVal(ledgerStartDate ?? '') }, [ledgerStartDate])
+function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved }) {
+  const [paperVal, setPaperVal] = useState(datePaper ?? '')
+  const [entVal,   setEntVal]   = useState(dateEnt   ?? '')
+  const [saving,   setSaving]   = useState(false)
+  const [err,      setErr]      = useState(null)
+  const [lotsMsg,  setLotsMsg]  = useState(null)
 
-  const dirty = val !== (ledgerStartDate ?? '')
+  useEffect(() => { setPaperVal(datePaper ?? '') }, [datePaper])
+  useEffect(() => { setEntVal(dateEnt ?? '') },     [dateEnt])
+
+  const dirty = paperVal !== (datePaper ?? '') || entVal !== (dateEnt ?? '')
 
   async function save() {
-    setSaving(true); setErr(null)
+    setSaving(true); setErr(null); setLotsMsg(null)
     try {
       const res = await fetch(`${API}/entitlement-groups/${entGroupId}/ledger-config`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ledger_start_date: val || null }),
+        body: JSON.stringify({
+          date_paper: paperVal || null,
+          date_ent:   entVal   || null,
+        }),
       })
       if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+      if (data.lots_entitled > 0) {
+        setLotsMsg(`${data.lots_entitled} lot${data.lots_entitled === 1 ? '' : 's'} entitled`)
+      }
       onSaved()
     } catch (e) { setErr(String(e)) }
     finally { setSaving(false) }
   }
 
+  const inputStyle = (dirty, cur) => ({
+    width: 120, padding: '3px 7px', fontSize: 12, borderRadius: 4,
+    border: `1px solid ${cur !== (dirty ?? '') ? '#2563eb' : '#d1d5db'}`,
+  })
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>Ledger start date</span>
-      <input type="text" placeholder="YYYY-MM-DD" value={val}
-        onChange={e => { setVal(e.target.value); setErr(null) }}
-        style={{ width: 120, padding: '3px 7px', fontSize: 12, borderRadius: 4,
-                 border: `1px solid ${dirty ? '#2563eb' : '#d1d5db'}` }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>First Paper Lots</span>
+        <input type="text" placeholder="YYYY-MM-DD" value={paperVal}
+          onChange={e => { setPaperVal(e.target.value); setErr(null); setLotsMsg(null) }}
+          style={inputStyle(datePaper, paperVal)} />
+        {!dirty && datePaper && (
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>Ledger starts {fmt(datePaper)}</span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>Entitlements Date</span>
+        <input type="text" placeholder="YYYY-MM-DD" value={entVal}
+          onChange={e => { setEntVal(e.target.value); setErr(null); setLotsMsg(null) }}
+          style={inputStyle(dateEnt, entVal)} />
+        {!dirty && dateEnt && (
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>Entitled {fmt(dateEnt)}</span>
+        )}
+      </div>
       {dirty && (
-        <button disabled={saving} onClick={save}
-          style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-                   background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
-                   cursor: saving ? 'default' : 'pointer' }}>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button disabled={saving} onClick={save}
+            style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
+                     background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
+                     cursor: saving ? 'default' : 'pointer' }}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
       )}
-      {!dirty && ledgerStartDate && (
-        <span style={{ fontSize: 11, color: '#9ca3af' }}>Ledger starts {fmt(ledgerStartDate)}</span>
-      )}
+      {lotsMsg && <span style={{ fontSize: 11, color: '#16a34a' }}>{lotsMsg}</span>}
       {err && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
     </div>
   )
@@ -723,7 +752,7 @@ export default function SimulationView() {
   // ── Build ledger rows ──────────────────────────────────────────────────────
 
   const ledgerRows = useMemo(() => buildLedgerRows(
-    byDev, entEvents, selectedDevIds, period, ledgerConfig?.ledger_start_date ?? null, utilization,
+    byDev, entEvents, selectedDevIds, period, ledgerConfig?.date_paper ?? null, utilization,
   ), [byDev, entEvents, selectedDevIds, period, ledgerConfig, utilization])
 
   const filteredUtilization = useMemo(() => {
@@ -799,9 +828,10 @@ export default function SimulationView() {
                       display: 'flex', flexDirection: 'column', gap: 14 }}>
 
           {ledgerConfig !== null && (
-            <LedgerStartSection
+            <LedgerConfigSection
               entGroupId={entGroupId}
-              ledgerStartDate={ledgerConfig.ledger_start_date}
+              datePaper={ledgerConfig.date_paper}
+              dateEnt={ledgerConfig.date_ent}
               onSaved={() => loadConfig(entGroupId)}
             />
           )}
