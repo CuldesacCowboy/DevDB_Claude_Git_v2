@@ -7,6 +7,7 @@ import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.deps import get_db_conn
+from api.sql_fragments import lot_status_sql
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 
@@ -264,19 +265,8 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
     Return lot-level rows for all developments in the entitlement group.
     Status is derived from date fields (never stored).
     """
+    _STATUS_SQL = lot_status_sql("sl")
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    _STATUS_SQL = """
-        CASE
-            WHEN sl.date_cls IS NOT NULL                                   THEN 'OUT'
-            WHEN sl.date_cmp IS NOT NULL                                   THEN 'C'
-            WHEN sl.date_str IS NOT NULL                                   THEN 'UC'
-            WHEN sl.date_td_hold IS NOT NULL AND sl.date_td IS NULL        THEN 'H'
-            WHEN sl.date_td IS NOT NULL                                    THEN 'U'
-            WHEN sl.date_dev IS NOT NULL                                   THEN 'D'
-            WHEN sl.date_ent IS NOT NULL                                   THEN 'E'
-            ELSE 'P'
-        END
-    """
     try:
         cur.execute(
             f"""

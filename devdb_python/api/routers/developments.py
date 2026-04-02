@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from api.deps import get_db_conn
 from api.models.lot_models import DevLotPhaseViewResponse
+from api.sql_fragments import lot_status_sql
 
 router = APIRouter(prefix="/developments", tags=["developments"])
 
@@ -264,18 +265,7 @@ def upsert_sim_params(dev_id: int, body: SimParamsPutRequest, conn=Depends(get_d
 # GET /developments/{dev_id}/lot-phase-view  (pre-existing endpoint)
 # ---------------------------------------------------------------------------
 
-_STATUS_SQL = """
-    CASE
-        WHEN date_cls IS NOT NULL                            THEN 'OUT'
-        WHEN date_cmp IS NOT NULL                           THEN 'C'
-        WHEN date_str IS NOT NULL                           THEN 'UC'
-        WHEN date_td_hold IS NOT NULL AND date_td IS NULL   THEN 'H'
-        WHEN date_td IS NOT NULL                            THEN 'U'
-        WHEN date_dev IS NOT NULL                           THEN 'D'
-        WHEN date_ent IS NOT NULL                           THEN 'E'
-        ELSE 'P'
-    END
-"""
+_STATUS_SQL = lot_status_sql()
 
 
 @router.get("/{dev_id}/lot-phase-view", response_model=DevLotPhaseViewResponse)

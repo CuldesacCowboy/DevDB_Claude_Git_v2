@@ -19,9 +19,6 @@ import CommunityDevelopmentsView from './CommunityDevelopmentsView'
 import TakedownAgreementsView from './TakedownAgreementsView'
 const LEFT_PANELS_WIDTH = 340 // sidebar + unassigned panel
 
-// TODO: re-enable when simulation run trigger is wired up
-const hideOutdatedWarning = true
-
 export default function LotPhaseView() {
   // -----------------------------------------------------------------------
   // Sidebar + community selection
@@ -669,8 +666,8 @@ export default function LotPhaseView() {
 
               {!loading && !fetchError && (
                 <>
-                  {/* Needs-rerun banner — hidden until simulation trigger is wired */}
-                  {!hideOutdatedWarning && needsRerun && (
+                  {/* Needs-rerun banner */}
+                  {needsRerun && (
                     <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-800 font-medium">
                       ⚠ Simulation results are outdated. Run simulation to update.
                     </div>
