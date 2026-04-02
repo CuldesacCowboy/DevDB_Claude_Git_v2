@@ -453,19 +453,12 @@ function LotLedger({ lots, loading }) {
     (srcFilter === 'all' || l.lot_source === srcFilter)
   )
 
-  const LOT_COLS = [
-    { key: 'lot_number',   label: 'Lot #',   left: true },
-    { key: 'lot_type_short', label: 'Type',  left: true },
-    { key: 'phase_name',   label: 'Phase',   left: true },
-    { key: 'lot_source',   label: 'Src',     left: true },
-    { key: 'status',       label: 'Status',  left: true },
-    { key: 'date_ent',     label: 'ENT' },
-    { key: 'date_dev',     label: 'DEV' },
-    { key: 'date_td',      label: 'TD' },
-    { key: 'date_str',     label: 'STR' },
-    { key: 'date_cmp',     label: 'CMP' },
-    { key: 'date_cls',     label: 'CLS' },
-  ]
+  // Render a date cell: actual (dark) or projected (muted italic) or empty dash
+  function dateCell(actual, projected) {
+    if (actual) return <span>{fmt(actual)}</span>
+    if (projected) return <span style={{ color: '#93c5fd', fontStyle: 'italic' }}>{fmt(projected)}</span>
+    return <span style={{ color: '#e5e7eb' }}>—</span>
+  }
 
   return (
     <div>
@@ -483,6 +476,7 @@ function LotLedger({ lots, loading }) {
           <option value="sim">Sim</option>
         </select>
         <span style={{ fontSize: 11, color: '#6b7280' }}>{filtered.length} lots</span>
+        <span style={{ fontSize: 11, color: '#93c5fd', fontStyle: 'italic', marginLeft: 8 }}>italic blue = projected</span>
       </div>
 
       <div style={{ overflowX: 'auto' }}>
@@ -490,7 +484,17 @@ function LotLedger({ lots, loading }) {
           <thead>
             <tr style={{ background: '#f9fafb' }}>
               {devFilter === 'all' && <th style={thS('left')}>Development</th>}
-              {LOT_COLS.map(c => <th key={c.key} style={thS(c.left ? 'left' : 'right')}>{c.label}</th>)}
+              <th style={thS('left')}>Lot #</th>
+              <th style={thS('left')}>Type</th>
+              <th style={thS('left')}>Phase</th>
+              <th style={thS('left')}>Src</th>
+              <th style={thS('left')}>Status</th>
+              <th style={thS()}>ENT</th>
+              <th style={thS()}>DEV</th>
+              <th style={thS()}>TD</th>
+              <th style={thS()}>STR</th>
+              <th style={thS()}>CMP</th>
+              <th style={thS()}>CLS</th>
             </tr>
           </thead>
           <tbody>
@@ -502,9 +506,12 @@ function LotLedger({ lots, loading }) {
                 <td style={tdS(true)}>{l.phase_name}</td>
                 <td style={{ ...tdS(true), color: '#6b7280', fontSize: 11 }}>{l.lot_source}</td>
                 <td style={{ ...tdS(true), fontWeight: 600, color: STATUS_COLOR[l.status] ?? '#374151' }}>{l.status}</td>
-                {['date_ent','date_dev','date_td','date_str','date_cmp','date_cls'].map(k => (
-                  <td key={k} style={tdS()}>{l[k] ? fmt(l[k]) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
-                ))}
+                <td style={tdS()}>{l.date_ent ? fmt(l.date_ent) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+                <td style={tdS()}>{l.date_dev ? fmt(l.date_dev) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+                <td style={tdS()}>{l.date_td ? fmt(l.date_td) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+                <td style={tdS()}>{dateCell(l.date_str, l.date_str_projected)}</td>
+                <td style={tdS()}>{dateCell(l.date_cmp, l.date_cmp_projected)}</td>
+                <td style={tdS()}>{dateCell(l.date_cls, l.date_cls_projected)}</td>
               </tr>
             ))}
           </tbody>

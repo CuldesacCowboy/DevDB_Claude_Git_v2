@@ -129,6 +129,113 @@ def _apply_build_lag_curves(temp_lots: list, curves: dict, rng: random.Random) -
     return result
 
 
+def _write_real_lot_projections(
+    conn: DBConnection,
+    dev_id: int,
+    demand_series,
+    build_lag_curves: dict,
+    rng: random.Random,
+) -> int:
+    """
+    Write date_str_projected / date_cmp_projected / date_cls_projected to real
+    P lots (no actual start date, no takedown date) for this dev.
+
+    Mirrors the S-07 demand allocation order (lot_id ASC) so each P lot gets
+    the same demand slot it would have absorbed from the starts pipeline.
+    Clears stale projections on real lots before writing new ones.
+    Returns number of lots projected.
+    """
+    # 1. Clear all projected dates on real lots for this dev (removes stale data
+    #    from prior runs and from lots that have since received actual dates).
+    conn.execute(f"""
+        UPDATE sim_lots
+        SET date_str_projected = NULL,
+            date_cmp_projected = NULL,
+            date_cls_projected = NULL
+        WHERE lot_source = 'real'
+          AND dev_id = {dev_id}
+    """)
+
+    # 2. Nothing to project if no demand series.
+    if demand_series is None or (hasattr(demand_series, "empty") and demand_series.empty):
+        return 0
+
+    # 3. Real P lots: no actual start, takedown, or hold date — ordered by lot_id
+    #    (same positional order demand_allocator uses).
+    p_lots_df = conn.read_df(f"""
+        SELECT lot_id, lot_type_id
+        FROM sim_lots
+        WHERE lot_source = 'real'
+          AND dev_id      = {dev_id}
+          AND date_str    IS NULL
+          AND date_td     IS NULL
+          AND date_td_hold IS NULL
+        ORDER BY lot_id
+    """)
+
+    if p_lots_df.empty:
+        return 0
+
+    # 4. Expand demand_series into an ordered list of slot dates.
+    date_slots: list[date] = []
+    for _, row in demand_series.iterrows():
+        yr, mo, slots = int(row["year"]), int(row["month"]), int(row["slots"])
+        slot_date = date(yr, mo, 1)
+        for _ in range(slots):
+            date_slots.append(slot_date)
+
+    if not date_slots:
+        return 0
+
+    # 5. Assign projected dates to P lots (as many as demand allows).
+    updates = []
+    for i, (_, lot) in enumerate(p_lots_df.iterrows()):
+        if i >= len(date_slots):
+            break
+        str_date = date_slots[i]
+        lt_id = int(lot["lot_type_id"]) if pd.notna(lot["lot_type_id"]) else None
+
+        str_cmp_curve = curves_for(build_lag_curves, "str_to_cmp", lt_id)
+        cmp_cls_curve = curves_for(build_lag_curves, "cmp_to_cls", lt_id)
+
+        DEFAULT_CMP_LAG = 270
+        DEFAULT_CLS_LAG = 45
+        lag_str_cmp = _sample_lag(rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
+        lag_cmp_cls = _sample_lag(rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+
+        cmp_date = str_date + timedelta(days=lag_str_cmp)
+        cls_date = cmp_date + timedelta(days=lag_cmp_cls)
+        updates.append((int(lot["lot_id"]), str_date, cmp_date, cls_date))
+
+    if not updates:
+        return 0
+
+    # 6. Bulk UPDATE via execute_values.
+    import psycopg2.extras as _extras
+    with conn._conn.cursor() as cur:
+        _extras.execute_values(
+            cur,
+            """
+            UPDATE sim_lots AS sl
+            SET date_str_projected = v.str_p::date,
+                date_cmp_projected = v.cmp_p::date,
+                date_cls_projected = v.cls_p::date
+            FROM (VALUES %s) AS v(lot_id, str_p, cmp_p, cls_p)
+            WHERE sl.lot_id = v.lot_id::bigint
+            """,
+            updates,
+        )
+    conn._conn.commit()
+
+    print(f"  Projected dates written to {len(updates)} real P lot(s) for dev {dev_id}.")
+    return len(updates)
+
+
+def curves_for(curves: dict, lag_type: str, lot_type_id) -> dict | None:
+    """Return the best-matching curve for a lag_type + lot_type_id."""
+    return curves.get((lag_type, lot_type_id)) or curves.get((lag_type, None))
+
+
 # ── Coordinator helpers ───────────────────────────────────────────────────────
 
 def _load_builder_splits(conn: DBConnection) -> dict:
@@ -278,6 +385,9 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     # S-11
     persistence_writer(conn, temp_lots, dev_id, sim_run_id,
                        _proposal=proposal)
+
+    # Write projected dates to real P lots using the same demand series
+    _write_real_lot_projections(conn, dev_id, demand_series, build_lag_curves, rng)
 
     # S-12
     ledger_aggregator(conn)

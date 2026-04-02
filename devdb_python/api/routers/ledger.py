@@ -174,7 +174,10 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 sl.date_td,
                 sl.date_str,
                 sl.date_cmp,
-                sl.date_cls
+                sl.date_cls,
+                sl.date_str_projected,
+                sl.date_cmp_projected,
+                sl.date_cls_projected
             FROM sim_lots sl
             JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
             JOIN dim_development dd ON dd.development_id = sl.dev_id
@@ -194,21 +197,24 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
 
         return [
             {
-                "lot_id":         r["lot_id"],
-                "lot_number":     r["lot_number"],
-                "lot_source":     r["lot_source"],
-                "lot_type_short": r["lot_type_short"],
-                "phase_name":     r["phase_name"],
-                "dev_id":         r["dev_id"],
-                "dev_name":       r["dev_name"],
-                "status":         r["status"],
-                "date_ent":       _d(r["date_ent"]),
-                "date_dev":       _d(r["date_dev"]),
-                "date_td_hold":   _d(r["date_td_hold"]),
-                "date_td":        _d(r["date_td"]),
-                "date_str":       _d(r["date_str"]),
-                "date_cmp":       _d(r["date_cmp"]),
-                "date_cls":       _d(r["date_cls"]),
+                "lot_id":              r["lot_id"],
+                "lot_number":          r["lot_number"],
+                "lot_source":          r["lot_source"],
+                "lot_type_short":      r["lot_type_short"],
+                "phase_name":          r["phase_name"],
+                "dev_id":              r["dev_id"],
+                "dev_name":            r["dev_name"],
+                "status":              r["status"],
+                "date_ent":            _d(r["date_ent"]),
+                "date_dev":            _d(r["date_dev"]),
+                "date_td_hold":        _d(r["date_td_hold"]),
+                "date_td":             _d(r["date_td"]),
+                "date_str":            _d(r["date_str"]),
+                "date_cmp":            _d(r["date_cmp"]),
+                "date_cls":            _d(r["date_cls"]),
+                "date_str_projected":  _d(r["date_str_projected"]),
+                "date_cmp_projected":  _d(r["date_cmp_projected"]),
+                "date_cls_projected":  _d(r["date_cls_projected"]),
             }
             for r in cur.fetchall()
         ]
