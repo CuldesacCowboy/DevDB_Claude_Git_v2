@@ -184,6 +184,7 @@ export default function SimulationView() {
   const [utilization, setUtilization] = useState([])
   const [loading, setLoading]         = useState(false)
   const [missingSplits, setMissingSplits] = useState([])
+  const [staleParams, setStaleParams]     = useState([])
 
   useEffect(() => {
     fetch(`${API}/entitlement-groups`)
@@ -196,10 +197,15 @@ export default function SimulationView() {
   }, [])
 
   const checkSplits = useCallback((id) => {
-    fetch(`${API}/entitlement-groups/${id}/split-check`)
-      .then(r => r.json())
-      .then(rows => setMissingSplits(Array.isArray(rows) ? rows : []))
-      .catch(() => setMissingSplits([]))
+    Promise.all([
+      fetch(`${API}/entitlement-groups/${id}/split-check`).then(r => r.json()),
+      fetch(`${API}/entitlement-groups/${id}/param-check`).then(r => r.json()),
+    ])
+      .then(([splits, params]) => {
+        setMissingSplits(Array.isArray(splits) ? splits : [])
+        setStaleParams(Array.isArray(params) ? params : [])
+      })
+      .catch(() => { setMissingSplits([]); setStaleParams([]) })
   }, [])
 
   const loadLedger = useCallback((id) => {
@@ -313,6 +319,33 @@ export default function SimulationView() {
           </ul>
           <div style={{ marginTop: 6, color: '#92400e', fontSize: 11 }}>
             Add product splits in the Lot · Phase tab before running.
+          </div>
+        </div>
+      )}
+
+      {/* Stale params warning */}
+      {staleParams.length > 0 && (
+        <div style={{
+          marginBottom: 16, padding: '10px 14px',
+          background: '#fff7ed', border: '1px solid #fb923c', borderRadius: 6, fontSize: 12,
+        }}>
+          <div style={{ fontWeight: 600, color: '#9a3412', marginBottom: 4 }}>
+            {staleParams.length} projection group{staleParams.length !== 1 ? 's' : ''} have missing or outdated starts targets — verify before running:
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, color: '#7c2d12', lineHeight: 1.7 }}>
+            {staleParams.map(p => (
+              <li key={p.projection_group_id}>
+                <span style={{ fontWeight: 500 }}>PG {p.projection_group_id}</span>
+                {' — '}{p.dev_name}
+                {p.status === 'missing'
+                  ? <span style={{ color: '#dc2626' }}> · no params configured</span>
+                  : <span style={{ color: '#b45309' }}> · last updated {p.updated_at ? p.updated_at.slice(0, 10) : 'unknown'} ({p.annual_starts_target} starts/yr)</span>
+                }
+              </li>
+            ))}
+          </ul>
+          <div style={{ marginTop: 6, color: '#9a3412', fontSize: 11 }}>
+            Update annual_starts_target in sim_projection_params to reflect current pace.
           </div>
         </div>
       )}

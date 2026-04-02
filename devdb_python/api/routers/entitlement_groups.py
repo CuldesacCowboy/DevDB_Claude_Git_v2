@@ -201,6 +201,55 @@ def ent_group_split_check(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.close()
 
 
+@router.get("/{ent_group_id}/param-check", response_model=list[dict])
+def ent_group_param_check(ent_group_id: int, conn=Depends(get_db_conn)):
+    """
+    Return projection groups in this entitlement group that have missing or stale
+    sim_projection_params. Stale = updated_at older than 180 days, or row absent.
+    Used by SimulationView to warn before running.
+    """
+    import psycopg2.extras
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    try:
+        cur.execute(
+            """
+            SELECT
+                dpg.projection_group_id,
+                d.dev_name,
+                spp.annual_starts_target,
+                spp.updated_at,
+                CASE
+                    WHEN spp.projection_group_id IS NULL THEN 'missing'
+                    WHEN spp.updated_at < NOW() - INTERVAL '180 days' THEN 'stale'
+                    ELSE 'ok'
+                END AS status
+            FROM dim_projection_groups dpg
+            JOIN sim_ent_group_developments segd ON dpg.dev_id = segd.dev_id
+            JOIN developments d ON d.dev_id = dpg.dev_id
+            LEFT JOIN sim_projection_params spp ON spp.projection_group_id = dpg.projection_group_id
+            WHERE segd.ent_group_id = %s
+              AND (
+                  spp.projection_group_id IS NULL
+                  OR spp.updated_at < NOW() - INTERVAL '180 days'
+              )
+            ORDER BY d.dev_name, dpg.projection_group_id
+            """,
+            (ent_group_id,),
+        )
+        return [
+            {
+                "projection_group_id": r["projection_group_id"],
+                "dev_name":            r["dev_name"],
+                "annual_starts_target": r["annual_starts_target"],
+                "updated_at":          r["updated_at"].isoformat() if r["updated_at"] else None,
+                "status":              r["status"],
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
 @router.get("/{ent_group_id}/lot-phase-view", response_model=EntGroupLotPhaseViewResponse)
 def ent_group_lot_phase_view(ent_group_id: int, conn=Depends(get_db_conn)):
     import psycopg2.extras
