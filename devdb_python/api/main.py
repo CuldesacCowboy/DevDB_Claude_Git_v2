@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from api.routers import developments, entitlement_groups, instruments, lots, phases, takedown_agreements, site_plans, phase_boundaries, lot_positions
+from api.routers import developments, entitlement_groups, instruments, lots, phases, takedown_agreements, site_plans, phase_boundaries, lot_positions, simulations, ledger
 
 load_dotenv()
 
@@ -112,3 +112,5 @@ app.include_router(takedown_agreements.router)
 app.include_router(site_plans.router)
 app.include_router(phase_boundaries.router)
 app.include_router(lot_positions.router)
+app.include_router(simulations.router)
+app.include_router(ledger.router)

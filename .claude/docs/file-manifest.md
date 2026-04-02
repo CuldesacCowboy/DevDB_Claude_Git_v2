@@ -99,6 +99,20 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: sim_lot_site_positions, sim_lots, sim_site_plans, sim_dev_phases, dim_development, developments, sim_legal_instruments
 - Last commit: 2026-04-02
 
+### devdb_python/api/routers/simulations.py
+- Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms
+- Imports: engine.coordinator, fastapi, pydantic, time, traceback
+- Imported by: api/main.py
+- Tables: none (delegates entirely to engine)
+- Last commit: 2026-04-01
+
+### devdb_python/api/routers/ledger.py
+- Owns: GET /ledger/{ent_group_id} — returns monthly ledger rows from v_sim_ledger_monthly filtered to the ent group's projection groups; only non-empty months returned
+- Imports: api.deps, psycopg2.extras, fastapi
+- Imported by: api/main.py
+- Tables: v_sim_ledger_monthly, dim_projection_groups, sim_ent_group_developments
+- Last commit: 2026-04-01
+
 ### devdb_python/services/lot_assignment_service.py
 - Owns: Lot phase reassignment, lot-type change, lot unassignment with validation and audit logging
 - Imports: psycopg2.extras, dataclasses
@@ -125,11 +139,18 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-03-26
 
 ### devdb_ui/src/App.jsx
-- Owns: React Router shell with tab navigation between LotPhaseView and TakedownAgreementsView
-- Imports: react-router-dom (BrowserRouter, Routes, Route, NavLink)
+- Owns: React Router shell with routes for LotPhaseView, SitePlanView, SimulationView
+- Imports: react-router-dom (BrowserRouter, Routes, Route, NavLink), LotPhaseView, SitePlanView, SimulationView
 - Imported by: main.jsx
 - Tables: none
-- Last commit: 2026-03-29
+- Last commit: 2026-04-01
+
+### devdb_ui/src/pages/SimulationView.jsx
+- Owns: Simulation run trigger (Run Simulation button → POST /api/simulations/run) and ledger results table (GET /api/ledger/{ent_group_id}); entitlement group picker; monthly pipeline event/status counts grouped by PG
+- Imports: react (useState, useEffect, useCallback)
+- Imported by: App.jsx
+- Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups)
+- Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker sidebar; add instrument inline form (replaces modal — expands in page header matching TDA pattern)
