@@ -574,3 +574,4 @@ Sections extracted from CLAUDE.md to reduce startup context. Read these when the
 |---|---|---|
 | File Manifest | `.claude/docs/file-manifest.md` | When writing or modifying files |
 | API Contract | `.claude/docs/api-contract.md` | When working on FastAPI routers or endpoint contracts |
+| Refactor Gameplan | `.claude/docs/refactor-gameplan.md` | When continuing refactoring work (Phase 2+ items) |
