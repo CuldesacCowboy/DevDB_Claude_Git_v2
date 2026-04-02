@@ -44,6 +44,8 @@ function SitePlanViewInner() {
   const [phases, setPhases]                   = useState([])
   const [undoStack, setUndoStack]             = useState([])
   const [instrumentColors, setInstrumentColors] = useState({})  // {instrument_id: color}
+  const [lotBankCollapsed, setLotBankCollapsed]       = useState(false)
+  const [phasePanelCollapsed, setPhasePanelCollapsed] = useState(false)
 
   // Lot bank + positioning
   const [allLots, setAllLots]             = useState([])   // all real lots for this ent_group
@@ -485,13 +487,12 @@ function SitePlanViewInner() {
 
         {hasPlan && <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />}
 
-        {/* Undo — visible in all modes when there's something to undo */}
+        {/* Undo — visible when there's something to undo and not tracing */}
         {hasPlan && undoStack.length > 0 && mode !== 'trace' && (
-          <button onClick={handleUndo} style={btn('#b45309', '#fffbeb', '#fde68a')}>
-            ↩ Undo
-          </button>
+          <button onClick={handleUndo} style={btn('#b45309', '#fffbeb', '#fde68a')}>↩ Undo</button>
         )}
 
+        {/* View mode tools */}
         {hasPlan && mode === 'view' && (
           <>
             <button onClick={() => setMode('trace')} style={btn('#2563eb', '#eff6ff', '#bfdbfe')}>
@@ -499,11 +500,11 @@ function SitePlanViewInner() {
             </button>
             {hasParcel && (
               <button onClick={() => setMode('edit')} style={btn('#374151', '#f9fafb', '#e5e7eb')}>
-                Edit Parcel
+                Edit Vertices
               </button>
             )}
             <button onClick={() => { setMode('split'); setSelectedBoundaryId(null) }} style={btn('#7c3aed', '#f5f3ff', '#ddd6fe')}>
-              Split Phases
+              Split Region
             </button>
             {hasParcel && (
               <button onClick={clearParcel} style={btn('#dc2626', '#fef2f2', '#fecaca')}>
@@ -513,31 +514,15 @@ function SitePlanViewInner() {
           </>
         )}
 
+        {/* Active-mode exit buttons — instructions shown as canvas overlay instead */}
         {hasPlan && mode === 'trace' && (
-          <>
-            <span style={{ fontSize: 12, color: '#92400e', fontWeight: 500 }}>
-              Click to place vertices · click first vertex or Close to finish
-            </span>
-            <button onClick={() => setMode('view')} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Cancel</button>
-          </>
+          <button onClick={() => setMode('view')} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Cancel</button>
         )}
-
         {hasPlan && mode === 'edit' && (
-          <>
-            <span style={{ fontSize: 12, color: '#1d4ed8', fontWeight: 500 }}>
-              Drag vertices · click edge to add · right-click to delete
-            </span>
-            <button onClick={() => setMode('view')} style={btn('#1d4ed8', '#eff6ff', '#bfdbfe')}>Done Editing</button>
-          </>
+          <button onClick={() => setMode('view')} style={btn('#1d4ed8', '#eff6ff', '#bfdbfe')}>Done</button>
         )}
-
         {hasPlan && mode === 'split' && (
-          <>
-            <span style={{ fontSize: 12, color: '#6d28d9', fontWeight: 500 }}>
-              Click a boundary edge to start · click to add vertices · last click on/past any boundary edge finalizes the split
-            </span>
-            <button onClick={() => { setMode('view'); setSelectedBoundaryId(null) }} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
-          </>
+          <button onClick={() => { setMode('view'); setSelectedBoundaryId(null) }} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
         )}
 
         {hasPlan && <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />}
@@ -569,7 +554,7 @@ function SitePlanViewInner() {
       {/* Canvas + panels */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
 
-        {/* Lot bank — left panel, visible when a plan is loaded */}
+        {/* Lot bank — left panel, collapsible */}
         {hasPlan && (
           <LotBank
             lots={bankLots}
@@ -577,6 +562,8 @@ function SitePlanViewInner() {
             placingLotId={currentPlacingLot?.lot_id ?? null}
             onLotDragStart={(e, lot) => e.dataTransfer.setData('lot_id', String(lot.lot_id))}
             onLotClick={startPlaceFromLot}
+            collapsed={lotBankCollapsed}
+            onCollapseToggle={() => setLotBankCollapsed(v => !v)}
           />
         )}
 
@@ -615,6 +602,23 @@ function SitePlanViewInner() {
             />
           )}
 
+          {/* Mode instruction overlay — floats at top-center of canvas */}
+          {hasPlan && mode !== 'view' && mode !== 'place' && (
+            <div style={{
+              position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 20, pointerEvents: 'none',
+              background: 'rgba(15,23,42,0.80)', borderRadius: 20,
+              padding: '5px 18px', backdropFilter: 'blur(4px)',
+              whiteSpace: 'nowrap',
+            }}>
+              <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 500 }}>
+                {mode === 'trace' && 'Click to place vertices · click first vertex to close'}
+                {mode === 'edit'  && 'Drag vertices · click edge to add point · right-click to remove'}
+                {mode === 'split' && 'Click boundary edge to begin · draw across · click opposite edge to finalize'}
+              </span>
+            </div>
+          )}
+
           {/* Floating overlay for click-to-set mode */}
           {mode === 'place' && currentPlacingLot && (
             <div style={{
@@ -645,7 +649,7 @@ function SitePlanViewInner() {
           )}
         </div>
 
-        {/* Phase side panel — always visible when a plan is loaded */}
+        {/* Phase side panel — collapsible */}
         {hasPlan && (
           <PhasePanel
             boundaries={boundaries}
@@ -661,6 +665,8 @@ function SitePlanViewInner() {
             onUnassign={unassignBoundary}
             onInstrumentColorChange={handleInstrumentColorChange}
             mode={mode}
+            collapsed={phasePanelCollapsed}
+            onCollapseToggle={() => setPhasePanelCollapsed(v => !v)}
           />
         )}
       </div>
@@ -674,10 +680,18 @@ export default function SitePlanView() {
 
 // ─── Phase Side Panel ─────────────────────────────────────────────────────────
 
+const panelCollapseBtn = {
+  width: 20, height: 20, borderRadius: 4, border: '1px solid #e5e7eb',
+  background: '#fff', cursor: 'pointer', display: 'flex',
+  alignItems: 'center', justifyContent: 'center', fontSize: 13,
+  color: '#9ca3af', flexShrink: 0, lineHeight: 1,
+}
+
 function PhasePanel({
   boundaries, phases, phaseMap, phaseColorMap,
   instrumentColors, selectedBoundaryId, selectedBoundary, assignedPhaseIds,
   onSelectBoundary, onAssign, onUnassign, onInstrumentColorChange, mode,
+  collapsed, onCollapseToggle,
 }) {
   // Group phases by instrument_id; unassigned (null) go into a separate list
   const byInstrument = []  // [{instrument_id, instrument_name, phases[]}]
@@ -692,29 +706,58 @@ function PhasePanel({
     byInstrument[instrSeen[ph.instrument_id]].phases.push(ph)
   }
 
+  // ── Collapsed strip ──────────────────────────────────────────────────────────
+  if (collapsed) {
+    return (
+      <div style={{
+        width: 28, borderLeft: '1px solid #e5e7eb', background: '#fafafa',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        flexShrink: 0, padding: '8px 0', gap: 10,
+      }}>
+        <button onClick={onCollapseToggle} title="Show Phases" style={panelCollapseBtn}>‹</button>
+        <span style={{
+          fontSize: 10, color: '#9ca3af', fontWeight: 600,
+          writingMode: 'vertical-rl', letterSpacing: '0.06em',
+          textTransform: 'uppercase', userSelect: 'none',
+        }}>
+          {boundaries.length > 0 ? `Phases (${boundaries.length})` : 'Phases'}
+        </span>
+      </div>
+    )
+  }
+
+  // ── Expanded panel ───────────────────────────────────────────────────────────
   return (
     <div style={{
       width: 240, borderLeft: '1px solid #e5e7eb', background: '#fafafa',
       display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
     }}>
       {/* Panel header */}
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Phase Boundaries</div>
-        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
-          {boundaries.length > 0
-            ? `${boundaries.length} region${boundaries.length !== 1 ? 's' : ''} · ${assignedPhaseIds.size} assigned`
-            : 'No regions yet'}
+      <div style={{
+        padding: '8px 12px', borderBottom: '1px solid #e5e7eb', background: '#fff',
+        flexShrink: 0, display: 'flex', alignItems: 'flex-start', gap: 6,
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Phases</div>
+          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
+            {boundaries.length > 0
+              ? `${boundaries.length} region${boundaries.length !== 1 ? 's' : ''} · ${assignedPhaseIds.size} assigned`
+              : 'No regions yet'}
+          </div>
         </div>
+        {onCollapseToggle && (
+          <button onClick={onCollapseToggle} title="Collapse panel" style={panelCollapseBtn}>›</button>
+        )}
       </div>
 
       {/* Empty state */}
       {boundaries.length === 0 && (
         <div style={{ padding: '16px 12px', fontSize: 11, color: '#9ca3af', lineHeight: 1.5 }}>
-          Trace a parcel on the plan to create your first phase region, then use Split Phases to subdivide it.
+          Trace a parcel on the plan to create your first phase region, then use Split Region to subdivide it.
         </div>
       )}
 
-      {/* Boundary list */}
+      {/* Boundary list — phase name is the primary label */}
       <div style={{ borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
         {boundaries.map((b, i) => {
           const ap = b.phase_id ? phaseMap[b.phase_id] : null
@@ -725,33 +768,40 @@ function PhasePanel({
               key={b.boundary_id}
               onClick={() => onSelectBoundary(b.boundary_id)}
               style={{
-                padding: '5px 12px 5px 9px', cursor: 'pointer',
+                padding: '5px 12px 5px 8px', cursor: 'pointer',
                 borderBottom: '1px solid #f3f4f6',
-                background: isSel ? '#f5f3ff' : 'transparent',
-                borderLeft: `3px solid ${isSel ? '#7c3aed' : 'transparent'}`,
+                background: isSel ? '#ede9fe' : 'transparent',
+                borderLeft: `4px solid ${isSel ? '#7c3aed' : 'transparent'}`,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <div style={{
                   width: 10, height: 10, borderRadius: 2, flexShrink: 0,
                   background: swatchColor,
+                  outline: isSel ? '2px solid #c4b5fd' : 'none',
+                  outlineOffset: 1,
                 }} />
-                <span style={{ fontSize: 11, color: '#374151', fontWeight: isSel ? 600 : 400 }}>
-                  Region {i + 1}
+                {/* Phase name is primary */}
+                <span style={{
+                  fontSize: 11, fontWeight: isSel ? 700 : ap ? 500 : 400,
+                  color: ap ? '#1e293b' : '#9ca3af',
+                }}>
+                  {ap ? ap.phase_name : 'Unassigned'}
                 </span>
               </div>
-              <div style={{ fontSize: 10, marginTop: 1, paddingLeft: 16, color: ap ? '#7c3aed' : '#d1d5db' }}>
-                {ap ? ap.phase_name : 'Unassigned'}
+              {/* Region number is secondary context */}
+              <div style={{ fontSize: 10, marginTop: 1, paddingLeft: 16, color: '#d1d5db' }}>
+                Region {i + 1}
               </div>
             </div>
           )
         })}
       </div>
 
-      {/* Phase list header */}
+      {/* Phase assignment header */}
       <div style={{ padding: '6px 12px 4px', borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#374151' }}>
-          Phases
+          Assign Phase
           {selectedBoundaryId
             ? <span style={{ color: '#7c3aed', fontWeight: 400 }}> — click to assign</span>
             : <span style={{ color: '#9ca3af', fontWeight: 400 }}> — select region first</span>}

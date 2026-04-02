@@ -12,6 +12,8 @@
 //   placingLotId     — lot_id currently being placed (null if not in loop)
 //   onLotDragStart   — (dragEvent, lot) => void
 //   onLotClick       — (lot) => void  — enters click-to-set loop from this lot
+//   collapsed        — bool (optional)
+//   onCollapseToggle — () => void (optional)
 
 import { useMemo } from 'react'
 
@@ -21,7 +23,18 @@ function lotLabel(lotNumber) {
   return m ? `${m[1]}-${parseInt(m[2], 10)}` : (lotNumber || '?')
 }
 
-export default function LotBank({ lots, instrumentColors, placingLotId, onLotDragStart, onLotClick }) {
+const collapseBtn = {
+  width: 20, height: 20, borderRadius: 4, border: '1px solid #e5e7eb',
+  background: '#fff', cursor: 'pointer', display: 'flex',
+  alignItems: 'center', justifyContent: 'center', fontSize: 13,
+  color: '#9ca3af', flexShrink: 0, lineHeight: 1,
+}
+
+export default function LotBank({
+  lots, instrumentColors, placingLotId,
+  onLotDragStart, onLotClick,
+  collapsed, onCollapseToggle,
+}) {
   // Group by instrument_name (stable order: preserve first-appearance)
   const groups = useMemo(() => {
     const seen = {}
@@ -37,17 +50,46 @@ export default function LotBank({ lots, instrumentColors, placingLotId, onLotDra
     return order.map(k => seen[k])
   }, [lots])
 
+  // ── Collapsed strip ────────────────────────────────────────────────────────
+  if (collapsed) {
+    return (
+      <div style={{
+        width: 28, borderRight: '1px solid #e5e7eb', background: '#fafafa',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        flexShrink: 0, padding: '8px 0', gap: 10,
+      }}>
+        <button onClick={onCollapseToggle} title="Show Lot Bank" style={collapseBtn}>›</button>
+        <span style={{
+          fontSize: 10, color: '#9ca3af', fontWeight: 600,
+          writingMode: 'vertical-rl', transform: 'rotate(180deg)',
+          letterSpacing: '0.06em', textTransform: 'uppercase', userSelect: 'none',
+        }}>
+          {lots.length > 0 ? `Bank (${lots.length})` : 'Lot Bank'}
+        </span>
+      </div>
+    )
+  }
+
+  // ── Expanded panel ─────────────────────────────────────────────────────────
   return (
     <div style={{
       width: 178, borderRight: '1px solid #e5e7eb', background: '#fafafa',
       display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
     }}>
       {/* Header */}
-      <div style={{ padding: '8px 10px', borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Lot Bank</div>
-        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
-          {lots.length === 0 ? 'All lots placed' : `${lots.length} lot${lots.length !== 1 ? 's' : ''}`}
+      <div style={{
+        padding: '8px 10px', borderBottom: '1px solid #e5e7eb', background: '#fff',
+        flexShrink: 0, display: 'flex', alignItems: 'flex-start', gap: 6,
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Lot Bank</div>
+          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
+            {lots.length === 0 ? 'All lots placed' : `${lots.length} lot${lots.length !== 1 ? 's' : ''}`}
+          </div>
         </div>
+        {onCollapseToggle && (
+          <button onClick={onCollapseToggle} title="Collapse Lot Bank" style={collapseBtn}>‹</button>
+        )}
       </div>
 
       {/* Empty state */}
