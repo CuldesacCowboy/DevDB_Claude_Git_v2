@@ -132,7 +132,7 @@ def _apply_build_lag_curves(temp_lots: list, curves: dict, rng: random.Random) -
 def _write_real_lot_projections(
     conn: DBConnection,
     dev_id: int,
-    demand_series,
+    run_start_date: date,
     build_lag_curves: dict,
     rng: random.Random,
 ) -> int:
@@ -140,13 +140,15 @@ def _write_real_lot_projections(
     Write date_str_projected / date_cmp_projected / date_cls_projected to real
     P lots (no actual start date, no takedown date) for this dev.
 
-    Mirrors the S-07 demand allocation order (lot_id ASC) so each P lot gets
-    the same demand slot it would have absorbed from the starts pipeline.
+    Generates its own demand series at the annual pace from sim_dev_params —
+    independent of the sim-lot capacity logic (which subtracts real lots from
+    capacity and can return empty demand when all slots are occupied by real lots).
     Clears stale projections on real lots before writing new ones.
     Returns number of lots projected.
     """
-    # 1. Clear all projected dates on real lots for this dev (removes stale data
-    #    from prior runs and from lots that have since received actual dates).
+    from dateutil.relativedelta import relativedelta
+
+    # 1. Clear all projected dates on real lots for this dev.
     conn.execute(f"""
         UPDATE sim_lots
         SET date_str_projected = NULL,
@@ -156,19 +158,14 @@ def _write_real_lot_projections(
           AND dev_id = {dev_id}
     """)
 
-    # 2. Nothing to project if no demand series.
-    if demand_series is None or (hasattr(demand_series, "empty") and demand_series.empty):
-        return 0
-
-    # 3. Real P lots: no actual start, takedown, or hold date — ordered by lot_id
-    #    (same positional order demand_allocator uses).
+    # 2. Real P lots: no actual start, takedown, or hold date — ordered by lot_id.
     p_lots_df = conn.read_df(f"""
         SELECT lot_id, lot_type_id
         FROM sim_lots
         WHERE lot_source = 'real'
-          AND dev_id      = {dev_id}
-          AND date_str    IS NULL
-          AND date_td     IS NULL
+          AND dev_id       = {dev_id}
+          AND date_str     IS NULL
+          AND date_td      IS NULL
           AND date_td_hold IS NULL
         ORDER BY lot_id
     """)
@@ -176,13 +173,34 @@ def _write_real_lot_projections(
     if p_lots_df.empty:
         return 0
 
-    # 4. Expand demand_series into an ordered list of slot dates.
+    # 3. Get annual_starts_target from sim_dev_params.
+    params_df = conn.read_df(f"""
+        SELECT annual_starts_target, max_starts_per_month
+        FROM sim_dev_params
+        WHERE dev_id = {dev_id}
+        LIMIT 1
+    """)
+    if params_df.empty:
+        return 0
+
+    annual_target = float(params_df.iloc[0]["annual_starts_target"])
+    max_per_month_raw = params_df.iloc[0]["max_starts_per_month"]
+    max_per_month = float(max_per_month_raw) if max_per_month_raw is not None and pd.notna(max_per_month_raw) else None
+    monthly_rate = annual_target / 12.0
+
+    # 4. Build demand slots starting from run_start_date until all P lots are covered.
+    n_needed = len(p_lots_df)
     date_slots: list[date] = []
-    for _, row in demand_series.iterrows():
-        yr, mo, slots = int(row["year"]), int(row["month"]), int(row["slots"])
-        slot_date = date(yr, mo, 1)
-        for _ in range(slots):
-            date_slots.append(slot_date)
+    current = run_start_date.replace(day=1)
+    while len(date_slots) < n_needed:
+        slots_this_month = max(1, round(monthly_rate))
+        if max_per_month is not None:
+            slots_this_month = min(slots_this_month, int(max_per_month))
+        for _ in range(slots_this_month):
+            date_slots.append(current)
+            if len(date_slots) >= n_needed:
+                break
+        current = current + relativedelta(months=1)
 
     if not date_slots:
         return 0
@@ -386,8 +404,8 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     persistence_writer(conn, temp_lots, dev_id, sim_run_id,
                        _proposal=proposal)
 
-    # Write projected dates to real P lots using the same demand series
-    _write_real_lot_projections(conn, dev_id, demand_series, build_lag_curves, rng)
+    # Write projected dates to real P lots at the configured annual pace
+    _write_real_lot_projections(conn, dev_id, run_start_date, build_lag_curves, rng)
 
     # S-12
     ledger_aggregator(conn)
