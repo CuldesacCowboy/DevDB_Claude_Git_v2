@@ -3,14 +3,24 @@
 $RepoRoot = Split-Path -Parent $PSCommandPath
 
 # -----------------------------------------------------------------------
-# 1. Kill any stale backend / frontend processes
+# 1. Kill any stale backend / frontend processes and close their windows
 # -----------------------------------------------------------------------
 Write-Host "Clearing stale processes on ports 8765 and 5173..."
 
+# Close cmd.exe windows that are running the backend or frontend
+Get-WmiObject Win32_Process | Where-Object {
+    $_.Name -eq 'cmd.exe' -and (
+        $_.CommandLine -like '*uvicorn*' -or
+        $_.CommandLine -like '*npm run dev*'
+    )
+} | ForEach-Object { taskkill /F /T /PID $_.ProcessId 2>$null }
+
+# Kill any remaining python.exe uvicorn processes (survive if cmd.exe already gone)
 Get-WmiObject Win32_Process | Where-Object {
     $_.Name -eq 'python.exe' -and $_.CommandLine -like '*uvicorn*'
 } | ForEach-Object { taskkill /F /T /PID $_.ProcessId 2>$null }
 
+# Release ports by PID as a fallback
 foreach ($port in @(8765, 5173)) {
     $lines = netstat -aon 2>$null | Select-String ":$port\s"
     foreach ($line in $lines) {
