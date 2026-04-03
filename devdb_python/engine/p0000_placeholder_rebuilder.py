@@ -516,11 +516,11 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     ))
 
     # Track scheduled state.
-    # delivery_date_per_year: locked events ONLY (D-119 — skip the last locked year).
-    # Auto events no longer register here.  Each dev tracks its own last delivery so
-    # one dev's early delivery cannot pull a later-peaking dev into the same year.
+    # delivery_date_per_year: one delivery date per calendar year per community.
+    # Any number of phases can land on that date; the date itself is the constraint.
+    # Locked events establish the date for their year; auto events snap to it.
     delivery_date_per_year: dict[int, date] = {}
-    last_date: date | None = None  # kept for locked-event initialisation only
+    last_date: date | None = None
 
     # Account for locked events already scheduled this/prior years
     locked_dates_df = conn.read_df(f"""
@@ -541,27 +541,25 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             if last_locked_date is None or d > last_locked_date:
                 last_locked_date = d
 
-    def _constrain_date(ideal: date, ws: int, we: int,
-                        dev_last: date | None = None) -> date:
+    def _constrain_date(ideal: date, ws: int, we: int) -> date:
         """
         Return the earliest valid delivery date >= ideal, respecting:
-        - Locked-year skip (D-119): if a locked event owns this year, snap to
-          that locked date (in practice lv is always past all locked years).
-        - min_gap months between consecutive delivery dates for this dev.
+        - One delivery date per year (snap to existing date if year is taken)
+        - min_gap months between consecutive delivery dates (new years only)
 
-        Auto events no longer register year anchors.  Each dev's min_gap is
-        enforced via dev_last so one dev's early delivery cannot pull a
-        later-peaking dev into the same calendar year.
+        max_per_year is no longer a count — any number of phases can land on
+        the single allowed date for a given year.
         """
         d = ideal
         for _ in range(500):  # safety limit
-            # If a locked event owns this year, snap to it (D-119 guard).
+            # If this year already has a delivery date (locked or auto),
+            # snap to it — no further constraints apply.
             if d.year in delivery_date_per_year:
                 return delivery_date_per_year[d.year]
 
-            # Enforce min_gap from this dev's last delivery date.
-            if dev_last is not None and min_gap > 0:
-                min_ok = _add_months(dev_last, min_gap)
+            # New year: enforce min_gap from the last delivery date.
+            if last_date is not None and min_gap > 0:
+                min_ok = _add_months(last_date, min_gap)
                 min_ok = min_ok.replace(day=1)
                 if d < min_ok:
                     d = _next_window_month_from(min_ok, ws, we)
@@ -595,14 +593,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     for dev_id in dev_phases:
         dev_scan_floor[dev_id] = last_locked_per_dev.get(dev_id, today_first - timedelta(days=1))
 
-    # Per-dev last delivery date for min_gap enforcement.
-    # Initialised from each dev's last locked delivery; updated as auto events
-    # are scheduled.  Kept separate from delivery_date_per_year so auto events
-    # do not force other devs into the same calendar year.
-    last_date_per_dev: dict[int, date | None] = {
-        dev_id: last_locked_per_dev.get(dev_id) for dev_id in dev_phases
-    }
-
     events_to_create = []
 
     for _ in range(200):
@@ -624,7 +614,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                         else _next_window_month_from(today_first, ws, we))
                 if lv_d < today_first:
                     lv_d = _next_window_month_from(today_first, ws, we)
-            lv_d = _constrain_date(lv_d, ws, we, last_date_per_dev.get(dev_id))
+            lv_d = _constrain_date(lv_d, ws, we)
             deadlines[dev_id] = lv_d
 
         # Most urgent dev drives the event date
@@ -690,13 +680,10 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 event_phase_ids.append(p["phase_id"])
 
         events_to_create.append({"date": event_date, "phases": event_phase_ids})
-        # Update each joining dev's last delivery date for subsequent min_gap checks.
-        # Auto events are NOT registered into delivery_date_per_year — that map is
-        # reserved for locked events only (D-119).  Per-dev tracking means a dev
-        # that delivers in May 2033 does not force a later-peaking dev to also
-        # deliver in May 2033; each dev schedules at its own natural lean date.
-        for _jd in joining:
-            last_date_per_dev[_jd] = event_date
+        # Register this year's delivery date so subsequent auto phases snap to it
+        if event_date.year not in delivery_date_per_year:
+            delivery_date_per_year[event_date.year] = event_date
+        last_date = event_date
 
     events_to_create.sort(key=lambda e: e["date"])
 
