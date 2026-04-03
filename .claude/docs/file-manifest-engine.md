@@ -1,0 +1,250 @@
+# DevDB File Manifest — Engine, Kernel & Tests (devdb_python/)
+
+Load when working on: simulation engine modules, convergence coordinator, planning kernel, or test suite.
+
+---
+
+#### Engine (devdb_python/engine/)
+
+### devdb_python/engine/connection.py
+- Owns: PGConnection wrapper -- connects to local Postgres with search_path=devdb; used by all engine modules
+- Imports: psycopg2, dotenv
+- Imported by: coordinator.py, all engine modules
+- Tables: none (connection factory)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/coordinator.py
+- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params (independent of sim-lot capacity); returns (iterations, missing_params_devs)
+- Imports: engine modules s0100-s1200, p0000-p0800, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
+- Imported by: routers/simulations.py, tests/test_coordinator.py
+- Tables: reads/writes via all pipeline modules; sim_lots (projected date columns), sim_dev_params
+- Last commit: 2026-04-02
+
+### devdb_python/engine/s0100_lot_loader.py
+- Owns: S-0100 -- loads real lots for ent_group from sim_lots into a DataFrame
+- Imported by: coordinator.py
+- Tables: sim_lots (SELECT real lots for ent_group)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s0200_date_actualizer.py
+- Owns: S-0200 -- applies MARKsystems actual milestone dates to real lots via schedhousedetail join; uses resolve_marks_date() priority
+- Imported by: coordinator.py
+- Tables: sim_lots (UPDATE date_* fields), schedhousedetail (SELECT)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s0300_gap_fill_engine.py
+- Owns: S-0300 -- fills true-gap missing dates (requires anchor on both sides per D-084/D-085)
+- Imported by: coordinator.py
+- Tables: sim_lots (UPDATE date_* fields in-memory DataFrame)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s0400_chronology_validator.py
+- Owns: S-0400 -- detects date ordering violations; returns violation list without modifying lots
+- Imported by: coordinator.py
+- Tables: sim_lots (SELECT read-only)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s0500_takedown_engine.py
+- Owns: S-0500 -- TDA gap-fill; writes date_td_hold per D-087 using checkpoint_lead_days
+- Imported by: coordinator.py
+- Tables: sim_lots (UPDATE date_td_hold), sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_agreement_lots
+- Last commit: 2026-03-25
+
+### devdb_python/engine/seasonal_weights.py
+- Owns: Shared seasonal weight sets (month→fractional weight, sums to 1.0) used by S-0600 and P-0000 for monthly demand/pace allocation
+- Imported by: s0600_demand_generator.py, p0000_placeholder_rebuilder.py
+- Tables: none
+- Last commit: 2026-04-03
+
+### devdb_python/engine/s0600_demand_generator.py
+- Owns: S-0600 -- generates monthly demand series for each phase; vectorized; capacity-capped per D-138
+- Imported by: coordinator.py
+- Tables: sim_dev_phases, sim_phase_product_splits, sim_lots (SELECT)
+- Last commit: 2026-04-03
+
+### devdb_python/engine/s0700_demand_allocator.py
+- Owns: S-0700 -- allocates demand slots to real/sim lots; positional merge; no carry-forward
+- Imported by: kernel/planning_kernel.py
+- Tables: none (pure DataFrame transform)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s0800_temp_lot_generator.py
+- Owns: S-0800 -- generates sim lots for unmet demand; date_str = demand slot month; date_td = date_str per D-137/D-142
+- Imported by: kernel/planning_kernel.py
+- Tables: none (builds DataFrame; persistence is in s1100)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s0810_building_group_enforcer.py
+- Owns: S-0810 -- enforces MIN(date_str) per building_group_id across sim lots per D-133
+- Imported by: kernel/planning_kernel.py
+- Tables: none (pure DataFrame transform)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s0820_post_generation_chronology_guard.py
+- Owns: S-0820 -- discards sim lots with chronology violations post-generation; warns on fully-cleared phases
+- Imported by: kernel/planning_kernel.py
+- Tables: none (pure DataFrame filter)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s0900_builder_assignment.py
+- Owns: S-0900 -- assigns builder_id to sim lots from sim_phase_builder_splits; builder splits passed as parameter
+- Imported by: coordinator.py
+- Tables: sim_phase_builder_splits (read parameter; no direct DB query)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s1000_demand_derived_date_writer.py
+- Owns: S-1000 -- writes MIN(date_str) per phase to sim_dev_phases.date_dev_projected
+- Imported by: coordinator.py
+- Tables: sim_dev_phases (UPDATE date_dev_projected)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/s1100_persistence_writer.py
+- Owns: S-1100 -- atomic DELETE+INSERT of sim lots; assigns lot_id via MAX(lot_id)+offset per D-086
+- Imported by: coordinator.py
+- Tables: sim_lots (DELETE sim rows, INSERT new sim rows)
+- Last commit: 2026-03-26
+
+### devdb_python/engine/s1200_ledger_aggregator.py
+- Owns: S-1200 -- creates/replaces v_sim_ledger_monthly view; COUNT-based pipeline stage counts
+- Imported by: coordinator.py
+- Tables: v_sim_ledger_monthly (CREATE OR REPLACE VIEW over sim_lots)
+- Last commit: 2026-04-02
+
+### devdb_python/engine/p0000_placeholder_rebuilder.py
+- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config
+- Imported by: coordinator.py
+- Tables: sim_delivery_events, sim_delivery_event_phases, sim_dev_phases, sim_entitlement_delivery_config (SELECT/INSERT/UPDATE)
+- Last commit: 2026-04-03
+
+### devdb_python/engine/p0100_actual_date_applicator.py
+- Owns: P-0100 -- applies locked delivery event dates to sim_dev_phases.date_dev_projected per D-112/D-125
+- Imported by: coordinator.py
+- Tables: sim_dev_phases (UPDATE), sim_delivery_events, sim_delivery_event_phases (SELECT)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/p0200_dependency_resolver.py
+- Owns: P-0200 -- resolves delivery event predecessor chains; uses event_id column (not delivery_event_id)
+- Imported by: coordinator.py
+- Tables: sim_delivery_events, sim_delivery_event_predecessors (SELECT)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/p0300_constraint_urgency_ranker.py
+- Owns: P-0300 -- ranks phases by delivery urgency based on inventory exhaustion
+- Imported by: coordinator.py
+- Tables: sim_dev_phases, sim_lots, sim_phase_product_splits (SELECT)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/p0400_delivery_date_assigner.py
+- Owns: P-0400 -- assigns delivery dates to placeholder events; never moves placeholder earlier than P-0000 wrote per D-141
+- Imported by: coordinator.py
+- Tables: sim_delivery_events (UPDATE), sim_dev_phases (SELECT)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/p0500_eligibility_updater.py
+- Owns: P-0500 -- updates phase delivery eligibility flags after date assignment; uses event_id column
+- Imported by: coordinator.py
+- Tables: sim_delivery_events, sim_delivery_event_predecessors (SELECT/UPDATE)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/p0600_phase_date_propagator.py
+- Owns: P-0600 -- propagates delivery event dates to child phases' date_dev_projected unconditionally per D-123
+- Imported by: coordinator.py
+- Tables: sim_dev_phases (UPDATE), sim_delivery_event_phases, sim_delivery_events (SELECT)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/p0700_lot_date_propagator.py
+- Owns: P-0700 -- propagates phase date_dev_projected to sim lots and real lots where date_dev IS NULL per D-113
+- Imported by: coordinator.py
+- Tables: sim_lots (UPDATE date_dev)
+- Last commit: 2026-03-25
+
+### devdb_python/engine/p0800_sync_flag_writer.py
+- Owns: P-0800 -- writes needs_rerun and sync status flags to sim_dev_phases
+- Imported by: coordinator.py
+- Tables: sim_dev_phases (UPDATE)
+- Last commit: 2026-03-25
+
+---
+
+#### Kernel (devdb_python/kernel/)
+
+### devdb_python/kernel/frozen_input.py
+- Owns: FrozenInput dataclass -- immutable snapshot of all data the planning kernel needs; assembled by coordinator before plan() call
+- Imports: dataclasses, pandas
+- Imported by: coordinator.py, kernel/planning_kernel.py, kernel/frozen_input_builder.py
+- Tables: none (pure dataclass)
+- Last commit: 2026-03-25
+
+### devdb_python/kernel/frozen_input_builder.py
+- Owns: Builds FrozenInput from database queries; all DB access for kernel inputs is here
+- Imports: engine.connection, frozen_input
+- Imported by: coordinator.py
+- Tables: sim_lots, sim_dev_phases, sim_phase_product_splits, sim_entitlement_delivery_config (SELECT)
+- Last commit: 2026-03-27
+
+### devdb_python/kernel/planning_kernel.py
+- Owns: plan() entry point -- wires S-0700 through S-0820 sequentially; pure function (no DB access)
+- Imports: frozen_input, proposal, proposal_validator, s0700, s0800, s0810, s0820
+- Imported by: coordinator.py
+- Tables: none (pure transform)
+- Last commit: 2026-03-26
+
+### devdb_python/kernel/proposal.py
+- Owns: Proposal dataclass -- output of plan(); holds generated sim lots DataFrame and warnings
+- Imports: dataclasses, pandas
+- Imported by: planning_kernel.py, coordinator.py
+- Tables: none
+- Last commit: 2026-03-25
+
+### devdb_python/kernel/proposal_validator.py
+- Owns: Validates a Proposal against business rules before coordinator accepts it
+- Imports: proposal, frozen_input
+- Imported by: planning_kernel.py
+- Tables: none (pure validation)
+- Last commit: 2026-03-27
+
+---
+
+#### Tests (devdb_python/tests/)
+
+### devdb_python/tests/test_s01_s04.py
+- Owns: Tests for starts pipeline S-0100 through S-0400 (lot_loader, date_actualizer, gap_fill_engine, chronology_validator)
+- Imports: engine modules s0100-s0400, pytest
+- Tables: sim_lots, schedhousedetail (via test fixtures)
+- Last commit: 2026-03-25
+
+### devdb_python/tests/test_s05_s08.py
+- Owns: Tests for S-0500 through S-0800 (takedown_engine, demand_generator, demand_allocator, temp_lot_generator)
+- Imports: engine modules s0500-s0800, pytest
+- Tables: sim_lots, sim_takedown_*, sim_dev_phases, sim_phase_product_splits (via fixtures)
+- Last commit: 2026-03-27
+
+### devdb_python/tests/test_s0810_s0820.py
+- Owns: Tests for S-0810 (building_group_enforcer) and S-0820 (post_generation_chronology_guard)
+- Imports: s0810, s0820, pytest
+- Tables: none (DataFrame-only tests)
+- Last commit: 2026-03-25
+
+### devdb_python/tests/test_s09_s12.py
+- Owns: Tests for S-0900 through S-1200 (builder_assignment, demand_derived_date_writer, persistence_writer, ledger_aggregator)
+- Imports: engine modules s0900-s1200, pytest
+- Tables: sim_lots, sim_dev_phases, sim_phase_builder_splits (via fixtures)
+- Last commit: 2026-03-25
+
+### devdb_python/tests/test_p01_p08.py
+- Owns: Tests for supply pipeline P-0100 through P-0800
+- Imports: engine modules p0100-p0800, pytest
+- Tables: sim_delivery_events, sim_dev_phases, sim_lots (via fixtures)
+- Last commit: 2026-03-25
+
+### devdb_python/tests/test_coordinator.py
+- Owns: End-to-end convergence test for coordinator (ent_group_id=9002)
+- Imports: engine.coordinator, pytest
+- Tables: all (runs full pipeline against local Postgres)
+- Last commit: 2026-03-25
+
+### devdb_python/tests/test_kernel_scenarios.py
+- Owns: Scenario-pack tests for planning kernel (FrozenInput fixtures, Scenario 1-10 truth cases)
+- Imports: kernel.planning_kernel, kernel.frozen_input, pytest
+- Tables: none (pure DataFrame fixtures)
+- Last commit: 2026-03-26
