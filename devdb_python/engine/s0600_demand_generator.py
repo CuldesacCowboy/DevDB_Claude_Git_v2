@@ -13,12 +13,7 @@ Rules:   Translates annual_starts_target + seasonal weights into monthly demand 
 
 import pandas as pd
 from .connection import DBConnection
-
-SEASONAL_WEIGHTS_BALANCED_2YR = {
-    1: 0.060, 2: 0.065, 3: 0.085, 4: 0.095,
-    5: 0.100, 6: 0.095, 7: 0.090, 8: 0.090,
-    9: 0.085, 10: 0.080, 11: 0.070, 12: 0.085,
-}
+from .seasonal_weights import WEIGHT_SETS, SUPPORTED_WEIGHT_SETS
 
 
 def demand_generator(conn: DBConnection, dev_id: int,
@@ -46,10 +41,10 @@ def demand_generator(conn: DBConnection, dev_id: int,
     max_per_month = float(row["max_starts_per_month"]) if row["max_starts_per_month"] is not None else None
     weight_set = row["seasonal_weight_set"] or "balanced_2yr"
 
-    if weight_set != "balanced_2yr":
+    if weight_set not in SUPPORTED_WEIGHT_SETS:
         raise ValueError(
             f"Dev {dev_id}: seasonal_weight_set='{weight_set}' is not supported. "
-            f"Only 'balanced_2yr' is implemented. Update sim_dev_params."
+            f"Supported sets: {sorted(SUPPORTED_WEIGHT_SETS)}. Update sim_dev_params."
         )
 
     # Step 1: available_capacity = total planned lots minus all real lots.
@@ -106,7 +101,7 @@ def demand_generator(conn: DBConnection, dev_id: int,
         current = current + relativedelta(months=1)
 
     df = pd.DataFrame(months, columns=["year", "month"])
-    df["weight"] = df["month"].map(SEASONAL_WEIGHTS_BALANCED_2YR)
+    df["weight"] = df["month"].map(WEIGHT_SETS[weight_set])
 
     # Step 3: Compute per-month slots at the annual pace, apply max_per_month cap,
     # then round to integers. Do NOT renormalize across the full horizon -- that

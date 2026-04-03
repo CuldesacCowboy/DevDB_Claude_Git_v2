@@ -16,6 +16,7 @@ import math
 from datetime import date, timedelta
 from collections import defaultdict
 from .connection import DBConnection
+from .seasonal_weights import effective_annual_pace
 
 
 # ---------------------------------------------------------------------------
@@ -303,7 +304,8 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
 
     # Delivery window is ent-group level (D-135); annual_starts_target is per-dev.
     pg_annual_df = conn.read_df(f"""
-        SELECT DISTINCT sdp.phase_id, sdvp.annual_starts_target
+        SELECT DISTINCT sdp.phase_id, sdvp.annual_starts_target,
+               COALESCE(sdvp.seasonal_weight_set, 'balanced_2yr') AS seasonal_weight_set
         FROM sim_dev_phases sdp
         JOIN sim_dev_params sdvp ON sdvp.dev_id = sdp.dev_id
         WHERE sdp.phase_id IN ({phase_ids_str})
@@ -312,12 +314,13 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # All phases share the ent-group-level window (D-135)
     window_map = {p["phase_id"]: (window_start_default, window_end_default)
                   for p in undelivered}
-    annual_target_map = {}  # phase_id -> annual_starts_target
+    annual_target_map = {}  # phase_id -> effective monthly pace
     for _, r in pg_annual_df.iterrows():
         ph_id = int(r["phase_id"])
         t = r["annual_starts_target"]
         if t is not None:
-            annual_target_map[ph_id] = float(t)
+            ws_name = r["seasonal_weight_set"]
+            annual_target_map[ph_id] = effective_annual_pace(ws_name, float(t)) / 12.0
 
     # Attach window to each undelivered phase
     for p in undelivered:
@@ -581,12 +584,12 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     ws = window_start_default
     we = window_end_default
 
-    # monthly pace per dev: average annual_starts_target across phases for that dev
+    # monthly pace per dev: average effective monthly pace across phases for that dev
     dev_monthly_pace = {}
     for dev_id, phases_list in dev_phases.items():
-        targets = [annual_target_map[p["phase_id"]] for p in phases_list if p["phase_id"] in annual_target_map]
-        if targets:
-            dev_monthly_pace[dev_id] = (sum(targets) / len(targets)) / 12.0
+        paces = [annual_target_map[p["phase_id"]] for p in phases_list if p["phase_id"] in annual_target_map]
+        if paces:
+            dev_monthly_pace[dev_id] = sum(paces) / len(paces)
 
     # Per-dev scan floor: start scanning after last locked delivery for this dev
     dev_scan_floor: dict[int, date] = {}
