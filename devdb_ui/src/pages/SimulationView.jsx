@@ -145,29 +145,30 @@ function LedgerTable({ rows, floors, period }) {
       <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap', width: '100%' }}>
         <thead>
           <tr style={{ background: '#f9fafb' }}>
-            <th style={thS('left')}>
+            <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>
               {period === 'quarterly' ? 'Quarter' : period === 'annual' ? 'Year' : 'Month'}
             </th>
-            <th style={{ ...thS('center'), borderRight: '2px solid #d1d5db' }} colSpan={6}>Events</th>
-            <th style={{ ...thS('center'), borderLeft: '2px solid #d1d5db' }} colSpan={8}>End-of-period status</th>
-            <th style={thS()}>Closed</th>
+            <th style={{ ...thS('center'), borderRight: '2px solid #d1d5db', position: 'sticky', top: 0, zIndex: 2 }} colSpan={6}>Events</th>
+            <th style={{ ...thS('center'), borderLeft: '2px solid #d1d5db', position: 'sticky', top: 0, zIndex: 2 }} colSpan={8}>End-of-period status</th>
+            <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>Closed</th>
           </tr>
           <tr style={{ background: '#f9fafb' }}>
-            <th style={thS('left')} />
+            <th style={{ ...thS('left'), position: 'sticky', top: 26, zIndex: 2 }} />
             {EVENT_COLS.map((c, i) => (
-              <th key={c} style={{ ...thS(), ...(i === 5 ? { borderRight: '2px solid #d1d5db' } : {}) }}>
+              <th key={c} style={{ ...thS(), ...(i === 5 ? { borderRight: '2px solid #d1d5db' } : {}), position: 'sticky', top: 26, zIndex: 2 }}>
                 {PLAN_LABELS[c]}
               </th>
             ))}
             {STATUS_COLS.map((c, i) => (
               <th key={c} style={{ ...thS(), ...(i === 0 ? { borderLeft: '2px solid #d1d5db' } : {}),
-                color: floorMap[c] != null ? '#1d4ed8' : '#6b7280' }}>
+                color: floorMap[c] != null ? '#1d4ed8' : '#6b7280',
+                position: 'sticky', top: 26, zIndex: 2 }}>
                 {STATUS_LABELS[c]}
                 {floorMap[c] != null && <span style={{ fontSize: 9, verticalAlign: 'super', marginLeft: 1 }}>≥{floorMap[c]}</span>}
               </th>
             ))}
-            <th style={{ ...thS(), borderLeft: '1px solid #e5e7eb', color: '#374151', fontWeight: 700 }}>Total</th>
-            <th style={thS()} />
+            <th style={{ ...thS(), borderLeft: '1px solid #e5e7eb', color: '#374151', fontWeight: 700, position: 'sticky', top: 26, zIndex: 2 }}>Total</th>
+            <th style={{ ...thS(), position: 'sticky', top: 26, zIndex: 2 }} />
           </tr>
         </thead>
         <tbody>
@@ -562,6 +563,78 @@ function EntitlementEventsSection({ entGroupId, events, devList, onChanged }) {
 
 const STATUS_COLOR = { OUT:'#6b7280', C:'#059669', UC:'#0284c7', H:'#d97706', U:'#7c3aed', D:'#374151', E:'#b45309', P:'#9ca3af' }
 
+// ─── DeliveryScheduleTab ─────────────────────────────────────────────────────
+
+function DeliveryScheduleTab({ rows, loading }) {
+  if (loading) return <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>
+  if (!rows.length) return <div style={{ color: '#9ca3af', fontSize: 12 }}>No delivery events found. Run a simulation first.</div>
+
+  // Assign alternating background per event group for visual separation
+  const eventOrder = [...new Set(rows.map(r => r.delivery_event_id))]
+  const eventIdx   = new Map(eventOrder.map((id, i) => [id, i]))
+  const rowBg = r => eventIdx.get(r.delivery_event_id) % 2 === 0 ? '#fff' : '#f9fafb'
+
+  const stickyTh = (align = 'right', extra = {}) => ({
+    ...thS(align, extra),
+    position: 'sticky', top: 0, zIndex: 2,
+  })
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap', width: '100%' }}>
+        <thead>
+          <tr style={{ background: '#f9fafb' }}>
+            <th style={stickyTh('left')}>Date</th>
+            <th style={stickyTh('left')}>Source</th>
+            <th style={stickyTh('left')}>Development</th>
+            <th style={stickyTh('left', { whiteSpace: 'normal' })}>Phases Delivered</th>
+            <th style={stickyTh()}>Units</th>
+            <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db' }}>D at Delivery</th>
+            <th style={stickyTh()}>U at Delivery</th>
+            <th style={stickyTh()}>UC at Delivery</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={`${r.delivery_event_id}-${r.dev_id}`} style={{ background: rowBg(r) }}>
+              <td style={tdS('left', { fontWeight: 500 })}>
+                {r.delivery_date ? fmt(r.delivery_date) : <span style={{ color: '#9ca3af' }}>—</span>}
+              </td>
+              <td style={tdS('left')}>
+                {r.is_locked
+                  ? <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 10,
+                                   fontSize: 11, fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>
+                      Locked
+                    </span>
+                  : <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 10,
+                                   fontSize: 11, fontWeight: 500, background: '#f3f4f6', color: '#6b7280' }}>
+                      Auto-scheduled
+                    </span>
+                }
+              </td>
+              <td style={tdS('left')}>{r.dev_name}</td>
+              <td style={tdS('left', { whiteSpace: 'normal', maxWidth: 340, color: '#374151' })}>{r.phases}</td>
+              <td style={tdS()}>{r.units_delivered > 0 ? r.units_delivered : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+              <td style={tdS('right', { borderLeft: '2px solid #d1d5db' })}>
+                {r.d_end != null ? r.d_end : <span style={{ color: '#e5e7eb' }}>—</span>}
+              </td>
+              <td style={tdS()}>
+                {r.u_end != null ? r.u_end : <span style={{ color: '#e5e7eb' }}>—</span>}
+              </td>
+              <td style={tdS()}>
+                {r.uc_end != null ? r.uc_end : <span style={{ color: '#e5e7eb' }}>—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ marginTop: 8, fontSize: 11, color: '#9ca3af' }}>
+        D/U/UC counts are end-of-month values for the delivery month.
+      </div>
+    </div>
+  )
+}
+
 function LotLedger({ lots, loading }) {
   const [devFilter, setDevFilter] = useState('all')
   const [srcFilter, setSrcFilter] = useState('all')
@@ -602,18 +675,18 @@ function LotLedger({ lots, loading }) {
         <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
             <tr style={{ background: '#f9fafb' }}>
-              {devFilter === 'all' && <th style={thS('left')}>Development</th>}
-              <th style={thS('left')}>Lot #</th>
-              <th style={thS('left')}>Type</th>
-              <th style={thS('left')}>Phase</th>
-              <th style={thS('left')}>Src</th>
-              <th style={thS('left')}>Status</th>
-              <th style={thS()}>ENT</th>
-              <th style={thS()}>DEV</th>
-              <th style={thS()}>TD</th>
-              <th style={thS()}>STR</th>
-              <th style={thS()}>CMP</th>
-              <th style={thS()}>CLS</th>
+              {devFilter === 'all' && <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Development</th>}
+              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Lot #</th>
+              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Type</th>
+              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Phase</th>
+              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Src</th>
+              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Status</th>
+              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>ENT</th>
+              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>DEV</th>
+              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>TD</th>
+              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>STR</th>
+              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>CMP</th>
+              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>CLS</th>
             </tr>
           </thead>
           <tbody>
@@ -658,6 +731,8 @@ export default function SimulationView() {
   const [view, setView]             = useState('ledger')
   const [lots, setLots]             = useState([])
   const [lotsLoading, setLotsLoading] = useState(false)
+  const [deliverySchedule, setDeliverySchedule]         = useState([])
+  const [deliveryScheduleLoading, setDeliveryScheduleLoading] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Ledger controls
   const [selectedDevIds, setSelectedDevIds] = useState(null)   // null = all
@@ -720,6 +795,14 @@ export default function SimulationView() {
       .finally(() => setLotsLoading(false))
   }, [])
 
+  const loadDeliverySchedule = useCallback((id) => {
+    setDeliveryScheduleLoading(true)
+    fetch(`${API}/ledger/${id}/delivery-schedule`).then(r => r.json())
+      .then(data => setDeliverySchedule(Array.isArray(data) ? data : []))
+      .catch(() => setDeliverySchedule([]))
+      .finally(() => setDeliveryScheduleLoading(false))
+  }, [])
+
   useEffect(() => {
     fetch(`${API}/entitlement-groups`).then(r => r.json())
       .then(data => { setEntGroups(data); if (data.length) setEntGroupId(data[0].ent_group_id) })
@@ -749,6 +832,7 @@ export default function SimulationView() {
       setRunErrors(data.errors || [])
       loadLedger(entGroupId)
       if (view === 'lots') loadLots(entGroupId)
+      if (view === 'delivery') loadDeliverySchedule(entGroupId)
       checkSplits(entGroupId)
     } catch (e) { setRunStatus({ ok: false, error: e.message }) }
   }
@@ -895,8 +979,16 @@ export default function SimulationView() {
 
       {/* ── View toggle ── */}
       <div style={{ display: 'flex', gap: 2, marginBottom: 12 }}>
-        {[['ledger','Monthly Ledger'],['lots','Lot List']].map(([v, label]) => (
-          <button key={v} onClick={() => { setView(v); if (v === 'lots' && entGroupId) loadLots(entGroupId) }}
+        {[
+          ['ledger',   'Monthly Ledger'],
+          ['lots',     'Lot List'],
+          ['delivery', 'Delivery Schedule Audit'],
+        ].map(([v, label]) => (
+          <button key={v} onClick={() => {
+            setView(v)
+            if (v === 'lots'     && entGroupId) loadLots(entGroupId)
+            if (v === 'delivery' && entGroupId) loadDeliverySchedule(entGroupId)
+          }}
             style={{ padding: '4px 14px', fontSize: 12, borderRadius: 4, border: '1px solid #d1d5db',
                      cursor: 'pointer', background: view === v ? '#1e40af' : '#f9fafb',
                      color: view === v ? '#fff' : '#374151', fontWeight: view === v ? 600 : 400 }}>
@@ -978,6 +1070,11 @@ export default function SimulationView() {
       {/* ── Lot List ── */}
       {view === 'lots' && (
         <LotLedger lots={lots} loading={lotsLoading} />
+      )}
+
+      {/* ── Delivery Schedule Audit ── */}
+      {view === 'delivery' && (
+        <DeliveryScheduleTab rows={deliverySchedule} loading={deliveryScheduleLoading} />
       )}
     </div>
   )

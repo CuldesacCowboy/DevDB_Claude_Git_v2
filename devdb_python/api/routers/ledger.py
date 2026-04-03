@@ -152,6 +152,110 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.close()
 
 
+@router.get("/{ent_group_id}/delivery-schedule")
+def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
+    """
+    Return one row per (delivery_event, development) with phases delivered,
+    units, and D/U/UC inventory at the delivery month.
+    """
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            """
+            WITH event_phases AS (
+                SELECT
+                    sde.delivery_event_id,
+                    sde.event_name,
+                    COALESCE(sde.date_dev_actual, sde.date_dev_projected)::date AS delivery_date,
+                    (sde.date_dev_actual IS NOT NULL)                            AS is_locked,
+                    sdp.dev_id,
+                    d.dev_name,
+                    sdp.phase_id,
+                    sdp.phase_name,
+                    sdp.sequence_number
+                FROM sim_delivery_events sde
+                JOIN sim_delivery_event_phases dep ON dep.delivery_event_id = sde.delivery_event_id
+                JOIN sim_dev_phases sdp            ON sdp.phase_id = dep.phase_id
+                JOIN dim_development dd            ON dd.development_id = sdp.dev_id
+                JOIN developments d               ON d.marks_code = dd.dev_code2
+                WHERE sde.ent_group_id = %s
+            ),
+            phase_units AS (
+                SELECT phase_id, COALESCE(SUM(projected_count), 0)::int AS units
+                FROM sim_phase_product_splits
+                WHERE phase_id IN (SELECT phase_id FROM event_phases)
+                GROUP BY phase_id
+            ),
+            event_dev AS (
+                SELECT
+                    ep.delivery_event_id,
+                    ep.event_name,
+                    ep.delivery_date,
+                    ep.is_locked,
+                    ep.dev_id,
+                    ep.dev_name,
+                    STRING_AGG(ep.phase_name, ', ' ORDER BY ep.sequence_number) AS phases,
+                    COALESCE(SUM(pu.units), 0)::int                             AS units_delivered
+                FROM event_phases ep
+                LEFT JOIN phase_units pu ON pu.phase_id = ep.phase_id
+                GROUP BY ep.delivery_event_id, ep.event_name, ep.delivery_date,
+                         ep.is_locked, ep.dev_id, ep.dev_name
+            ),
+            inventory AS (
+                SELECT dev_id, calendar_month,
+                       SUM(d_end)::int   AS d_end,
+                       SUM(u_end)::int   AS u_end,
+                       SUM(uc_end)::int  AS uc_end
+                FROM v_sim_ledger_monthly
+                WHERE dev_id IN (
+                    SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s
+                )
+                GROUP BY dev_id, calendar_month
+            )
+            SELECT
+                ed.delivery_event_id,
+                ed.event_name,
+                ed.delivery_date,
+                ed.is_locked,
+                ed.dev_id,
+                ed.dev_name,
+                ed.phases,
+                ed.units_delivered,
+                inv.d_end,
+                inv.u_end,
+                inv.uc_end
+            FROM event_dev ed
+            LEFT JOIN inventory inv
+                ON  inv.dev_id = ed.dev_id
+                AND inv.calendar_month = DATE_TRUNC('month', ed.delivery_date)::date
+            ORDER BY ed.delivery_date NULLS LAST, ed.delivery_event_id, ed.dev_name
+            """,
+            (ent_group_id, ent_group_id),
+        )
+
+        def _d(v):
+            return v.isoformat() if v else None
+
+        return [
+            {
+                "delivery_event_id": r["delivery_event_id"],
+                "event_name":        r["event_name"],
+                "delivery_date":     _d(r["delivery_date"]),
+                "is_locked":         bool(r["is_locked"]),
+                "dev_id":            r["dev_id"],
+                "dev_name":          r["dev_name"],
+                "phases":            r["phases"],
+                "units_delivered":   r["units_delivered"],
+                "d_end":             r["d_end"],
+                "u_end":             r["u_end"],
+                "uc_end":            r["uc_end"],
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
 @router.get("/{ent_group_id}/by-dev")
 def get_ledger_by_dev(ent_group_id: int, conn=Depends(get_db_conn)):
     """
