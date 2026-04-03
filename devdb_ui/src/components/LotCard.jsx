@@ -1,14 +1,12 @@
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
+import { STATUS_CFG } from '../utils/statusConfig'
 
-const STATUS_BG = {
-  OUT: 'bg-white border border-gray-300 text-gray-400',
-  C:   'bg-green-100 text-green-700',
-  UC:  'bg-yellow-100 text-yellow-700',
-  U:   'bg-blue-100 text-blue-700',
-  D:   'bg-purple-100 text-purple-700',
+function pillStyle(status) {
+  const cfg = STATUS_CFG[status]
+  if (!cfg) return { background: '#fff', border: '1px solid #e5e7eb', color: '#6b7280' }
+  return { background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color }
 }
-const DEFAULT_PILL_BG = 'bg-white border border-gray-200 text-gray-600'
 
 function parseLotNumber(lotNumber, fallbackId) {
   if (!lotNumber) return { code: 'lot', num: String(fallbackId) }
@@ -58,8 +56,9 @@ export function BuildingGroupCard({ lots, isPending, isOverlay = false, listView
         {lots.map((l) => {
           const { num } = parseLotNumber(l.lot_number, l.lot_id)
           return (
-            <p key={l.lot_id} className="text-[10px] text-gray-500 font-mono ml-2">
-              {num} — {l.status}{l.has_actual_dates ? ' ⚠' : ''}
+            <p key={l.lot_id} className="text-[10px] font-mono ml-2"
+               style={{ color: STATUS_CFG[l.status]?.color ?? '#6b7280', fontWeight: 600 }}>
+              {num} — {STATUS_CFG[l.status]?.shape} {l.status}{l.has_actual_dates ? ' ⚠' : ''}
             </p>
           )
         })}
@@ -133,20 +132,21 @@ export default function LotCard({ lot, isPending, isOverlay = false, listView = 
         `}
       >
         <p className="font-bold text-xs text-gray-800 font-mono">{code}{num ? ` ${num}` : ''}</p>
-        <p className="text-[10px] text-gray-400 mt-0.5">
-          {lot.status}{lot.has_actual_dates ? ' ⚠' : ''}
+        <p className="text-[10px] mt-0.5" style={{ color: STATUS_CFG[lot.status]?.color ?? '#9ca3af', fontWeight: 600 }}>
+          {STATUS_CFG[lot.status]?.shape} {lot.status}{lot.has_actual_dates ? ' ⚠' : ''}
         </p>
       </div>
     )
   }
 
-  const pillBg = STATUS_BG[lot.status] ?? DEFAULT_PILL_BG
+  const ps = pillStyle(lot.status)
 
   return (
     <div
       ref={setNodeRef}
       style={{
         ...baseStyle,
+        ...ps,
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -157,12 +157,12 @@ export default function LotCard({ lot, isPending, isOverlay = false, listView = 
         fontSize: 11,
         borderRadius: 4,
         flexShrink: 0,
+        opacity: isPending ? 0.6 : 1,
       }}
       {...listeners}
       {...attributes}
       className={`
-        select-none touch-none font-medium ${pillBg}
-        ${isPending ? 'opacity-60' : ''}
+        select-none touch-none font-medium
         ${isDragging && !isOverlay ? 'ring-1 ring-blue-400' : ''}
       `}
     >

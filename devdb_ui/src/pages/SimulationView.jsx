@@ -3,6 +3,7 @@ import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
+import { STATUS_CFG, STATUS_COLOR, StatusBadge } from '../utils/statusConfig'
 
 const API = '/api'
 
@@ -19,8 +20,6 @@ const FLOOR_LABELS = { min_p_count:'P', min_e_count:'E', min_d_count:'D',
                         min_u_count:'U', min_uc_count:'UC', min_c_count:'C' }
 const NUMERIC_COLS = [...EVENT_COLS, ...STATUS_COLS]
 
-// Status colors shared across table and graph
-const STATUS_COLOR = { OUT:'#6b7280', C:'#059669', UC:'#0284c7', H:'#d97706', U:'#7c3aed', D:'#374151', E:'#b45309', P:'#9ca3af' }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -146,14 +145,21 @@ function LedgerTable({ rows, floors, period }) {
                 {PLAN_LABELS[c]}
               </th>
             ))}
-            {STATUS_COLS.map((c, i) => (
-              <th key={c} style={{ ...thS(), ...(i === 0 ? { borderLeft: '2px solid #d1d5db' } : {}),
-                color: floorMap[c] != null ? '#1d4ed8' : '#6b7280',
-                position: 'sticky', top: 26, zIndex: 2 }}>
-                {STATUS_LABELS[c]}
-                {floorMap[c] != null && <span style={{ fontSize: 9, verticalAlign: 'super', marginLeft: 1 }}>≥{floorMap[c]}</span>}
-              </th>
-            ))}
+            {STATUS_COLS.map((c, i) => {
+              const lbl = STATUS_LABELS[c]
+              const cfg = STATUS_CFG[lbl] ?? {}
+              const hasFloor = floorMap[c] != null
+              return (
+                <th key={c} style={{ ...thS(), ...(i === 0 ? { borderLeft: '2px solid #d1d5db' } : {}),
+                  color: hasFloor ? '#1d4ed8' : (cfg.color ?? '#6b7280'),
+                  position: 'sticky', top: 26, zIndex: 2 }}>
+                  <span title={cfg.label ?? lbl} style={{ letterSpacing: '0.01em' }}>
+                    {cfg.shape} {lbl}
+                  </span>
+                  {hasFloor && <span style={{ fontSize: 9, verticalAlign: 'super', marginLeft: 1 }}>≥{floorMap[c]}</span>}
+                </th>
+              )
+            })}
             <th style={{ ...thS(), borderLeft: '1px solid #e5e7eb', color: '#374151', fontWeight: 700, position: 'sticky', top: 26, zIndex: 2 }}>Total</th>
             <th style={{ ...thS(), position: 'sticky', top: 26, zIndex: 2 }} />
           </tr>
@@ -224,13 +230,13 @@ function LedgerGraph({ rows, period }) {
               formatter={(v, name) => [v > 0 ? v : '—', name]}
               itemStyle={{ fontSize: 11 }} />
             <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-            <Area type="monotone" dataKey="p_end"  stackId="s" stroke={STATUS_COLOR.P}  fill={STATUS_COLOR.P}  fillOpacity={0.85} name="P"  />
-            <Area type="monotone" dataKey="e_end"  stackId="s" stroke={STATUS_COLOR.E}  fill={STATUS_COLOR.E}  fillOpacity={0.85} name="E"  />
-            <Area type="monotone" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.85} name="D"  />
-            <Area type="monotone" dataKey="h_end"  stackId="s" stroke={STATUS_COLOR.H}  fill={STATUS_COLOR.H}  fillOpacity={0.85} name="H"  />
-            <Area type="monotone" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name="U"  />
-            <Area type="monotone" dataKey="uc_end" stackId="s" stroke={STATUS_COLOR.UC} fill={STATUS_COLOR.UC} fillOpacity={0.85} name="UC" />
-            <Area type="monotone" dataKey="c_end"  stackId="s" stroke={STATUS_COLOR.C}  fill={STATUS_COLOR.C}  fillOpacity={0.85} name="C"  />
+            <Area type="monotone" dataKey="p_end"  stackId="s" stroke={STATUS_COLOR.P}  fill={STATUS_COLOR.P}  fillOpacity={0.85} name={`${STATUS_CFG.P.shape} P`}  />
+            <Area type="monotone" dataKey="e_end"  stackId="s" stroke={STATUS_COLOR.E}  fill={STATUS_COLOR.E}  fillOpacity={0.85} name={`${STATUS_CFG.E.shape} E`}  />
+            <Area type="monotone" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.85} name={`${STATUS_CFG.D.shape} D`}  />
+            <Area type="monotone" dataKey="h_end"  stackId="s" stroke={STATUS_COLOR.H}  fill={STATUS_COLOR.H}  fillOpacity={0.85} name={`${STATUS_CFG.H.shape} H`}  />
+            <Area type="monotone" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name={`${STATUS_CFG.U.shape} U`}  />
+            <Area type="monotone" dataKey="uc_end" stackId="s" stroke={STATUS_COLOR.UC} fill={STATUS_COLOR.UC} fillOpacity={0.85} name={`${STATUS_CFG.UC.shape} UC`} />
+            <Area type="monotone" dataKey="c_end"  stackId="s" stroke={STATUS_COLOR.C}  fill={STATUS_COLOR.C}  fillOpacity={0.85} name={`${STATUS_CFG.C.shape} C`}  />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -675,7 +681,7 @@ function LotLedger({ lots, loading }) {
                 <td style={tdS('left')}>{l.lot_type_short ?? '—'}</td>
                 <td style={tdS('left')}>{l.phase_name}</td>
                 <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>{l.lot_source}</td>
-                <td style={tdS('left', { fontWeight: 600, color: STATUS_COLOR[l.status] ?? '#374151' })}>{l.status}</td>
+                <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>{l.date_ent ? fmt(l.date_ent) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
                 <td style={tdS()}>{l.date_dev ? fmt(l.date_dev) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
                 <td style={tdS()}>{l.date_td  ? fmt(l.date_td)  : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
