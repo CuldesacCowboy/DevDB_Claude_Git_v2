@@ -96,11 +96,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/phases.py
-- Owns: Phase CRUD, lot-type split management; DELETE /{phase_id}/lot-type registered BEFORE DELETE /{phase_id} (route ordering is intentional)
+- Owns: Phase CRUD, lot-type split management; GET /lot-types (all ref_lot_types for picker); POST /{phase_id}/lot-type/{lot_type_id} (add split with p=0, 409 if exists); DELETE /{phase_id}/lot-type/{lot_type_id} (requires p=0 AND r=0); PATCH /{phase_id}/lot-type/{lot_type_id}/projected; DELETE and PATCH routes registered BEFORE generic /{phase_id} (route ordering intentional)
 - Imports: api.deps, api.models.phase_models, services.phase_assignment_service, psycopg2.extras
 - Imported by: api/main.py
-- Tables: sim_dev_phases, sim_legal_instruments, ref_lot_types, sim_phase_product_splits, sim_phase_builder_splits, sim_delivery_event_phases, sim_lots (devdb. prefix on DELETE lot-type queries)
-- Last commit: 2026-04-02
+- Tables: sim_dev_phases, sim_legal_instruments, ref_lot_types, sim_phase_product_splits, sim_phase_builder_splits, sim_delivery_event_phases, sim_lots (devdb. prefix on lot-type queries)
+- Last commit: 2026-04-04
 
 ### devdb_python/api/routers/site_plans.py
 - Owns: Site plan CRUD; POST /site-plans (upload PDF); GET /site-plans/ent-group/{id}; GET /{plan_id}/file; PATCH /{plan_id}/parcel (saves parcel polygon, auto-seeds first boundary if none exists)

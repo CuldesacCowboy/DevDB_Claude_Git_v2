@@ -12,25 +12,25 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-03-26
 
 ### devdb_ui/src/App.jsx
-- Owns: React Router shell with routes for LotPhaseView, SitePlanView, SimulationView
+- Owns: React Router shell with routes for LotPhaseView, SitePlanView, SimulationView; shared selectedGroupId state lifted here and passed to all views so the last-selected community persists across navigation
 - Imports: react-router-dom (BrowserRouter, Routes, Route, NavLink), LotPhaseView, SitePlanView, SimulationView
 - Imported by: main.jsx
 - Tables: none
-- Last commit: 2026-04-01
+- Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/SimulationView.jsx
-- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); Monthly Ledger has Ledger/Graph sub-toggle (ledgerSubView state); LedgerGraph component: stacked AreaChart for P/E/D/H/U/UC/C inventory + BarChart for STR/CMP/CLS activity; UtilizationPanel in Phase Utilization tab; settings panel: LedgerConfigSection (Plan Start Date + Entitlements Date), StartsTargetsSection (annual_starts_target + max_starts_per_month per dev), DeliveryConfigSection (delivery scheduling params + build lag fallbacks + inventory floor tolerances). EntitlementEventsSection removed — sim_entitlement_events table dropped.
+- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); Monthly Ledger has Ledger/Graph sub-toggle (ledgerSubView state); LedgerGraph component: stacked AreaChart for P/E/D/H/U/UC/C inventory + BarChart for STR/CMP/CLS activity; UtilizationPanel in Phase Utilization tab; settings panel: LedgerConfigSection (Plan Start Date + Entitlements Date), StartsTargetsSection (annual_starts_target + max_starts_per_month per dev), DeliveryConfigSection (delivery scheduling params + build lag fallbacks + inventory floor tolerances). EntitlementEventsSection removed — sim_entitlement_events table dropped. selectedGroupId now lifted to App.jsx prop.
 - Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.)
 - Imported by: App.jsx
 - Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params)
-- Last commit: 2026-04-03
+- Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
-- Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker sidebar; add instrument inline form (replaces modal — expands in page header matching TDA pattern)
+- Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker sidebar; add instrument inline form (replaces modal — expands in page header matching TDA pattern). selectedGroupId now lifted to App.jsx prop.
 - Imports: dnd-kit, react, hooks (useLotPhaseData, useDragHandler, usePhaseEqualization), components, CommunityDevelopmentsView
 - Imported by: App.jsx
 - Tables: none (API calls via /api/entitlement-groups, /api/developments, /api/instruments, /api/phases)
-- Last commit: 2026-04-02
+- Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/CommunityDevelopmentsView.jsx
 - Owns: Community-development assignment view; unassigned dev panel; community pills; alphabet slider; drag-to-create-community
@@ -47,18 +47,18 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/SitePlanView.jsx
-- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split/place/delete-phases); lot bank + positioning state (lotPositions, savedPositions, placeQueue, placeHistory, isDirty); granular undo: traceUndoSignal (increments to pop trace points in PdfCanvas), placeHistory stack ({lotId, prevPos}) for per-placement undo; delete-with-merge: handleDeleteBoundary finds best neighbor via shared-vertex count, calls mergeAdjacentPolygons before DELETE; normalizeSharedVertices called pre-save after every split; handleCleanupPolygons (toolbar "Clean Up" button); PhasePanel (inline — redesigned: no boundary list, gray/black text by assignment, click-to-select highlights region, X unassigns, drag-drop swap/reassign/unassign); UnassignedRegionsBar (right panel, collapsible); LotBank + PhasePanel collapse state; mode instruction overlay (floating pill); save/discard bar; point-in-polygon phase assignment on save; instrument colors in localStorage per ent-group
+- Owns: Site plan page orchestrator; ent-group picker (auto-restores last community from localStorage); plan creation (PDF upload); mode management (view/trace/edit/split/place/delete-phases/draw-building/delete-building); lot bank + positioning state (lotPositions, savedPositions, placeQueue, placeHistory, isDirty); granular undo: traceUndoSignal (increments to pop trace points in PdfCanvas), placeHistory stack ({lotId, prevPos}) for per-placement undo; delete-with-merge: handleDeleteBoundary finds best neighbor via shared-vertex count, calls mergeAdjacentPolygons before DELETE; normalizeSharedVertices called pre-save after every split; handleCleanupPolygons (toolbar "Clean Up" button); PhasePanel (inline — redesigned: no boundary list, gray/black text by assignment, click-to-select highlights region, X unassigns, drag-drop swap/reassign/unassign); UnassignedRegionsBar (right panel, collapsible); LotBank + PhasePanel collapse state; mode instruction overlay (floating pill); save/discard bar; point-in-polygon phase assignment on save; instrument colors in localStorage per ent-group; building groups: showBuildingGroups toggle (persisted to localStorage), buildingGroups state loaded from /api/building-groups/plan/{id}, draw-building mode (handleBuildingGroupDrawn — pointInPolygon + phase scoping + excludes already-grouped lots), pendingBuildingGroup confirmation panel, delete-building mode (selectedBgIds set, handleDeleteSelectedBuildingGroups, handleDeleteSingleBuildingGroup), bgContextMenu (right-click context menu); right-panel tabs (rightPanelTab: 'assignment'|'unit-counts'); Unit Counts tab: UnitCountsPanel + PhaseUnitBlock components; handleProjectedCountChange (PATCH + instant setPhases update + p=0,r=0 → pendingDeleteLotType); handleAddLotType (POST /phases/{id}/lot-type/{id}); handleDeleteLotType (DELETE); allLotTypes loaded from /phases/lot-types; lotMeta now includes phase_id for PdfCanvas centroid fix
 - Imports: react (useState, useEffect, useRef, useCallback, useMemo, Component), PdfCanvas, LotBank, splitPolygon (normalizeSharedVertices, mergeAdjacentPolygons)
 - Imported by: App.jsx
-- Tables: none (API calls via /api/site-plans, /api/phase-boundaries, /api/entitlement-groups, /api/lot-positions)
-- Last commit: 2026-04-03
+- Tables: none (API calls via /api/site-plans, /api/phase-boundaries, /api/entitlement-groups, /api/lot-positions, /api/building-groups, /api/phases)
+- Last commit: 2026-04-04
 
 ### devdb_ui/src/components/SitePlan/PdfCanvas.jsx
-- Owns: PDF rendering canvas; parcel trace mode (traceUndoSignal prop — increment pops last point); parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (bestSplitSnap = vertex snap priority over edge snap; click-to-draw polyline, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion (rotation-aware: coords stored in unrotated space, applyRotationToNorm/unapplyRotationFromNorm for CW PDF.js convention); rotation persistence (localStorage per planId); buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay
+- Owns: PDF rendering canvas; parcel trace mode (traceUndoSignal prop — increment pops last point); parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (bestSplitSnap = vertex snap priority over edge snap; click-to-draw polyline, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion (rotation-aware: coords stored in unrotated space, applyRotationToNorm/unapplyRotationFromNorm for CW PDF.js convention); rotation persistence (localStorage per planId); buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay; building group draw mode: freehand (pointermove > DRAG_THRESHOLD) + multi-point click + dblclick detection via bgLastClick ref (350ms window); building group delete mode: hoveredBgId + selectedBgIds; bgEllipse({cx,cy,rx,ry}) from lot bounding box + 18px padding; right-click context menu via onBuildingGroupContextMenu; unit count overlays (rightPanelTab='unit-counts'): visual center via nearest lot to vertex avg (lotMeta.phase_id lookup); zoom scaling clamped max(9,min(14,11.5/√zoom)); totals mode badge (white bg + phase-colored border via darkenHex); by-type table card (Type/R/P/T columns, header sep line, data rows, total row, teal underlined P values clickable via onEditProjected); darkenHex() utility
 - Imports: pdfjs-dist, react, splitPolygon (distToSeg, snapToVertices, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon, findBestSplit)
 - Imported by: SitePlanView.jsx
 - Tables: none (API calls via onParcelSaved, onSplitConfirm, onBoundaryUpdated props)
-- Last commit: 2026-04-03
+- Last commit: 2026-04-04
 
 ### devdb_ui/src/components/SitePlan/LotBank.jsx
 - Owns: Left panel on the site plan page showing unpositioned lots grouped by legal instrument; lot pills are draggable (HTML5 DnD) and clickable (enters click-to-set loop); active placing lot highlighted with instrument color; groups use stable insertion order; collapsed prop renders 28px vertical strip with label + expand button
@@ -96,11 +96,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-03-29
 
 ### devdb_ui/src/components/LotCard.jsx
-- Owns: Draggable lot pill (icon mode) and list-view card (lot number + status)
-- Imports: dnd-kit (useDraggable)
+- Owns: Draggable lot pill (icon mode) and list-view card (lot number + status); updated to use unified pipeline status visual identity system (shape + color per status)
+- Imports: dnd-kit (useDraggable), statusConfig
 - Imported by: LotTypePill.jsx, UnassignedColumn.jsx
 - Tables: none
-- Last commit: 2026-03-27
+- Last commit: 2026-04-04
 
 ### devdb_ui/src/components/ProjectionGroupContainer.jsx
 - Owns: Development-level wrapper for all instruments; equalized row heights; aggregate counts; warm neutral card chrome (#F0EEE8 header, #F7F6F3 body) matching TDA aesthetic
@@ -248,6 +248,13 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imported by: TakedownAgreementsView.jsx
 - Tables: none
 - Last commit: 2026-04-01
+
+### devdb_ui/src/utils/statusConfig.js
+- Owns: Unified pipeline status visual identity system — shape + color per pipeline status (P/E/D/H/U/UC/C/OUT); exports STATUS_CONFIG map used by LotCard and other status-rendering components
+- Imports: react (JSX — file uses .js extension, use .jsx for Vite strict builds)
+- Imported by: LotCard.jsx
+- Tables: none
+- Last commit: 2026-04-04
 
 ### devdb_ui/src/utils/layoutEngine.js
 - Owns: DELETED -- replaced by computeCols.js (CSS-first approach)
