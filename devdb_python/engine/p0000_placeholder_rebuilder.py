@@ -321,14 +321,18 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         p["window_end"] = we
 
     # ------------------------------------------------------------------
-    # Step 4b: Load projected D-balance from stable lot sources.
+    # Step 4b: Load projected D-balance from ALL lots in the DB.
     #
-    # Queries real lots + locked-delivery sim lots only (no circular
-    # dependency with auto-delivery sim lots from previous iterations).
-    # LEFT JOIN ensures months with d_end=0 appear in results.
-    # d_balance[dev_id][calendar_month] = integer d_end count.
-    # _apply_delivery_to_balance() adds each scheduled batch in-place.
-    # The scheduling loop reads d_balance to find every dev's next lv.
+    # Includes real lots AND sim lots from all deliveries (locked and
+    # auto-scheduled from previous convergence iterations).  On
+    # iteration 1 only real lots exist; on iteration 2+ the previous
+    # engine run's sim lots give an accurate D trajectory so P-0000
+    # only schedules where D will actually hit the floor.
+    #
+    # _apply_delivery_to_balance() then adds the projected contribution
+    # of each NEW delivery scheduled in the current P-0000 run on top
+    # of this base.  These new lots don't exist in the DB yet (engine
+    # hasn't run), so the approximation covers them only.
     # ------------------------------------------------------------------
     all_dev_ids_for_query = [int(d) for d in all_phases_df["dev_id"].unique()]
     d_balance: dict[int, dict[date, int]] = {d: {} for d in all_dev_ids_for_query}
@@ -345,14 +349,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             ),
             devs (dev_id) AS (
                 VALUES {dev_values}
-            ),
-            locked_phases AS (
-                SELECT DISTINCT dep.phase_id
-                FROM sim_delivery_event_phases dep
-                JOIN sim_delivery_events sde
-                     ON sde.delivery_event_id = dep.delivery_event_id
-                WHERE sde.ent_group_id = {ent_group_id}
-                  AND sde.date_dev_actual IS NOT NULL
             )
             SELECT devs.dev_id, f.m AS calendar_month,
                    COUNT(sl.lot_id) AS d_end
@@ -364,8 +360,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 AND sl.date_dev <= f.m
                 AND (sl.date_td     IS NULL OR sl.date_td     > f.m)
                 AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
-                AND (sl.lot_source = 'real'
-                     OR sl.phase_id IN (SELECT phase_id FROM locked_phases))
             GROUP BY devs.dev_id, f.m
             ORDER BY devs.dev_id, f.m
         """)
