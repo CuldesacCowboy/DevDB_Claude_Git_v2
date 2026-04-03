@@ -231,18 +231,18 @@ touches before making changes. Keep this section updated when files are added or
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/SitePlanView.jsx
-- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split/place/delete-phases); lot bank + positioning state (lotPositions, savedPositions, placeQueue, placeHistory, isDirty); granular undo: traceUndoSignal (increments to pop trace points in PdfCanvas), placeHistory stack ({lotId, prevPos}) for per-placement undo; delete-with-merge: handleDeleteBoundary finds best neighbor via shared-vertex count, calls mergeAdjacentPolygons before DELETE; normalizeSharedVertices called pre-save after every split; handleCleanupPolygons (toolbar "Clean Up" button); PhasePanel (inline — phase name primary, collapsible 28px strip, × delete per boundary); LotBank + PhasePanel collapse state; mode instruction overlay (floating pill); save/discard bar; point-in-polygon phase assignment on save; instrument colors in localStorage per ent-group
+- Owns: Site plan page orchestrator; ent-group picker; plan creation (PDF upload); mode management (view/trace/edit/split/place/delete-phases); lot bank + positioning state (lotPositions, savedPositions, placeQueue, placeHistory, isDirty); granular undo: traceUndoSignal (increments to pop trace points in PdfCanvas), placeHistory stack ({lotId, prevPos}) for per-placement undo; delete-with-merge: handleDeleteBoundary finds best neighbor via shared-vertex count, calls mergeAdjacentPolygons before DELETE; normalizeSharedVertices called pre-save after every split; handleCleanupPolygons (toolbar "Clean Up" button); PhasePanel (inline — redesigned: no boundary list, gray/black text by assignment, click-to-select highlights region, X unassigns, drag-drop swap/reassign/unassign); UnassignedRegionsBar (right panel, collapsible); LotBank + PhasePanel collapse state; mode instruction overlay (floating pill); save/discard bar; point-in-polygon phase assignment on save; instrument colors in localStorage per ent-group
 - Imports: react (useState, useEffect, useRef, useCallback, useMemo, Component), PdfCanvas, LotBank, splitPolygon (normalizeSharedVertices, mergeAdjacentPolygons)
 - Imported by: App.jsx
 - Tables: none (API calls via /api/site-plans, /api/phase-boundaries, /api/entitlement-groups, /api/lot-positions)
-- Last commit: 2026-04-02
+- Last commit: 2026-04-03
 
 ### devdb_ui/src/components/SitePlan/PdfCanvas.jsx
-- Owns: PDF rendering canvas; parcel trace mode (traceUndoSignal prop — increment pops last point); parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (bestSplitSnap = vertex snap priority over edge snap; click-to-draw polyline, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion; buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay
+- Owns: PDF rendering canvas; parcel trace mode (traceUndoSignal prop — increment pops last point); parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (bestSplitSnap = vertex snap priority over edge snap; click-to-draw polyline, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion (rotation-aware: coords stored in unrotated space, applyRotationToNorm/unapplyRotationFromNorm for CW PDF.js convention); rotation persistence (localStorage per planId); buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay
 - Imports: pdfjs-dist, react, splitPolygon (distToSeg, snapToVertices, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon, findBestSplit)
 - Imported by: SitePlanView.jsx
 - Tables: none (API calls via onParcelSaved, onSplitConfirm, onBoundaryUpdated props)
-- Last commit: 2026-04-02
+- Last commit: 2026-04-03
 
 ### devdb_ui/src/components/SitePlan/LotBank.jsx
 - Owns: Left panel on the site plan page showing unpositioned lots grouped by legal instrument; lot pills are draggable (HTML5 DnD) and clickable (enters click-to-set loop); active placing lot highlighted with instrument color; groups use stable insertion order; collapsed prop renders 28px vertical strip with label + expand button
@@ -604,11 +604,17 @@ touches before making changes. Keep this section updated when files are added or
 - Tables: sim_lots (UPDATE date_td_hold), sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_agreement_lots
 - Last commit: 2026-03-25
 
+### devdb_python/engine/seasonal_weights.py
+- Owns: Shared seasonal weight sets (month→fractional weight, sums to 1.0) used by S-0600 and P-0000 for monthly demand/pace allocation
+- Imported by: s0600_demand_generator.py, p0000_placeholder_rebuilder.py
+- Tables: none
+- Last commit: 2026-04-03
+
 ### devdb_python/engine/s0600_demand_generator.py
 - Owns: S-0600 -- generates monthly demand series for each phase; vectorized; capacity-capped per D-138
 - Imported by: coordinator.py
 - Tables: sim_dev_phases, sim_phase_product_splits, sim_lots (SELECT)
-- Last commit: 2026-03-27
+- Last commit: 2026-04-03
 
 ### devdb_python/engine/s0700_demand_allocator.py
 - Owns: S-0700 -- allocates demand slots to real/sim lots; positional merge; no carry-forward
@@ -662,7 +668,7 @@ touches before making changes. Keep this section updated when files are added or
 - Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config
 - Imported by: coordinator.py
 - Tables: sim_delivery_events, sim_delivery_event_phases, sim_dev_phases, sim_entitlement_delivery_config (SELECT/INSERT/UPDATE)
-- Last commit: 2026-04-02
+- Last commit: 2026-04-03
 
 ### devdb_python/engine/p0100_actual_date_applicator.py
 - Owns: P-0100 -- applies locked delivery event dates to sim_dev_phases.date_dev_projected per D-112/D-125
@@ -803,7 +809,7 @@ touches before making changes. Keep this section updated when files are added or
 
 ### CLAUDE.md
 - Owns: Primary session bootstrap — architecture rules, decision log, build status. File manifest and API contract extracted to .claude/docs/
-- Last commit: 2026-04-01
+- Last commit: 2026-04-03
 
 ### .claude/docs/file-manifest.md
 - Owns: File manifest — every file touched by git in the last 60 days; Owns/Imports/Tables/Last-commit per file
@@ -838,7 +844,7 @@ touches before making changes. Keep this section updated when files are added or
 
 ### Stop_DevDB.bat
 - Owns: Windows batch file to stop backend (uvicorn + detached python.exe on port 8765), frontend (Vite), and Chrome DevDB windows; uses PowerShell + taskkill /F /T
-- Last commit: 2026-03-30
+- Last commit: 2026-04-03
 
 ### Start_DevDB_Session.bat
 - Owns: Session startup bat — opens DevDB session windows via devdb_open_session_windows.ps1
@@ -847,6 +853,10 @@ touches before making changes. Keep this section updated when files are added or
 ### devdb_open_session_windows.ps1
 - Owns: PowerShell script that opens all DevDB session windows (backend terminal, frontend terminal, browser, Claude Code terminal snapped to right half of right screen)
 - Last commit: 2026-03-30
+
+### .claude/docs/workplan_ledger_entitlement_params_delivery.md
+- Owns: Work plan tracking ledger balance, entitlement date model, parameter surfacing, and delivery scheduling tasks — created 2026-04-03
+- Last commit: 2026-04-03
 
 ### .claude/skills/start/SKILL.md
 - Owns: /start skill — reads CLAUDE.md and selected reference docs based on task; acknowledges today's task
