@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from api.routers import developments, eg_crud, eg_validation, eg_views, instruments, lots, phases, tda_crud, tda_checkpoints, tda_assignments, site_plans, phase_boundaries, lot_positions, simulations, ledger
+from api.routers import developments, eg_crud, eg_validation, eg_views, instruments, lots, phases, tda_crud, tda_checkpoints, tda_assignments, site_plans, phase_boundaries, lot_positions, simulations, ledger, building_groups
 
 load_dotenv()
 
@@ -118,3 +118,4 @@ app.include_router(phase_boundaries.router)
 app.include_router(lot_positions.router)
 app.include_router(simulations.router)
 app.include_router(ledger.router)
+app.include_router(building_groups.router)

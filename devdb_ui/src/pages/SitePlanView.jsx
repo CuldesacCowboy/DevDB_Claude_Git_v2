@@ -34,7 +34,9 @@ const UNASSIGNED_COLOR = '#9ca3af'
 
 function SitePlanViewInner() {
   const [entGroups, setEntGroups]             = useState([])
-  const [selectedGroupId, setSelectedGroupId] = useState('')
+  const [selectedGroupId, setSelectedGroupId] = useState(() => {
+    try { return localStorage.getItem('devdb_siteplan_last_group') || '' } catch { return '' }
+  })
   const [plan, setPlan]                       = useState(null)
   const [loading, setLoading]                 = useState(false)
   const [uploading, setUploading]             = useState(false)
@@ -51,6 +53,15 @@ function SitePlanViewInner() {
   const [phasePanelCollapsed, setPhasePanelCollapsed]       = useState(false)
   const [unassignedBarCollapsed, setUnassignedBarCollapsed] = useState(false)
 
+  // Building groups
+  const [showBuildingGroups, setShowBuildingGroups] = useState(() => {
+    try { return localStorage.getItem('devdb_siteplan_show_bg') === 'true' } catch { return false }
+  })
+  const [buildingGroups, setBuildingGroups]                   = useState([])
+  const [selectedBgIds, setSelectedBgIds]                     = useState(new Set())
+  const [pendingBuildingGroup, setPendingBuildingGroup]       = useState(null) // {lots, polygon}
+  const [bgContextMenu, setBgContextMenu]                     = useState(null) // {x,y,id}
+
   // Lot bank + positioning
   const [allLots, setAllLots]             = useState([])   // all real lots for this ent_group
   const [lotPositions, setLotPositions]   = useState({})   // {lot_id: {x,y}} — local (unsaved)
@@ -63,6 +74,13 @@ function SitePlanViewInner() {
   const lotPositionsRef   = useRef(lotPositions)
   useEffect(() => { boundariesRef.current   = boundaries   }, [boundaries])
   useEffect(() => { lotPositionsRef.current = lotPositions }, [lotPositions])
+
+  // Persist last selected community
+  useEffect(() => {
+    if (selectedGroupId) {
+      try { localStorage.setItem('devdb_siteplan_last_group', selectedGroupId) } catch {}
+    }
+  }, [selectedGroupId])
 
   // Load entitlement groups
   useEffect(() => {
@@ -156,6 +174,15 @@ function SitePlanViewInner() {
       return next
     })
   }, [selectedGroupId])
+
+  // Load building groups when plan changes or toggle turns on
+  useEffect(() => {
+    if (!plan || !showBuildingGroups) { setBuildingGroups([]); return }
+    fetch(`${API}/building-groups/plan/${plan.plan_id}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setBuildingGroups)
+      .catch(() => setBuildingGroups([]))
+  }, [plan?.plan_id, showBuildingGroups])
 
   // Load lot positions when plan changes
   useEffect(() => {
@@ -532,6 +559,133 @@ function SitePlanViewInner() {
     } catch { /* ignore */ }
   }
 
+  // ─── Building group helpers ─────────────────────────────────────────────────
+
+  async function loadBuildingGroups() {
+    if (!plan) return
+    const res = await fetch(`${API}/building-groups/plan/${plan.plan_id}`)
+    if (res.ok) setBuildingGroups(await res.json())
+  }
+
+  function toggleShowBuildingGroups() {
+    setShowBuildingGroups(prev => {
+      const next = !prev
+      try { localStorage.setItem('devdb_siteplan_show_bg', String(next)) } catch {}
+      if (!next) {
+        setBuildingGroups([])
+        setSelectedBgIds(new Set())
+        setPendingBuildingGroup(null)
+        setBgContextMenu(null)
+        if (mode === 'draw-building' || mode === 'delete-building') setMode('view')
+      }
+      return next
+    })
+  }
+
+  // Called by PdfCanvas when user finishes drawing a building group polygon.
+  // Detects which positioned lots are inside, within the same phase, and not already grouped.
+  const handleBuildingGroupDrawn = useCallback((polygon) => {
+    if (!polygon || polygon.length < 3) return
+
+    // Determine the phase context from the first polygon point
+    const firstPhaseId = findPhaseForPosition(polygon[0].x, polygon[0].y)
+
+    // Collect lot_ids already assigned to any building group
+    const assignedLotIds = new Set()
+    for (const bg of buildingGroups) {
+      for (const l of bg.lots) assignedLotIds.add(l.lot_id)
+    }
+
+    // Filter positioned lots: inside polygon + matching phase + not already grouped
+    const insideLots = []
+    for (const [lotIdStr, pos] of Object.entries(lotPositions)) {
+      const lotId = Number(lotIdStr)
+      if (assignedLotIds.has(lotId)) continue
+      if (!pointInPolygon(pos.x, pos.y, polygon)) continue
+      // Phase filter: only include lots whose position falls in the same phase as first click
+      const lotPhase = findPhaseForPosition(pos.x, pos.y)
+      if (firstPhaseId !== undefined && lotPhase !== firstPhaseId) continue
+      const meta = allLots.find(l => l.lot_id === lotId)
+      if (meta) insideLots.push({ lot_id: lotId, lot_number: meta.lot_number, phase_id: meta.phase_id })
+    }
+
+    if (!insideLots.length) {
+      // Nothing to group — stay in draw mode so user can try again
+      return
+    }
+
+    setPendingBuildingGroup({ lots: insideLots, polygon, phaseId: firstPhaseId })
+  }, [buildingGroups, lotPositions, allLots, boundaries]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleBuildingGroupConfirm() {
+    if (!pendingBuildingGroup || !plan) return
+    const { lots } = pendingBuildingGroup
+
+    // Resolve dev_id from any lot's phase
+    const firstLot = allLots.find(l => l.lot_id === lots[0].lot_id)
+    const phaseInfo = phases.find(p => p.phase_id === firstLot?.phase_id)
+    const devId = phaseInfo?.dev_id ?? 0  // 0 as last resort; NOT NULL constraint in DB
+
+    try {
+      const res = await fetch(`${API}/building-groups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lot_ids: lots.map(l => l.lot_id), dev_id: devId, plan_id: plan.plan_id }),
+      })
+      if (res.ok) {
+        setPendingBuildingGroup(null)
+        setMode('view')
+        await loadBuildingGroups()
+      }
+    } catch { /* ignore */ }
+  }
+
+  function handleBuildingGroupCancel() {
+    setPendingBuildingGroup(null)
+    setMode('view')
+  }
+
+  const handleBuildingGroupSelect = useCallback((id) => {
+    setSelectedBgIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  async function handleDeleteSelectedBuildingGroups() {
+    const ids = [...selectedBgIds]
+    if (!ids.length) return
+    try {
+      const res = await fetch(`${API}/building-groups/bulk-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ building_group_ids: ids }),
+      })
+      if (res.ok) {
+        setSelectedBgIds(new Set())
+        setMode('view')
+        await loadBuildingGroups()
+      }
+    } catch { /* ignore */ }
+  }
+
+  async function handleDeleteSingleBuildingGroup(id) {
+    try {
+      const res = await fetch(`${API}/building-groups/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        setSelectedBgIds(prev => { const next = new Set(prev); next.delete(id); return next })
+        setBgContextMenu(null)
+        await loadBuildingGroups()
+      }
+    } catch { /* ignore */ }
+  }
+
+  const handleBuildingGroupContextMenu = useCallback((id, x, y) => {
+    setBgContextMenu({ id, x, y })
+  }, [])
+
   async function assignPhaseToSelected(phaseId) {
     if (!selectedBoundaryId) return
     try {
@@ -706,6 +860,36 @@ function SitePlanViewInner() {
                 Delete Community Boundary
               </button>
             )}
+
+            {/* Building group tools (only shown when toggle is ON) */}
+            {hasPlan && <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />}
+            <button
+              onClick={toggleShowBuildingGroups}
+              style={showBuildingGroups
+                ? btn('#0d9488', '#f0fdfa', '#99f6e4')
+                : btn('#374151', '#f9fafb', '#e5e7eb')}
+              title={showBuildingGroups ? 'Hide building groups' : 'Show building groups'}
+            >
+              {showBuildingGroups ? '⬡ Groups ON' : '⬡ Groups'}
+            </button>
+            {showBuildingGroups && (
+              <>
+                <button
+                  onClick={() => { setPendingBuildingGroup(null); setMode('draw-building') }}
+                  style={btn('#0f766e', '#f0fdfa', '#5eead4')}
+                  title="Draw a boundary around lots to group them into a building"
+                >
+                  Draw Group
+                </button>
+                <button
+                  onClick={() => { setSelectedBgIds(new Set()); setMode('delete-building') }}
+                  style={btn('#b45309', '#fffbeb', '#fde68a')}
+                  title="Click building ovals to select and delete groups"
+                >
+                  Delete Groups
+                </button>
+              </>
+            )}
           </>
         )}
 
@@ -723,6 +907,19 @@ function SitePlanViewInner() {
           <>
             <button onClick={handleDeleteAllBoundaries} style={btn('#dc2626', '#fef2f2', '#fecaca')}>Delete All</button>
             <button onClick={() => setMode('view')} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
+          </>
+        )}
+        {hasPlan && mode === 'draw-building' && (
+          <button onClick={() => { setPendingBuildingGroup(null); setMode('view') }} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Cancel</button>
+        )}
+        {hasPlan && mode === 'delete-building' && (
+          <>
+            {selectedBgIds.size > 0 && (
+              <button onClick={handleDeleteSelectedBuildingGroups} style={btn('#dc2626', '#fef2f2', '#fecaca')}>
+                Delete {selectedBgIds.size} group{selectedBgIds.size !== 1 ? 's' : ''}
+              </button>
+            )}
+            <button onClick={() => { setSelectedBgIds(new Set()); setMode('view') }} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
           </>
         )}
 
@@ -802,6 +999,12 @@ function SitePlanViewInner() {
               onPlaceLot={handlePlaceLot}
               onLotDrop={handleLotDrop}
               onLotMove={handleLotMove}
+              buildingGroups={buildingGroups}
+              showBuildingGroups={showBuildingGroups}
+              selectedBgIds={selectedBgIds}
+              onBuildingGroupDrawn={handleBuildingGroupDrawn}
+              onBuildingGroupSelect={handleBuildingGroupSelect}
+              onBuildingGroupContextMenu={handleBuildingGroupContextMenu}
             />
           )}
 
@@ -815,11 +1018,93 @@ function SitePlanViewInner() {
               whiteSpace: 'nowrap',
             }}>
               <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 500 }}>
-                {mode === 'trace'          && 'Click to place vertices · click first vertex to close'}
-                {mode === 'edit'           && 'Drag vertices · click edge to add point · right-click to remove'}
-                {mode === 'split'          && 'Click any boundary edge to begin · draw across the region · click any boundary edge to split'}
-                {mode === 'delete-phases'  && 'Click a phase region to delete it · or use Delete All in the toolbar'}
+                {mode === 'trace'           && 'Click to place vertices · click first vertex to close'}
+                {mode === 'edit'            && 'Drag vertices · click edge to add point · right-click to remove'}
+                {mode === 'split'           && 'Click any boundary edge to begin · draw across the region · click any boundary edge to split'}
+                {mode === 'delete-phases'   && 'Click a phase region to delete it · or use Delete All in the toolbar'}
+                {mode === 'draw-building'   && 'Click to add points · double-click or near first point to close · or click-and-drag for freehand'}
+                {mode === 'delete-building' && 'Click a building oval to select · right-click for quick delete · use toolbar to delete selected'}
               </span>
+            </div>
+          )}
+
+          {/* Building group confirmation panel */}
+          {pendingBuildingGroup && (
+            <div style={{
+              position: 'absolute', top: 16, right: 16, zIndex: 40,
+              background: 'rgba(15,23,42,0.93)', borderRadius: 10, padding: '12px 16px',
+              display: 'flex', flexDirection: 'column', gap: 10, backdropFilter: 'blur(4px)',
+              maxWidth: 240, boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+            }}>
+              <div style={{ fontSize: 12, color: '#99f6e4', fontWeight: 600 }}>
+                New building — {pendingBuildingGroup.lots.length} unit{pendingBuildingGroup.lots.length !== 1 ? 's' : ''}
+              </div>
+              <div style={{ fontSize: 11, color: '#94a3b8', lineHeight: 1.5 }}>
+                {pendingBuildingGroup.lots.map(l => l.lot_number).join(' · ')}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={handleBuildingGroupConfirm}
+                  style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: 'none',
+                    background: '#0d9488', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  ✓ Create
+                </button>
+                <button
+                  onClick={handleBuildingGroupCancel}
+                  style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: '1px solid #475569',
+                    background: 'transparent', color: '#94a3b8', fontSize: 12, cursor: 'pointer' }}
+                >
+                  ✗ Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Building group right-click context menu */}
+          {bgContextMenu && (
+            <div
+              style={{
+                position: 'absolute', left: bgContextMenu.x, top: bgContextMenu.y, zIndex: 50,
+                background: '#1e293b', borderRadius: 8, border: '1px solid #334155',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.5)', minWidth: 190, overflow: 'hidden',
+              }}
+              onMouseLeave={() => setBgContextMenu(null)}
+            >
+              <button
+                onClick={() => handleDeleteSingleBuildingGroup(bgContextMenu.id)}
+                style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none',
+                  background: 'transparent', color: '#fca5a5', fontSize: 12, textAlign: 'left',
+                  cursor: 'pointer' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#374151' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                Delete this building group
+              </button>
+              {selectedBgIds.size > 1 && selectedBgIds.has(bgContextMenu.id) && (
+                <button
+                  onClick={() => { setBgContextMenu(null); handleDeleteSelectedBuildingGroups() }}
+                  style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none',
+                    borderTop: '1px solid #334155',
+                    background: 'transparent', color: '#fca5a5', fontSize: 12, textAlign: 'left',
+                    cursor: 'pointer' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#374151' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+                >
+                  Delete all {selectedBgIds.size} selected groups
+                </button>
+              )}
+              <button
+                onClick={() => setBgContextMenu(null)}
+                style={{ display: 'block', width: '100%', padding: '9px 14px', border: 'none',
+                  borderTop: '1px solid #334155',
+                  background: 'transparent', color: '#94a3b8', fontSize: 12, textAlign: 'left',
+                  cursor: 'pointer' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#374151' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+              >
+                Cancel
+              </button>
             </div>
           )}
 

@@ -100,6 +100,13 @@ export default function PdfCanvas({
   onPlaceLot,           // ({x,y}) => void
   onLotDrop,            // (lot_id, {x,y}) => void  — HTML5 drop from bank
   onLotMove,            // (lot_id, {x,y}) => void  — drag existing lot on map
+  // Building group props
+  buildingGroups = [],        // [{building_group_id, dev_id, building_name, lots:[{lot_id,lot_number,x,y}]}]
+  showBuildingGroups = false, // whether to render ovals
+  selectedBgIds = new Set(),  // set of selected building_group_ids (delete mode)
+  onBuildingGroupDrawn,       // (polygon:[{x,y}]) => void
+  onBuildingGroupSelect,      // (building_group_id) => void
+  onBuildingGroupContextMenu, // (building_group_id, svgX, svgY) => void
 }) {
   const canvasRef    = useRef(null)
   const containerRef = useRef(null)
@@ -146,10 +153,19 @@ export default function PdfCanvas({
   // Delete-phases mode hover
   const [hoveredDeleteBndId, setHoveredDeleteBndId] = useState(null)
 
+  // Building group draw mode
+  const [bgDrawPoints, setBgDrawPoints]       = useState([])   // [{x,y}] normalized — multi-point mode
+  const [bgDrawCursorSvg, setBgDrawCursorSvg] = useState(null) // {x,y} in SVG space
+
+  // Building group delete mode
+  const [hoveredBgId, setHoveredBgId] = useState(null)
+
   // Interaction refs
-  const dragRef  = useRef(null)
-  const traceRef = useRef(null)
-  const editRef  = useRef(null)
+  const dragRef    = useRef(null)
+  const traceRef   = useRef(null)
+  const editRef    = useRef(null)
+  const bgDrawRef  = useRef(null) // {startX,startY,moved,freehand,freehandPts:[{x,y}],lastFreehandSvg}
+  const bgLastClick = useRef(0)   // timestamp of last pointer-up click (for dblclick detection)
 
   useEffect(() => { setSavedParcel(initialParcel || null) }, [initialParcel])
 
@@ -171,6 +187,8 @@ export default function PdfCanvas({
     setSplitPhase('idle'); setSplitLine([]); setSplitCursorSvg(null)
     setSplitSnapSvg(null); setSplitTargetId(null)
     setHoveredDeleteBndId(null)
+    setBgDrawPoints([]); setBgDrawCursorSvg(null); bgDrawRef.current = null
+    setHoveredBgId(null)
 
     if (mode === 'edit') {
       setEditPoints(savedParcel ? [...savedParcel] : null)
@@ -713,42 +731,208 @@ export default function PdfCanvas({
     if (norm) onPlaceLot?.(norm)
   }
 
+  // ─── Building group: hit-test an ellipse (screen coords) ─────────────────────
+  // Returns true when (sx,sy) is inside the ellipse described by (cx,cy,rx,ry).
+  function hitTestEllipse(sx, sy, cx, cy, rx, ry) {
+    const dx = (sx - cx) / rx
+    const dy = (sy - cy) / ry
+    return dx * dx + dy * dy <= 1
+  }
+
+  // Compute the SVG-space ellipse for a building group given its lot positions.
+  // Returns {cx, cy, rx, ry} in screen pixels, or null if no lots have positions.
+  function bgEllipse(bg) {
+    if (!bg.lots || !bg.lots.length) return null
+    const pts = bg.lots.map(l => normToScreen(l.x, l.y))
+    const minX = Math.min(...pts.map(p => p.x))
+    const maxX = Math.max(...pts.map(p => p.x))
+    const minY = Math.min(...pts.map(p => p.y))
+    const maxY = Math.max(...pts.map(p => p.y))
+    const PAD = 18
+    return {
+      cx: (minX + maxX) / 2,
+      cy: (minY + maxY) / 2,
+      rx: Math.max(14, (maxX - minX) / 2 + PAD),
+      ry: Math.max(14, (maxY - minY) / 2 + PAD),
+    }
+  }
+
+  // Find the first building group whose ellipse contains (sx, sy).
+  function findBgAtPoint(sx, sy) {
+    for (const bg of buildingGroups) {
+      const ell = bgEllipse(bg)
+      if (!ell) continue
+      if (hitTestEllipse(sx, sy, ell.cx, ell.cy, ell.rx, ell.ry)) return bg.building_group_id
+    }
+    return null
+  }
+
+  // ─── Building group draw mode ─────────────────────────────────────────────────
+  // Supports two drawing styles:
+  //   Freehand: hold mouse button and drag → releases on mouseup
+  //   Multi-point: click to add vertices → double-click (or click near first point) to close
+
+  const FREEHAND_STEP_SQ = 25  // minimum squared screen-px distance between freehand samples
+  const DBLCLICK_MS = 350      // milliseconds to distinguish double-click from two single clicks
+
+  function handleBgDrawDown(e) {
+    if (e.button !== 0) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const { sx, sy } = svgXY(e)
+    const norm = screenToNorm(sx, sy)
+    bgDrawRef.current = {
+      startX: e.clientX, startY: e.clientY,
+      moved: false,
+      freehand: false,
+      freehandPts: norm ? [norm] : [],
+      lastFreehandSvg: { x: sx, y: sy },
+    }
+  }
+
+  function handleBgDrawMove(e) {
+    const { sx, sy } = svgXY(e)
+    setBgDrawCursorSvg({ x: sx, y: sy })
+
+    const ref = bgDrawRef.current
+    if (!ref) return
+
+    const dx = e.clientX - ref.startX
+    const dy = e.clientY - ref.startY
+
+    if (!ref.freehand && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+      ref.freehand = true
+      ref.moved = true
+    }
+
+    if (ref.freehand) {
+      const last = ref.lastFreehandSvg
+      const dSq = (sx - last.x) * (sx - last.x) + (sy - last.y) * (sy - last.y)
+      if (dSq >= FREEHAND_STEP_SQ) {
+        const norm = screenToNorm(sx, sy)
+        if (norm) ref.freehandPts.push(norm)
+        ref.lastFreehandSvg = { x: sx, y: sy }
+      }
+    }
+  }
+
+  function handleBgDrawUp(e) {
+    const ref = bgDrawRef.current
+    bgDrawRef.current = null
+
+    if (!ref) return
+
+    if (ref.freehand) {
+      // Freehand close — use collected points
+      const pts = ref.freehandPts
+      if (pts.length >= 3) {
+        onBuildingGroupDrawn?.(pts)
+        setBgDrawPoints([])
+      }
+      return
+    }
+
+    // Not freehand — treat as a click
+    const now = Date.now()
+    const isDblClick = (now - bgLastClick.current) < DBLCLICK_MS
+    bgLastClick.current = now
+
+    const { sx, sy } = svgXY(e)
+    const norm = screenToNorm(sx, sy)
+    if (!norm) return
+
+    if (isDblClick) {
+      // Double-click: pop the point added by the first click of this dblclick pair, then close
+      setBgDrawPoints(pts => {
+        const trimmed = pts.slice(0, -1)
+        if (trimmed.length >= 3) {
+          onBuildingGroupDrawn?.(trimmed)
+          return []
+        }
+        return trimmed
+      })
+      return
+    }
+
+    // Single click
+    setBgDrawPoints(pts => {
+      if (pts.length >= 3) {
+        // Check proximity to first point — snap-close
+        const first = normToScreen(pts[0].x, pts[0].y)
+        if (Math.hypot(first.x - sx, first.y - sy) < SNAP_TRACE_PX) {
+          onBuildingGroupDrawn?.(pts)
+          return []
+        }
+      }
+      return [...pts, norm]
+    })
+  }
+
+  // ─── Building group delete mode ───────────────────────────────────────────────
+
+  function handleBgDeleteDown(e) {
+    if (e.button !== 0) return
+    const { sx, sy } = svgXY(e)
+    const id = findBgAtPoint(sx, sy)
+    if (id !== null) onBuildingGroupSelect?.(id)
+  }
+
+  function handleBgDeleteContextMenu(e) {
+    e.preventDefault()
+    const { sx, sy } = svgXY(e)
+    const id = findBgAtPoint(sx, sy)
+    if (id !== null) {
+      // Select it first if not already selected
+      if (!selectedBgIds.has(id)) onBuildingGroupSelect?.(id)
+      onBuildingGroupContextMenu?.(id, sx, sy)
+    }
+  }
+
   // ─── Overlay event dispatcher ─────────────────────────────────────────────────
-  const inTrace        = mode === 'trace'
-  const inEdit         = mode === 'edit'
-  const inSplit        = mode === 'split'
-  const inPlace        = mode === 'place'
-  const inDeletePhases = mode === 'delete-phases'
-  const overlayActive  = inTrace || inEdit || inSplit || inPlace || inDeletePhases
+  const inTrace          = mode === 'trace'
+  const inEdit           = mode === 'edit'
+  const inSplit          = mode === 'split'
+  const inPlace          = mode === 'place'
+  const inDeletePhases   = mode === 'delete-phases'
+  const inDrawBuilding   = mode === 'draw-building'
+  const inDeleteBuilding = mode === 'delete-building'
+  const overlayActive    = inTrace || inEdit || inSplit || inPlace || inDeletePhases || inDrawBuilding || inDeleteBuilding
 
   function onSvgPointerDown(e) {
     if (inTrace) handleTraceDown(e)
     else if (inEdit) handleEditDown(e)
-    else if (inSplit) {
-      if (splitPhase === 'review') handleSplitDown(e)
-      else handleSplitDown(e)
-    }
+    else if (inSplit) handleSplitDown(e)
+    else if (inDrawBuilding) handleBgDrawDown(e)
+    else if (inDeleteBuilding) handleBgDeleteDown(e)
     // place mode: handled on PointerUp to avoid conflict with accidental drags
   }
   function onSvgPointerMove(e) {
     if (inTrace) handleTraceMove(e)
     else if (inEdit) handleEditMove(e)
-    else if (inSplit) { handleSplitMove(e) }
-    else if (inPlace) { handlePlaceMove(e) }
+    else if (inSplit) handleSplitMove(e)
+    else if (inPlace) handlePlaceMove(e)
+    else if (inDrawBuilding) handleBgDrawMove(e)
+    else if (inDeleteBuilding) {
+      const { sx, sy } = svgXY(e)
+      setHoveredBgId(findBgAtPoint(sx, sy))
+    }
   }
   function onSvgPointerUp(e) {
     if (inTrace) handleTraceUp(e)
     else if (inEdit) handleEditUp(e)
-    else if (inPlace) { handlePlaceUp(e) }
+    else if (inPlace) handlePlaceUp(e)
+    else if (inDrawBuilding) handleBgDrawUp(e)
   }
   function onSvgPointerLeave() {
     if (inTrace) setCursorNorm(null)
     else if (inEdit) { setHoverTarget(null); setEditSnapSvg(null) }
     else if (inSplit) { setSplitCursorSvg(null); setSplitSnapSvg(null) }
     else if (inPlace) { setPlaceCursorSvg(null) }
+    else if (inDrawBuilding) setBgDrawCursorSvg(null)
+    else if (inDeleteBuilding) setHoveredBgId(null)
   }
   function onSvgContextMenu(e) {
     if (inEdit) handleEditContextMenu(e)
+    else if (inDeleteBuilding) handleBgDeleteContextMenu(e)
   }
 
   // ─── Derived SVG values ────────────────────────────────────────────────────────
@@ -772,6 +956,9 @@ export default function PdfCanvas({
   const deleteCursor = inDeletePhases
     ? (hoveredDeleteBndId !== null ? 'pointer' : 'default')
     : 'default'
+
+  const bgDrawCursor   = inDrawBuilding ? 'crosshair' : 'default'
+  const bgDeleteCursor = inDeleteBuilding ? (hoveredBgId !== null ? 'pointer' : 'default') : 'default'
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -818,7 +1005,7 @@ export default function PdfCanvas({
           <svg
             style={{ position: 'absolute', top:0, left:0, width:'100%', height:'100%', overflow:'visible',
               pointerEvents: overlayActive ? 'all' : 'none',
-              cursor: inTrace ? (traceSnap ? 'cell' : 'crosshair') : inEdit ? editCursor : inSplit ? splitCursor : inDeletePhases ? deleteCursor : inPlace ? 'crosshair' : 'default' }}
+              cursor: inTrace ? (traceSnap ? 'cell' : 'crosshair') : inEdit ? editCursor : inSplit ? splitCursor : inDeletePhases ? deleteCursor : inPlace ? 'crosshair' : inDrawBuilding ? bgDrawCursor : inDeleteBuilding ? bgDeleteCursor : 'default' }}
             onPointerDown={overlayActive ? onSvgPointerDown : undefined}
             onPointerMove={overlayActive ? onSvgPointerMove : undefined}
             onPointerUp={overlayActive ? onSvgPointerUp : undefined}
@@ -995,6 +1182,111 @@ export default function PdfCanvas({
                 )}
 
               </>
+            )}
+
+            {/* ── Building group ovals ── */}
+            {showBuildingGroups && buildingGroups.map(bg => {
+              const ell = bgEllipse(bg)
+              if (!ell) return null
+              const isSelected  = selectedBgIds.has(bg.building_group_id)
+              const isHovered   = hoveredBgId === bg.building_group_id
+              const strokeColor = isSelected ? '#ef4444' : isHovered ? '#f97316' : '#0d9488'
+              const fillColor   = isSelected ? 'rgba(239,68,68,0.10)' : isHovered ? 'rgba(249,115,22,0.10)' : 'rgba(13,148,136,0.07)'
+              const strokeW     = isSelected || isHovered ? 2.5 : 1.8
+              return (
+                <g key={bg.building_group_id}
+                  style={{ cursor: inDeleteBuilding ? 'pointer' : 'default' }}
+                  onPointerEnter={inDeleteBuilding ? () => setHoveredBgId(bg.building_group_id) : undefined}
+                  onPointerLeave={inDeleteBuilding ? () => setHoveredBgId(null) : undefined}
+                  onClick={inDeleteBuilding ? () => onBuildingGroupSelect?.(bg.building_group_id) : undefined}
+                  onContextMenu={inDeleteBuilding ? (e) => {
+                    e.preventDefault()
+                    if (!selectedBgIds.has(bg.building_group_id)) onBuildingGroupSelect?.(bg.building_group_id)
+                    onBuildingGroupContextMenu?.(bg.building_group_id, ell.cx, ell.cy)
+                  } : undefined}
+                >
+                  {/* White halo for legibility over any PDF background */}
+                  <ellipse cx={ell.cx} cy={ell.cy} rx={ell.rx + 2} ry={ell.ry + 2}
+                    fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth={strokeW + 3}
+                    style={{ pointerEvents: 'none' }} />
+                  <ellipse cx={ell.cx} cy={ell.cy} rx={ell.rx} ry={ell.ry}
+                    fill={fillColor}
+                    stroke={strokeColor}
+                    strokeWidth={strokeW}
+                    strokeDasharray="6 4"
+                    style={{ pointerEvents: inDeleteBuilding ? 'fill' : 'none' }}
+                  />
+                  {zoom > 0.5 && (
+                    <text
+                      x={ell.cx} y={ell.cy + ell.ry + 13}
+                      textAnchor="middle"
+                      fontSize={Math.max(8, 10 / zoom)}
+                      fill={strokeColor}
+                      stroke="rgba(255,255,255,0.9)" strokeWidth={2.5 / zoom}
+                      paintOrder="stroke"
+                      style={{ pointerEvents: 'none', userSelect: 'none' }}
+                    >
+                      {bg.building_name}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
+
+            {/* ── Building group draw preview ── */}
+            {inDrawBuilding && bgDrawPoints.length > 0 && (() => {
+              const svgPts = bgDrawPoints.map(p => normToScreen(p.x, p.y))
+              const svgFirst = svgPts[0]
+              const svgLast  = svgPts[svgPts.length - 1]
+              const nearFirst = bgDrawPoints.length >= 3 && bgDrawCursorSvg
+                && Math.hypot(svgFirst.x - bgDrawCursorSvg.x, svgFirst.y - bgDrawCursorSvg.y) < SNAP_TRACE_PX
+              return (
+                <>
+                  {svgPts.length >= 2 && (
+                    <polyline points={svgPts.map(p => `${p.x},${p.y}`).join(' ')}
+                      fill="none" stroke="#0d9488" strokeWidth={2} strokeLinejoin="round" />
+                  )}
+                  {/* Closing line preview */}
+                  {bgDrawCursorSvg && svgLast && !nearFirst && (
+                    <line x1={svgLast.x} y1={svgLast.y} x2={bgDrawCursorSvg.x} y2={bgDrawCursorSvg.y}
+                      stroke="#0d9488" strokeWidth={1.5} strokeDasharray="5 4" />
+                  )}
+                  {nearFirst && (
+                    <line x1={svgLast.x} y1={svgLast.y} x2={svgFirst.x} y2={svgFirst.y}
+                      stroke="#0d9488" strokeWidth={1.5} strokeDasharray="5 4" />
+                  )}
+                  {/* Fill preview when about to close */}
+                  {nearFirst && (
+                    <polygon points={svgPts.map(p => `${p.x},${p.y}`).join(' ')}
+                      fill="rgba(13,148,136,0.12)" stroke="none" />
+                  )}
+                  {/* Vertex dots */}
+                  {svgPts.map((p, i) => (
+                    <circle key={i} cx={p.x} cy={p.y} r={i === 0 ? 6 : 4}
+                      fill={i === 0 && bgDrawPoints.length >= 3 ? (nearFirst ? 'rgba(13,148,136,0.3)' : 'none') : '#0d9488'}
+                      stroke="#0d9488" strokeWidth={2} />
+                  ))}
+                  {/* Snap ring on first point when close enough */}
+                  {bgDrawPoints.length >= 3 && (
+                    <circle cx={svgFirst.x} cy={svgFirst.y}
+                      r={nearFirst ? SNAP_TRACE_PX : 8}
+                      fill={nearFirst ? 'rgba(13,148,136,0.2)' : 'none'}
+                      stroke="#0d9488" strokeWidth={nearFirst ? 2 : 1.5} strokeDasharray={nearFirst ? 'none' : '3 2'} />
+                  )}
+                  {/* Cursor dot */}
+                  {bgDrawCursorSvg && (
+                    <circle cx={bgDrawCursorSvg.x} cy={bgDrawCursorSvg.y} r={3}
+                      fill="#0d9488" stroke="#fff" strokeWidth={1} />
+                  )}
+                </>
+              )
+            })()}
+
+            {/* Draw-building: cursor dot when no points yet */}
+            {inDrawBuilding && bgDrawPoints.length === 0 && bgDrawCursorSvg && (
+              <circle cx={bgDrawCursorSvg.x} cy={bgDrawCursorSvg.y} r={4}
+                fill="rgba(13,148,136,0.5)" stroke="#0d9488" strokeWidth={1.5}
+                style={{ pointerEvents: 'none' }} />
             )}
 
             {/* ── Lot markers ── */}
