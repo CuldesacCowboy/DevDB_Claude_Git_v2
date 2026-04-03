@@ -339,7 +339,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             WITH future AS (
                 SELECT generate_series(
                     DATE_TRUNC('MONTH', CURRENT_DATE)::DATE,
-                    (DATE_TRUNC('MONTH', CURRENT_DATE) + INTERVAL '10 years')::DATE,
+                    (DATE_TRUNC('MONTH', CURRENT_DATE) + INTERVAL '30 years')::DATE,
                     INTERVAL '1 month'
                 )::DATE AS m
             ),
@@ -409,12 +409,12 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             bal[m] = bal.get(m, 0) + contrib
 
     def _find_violation_month(dev_id_key: int, scan_floor: date) -> date | None:
-        """First month after scan_floor where d_balance < min_buffer."""
+        """First month after scan_floor where d_balance <= min_buffer (exhaustion)."""
         bal = d_balance.get(dev_id_key, {})
         for m in sorted(bal.keys()):
             if m <= scan_floor:
                 continue
-            if bal[m] < min_buffer:
+            if bal[m] <= min_buffer:
                 return m
         return None
 
@@ -529,10 +529,14 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         for dev_id in active:
             lv_d = _dev_lv_from_balance(dev_id, dev_scan_floor[dev_id], ws, we)
             if lv_d is None:
-                # No D-floor violation — fall back to demand_date signal
+                # No D-floor violation found in scan window — this should only
+                # happen when the phase has no sim lots from locked deliveries yet.
+                # Fall back to demand_date but never schedule before today_first.
                 first_demand = dev_phases[dev_id][0]["demand_date"]
                 lv_d = (_snap_to_window(first_demand, ws, we) if first_demand
                         else date(last_event_year + 1, ws, 1))
+                if lv_d < today_first:
+                    lv_d = _next_window_month_from(today_first, ws, we)
             if lv_d.year <= last_event_year:
                 lv_d = date(last_event_year + 1, ws, 1)
             deadlines[dev_id] = lv_d
