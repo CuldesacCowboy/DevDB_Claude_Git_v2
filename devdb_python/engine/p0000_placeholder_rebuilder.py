@@ -464,10 +464,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             if last_locked_date is None or d > last_locked_date:
                 last_locked_date = d
 
-    # No auto-scheduled event may land in the same year as (or before) the
-    # last locked event.  Earliest valid year = last_locked_year + 1.
-    last_locked_year: int | None = last_locked_date.year if last_locked_date else None
-
     def _constrain_date(ideal: date, ws: int, we: int) -> date:
         """Push ideal forward until max_per_year and min_gap are satisfied."""
         d = ideal
@@ -514,7 +510,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     for dev_id in dev_phases:
         dev_scan_floor[dev_id] = last_locked_per_dev.get(dev_id, today_first - timedelta(days=1))
 
-    last_event_year = last_locked_year if last_locked_year else (today_first.year - 1)
     events_to_create = []
 
     for _ in range(200):
@@ -524,7 +519,10 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             break
 
         # Compute deadline per dev from live d_balance.
-        # D-119 floor: no event in same year as last scheduled event.
+        # max_per_year / min_gap constraints applied via _constrain_date.
+        # Locked events already counted in events_per_year, so this naturally
+        # enforces D-119 when max_per_year=1 while allowing same-year auto-
+        # scheduling when max_per_year>1 and the slot is available.
         deadlines = {}
         for dev_id in active:
             lv_d = _dev_lv_from_balance(dev_id, dev_scan_floor[dev_id], ws, we)
@@ -534,16 +532,29 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 # Fall back to demand_date but never schedule before today_first.
                 first_demand = dev_phases[dev_id][0]["demand_date"]
                 lv_d = (_snap_to_window(first_demand, ws, we) if first_demand
-                        else date(last_event_year + 1, ws, 1))
+                        else _next_window_month_from(today_first, ws, we))
                 if lv_d < today_first:
                     lv_d = _next_window_month_from(today_first, ws, we)
-            if lv_d.year <= last_event_year:
-                lv_d = date(last_event_year + 1, ws, 1)
+            # Apply max_per_year and min_gap constraints
+            lv_d = _constrain_date(lv_d, ws, we)
             deadlines[dev_id] = lv_d
 
         # Most urgent dev drives the event date
         urgent_dev = min(deadlines, key=lambda d: deadlines[d])
         event_date = deadlines[urgent_dev]
+
+        # Warn if the constrained delivery lands at or after the D-floor
+        # violation month — means the constraint cannot be satisfied given
+        # current max_per_year / min_gap settings.
+        violation_check = _find_violation_month(urgent_dev, dev_scan_floor[urgent_dev])
+        if violation_check is not None and event_date >= violation_check:
+            print(
+                f"P-00: WARNING: Dev {urgent_dev}: next delivery {event_date} "
+                f"cannot be moved before D-floor violation at {violation_check} "
+                f"(max_deliveries_per_year={max_per_year}, "
+                f"min_gap_months={min_gap}, min_d_count={min_buffer}). "
+                f"D-balance floor will not be maintained."
+            )
 
         # All devs whose deadline <= event_date join this event
         joining = [d for d in active if deadlines[d] <= event_date]
@@ -585,7 +596,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         events_to_create.append({"date": event_date, "phases": event_phase_ids})
         events_per_year[event_date.year] += 1
         last_date = event_date
-        last_event_year = event_date.year
 
     events_to_create.sort(key=lambda e: e["date"])
 
