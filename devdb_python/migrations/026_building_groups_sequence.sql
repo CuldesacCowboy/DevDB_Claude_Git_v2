@@ -15,14 +15,16 @@ BEGIN
         false   -- false = next call returns this value (not this value + 1)
     );
 
-    -- Attach the sequence as the column default only if not already set
+    -- Attach the sequence as the column default only if not already set.
+    -- Also skip if the column is already an identity column (identity_generation IS NOT NULL)
+    -- because identity columns manage their own sequence and reject SET DEFAULT.
     IF NOT EXISTS (
         SELECT 1
         FROM information_schema.columns
         WHERE table_schema = 'devdb'
           AND table_name   = 'sim_building_groups'
           AND column_name  = 'building_group_id'
-          AND column_default LIKE 'nextval%'
+          AND (column_default LIKE 'nextval%' OR identity_generation IS NOT NULL)
     ) THEN
         ALTER TABLE devdb.sim_building_groups
             ALTER COLUMN building_group_id
