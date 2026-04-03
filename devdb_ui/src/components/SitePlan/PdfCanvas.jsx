@@ -41,19 +41,20 @@ const UNASSIGNED_COLOR = '#9ca3af'
 // stay aligned with the PDF at any rotation angle.
 
 function applyRotationToNorm(nx, ny, rotation) {
+  // PDF.js rotation is clockwise (matching PDF spec).
   switch (rotation) {
-    case 90:  return [ny, 1 - nx]        // 90° CCW
+    case 90:  return [1 - ny, nx]        // 90° CW
     case 180: return [1 - nx, 1 - ny]
-    case 270: return [1 - ny, nx]        // 270° CCW (= 90° CW)
+    case 270: return [ny, 1 - nx]        // 270° CW (= 90° CCW)
     default:  return [nx, ny]
   }
 }
 
 function unapplyRotationFromNorm(rx, ry, rotation) {
   switch (rotation) {
-    case 90:  return [1 - ry, rx]        // inverse of 90° CCW
+    case 90:  return [ry, 1 - rx]        // inverse of 90° CW
     case 180: return [1 - rx, 1 - ry]
-    case 270: return [ry, 1 - rx]        // inverse of 270° CCW
+    case 270: return [1 - ry, rx]        // inverse of 270° CW
     default:  return [rx, ry]
   }
 }
