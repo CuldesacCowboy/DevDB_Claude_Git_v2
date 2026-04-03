@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: April 2026 (2026-04-03) | Architecture v20 | Decision Log: D-001 through D-152 | Next ID: D-153*
+*Last updated: April 2026 (2026-04-03) | Architecture v20 | Decision Log: D-001 through D-153 | Next ID: D-154*
 
 ---
 
@@ -303,7 +303,7 @@ Runs against local Postgres via PGConnection. No USE CATALOG required.
 - **D-115** -- P-04 "never move later" guard applies only when cur >= today_first. Past projected dates are stale and always correctable forward.
 - **D-117** -- P-00 skips phases with null demand and zero sim lots. No delivery event created.
 - **D-118** -- P-00 skips phases with demand past sellout horizon (MAX(date_cls) across all sim lots for the ent_group).
-- **D-119** -- No auto-scheduled delivery event may be dated in the same year as the last locked event. Floor = date(last_locked_year + 1, delivery_window_start, 1). delivery_window_start/end live in sim_entitlement_delivery_config (D-135).
+- **D-119** -- No auto-scheduled delivery event may be dated in the same year as the last locked event. Floor = date(last_locked_year + 1, delivery_window_start, 1). delivery_window_start/end live in sim_entitlement_delivery_config (D-135). Auto events do NOT register year anchors (D-153); multiple devs can deliver in the same year at their own natural lean dates.
 - **D-120** -- A phase may only belong to one delivery event. Many-to-one enforced by data cleanup and UI constraint.
 - **D-121** -- main.devdb. prefix removed from all 17 engine modules. Postgres uses search_path=devdb.
 - **D-123** -- P-06 writes date_dev_projected unconditionally (removed "only update if earlier" guard).
@@ -404,6 +404,27 @@ The equalization logic in usePhaseEqualization.js runs after paint to match row 
 - Migration files are numbered sequentially: `000_`, `001_`, `002_`, etc.
 - The auto-apply runner in `api/main.py` applies unapplied migrations on every backend startup. New files are picked up automatically.
 - After creating a migration file, grep `devdb_python/` for all references to renamed or dropped columns and update every one before committing.
+
+## Decision Log — D-153
+
+D-153: Per-dev min_gap in P-0000 auto-delivery scheduler
+
+Auto events no longer register in delivery_date_per_year. That map now
+contains locked events only (D-119 guard: skip the last locked year).
+Each dev tracks its own last_date_per_dev for min_gap enforcement.
+
+Previously, when dev A scheduled May 2033, it registered 2033 → May 2033
+in delivery_date_per_year. In the next loop iteration, dev B's natural
+Nov 2033 deadline was snapped back to May 2033 via _constrain_date —
+delivering dev B 6 months too early and creating high D-at-delivery
+inventory. This manifested as over-early deliveries in specific years
+(2033, 2035, 2036 in Waterton Station).
+
+Fix: _constrain_date accepts dev_last parameter (per-dev last delivery).
+Auto events do not write to delivery_date_per_year. Multiple devs can
+schedule in the same calendar year at their own natural lean dates.
+
+---
 
 ## Decision Log — D-152
 
