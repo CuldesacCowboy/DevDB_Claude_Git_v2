@@ -442,8 +442,11 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         p["dev_id"],
     ))
 
-    # Track scheduled state
-    events_per_year: dict[int, int] = defaultdict(int)
+    # Track scheduled state.
+    # delivery_date_per_year: one delivery date per calendar year per community.
+    # Any number of phases can land on that date; the date itself is the constraint.
+    # Locked events establish the date for their year; auto events snap to it.
+    delivery_date_per_year: dict[int, date] = {}
     last_date: date | None = None
 
     # Account for locked events already scheduled this/prior years
@@ -458,29 +461,36 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         d = r["date_dev_actual"]
         if d is not None:
             d = d.date() if hasattr(d, "date") else d
-            events_per_year[d.year] += 1
+            # Locked event establishes the delivery date for its year
+            delivery_date_per_year[d.year] = d
             if last_date is None or d > last_date:
                 last_date = d
             if last_locked_date is None or d > last_locked_date:
                 last_locked_date = d
 
     def _constrain_date(ideal: date, ws: int, we: int) -> date:
-        """Push ideal forward until max_per_year and min_gap are satisfied."""
+        """
+        Return the earliest valid delivery date >= ideal, respecting:
+        - One delivery date per year (snap to existing date if year is taken)
+        - min_gap months between consecutive delivery dates (new years only)
+
+        max_per_year is no longer a count — any number of phases can land on
+        the single allowed date for a given year.
+        """
         d = ideal
         for _ in range(500):  # safety limit
-            # min_gap constraint
+            # If this year already has a delivery date (locked or auto),
+            # snap to it — no further constraints apply.
+            if d.year in delivery_date_per_year:
+                return delivery_date_per_year[d.year]
+
+            # New year: enforce min_gap from the last delivery date.
             if last_date is not None and min_gap > 0:
                 min_ok = _add_months(last_date, min_gap)
                 min_ok = min_ok.replace(day=1)
                 if d < min_ok:
                     d = _next_window_month_from(min_ok, ws, we)
                     continue
-
-            # max_per_year constraint
-            if events_per_year[d.year] >= max_per_year:
-                # Push to first window month of next year
-                d = _first_window_month_in_year(d.year + 1, ws)
-                continue
 
             break
         return d
@@ -518,24 +528,19 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         if not active:
             break
 
-        # Compute deadline per dev from live d_balance.
-        # max_per_year / min_gap constraints applied via _constrain_date.
-        # Locked events already counted in events_per_year, so this naturally
-        # enforces D-119 when max_per_year=1 while allowing same-year auto-
-        # scheduling when max_per_year>1 and the slot is available.
+        # Compute deadline per dev from live d_balance, then constrain via
+        # _constrain_date (snaps to year's existing date or enforces min_gap).
         deadlines = {}
         for dev_id in active:
             lv_d = _dev_lv_from_balance(dev_id, dev_scan_floor[dev_id], ws, we)
             if lv_d is None:
-                # No D-floor violation found in scan window — this should only
-                # happen when the phase has no sim lots from locked deliveries yet.
-                # Fall back to demand_date but never schedule before today_first.
+                # No D-floor violation found in scan window — fall back to
+                # demand_date signal; never schedule before today_first.
                 first_demand = dev_phases[dev_id][0]["demand_date"]
                 lv_d = (_snap_to_window(first_demand, ws, we) if first_demand
                         else _next_window_month_from(today_first, ws, we))
                 if lv_d < today_first:
                     lv_d = _next_window_month_from(today_first, ws, we)
-            # Apply max_per_year and min_gap constraints
             lv_d = _constrain_date(lv_d, ws, we)
             deadlines[dev_id] = lv_d
 
@@ -594,7 +599,9 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 event_phase_ids.append(p["phase_id"])
 
         events_to_create.append({"date": event_date, "phases": event_phase_ids})
-        events_per_year[event_date.year] += 1
+        # Register this year's delivery date so subsequent auto phases snap to it
+        if event_date.year not in delivery_date_per_year:
+            delivery_date_per_year[event_date.year] = event_date
         last_date = event_date
 
     events_to_create.sort(key=lambda e: e["date"])
