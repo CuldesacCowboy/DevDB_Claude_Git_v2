@@ -1774,13 +1774,13 @@ function UnitCountsPanel({
           border: `1px solid ${!unitCountsSubtotal ? '#0d9488' : '#d1d5db'}`,
           background: !unitCountsSubtotal ? '#f0fdfa' : '#fff',
           color: !unitCountsSubtotal ? '#0f766e' : '#6b7280',
-        }}>Totals on map</button>
+        }}>Totals</button>
         <button onClick={() => onToggleSubtotal(true)} style={{
           flex: 1, padding: '4px 4px', borderRadius: 5, fontSize: 10, cursor: 'pointer', fontWeight: unitCountsSubtotal ? 600 : 400,
           border: `1px solid ${unitCountsSubtotal ? '#0d9488' : '#d1d5db'}`,
           background: unitCountsSubtotal ? '#f0fdfa' : '#fff',
           color: unitCountsSubtotal ? '#0f766e' : '#6b7280',
-        }}>By type on map</button>
+        }}>Lot Types</button>
         {/* Expanded/compressed view toggle */}
         <button onClick={() => setExpanded(v => !v)} title={expanded ? 'Compact view' : 'Expanded view'} style={{
           padding: '4px 7px', borderRadius: 5, fontSize: 10, cursor: 'pointer', flexShrink: 0,

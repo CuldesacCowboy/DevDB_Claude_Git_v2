@@ -1356,20 +1356,82 @@ export default function PdfCanvas({
               const borderColor  = darkenHex(phaseColor, 0.4)
 
               if (!unitCountsSubtotal) {
-                // ── Totals mode: compact styled badge ────────────────
-                const parts = [`R ${totalR}`, `P ${totalP}`, `T ${totalT}`]
-                const bw    = parts.join('  ').length * charW + 14
-                const bh    = fs * 1.6
-                const bx    = labelCx - bw / 2
-                const by    = labelCy - bh / 2
+                // ── Totals mode: table card with single "Total" row ───
+                const pText    = String(totalP)
+                const pW       = pText.length * charW * 1.05
+                const pillPadX = charW * 0.4
+                const pillPadY = fs * 0.12
+                const typeColW = 5 * charW   // "Total"
+                const valColW  = Math.max(2 * charW, String(Math.max(totalR, totalP, totalT, 9)).length * charW + charW * 0.5)
+                const gapW     = charW * 1.0
+                const padX     = 7
+                const padY     = 5
+                const innerW   = typeColW + gapW + valColW + gapW + valColW + gapW + valColW
+                const boxW     = innerW + padX * 2
+                const boxH     = 2 * lineH + padY * 2
+                const boxX     = labelCx - boxW / 2
+                const boxY     = labelCy - boxH / 2
+                const col0x    = boxX + padX
+                const col1x    = col0x + typeColW + gapW + valColW
+                const col2x    = col1x + gapW + valColW
+                const col3x    = col2x + gapW + valColW
+                const rowY     = (i) => boxY + padY + (i + 0.78) * lineH
+                const headerY  = rowY(0)
+                const sepY1    = boxY + padY + lineH
+                const dataY    = rowY(1)
                 return (
                   <g key={`uc_${b.boundary_id}`} style={{ pointerEvents: 'none' }}>
-                    <rect x={bx} y={by} width={bw} height={bh} rx={4}
-                      fill="rgba(255,255,255,0.92)" stroke={borderColor} strokeWidth={Math.max(0.8, 1.2/zoom)} />
-                    <text x={labelCx} y={labelCy} textAnchor="middle" dominantBaseline="central"
-                      fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="600"
+                    {/* Phase name above card */}
+                    <text x={labelCx} y={boxY - 2} textAnchor="middle" dominantBaseline="auto"
+                      fontFamily="sans-serif" fontSize={fs * 0.82} fill={borderColor} fontWeight="700"
                       style={{ userSelect: 'none' }}>
-                      R {totalR}{'   '}P {totalP}{'   '}T {totalT}
+                      {phaseData.phase_name}
+                    </text>
+                    {/* Card */}
+                    <rect x={boxX} y={boxY} width={boxW} height={boxH} rx={5}
+                      fill="rgba(255,255,255,0.94)" stroke={borderColor}
+                      strokeWidth={Math.max(0.8, 1.5/zoom)} />
+                    {/* Column headers */}
+                    <text x={col0x} y={headerY} dominantBaseline="auto"
+                      fontFamily="sans-serif" fontSize={fs * 0.82} fill="#94a3b8" fontWeight="700"
+                      style={{ userSelect: 'none' }}>
+                      Type
+                    </text>
+                    {['R','P','T'].map((hdr, hi) => (
+                      <text key={hdr} x={[col1x, col2x, col3x][hi]} y={headerY} textAnchor="end" dominantBaseline="auto"
+                        fontFamily="sans-serif" fontSize={fs * 0.82}
+                        fill={hi === 1 ? '#0f766e' : hi === 0 ? '#64748b' : '#374151'}
+                        fontWeight="700" style={{ userSelect: 'none' }}>
+                        {hdr}
+                      </text>
+                    ))}
+                    {/* Separator */}
+                    <line x1={boxX + 3} y1={sepY1} x2={boxX + boxW - 3} y2={sepY1}
+                      stroke={borderColor} strokeOpacity={0.4} strokeWidth={Math.max(0.5, 0.8/zoom)} />
+                    {/* Total data row */}
+                    <text x={col0x} y={dataY} dominantBaseline="auto"
+                      fontFamily="sans-serif" fontSize={fs * 0.82} fill="#94a3b8" fontWeight="700"
+                      style={{ userSelect: 'none' }}>
+                      Total
+                    </text>
+                    <text x={col1x} y={dataY} textAnchor="end" dominantBaseline="auto"
+                      fontFamily="monospace" fontSize={fs} fill="#64748b" fontWeight="600"
+                      style={{ userSelect: 'none' }}>
+                      {totalR}
+                    </text>
+                    {/* P — green pill */}
+                    <rect x={col2x - pW - pillPadX} y={dataY - fs * 0.85 - pillPadY}
+                      width={pW + pillPadX * 2} height={fs * 1.1} rx={3}
+                      fill="#f0fdfa" stroke="#0d9488" strokeWidth={Math.max(0.6, 1/zoom)} />
+                    <text x={col2x} y={dataY} textAnchor="end" dominantBaseline="auto"
+                      fontFamily="monospace" fontSize={fs} fill="#0f766e" fontWeight="700"
+                      style={{ userSelect: 'none' }}>
+                      {pText}
+                    </text>
+                    <text x={col3x} y={dataY} textAnchor="end" dominantBaseline="auto"
+                      fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="700"
+                      style={{ userSelect: 'none' }}>
+                      {totalT}
                     </text>
                   </g>
                 )
@@ -1412,6 +1474,12 @@ export default function PdfCanvas({
 
               return (
                 <g key={`uc_${b.boundary_id}`}>
+                  {/* Phase name above card */}
+                  <text x={labelCx} y={boxY - 2} textAnchor="middle" dominantBaseline="auto"
+                    fontFamily="sans-serif" fontSize={fs * 0.82} fill={borderColor} fontWeight="700"
+                    style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                    {phaseData.phase_name}
+                  </text>
                   {/* Card background + border */}
                   <rect x={boxX} y={boxY} width={boxW} height={boxH} rx={5}
                     fill="rgba(255,255,255,0.94)" stroke={borderColor}
@@ -1471,16 +1539,16 @@ export default function PdfCanvas({
                           style={{ userSelect: 'none', pointerEvents: 'none' }}>
                           {lt.actual || 0}
                         </text>
-                        {/* P value — teal + underline */}
+                        {/* P value — green pill */}
+                        <rect x={col2x - pW - charW * 0.4} y={ry - fs * 0.85 - fs * 0.12}
+                          width={pW + charW * 0.8} height={fs * 1.1} rx={3}
+                          fill="#f0fdfa" stroke="#0d9488" strokeWidth={Math.max(0.6, 1/zoom)}
+                          style={{ pointerEvents: 'none' }} />
                         <text x={col2x} y={ry} textAnchor="end" dominantBaseline="auto"
                           fontFamily="monospace" fontSize={fs} fill="#0f766e" fontWeight="700"
-                          stroke="rgba(255,255,255,0.6)" strokeWidth={1.5/zoom} paintOrder="stroke"
                           style={{ userSelect: 'none', pointerEvents: 'none' }}>
                           {pText}
                         </text>
-                        <line x1={col2x - pW} y1={ry + fs * 0.15}
-                          x2={col2x} y2={ry + fs * 0.15}
-                          stroke="#0d9488" strokeWidth={Math.max(0.6, 1/zoom)} />
                         {/* T value */}
                         <text x={col3x} y={ry} textAnchor="end" dominantBaseline="auto"
                           fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="600"
@@ -1508,6 +1576,12 @@ export default function PdfCanvas({
                           style={{ userSelect: 'none' }}>
                           {totalR}
                         </text>
+                        {/* P — green pill */}
+                        {(() => { const tpW = String(totalP).length * charW * 1.05; return (
+                          <rect x={col2x - tpW - charW * 0.4} y={ty - fs * 0.85 - fs * 0.12}
+                            width={tpW + charW * 0.8} height={fs * 1.1} rx={3}
+                            fill="#f0fdfa" stroke="#0d9488" strokeWidth={Math.max(0.6, 1/zoom)} />
+                        )})()}
                         <text x={col2x} y={ty} textAnchor="end" dominantBaseline="auto"
                           fontFamily="monospace" fontSize={fs} fill="#0f766e" fontWeight="700"
                           style={{ userSelect: 'none' }}>
