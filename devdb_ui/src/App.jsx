@@ -1,9 +1,25 @@
+import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import LotPhaseView from './pages/LotPhaseView'
 import SitePlanView from './pages/SitePlanView'
 import SimulationView from './pages/SimulationView'
 
+const LS_KEY = 'devdb_active_community'
+
 export default function App() {
+  const [selectedGroupId, setSelectedGroupId] = useState(() => {
+    try {
+      const v = localStorage.getItem(LS_KEY) || localStorage.getItem('devdb_siteplan_last_group')
+      return v ? Number(v) : null
+    } catch { return null }
+  })
+
+  useEffect(() => {
+    if (selectedGroupId) {
+      try { localStorage.setItem(LS_KEY, String(selectedGroupId)) } catch {}
+    }
+  }, [selectedGroupId])
+
   return (
     <BrowserRouter>
       <nav style={{
@@ -47,9 +63,9 @@ export default function App() {
       </nav>
 
       <Routes>
-        <Route path="/" element={<LotPhaseView />} />
-        <Route path="/site-plan" element={<SitePlanView />} />
-        <Route path="/simulation" element={<SimulationView />} />
+        <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
+        <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
+        <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
       </Routes>
     </BrowserRouter>
   )

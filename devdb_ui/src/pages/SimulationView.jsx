@@ -693,9 +693,10 @@ function LotLedger({ lots, loading }) {
 
 // ─── Main view ───────────────────────────────────────────────────────────────
 
-export default function SimulationView() {
+export default function SimulationView({ selectedGroupId, setSelectedGroupId }) {
+  const entGroupId = selectedGroupId
+  const setEntGroupId = setSelectedGroupId
   const [entGroups, setEntGroups]   = useState([])
-  const [entGroupId, setEntGroupId] = useState(null)
   const [runStatus, setRunStatus]   = useState(null)
   const [runErrors, setRunErrors]   = useState([])
   const [byDev, setByDev]           = useState([])
@@ -774,7 +775,7 @@ export default function SimulationView() {
 
   useEffect(() => {
     fetch(`${API}/entitlement-groups`).then(r => r.json())
-      .then(data => { setEntGroups(data); if (data.length) setEntGroupId(data[0].ent_group_id) })
+      .then(data => { setEntGroups(data); if (data.length && !selectedGroupId) setEntGroupId(data[0].ent_group_id) })
       .catch(() => {})
   }, [])
 

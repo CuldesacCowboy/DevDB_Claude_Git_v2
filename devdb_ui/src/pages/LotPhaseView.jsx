@@ -19,13 +19,14 @@ import CommunityDevelopmentsView from './CommunityDevelopmentsView'
 import TakedownAgreementsView from './TakedownAgreementsView'
 const LEFT_PANELS_WIDTH = 340 // sidebar + unassigned panel
 
-export default function LotPhaseView() {
+export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
   // -----------------------------------------------------------------------
   // Sidebar + community selection
   // -----------------------------------------------------------------------
+  const entGroupId = selectedGroupId ?? 9002
+  const setEntGroupId = setSelectedGroupId ?? (() => {})
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [communities, setCommunities] = useState([])
-  const [entGroupId, setEntGroupId] = useState(9002)
   const [addingCommunity, setAddingCommunity] = useState(false)
   const [newCommunityName, setNewCommunityName] = useState('')
   const [addCommunityError, setAddCommunityError] = useState('')

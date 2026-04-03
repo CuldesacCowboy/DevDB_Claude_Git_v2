@@ -32,11 +32,10 @@ const INSTRUMENT_COLORS = [
 ]
 const UNASSIGNED_COLOR = '#9ca3af'
 
-function SitePlanViewInner() {
+function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedGroupId: _setSelectedGroupIdProp }) {
   const [entGroups, setEntGroups]             = useState([])
-  const [selectedGroupId, setSelectedGroupId] = useState(() => {
-    try { return localStorage.getItem('devdb_siteplan_last_group') || '' } catch { return '' }
-  })
+  const selectedGroupId    = _selectedGroupIdProp    ?? ''
+  const setSelectedGroupId = _setSelectedGroupIdProp ?? (() => {})
   const [plan, setPlan]                       = useState(null)
   const [loading, setLoading]                 = useState(false)
   const [uploading, setUploading]             = useState(false)
@@ -79,13 +78,6 @@ function SitePlanViewInner() {
   const lotPositionsRef   = useRef(lotPositions)
   useEffect(() => { boundariesRef.current   = boundaries   }, [boundaries])
   useEffect(() => { lotPositionsRef.current = lotPositions }, [lotPositions])
-
-  // Persist last selected community
-  useEffect(() => {
-    if (selectedGroupId) {
-      try { localStorage.setItem('devdb_siteplan_last_group', selectedGroupId) } catch {}
-    }
-  }, [selectedGroupId])
 
   // Load entitlement groups
   useEffect(() => {
@@ -841,8 +833,8 @@ function SitePlanViewInner() {
         display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
       }}>
         <select
-          value={selectedGroupId}
-          onChange={e => { setSelectedGroupId(e.target.value); setMode('view'); setSelectedBoundaryId(null) }}
+          value={selectedGroupId ?? ''}
+          onChange={e => { setSelectedGroupId(e.target.value ? Number(e.target.value) : null); setMode('view'); setSelectedBoundaryId(null) }}
           style={{ fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db', minWidth: 220 }}
         >
           <option value=''>Select project...</option>
@@ -1270,8 +1262,8 @@ function SitePlanViewInner() {
   )
 }
 
-export default function SitePlanView() {
-  return <SitePlanErrorBoundary><SitePlanViewInner /></SitePlanErrorBoundary>
+export default function SitePlanView({ selectedGroupId, setSelectedGroupId }) {
+  return <SitePlanErrorBoundary><SitePlanViewInner selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} /></SitePlanErrorBoundary>
 }
 
 // ─── Phase Side Panel ─────────────────────────────────────────────────────────
