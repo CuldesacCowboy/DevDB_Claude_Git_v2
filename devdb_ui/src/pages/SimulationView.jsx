@@ -1,4 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import {
+  AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts'
 
 const API = '/api'
 
@@ -14,6 +18,9 @@ const FLOOR_STATUS = { min_p_count:'p_end', min_e_count:'e_end', min_d_count:'d_
 const FLOOR_LABELS = { min_p_count:'P', min_e_count:'E', min_d_count:'D',
                         min_u_count:'U', min_uc_count:'UC', min_c_count:'C' }
 const NUMERIC_COLS = [...EVENT_COLS, ...STATUS_COLS]
+
+// Status colors shared across table and graph
+const STATUS_COLOR = { OUT:'#6b7280', C:'#059669', UC:'#0284c7', H:'#d97706', U:'#7c3aed', D:'#374151', E:'#b45309', P:'#9ca3af' }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -38,15 +45,12 @@ function periodLabel(key, period) {
   return fmt(key)
 }
 
-/** Collapse raw API rows (multiple builder_ids per month) into one row per month,
- *  then group into the chosen period. */
+/** Collapse raw API rows into one row per period, compute p_end and cumulative closed. */
 function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate, utilization) {
-  // 1. Filter by selected devs
   const filtered = selectedDevIds === null
     ? rawRows
     : rawRows.filter(r => selectedDevIds.includes(r.dev_id))
 
-  // 2. Sum across builder_ids → one row per (dev_id, calendar_month) then across devs
   const monthMap = new Map()
   for (const r of filtered) {
     const key = r.calendar_month
@@ -58,16 +62,12 @@ function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate, utili
     for (const col of NUMERIC_COLS) agg[col] += (r[col] || 0)
   }
 
-  // 3. Sort months
   let sorted = [...monthMap.values()].sort((a, b) => a.calendar_month.localeCompare(b.calendar_month))
 
-  // 4. Filter to date_paper (Plan Start Date) if set
   if (ledgerStartDate) {
     sorted = sorted.filter(r => r.calendar_month >= ledgerStartDate)
   }
 
-  // 5. Recompute p_end: all lots start in P at date_paper and drain as entitlement fires.
-  //    p_end = totalPlannedLots - cumulativeEntitled.
   const filteredUtil = utilization
     ? (selectedDevIds === null ? utilization : utilization.filter(u => selectedDevIds.includes(u.dev_id)))
     : []
@@ -80,12 +80,13 @@ function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate, utili
     }
   }
 
-  // 6. Running closed_cumulative
   let cumul = 0
   for (const r of sorted) { cumul += (r.cls_plan || 0); r.closed_cumulative = cumul || null }
 
-  // 7. Group by period
-  if (period === 'monthly') return sorted
+  if (period === 'monthly') {
+    for (const r of sorted) r._label = fmt(r.calendar_month)
+    return sorted
+  }
 
   const periodMap = new Map()
   for (const r of sorted) {
@@ -96,7 +97,7 @@ function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate, utili
 
   return [...periodMap.values()].map(({ _key, _rows }) => {
     const last = _rows[_rows.length - 1]
-    const out = { calendar_month: _key, _periodLabel: periodLabel(_key, period) }
+    const out = { calendar_month: _key, _label: periodLabel(_key, period), _periodLabel: periodLabel(_key, period) }
     for (const col of EVENT_COLS)  out[col] = _rows.reduce((s, r) => s + (r[col] || 0), 0)
     for (const col of STATUS_COLS) out[col] = last[col] || 0
     out.closed_cumulative = last.closed_cumulative || null
@@ -121,7 +122,7 @@ function cell(v) { return v > 0 ? v : <span style={{ color: '#e5e7eb' }}>—</sp
 // ─── LedgerTable ─────────────────────────────────────────────────────────────
 
 function LedgerTable({ rows, floors, period }) {
-  const floorMap = {}  // status_col → min value
+  const floorMap = {}
   for (const [fk, sk] of Object.entries(FLOOR_STATUS)) {
     if (floors?.[fk] != null) floorMap[sk] = floors[fk]
   }
@@ -193,42 +194,108 @@ function LedgerTable({ rows, floors, period }) {
   )
 }
 
+// ─── LedgerGraph ─────────────────────────────────────────────────────────────
+
+const GRAPH_TOOLTIP_STYLE = { fontSize: 11, border: '1px solid #e5e7eb', background: '#fff', borderRadius: 4 }
+
+function LedgerGraph({ rows, period }) {
+  if (!rows.length) return null
+
+  // Thin X axis labels: monthly → every 12th, quarterly → every 4th, annual → all
+  const xInterval = period === 'monthly' ? 11 : period === 'quarterly' ? 3 : 0
+
+  const tickStyle = { fontSize: 10, fill: '#9ca3af' }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+
+      {/* ── Inventory stacked area ── */}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase',
+                      letterSpacing: '0.05em', marginBottom: 8 }}>
+          End-of-period inventory
+        </div>
+        <ResponsiveContainer width="100%" height={300}>
+          <AreaChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+            <XAxis dataKey="_label" interval={xInterval} tick={tickStyle} tickLine={false} axisLine={false} />
+            <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={34} />
+            <Tooltip contentStyle={GRAPH_TOOLTIP_STYLE}
+              formatter={(v, name) => [v > 0 ? v : '—', name]}
+              itemStyle={{ fontSize: 11 }} />
+            <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+            <Area type="monotone" dataKey="p_end"  stackId="s" stroke={STATUS_COLOR.P}  fill={STATUS_COLOR.P}  fillOpacity={0.85} name="P"  />
+            <Area type="monotone" dataKey="e_end"  stackId="s" stroke={STATUS_COLOR.E}  fill={STATUS_COLOR.E}  fillOpacity={0.85} name="E"  />
+            <Area type="monotone" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.85} name="D"  />
+            <Area type="monotone" dataKey="h_end"  stackId="s" stroke={STATUS_COLOR.H}  fill={STATUS_COLOR.H}  fillOpacity={0.85} name="H"  />
+            <Area type="monotone" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name="U"  />
+            <Area type="monotone" dataKey="uc_end" stackId="s" stroke={STATUS_COLOR.UC} fill={STATUS_COLOR.UC} fillOpacity={0.85} name="UC" />
+            <Area type="monotone" dataKey="c_end"  stackId="s" stroke={STATUS_COLOR.C}  fill={STATUS_COLOR.C}  fillOpacity={0.85} name="C"  />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ── Activity bar chart ── */}
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase',
+                      letterSpacing: '0.05em', marginBottom: 8 }}>
+          Activity per period — STR / CMP / CLS
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} barCategoryGap="30%">
+            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+            <XAxis dataKey="_label" interval={xInterval} tick={tickStyle} tickLine={false} axisLine={false} />
+            <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={34} />
+            <Tooltip contentStyle={GRAPH_TOOLTIP_STYLE}
+              formatter={(v, name) => [v > 0 ? v : '—', name]}
+              itemStyle={{ fontSize: 11 }} />
+            <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+            <Bar dataKey="str_plan" fill={STATUS_COLOR.U}   name="STR" radius={[2,2,0,0]} />
+            <Bar dataKey="cmp_plan" fill={STATUS_COLOR.C}   name="CMP" radius={[2,2,0,0]} />
+            <Bar dataKey="cls_plan" fill={STATUS_COLOR.OUT} name="CLS" radius={[2,2,0,0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+    </div>
+  )
+}
+
 // ─── UtilizationPanel ────────────────────────────────────────────────────────
 
 function UtilizationPanel({ phases }) {
-  if (!phases.length) return null
+  if (!phases.length) return (
+    <div style={{ color: '#9ca3af', fontSize: 12 }}>No utilization data. Run a simulation first.</div>
+  )
+
   const color = pct => pct === null ? { bg: '#f3f4f6', bar: '#d1d5db', text: '#9ca3af', label: 'no splits' }
     : pct > 95  ? { bg: '#fee2e2', bar: '#fca5a5', text: '#991b1b', label: `${pct}%` }
     : pct < 70  ? { bg: '#fef9c3', bar: '#fde047', text: '#854d0e', label: `${pct}%` }
     :             { bg: '#dcfce7', bar: '#86efac', text: '#166534', label: `${pct}%` }
 
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase',
-                    letterSpacing: '0.05em', marginBottom: 5 }}>Phase utilization</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {phases.map(p => {
-          const { bar, text, label } = color(p.utilization_pct)
-          return (
-            <div key={p.phase_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 260, fontSize: 11, color: '#374151', overflow: 'hidden',
-                            textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}
-                   title={p.phase_name}>{p.phase_name}</div>
-              <div style={{ flex: 1, height: 12, background: '#f3f4f6', borderRadius: 2,
-                            overflow: 'hidden', minWidth: 60 }}>
-                <div style={{ width: `${Math.min(p.utilization_pct ?? 0, 100)}%`, height: '100%',
-                              background: bar, transition: 'width .3s', borderRadius: 2 }} />
-              </div>
-              <div style={{ width: 52, textAlign: 'right', fontSize: 11, fontWeight: 600, color: text, flexShrink: 0 }}>
-                {label}
-              </div>
-              <div style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0 }}>
-                {p.real_count}r+{p.sim_count}s/{p.projected_count}p
-              </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {phases.map(p => {
+        const { bar, text, label } = color(p.utilization_pct)
+        return (
+          <div key={p.phase_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 260, fontSize: 11, color: '#374151', overflow: 'hidden',
+                          textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 0 }}
+                 title={p.phase_name}>{p.phase_name}</div>
+            <div style={{ flex: 1, height: 12, background: '#f3f4f6', borderRadius: 2,
+                          overflow: 'hidden', minWidth: 60 }}>
+              <div style={{ width: `${Math.min(p.utilization_pct ?? 0, 100)}%`, height: '100%',
+                            background: bar, transition: 'width .3s', borderRadius: 2 }} />
             </div>
-          )
-        })}
-      </div>
+            <div style={{ width: 52, textAlign: 'right', fontSize: 11, fontWeight: 600, color: text, flexShrink: 0 }}>
+              {label}
+            </div>
+            <div style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0 }}>
+              {p.real_count}r+{p.sim_count}s/{p.projected_count}p
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -252,16 +319,11 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved }) {
     try {
       const res = await fetch(`${API}/entitlement-groups/${entGroupId}/ledger-config`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date_paper: paperVal || null,
-          date_ent:   entVal   || null,
-        }),
+        body: JSON.stringify({ date_paper: paperVal || null, date_ent: entVal || null }),
       })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
-      if (data.lots_entitled > 0) {
-        setLotsMsg(`${data.lots_entitled} lot${data.lots_entitled === 1 ? '' : 's'} entitled`)
-      }
+      if (data.lots_entitled > 0) setLotsMsg(`${data.lots_entitled} lot${data.lots_entitled === 1 ? '' : 's'} entitled`)
       onSaved()
     } catch (e) { setErr(String(e)) }
     finally { setSaving(false) }
@@ -279,28 +341,22 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved }) {
         <input type="text" placeholder="YYYY-MM-DD" value={paperVal}
           onChange={e => { setPaperVal(e.target.value); setErr(null); setLotsMsg(null) }}
           style={inputStyle(datePaper, paperVal)} />
-        {!dirty && datePaper && (
-          <span style={{ fontSize: 11, color: '#9ca3af' }}>Ledger starts {fmt(datePaper)}</span>
-        )}
+        {!dirty && datePaper && <span style={{ fontSize: 11, color: '#9ca3af' }}>Ledger starts {fmt(datePaper)}</span>}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>Entitlements Date</span>
         <input type="text" placeholder="YYYY-MM-DD" value={entVal}
           onChange={e => { setEntVal(e.target.value); setErr(null); setLotsMsg(null) }}
           style={inputStyle(dateEnt, entVal)} />
-        {!dirty && dateEnt && (
-          <span style={{ fontSize: 11, color: '#9ca3af' }}>Entitled {fmt(dateEnt)}</span>
-        )}
+        {!dirty && dateEnt && <span style={{ fontSize: 11, color: '#9ca3af' }}>Entitled {fmt(dateEnt)}</span>}
       </div>
       {dirty && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button disabled={saving} onClick={save}
-            style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-                     background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
-                     cursor: saving ? 'default' : 'pointer' }}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+        <button disabled={saving} onClick={save}
+          style={{ alignSelf: 'flex-start', padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
+                   background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
+                   cursor: saving ? 'default' : 'pointer' }}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
       )}
       {lotsMsg && <span style={{ fontSize: 11, color: '#16a34a' }}>{lotsMsg}</span>}
       {err && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
@@ -315,32 +371,22 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
 
   const isDirty = Object.keys(edits).length > 0
 
-  function valFor(key) {
-    return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '')
-  }
-
+  function valFor(key) { return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '') }
   function setVal(key, v) { setEdits(p => ({ ...p, [key]: v })) }
 
   async function save() {
     setSaving(true); setErr(null)
     const body = {}
-    // Floor tolerances
     for (const key of FLOOR_KEYS) {
-      const v = valFor(key)
-      body[key] = v === '' ? null : parseInt(v, 10)
+      const v = valFor(key); body[key] = v === '' ? null : parseInt(v, 10)
     }
-    // Delivery scheduling
     for (const key of ['delivery_window_start', 'delivery_window_end', 'max_deliveries_per_year']) {
-      const v = valFor(key)
-      body[key] = v === '' ? null : parseInt(v, 10)
+      const v = valFor(key); body[key] = v === '' ? null : parseInt(v, 10)
     }
-    // auto_schedule_enabled: store as bool or null
     const asVal = valFor('auto_schedule_enabled')
     body['auto_schedule_enabled'] = asVal === '' ? null : asVal === true || asVal === 'true'
-    // Build lag fallbacks
     for (const key of ['default_cmp_lag_days', 'default_cls_lag_days']) {
-      const v = valFor(key)
-      body[key] = v === '' ? null : parseInt(v, 10)
+      const v = valFor(key); body[key] = v === '' ? null : parseInt(v, 10)
     }
     try {
       const res = await fetch(`${API}/entitlement-groups/${entGroupId}/delivery-config`, {
@@ -348,8 +394,7 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
         body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error(await res.text())
-      setEdits({})
-      onSaved()
+      setEdits({}); onSaved()
     } catch (e) { setErr(String(e)) }
     finally { setSaving(false) }
   }
@@ -358,28 +403,14 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
     <input key={key} type="number" min="0" placeholder={placeholder}
       value={valFor(key)}
       onChange={e => setVal(key, e.target.value)}
-      style={{ width, padding: '2px 5px', fontSize: 12, borderRadius: 4,
-               border: `1px solid ${edits[key] !== undefined ? '#2563eb' : '#d1d5db'}`,
-               textAlign: 'right' }} />
-  )
-
-  const saveBtn = isDirty && (
-    <button disabled={saving} onClick={save}
-      style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-               background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
-               cursor: saving ? 'default' : 'pointer' }}>
-      {saving ? 'Saving…' : 'Save'}
-    </button>
+      style={{ width, padding: '2px 5px', fontSize: 12, borderRadius: 4, textAlign: 'right',
+               border: `1px solid ${edits[key] !== undefined ? '#2563eb' : '#d1d5db'}` }} />
   )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-
-      {/* Delivery scheduling */}
       <div>
-        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
-          Delivery scheduling
-        </div>
+        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>Delivery scheduling</div>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
             <span style={{ color: '#6b7280' }}>Window start (mo)</span>
@@ -403,14 +434,10 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
           </label>
         </div>
       </div>
-
-      {/* Build lag fallback constants */}
       <div>
         <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
           Build lag fallbacks
-          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>
-            used when no empirical curve exists for a lot type
-          </span>
+          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>used when no empirical curve exists</span>
         </div>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
@@ -423,14 +450,10 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
           </label>
         </div>
       </div>
-
-      {/* Inventory floor tolerances */}
       <div>
         <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
           Inventory floor tolerances
-          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>
-            highlighted orange in ledger when below floor
-          </span>
+          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>highlighted orange when below floor</span>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           {FLOOR_KEYS.map(key => (
@@ -441,9 +464,15 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
           ))}
         </div>
       </div>
-
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {saveBtn}
+        {isDirty && (
+          <button disabled={saving} onClick={save}
+            style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
+                     background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
+                     cursor: saving ? 'default' : 'pointer' }}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        )}
         {err && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
       </div>
     </div>
@@ -454,9 +483,7 @@ function StartsTargetsSection({ entGroupId, params, onSaved }) {
   const [edits, setEdits] = useState({})
 
   if (!params.length) return (
-    <div style={{ fontSize: 12, color: '#9ca3af' }}>
-      No starts targets to configure. Run a simulation first.
-    </div>
+    <div style={{ fontSize: 12, color: '#9ca3af' }}>No starts targets to configure. Run a simulation first.</div>
   )
 
   return (
@@ -522,24 +549,18 @@ function StartsTargetsSection({ entGroupId, params, onSaved }) {
   )
 }
 
-// ─── LotLedger ───────────────────────────────────────────────────────────────
-
-const STATUS_COLOR = { OUT:'#6b7280', C:'#059669', UC:'#0284c7', H:'#d97706', U:'#7c3aed', D:'#374151', E:'#b45309', P:'#9ca3af' }
-
 // ─── DeliveryScheduleTab ─────────────────────────────────────────────────────
 
 function DeliveryScheduleTab({ rows, loading }) {
   if (loading) return <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>
   if (!rows.length) return <div style={{ color: '#9ca3af', fontSize: 12 }}>No delivery events found. Run a simulation first.</div>
 
-  // Assign alternating background per event group for visual separation
   const eventOrder = [...new Set(rows.map(r => r.delivery_event_id))]
   const eventIdx   = new Map(eventOrder.map((id, i) => [id, i]))
   const rowBg = r => eventIdx.get(r.delivery_event_id) % 2 === 0 ? '#fff' : '#f9fafb'
 
   const stickyTh = (align = 'right', extra = {}) => ({
-    ...thS(align, extra),
-    position: 'sticky', top: 0, zIndex: 2,
+    ...thS(align, extra), position: 'sticky', top: 0, zIndex: 2,
   })
 
   return (
@@ -566,13 +587,9 @@ function DeliveryScheduleTab({ rows, loading }) {
               <td style={tdS('left')}>
                 {r.is_locked
                   ? <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 10,
-                                   fontSize: 11, fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>
-                      Locked
-                    </span>
+                                   fontSize: 11, fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>Locked</span>
                   : <span style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 10,
-                                   fontSize: 11, fontWeight: 500, background: '#f3f4f6', color: '#6b7280' }}>
-                      Auto-scheduled
-                    </span>
+                                   fontSize: 11, fontWeight: 500, background: '#f3f4f6', color: '#6b7280' }}>Auto-scheduled</span>
                 }
               </td>
               <td style={tdS('left')}>{r.dev_name}</td>
@@ -581,12 +598,8 @@ function DeliveryScheduleTab({ rows, loading }) {
               <td style={tdS('right', { borderLeft: '2px solid #d1d5db' })}>
                 {r.d_end != null ? r.d_end : <span style={{ color: '#e5e7eb' }}>—</span>}
               </td>
-              <td style={tdS()}>
-                {r.u_end != null ? r.u_end : <span style={{ color: '#e5e7eb' }}>—</span>}
-              </td>
-              <td style={tdS()}>
-                {r.uc_end != null ? r.uc_end : <span style={{ color: '#e5e7eb' }}>—</span>}
-              </td>
+              <td style={tdS()}>{r.u_end != null ? r.u_end : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+              <td style={tdS()}>{r.uc_end != null ? r.uc_end : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
             </tr>
           ))}
         </tbody>
@@ -597,6 +610,8 @@ function DeliveryScheduleTab({ rows, loading }) {
     </div>
   )
 }
+
+// ─── LotLedger ───────────────────────────────────────────────────────────────
 
 function LotLedger({ lots, loading }) {
   const [devFilter, setDevFilter] = useState('all')
@@ -688,25 +703,22 @@ export default function SimulationView() {
   const [loading, setLoading]       = useState(false)
   const [missingSplits, setMissingSplits] = useState([])
   const [staleParams, setStaleParams]     = useState([])
-  const [deliveryConfig, setDeliveryConfig]   = useState(null)
-  const [ledgerConfig, setLedgerConfig]       = useState(null)
+  const [deliveryConfig, setDeliveryConfig] = useState(null)
+  const [ledgerConfig, setLedgerConfig]     = useState(null)
   const [view, setView]             = useState('ledger')
+  const [ledgerSubView, setLedgerSubView] = useState('table')   // 'table' | 'graph'
   const [lots, setLots]             = useState([])
   const [lotsLoading, setLotsLoading] = useState(false)
-  const [deliverySchedule, setDeliverySchedule]         = useState([])
+  const [deliverySchedule, setDeliverySchedule]               = useState([])
   const [deliveryScheduleLoading, setDeliveryScheduleLoading] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  // Ledger controls
-  const [selectedDevIds, setSelectedDevIds] = useState(null)   // null = all
+  const [selectedDevIds, setSelectedDevIds] = useState(null)
   const [period, setPeriod]                 = useState('monthly')
 
-  // Dev list derived from loaded ledger data
   const devList = useMemo(
     () => [...new Map(byDev.map(r => [r.dev_id, r.dev_name])).entries()].map(([id, name]) => ({ id, name })),
     [byDev],
   )
-
-  // ── Fetch helpers ──────────────────────────────────────────────────────────
 
   const loadLedger = useCallback((id) => {
     setLoading(true)
@@ -727,10 +739,7 @@ export default function SimulationView() {
       fetch(`${API}/entitlement-groups/${id}/delivery-config`).then(r => r.json()),
       fetch(`${API}/entitlement-groups/${id}/ledger-config`).then(r => r.json()),
     ])
-      .then(([dc, lc]) => {
-        setDeliveryConfig(dc)
-        setLedgerConfig(lc)
-      })
+      .then(([dc, lc]) => { setDeliveryConfig(dc); setLedgerConfig(lc) })
       .catch(() => {})
   }, [])
 
@@ -791,13 +800,11 @@ export default function SimulationView() {
       setRunStatus({ ok: true, iterations: data.iterations, elapsed_ms: data.elapsed_ms })
       setRunErrors(data.errors || [])
       loadLedger(entGroupId)
-      if (view === 'lots') loadLots(entGroupId)
+      if (view === 'lots')     loadLots(entGroupId)
       if (view === 'delivery') loadDeliverySchedule(entGroupId)
       checkSplits(entGroupId)
     } catch (e) { setRunStatus({ ok: false, error: e.message }) }
   }
-
-  // ── Build ledger rows ──────────────────────────────────────────────────────
 
   const ledgerRows = useMemo(() => buildLedgerRows(
     byDev, selectedDevIds, period, ledgerConfig?.date_paper ?? null, utilization,
@@ -809,8 +816,6 @@ export default function SimulationView() {
   }, [utilization, selectedDevIds])
 
   const hasData = byDev.length > 0
-
-  // ── Dev filter pill toggle ─────────────────────────────────────────────────
 
   function toggleDev(devId) {
     if (selectedDevIds === null) {
@@ -873,7 +878,6 @@ export default function SimulationView() {
         <div style={{ marginBottom: 16, padding: '14px 16px', background: '#f8fafc',
                       border: '1px solid #e2e8f0', borderRadius: 8,
                       display: 'flex', flexDirection: 'column', gap: 14 }}>
-
           {ledgerConfig !== null && (
             <LedgerConfigSection
               entGroupId={entGroupId}
@@ -882,22 +886,12 @@ export default function SimulationView() {
               onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
             />
           )}
-
           <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
-            <StartsTargetsSection
-              entGroupId={entGroupId}
-              params={staleParams}
-              onSaved={() => checkSplits(entGroupId)}
-            />
+            <StartsTargetsSection entGroupId={entGroupId} params={staleParams} onSaved={() => checkSplits(entGroupId)} />
           </div>
-
           {deliveryConfig !== null && (
             <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
-              <DeliveryConfigSection
-                entGroupId={entGroupId}
-                deliveryConfig={deliveryConfig}
-                onSaved={() => loadConfig(entGroupId)}
-              />
+              <DeliveryConfigSection entGroupId={entGroupId} deliveryConfig={deliveryConfig} onSaved={() => loadConfig(entGroupId)} />
             </div>
           )}
         </div>
@@ -927,12 +921,13 @@ export default function SimulationView() {
         </div>
       )}
 
-      {/* ── View toggle ── */}
+      {/* ── View tabs ── */}
       <div style={{ display: 'flex', gap: 2, marginBottom: 12 }}>
         {[
-          ['ledger',   'Monthly Ledger'],
-          ['lots',     'Lot List'],
-          ['delivery', 'Delivery Schedule Audit'],
+          ['ledger',      'Monthly Ledger'],
+          ['lots',        'Lot List'],
+          ['delivery',    'Delivery Schedule'],
+          ['utilization', 'Phase Utilization'],
         ].map(([v, label]) => (
           <button key={v} onClick={() => {
             setView(v)
@@ -951,35 +946,27 @@ export default function SimulationView() {
       {view === 'ledger' && (
         <>
           {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
-
           {!loading && !hasData && (
             <div style={{ color: '#9ca3af', fontSize: 12 }}>No ledger data. Run a simulation to populate results.</div>
           )}
-
           {!loading && hasData && (
             <>
               {/* Controls row */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
-
                 {/* Dev filter pills */}
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: '#9ca3af', marginRight: 2 }}>Dev</span>
-                  <button
-                    onClick={() => setSelectedDevIds(null)}
-                    style={{ padding: '3px 10px', fontSize: 11, borderRadius: 12,
-                             border: '1px solid',
+                  <button onClick={() => setSelectedDevIds(null)}
+                    style={{ padding: '3px 10px', fontSize: 11, borderRadius: 12, border: '1px solid',
                              borderColor: selectedDevIds === null ? '#1e40af' : '#d1d5db',
                              background: selectedDevIds === null ? '#dbeafe' : '#fff',
                              color: selectedDevIds === null ? '#1e40af' : '#374151',
-                             cursor: 'pointer', fontWeight: selectedDevIds === null ? 600 : 400 }}>
-                    All
-                  </button>
+                             cursor: 'pointer', fontWeight: selectedDevIds === null ? 600 : 400 }}>All</button>
                   {devList.map(({ id, name }) => {
                     const active = selectedDevIds !== null && selectedDevIds.includes(id)
                     return (
                       <button key={id} onClick={() => toggleDev(id)}
-                        style={{ padding: '3px 10px', fontSize: 11, borderRadius: 12,
-                                 border: '1px solid',
+                        style={{ padding: '3px 10px', fontSize: 11, borderRadius: 12, border: '1px solid',
                                  borderColor: active ? '#1e40af' : '#d1d5db',
                                  background: active ? '#dbeafe' : '#fff',
                                  color: active ? '#1e40af' : '#374151',
@@ -991,14 +978,26 @@ export default function SimulationView() {
                 </div>
 
                 {/* Period toggle */}
-                <div style={{ display: 'flex', gap: 2, marginLeft: 8 }}>
+                <div style={{ display: 'flex', gap: 2 }}>
                   {[['monthly','M'],['quarterly','Q'],['annual','Y']].map(([v, label]) => (
                     <button key={v} onClick={() => setPeriod(v)}
-                      style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4,
-                               border: '1px solid #d1d5db', cursor: 'pointer',
-                               background: period === v ? '#1e40af' : '#f9fafb',
-                               color: period === v ? '#fff' : '#374151',
-                               fontWeight: period === v ? 600 : 400 }}>
+                      style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: '1px solid #d1d5db',
+                               cursor: 'pointer', background: period === v ? '#1e40af' : '#f9fafb',
+                               color: period === v ? '#fff' : '#374151', fontWeight: period === v ? 600 : 400 }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Ledger / Graph sub-toggle */}
+                <div style={{ display: 'flex', gap: 0, borderRadius: 4, overflow: 'hidden',
+                              border: '1px solid #d1d5db', flexShrink: 0 }}>
+                  {[['table','Ledger'],['graph','Graph']].map(([v, label]) => (
+                    <button key={v} onClick={() => setLedgerSubView(v)}
+                      style={{ padding: '3px 12px', fontSize: 11, border: 'none', cursor: 'pointer',
+                               background: ledgerSubView === v ? '#1e40af' : '#f9fafb',
+                               color: ledgerSubView === v ? '#fff' : '#374151',
+                               fontWeight: ledgerSubView === v ? 600 : 400 }}>
                       {label}
                     </button>
                   ))}
@@ -1010,21 +1009,27 @@ export default function SimulationView() {
                 </span>
               </div>
 
-              <LedgerTable rows={ledgerRows} floors={deliveryConfig} period={period} />
-              <UtilizationPanel phases={filteredUtilization} />
+              {ledgerSubView === 'table'
+                ? <LedgerTable rows={ledgerRows} floors={deliveryConfig} period={period} />
+                : <LedgerGraph rows={ledgerRows} period={period} />
+              }
             </>
           )}
         </>
       )}
 
       {/* ── Lot List ── */}
-      {view === 'lots' && (
-        <LotLedger lots={lots} loading={lotsLoading} />
-      )}
+      {view === 'lots' && <LotLedger lots={lots} loading={lotsLoading} />}
 
-      {/* ── Delivery Schedule Audit ── */}
-      {view === 'delivery' && (
-        <DeliveryScheduleTab rows={deliverySchedule} loading={deliveryScheduleLoading} />
+      {/* ── Delivery Schedule ── */}
+      {view === 'delivery' && <DeliveryScheduleTab rows={deliverySchedule} loading={deliveryScheduleLoading} />}
+
+      {/* ── Phase Utilization ── */}
+      {view === 'utilization' && (
+        <>
+          {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
+          {!loading && <UtilizationPanel phases={filteredUtilization} />}
+        </>
       )}
     </div>
   )

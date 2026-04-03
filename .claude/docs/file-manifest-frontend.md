@@ -19,8 +19,8 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/SimulationView.jsx
-- Owns: Simulation run trigger, monthly ledger view (by-dev), lot ledger tab, delivery schedule audit tab, phase utilization bars, settings panel: LedgerConfigSection (Plan Start Date + Entitlements Date), StartsTargetsSection (annual_starts_target + max_starts_per_month per dev), DeliveryConfigSection (delivery scheduling params + build lag fallbacks + inventory floor tolerances). EntitlementEventsSection removed — sim_entitlement_events table dropped.
-- Imports: react (useState, useEffect, useCallback, useMemo)
+- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); Monthly Ledger has Ledger/Graph sub-toggle (ledgerSubView state); LedgerGraph component: stacked AreaChart for P/E/D/H/U/UC/C inventory + BarChart for STR/CMP/CLS activity; UtilizationPanel in Phase Utilization tab; settings panel: LedgerConfigSection (Plan Start Date + Entitlements Date), StartsTargetsSection (annual_starts_target + max_starts_per_month per dev), DeliveryConfigSection (delivery scheduling params + build lag fallbacks + inventory floor tolerances). EntitlementEventsSection removed — sim_entitlement_events table dropped.
+- Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.)
 - Imported by: App.jsx
 - Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params)
 - Last commit: 2026-04-03
