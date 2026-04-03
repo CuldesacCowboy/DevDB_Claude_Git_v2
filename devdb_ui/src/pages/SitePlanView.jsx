@@ -53,6 +53,11 @@ function SitePlanViewInner() {
   const [phasePanelCollapsed, setPhasePanelCollapsed]       = useState(false)
   const [unassignedBarCollapsed, setUnassignedBarCollapsed] = useState(false)
 
+  // Right panel tab + unit counts
+  const [rightPanelTab, setRightPanelTab]             = useState('assignment')  // 'assignment' | 'unit-counts'
+  const [unitCountsSubtotal, setUnitCountsSubtotal]   = useState(false)         // false=totals on map, true=by-type on map
+  const [editProjected, setEditProjected]             = useState(null)           // {phase_id, lot_type_id, value, sx, sy}
+
   // Building groups
   const [showBuildingGroups, setShowBuildingGroups] = useState(() => {
     try { return localStorage.getItem('devdb_siteplan_show_bg') === 'true' } catch { return false }
@@ -559,6 +564,29 @@ function SitePlanViewInner() {
     } catch { /* ignore */ }
   }
 
+  // ─── Unit counts helpers ────────────────────────────────────────────────────
+
+  async function handleProjectedCountChange(phaseId, lotTypeId, newValue) {
+    const res = await fetch(`${API}/phases/${phaseId}/lot-type/${lotTypeId}/projected`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projected_count: newValue }),
+    })
+    if (res.ok) {
+      const data = await res.json()  // {phase_id, lot_type_id, projected_count, actual, total}
+      setPhases(prev => prev.map(ph => {
+        if (ph.phase_id !== phaseId) return ph
+        return {
+          ...ph,
+          by_lot_type: (ph.by_lot_type || []).map(lt => {
+            if (lt.lot_type_id !== lotTypeId) return lt
+            return { ...lt, projected: data.projected_count, actual: data.actual, total: data.total }
+          }),
+        }
+      }))
+    }
+  }
+
   // ─── Building group helpers ─────────────────────────────────────────────────
 
   async function loadBuildingGroups() {
@@ -1005,6 +1033,12 @@ function SitePlanViewInner() {
               onBuildingGroupDrawn={handleBuildingGroupDrawn}
               onBuildingGroupSelect={handleBuildingGroupSelect}
               onBuildingGroupContextMenu={handleBuildingGroupContextMenu}
+              rightPanelTab={rightPanelTab}
+              unitCountsSubtotal={unitCountsSubtotal}
+              phasesData={phases}
+              onEditProjected={(phase_id, lot_type_id, value, sx, sy) =>
+                setEditProjected({ phase_id, lot_type_id, value, sx, sy })
+              }
             />
           )}
 
@@ -1108,6 +1142,36 @@ function SitePlanViewInner() {
             </div>
           )}
 
+          {/* Floating projected-count editor — opens when user clicks a p-value on the map */}
+          {editProjected && (
+            <div
+              style={{
+                position: 'absolute',
+                left: Math.min(editProjected.sx + 8, window.innerWidth - 180),
+                top: Math.max(8, editProjected.sy - 52),
+                zIndex: 60,
+                background: '#fff',
+                borderRadius: 8,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.28)',
+                padding: '10px 12px',
+                border: '2px solid #0d9488',
+                display: 'flex', flexDirection: 'column', gap: 6,
+                minWidth: 148,
+              }}
+            >
+              <div style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>Projected count (p)</div>
+              <ProjectedInput
+                value={editProjected.value}
+                onSave={async (v) => {
+                  setEditProjected(null)
+                  await handleProjectedCountChange(editProjected.phase_id, editProjected.lot_type_id, v)
+                }}
+                onCancel={() => setEditProjected(null)}
+                autoFocus
+              />
+            </div>
+          )}
+
           {/* Floating overlay for click-to-set mode */}
           {mode === 'place' && currentPlacingLot && (
             <div style={{
@@ -1138,36 +1202,68 @@ function SitePlanViewInner() {
           )}
         </div>
 
-        {/* Phase side panel — collapsible */}
+        {/* Right panel — tabbed: Phase Assignment | Unit Counts */}
         {hasPlan && (
-          <PhasePanel
-            phases={phases}
-            phaseColorMap={phaseColorMap}
-            phaseToBoundaryId={phaseToBoundaryId}
-            instrumentColors={instrumentColors}
-            selectedBoundaryId={selectedBoundaryId}
-            unassignedSelectedBoundaryId={unassignedSelectedBoundaryId}
-            assignedPhaseIds={assignedPhaseIds}
-            onSelectBoundary={id => setSelectedBoundaryId(prev => prev === id ? null : id)}
-            onAssignBoundaryToPhase={assignPhaseToBoundary}
-            onUnassign={unassignBoundary}
-            onSwapBoundaries={swapBoundaryAssignments}
-            onInstrumentColorChange={handleInstrumentColorChange}
-            collapsed={phasePanelCollapsed}
-            onCollapseToggle={() => setPhasePanelCollapsed(v => !v)}
-          />
-        )}
+          <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, height: '100%', overflow: 'hidden', background: '#fff', borderLeft: '1px solid #e5e7eb' }}>
 
-        {/* Unassigned regions bar — collapsible, to the right of phases panel */}
-        {hasPlan && (
-          <UnassignedRegionsBar
-            boundaries={boundaries}
-            selectedBoundaryId={selectedBoundaryId}
-            onSelectBoundary={id => setSelectedBoundaryId(prev => prev === id ? null : id)}
-            onUnassignBoundary={unassignBoundary}
-            collapsed={unassignedBarCollapsed}
-            onCollapseToggle={() => setUnassignedBarCollapsed(v => !v)}
-          />
+            {/* Tab bar */}
+            <div style={{ display: 'flex', flexShrink: 0, borderBottom: '1px solid #e5e7eb', background: '#f8fafc' }}>
+              {[['assignment', 'Phase Assignment'], ['unit-counts', 'Unit Counts']].map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setRightPanelTab(key)}
+                  style={{
+                    flex: 1, padding: '7px 6px', border: 'none', borderBottom: rightPanelTab === key ? '2px solid #2563eb' : '2px solid transparent',
+                    background: 'transparent', fontSize: 12, fontWeight: rightPanelTab === key ? 600 : 400,
+                    color: rightPanelTab === key ? '#1d4ed8' : '#6b7280', cursor: 'pointer',
+                    transition: 'color 0.15s',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* Assignment tab content */}
+            {rightPanelTab === 'assignment' && (
+              <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                <PhasePanel
+                  phases={phases}
+                  phaseColorMap={phaseColorMap}
+                  phaseToBoundaryId={phaseToBoundaryId}
+                  instrumentColors={instrumentColors}
+                  selectedBoundaryId={selectedBoundaryId}
+                  unassignedSelectedBoundaryId={unassignedSelectedBoundaryId}
+                  assignedPhaseIds={assignedPhaseIds}
+                  onSelectBoundary={id => setSelectedBoundaryId(prev => prev === id ? null : id)}
+                  onAssignBoundaryToPhase={assignPhaseToBoundary}
+                  onUnassign={unassignBoundary}
+                  onSwapBoundaries={swapBoundaryAssignments}
+                  onInstrumentColorChange={handleInstrumentColorChange}
+                  collapsed={phasePanelCollapsed}
+                  onCollapseToggle={() => setPhasePanelCollapsed(v => !v)}
+                />
+                <UnassignedRegionsBar
+                  boundaries={boundaries}
+                  selectedBoundaryId={selectedBoundaryId}
+                  onSelectBoundary={id => setSelectedBoundaryId(prev => prev === id ? null : id)}
+                  onUnassignBoundary={unassignBoundary}
+                  collapsed={unassignedBarCollapsed}
+                  onCollapseToggle={() => setUnassignedBarCollapsed(v => !v)}
+                />
+              </div>
+            )}
+
+            {/* Unit counts tab content */}
+            {rightPanelTab === 'unit-counts' && (
+              <UnitCountsPanel
+                phases={phases}
+                unitCountsSubtotal={unitCountsSubtotal}
+                onToggleSubtotal={setUnitCountsSubtotal}
+                onProjectedCountChange={handleProjectedCountChange}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -1581,3 +1677,171 @@ function btn(color, bg, border) {
 }
 
 const btnGray = { fontSize: 12, padding: '4px 10px', borderRadius: 4, border: '1px solid #d1d5db', color: '#374151', background: '#f9fafb', cursor: 'pointer' }
+
+// ─── Unit Counts Panel ────────────────────────────────────────────────────────
+
+function UnitCountsPanel({ phases, unitCountsSubtotal, onToggleSubtotal, onProjectedCountChange }) {
+  // Group phases by instrument (same logic as PhasePanel)
+  const byInstrument = []
+  const instrSeen = {}
+  const noInstrumentPhases = []
+  for (const ph of phases) {
+    if (ph.instrument_id == null) { noInstrumentPhases.push(ph); continue }
+    if (!(ph.instrument_id in instrSeen)) {
+      instrSeen[ph.instrument_id] = byInstrument.length
+      byInstrument.push({
+        instrument_id: ph.instrument_id,
+        instrument_name: ph.instrument_name || `Instrument ${ph.instrument_id}`,
+        dev_name: ph.dev_name,
+        phases: [],
+      })
+    }
+    byInstrument[instrSeen[ph.instrument_id]].phases.push(ph)
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minWidth: 256 }}>
+      {/* Toggle: controls what the map polygons show */}
+      <div style={{ padding: '8px 10px', borderBottom: '1px solid #e5e7eb', background: '#f8fafc', display: 'flex', gap: 6, flexShrink: 0 }}>
+        <button
+          onClick={() => onToggleSubtotal(false)}
+          style={{
+            flex: 1, padding: '4px 6px', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontWeight: !unitCountsSubtotal ? 600 : 400,
+            border: `1px solid ${!unitCountsSubtotal ? '#0d9488' : '#d1d5db'}`,
+            background: !unitCountsSubtotal ? '#f0fdfa' : '#fff',
+            color: !unitCountsSubtotal ? '#0f766e' : '#6b7280',
+          }}
+        >
+          Totals on map
+        </button>
+        <button
+          onClick={() => onToggleSubtotal(true)}
+          style={{
+            flex: 1, padding: '4px 6px', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontWeight: unitCountsSubtotal ? 600 : 400,
+            border: `1px solid ${unitCountsSubtotal ? '#0d9488' : '#d1d5db'}`,
+            background: unitCountsSubtotal ? '#f0fdfa' : '#fff',
+            color: unitCountsSubtotal ? '#0f766e' : '#6b7280',
+          }}
+        >
+          By type on map
+        </button>
+      </div>
+
+      {/* Scrollable phase list */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
+        {byInstrument.map(inst => (
+          <div key={inst.instrument_id} style={{ marginBottom: 4 }}>
+            <div style={{
+              padding: '4px 10px', fontSize: 10, fontWeight: 700, color: '#374151', letterSpacing: '0.04em',
+              background: '#f1f5f9', borderTop: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+              display: 'flex', alignItems: 'baseline', gap: 6,
+            }}>
+              {inst.instrument_name}
+              {inst.dev_name && <span style={{ fontWeight: 400, color: '#9ca3af', fontSize: 10 }}>{inst.dev_name}</span>}
+            </div>
+            {inst.phases.map(ph => (
+              <PhaseUnitBlock key={ph.phase_id} phase={ph} onProjectedCountChange={onProjectedCountChange} />
+            ))}
+          </div>
+        ))}
+        {noInstrumentPhases.length > 0 && (
+          <div>
+            <div style={{
+              padding: '4px 10px', fontSize: 10, fontWeight: 700, color: '#9ca3af',
+              background: '#f1f5f9', borderTop: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+            }}>
+              Unassigned phases
+            </div>
+            {noInstrumentPhases.map(ph => (
+              <PhaseUnitBlock key={ph.phase_id} phase={ph} onProjectedCountChange={onProjectedCountChange} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PhaseUnitBlock({ phase, onProjectedCountChange }) {
+  const byLt = phase.by_lot_type || []
+  const totalR = byLt.reduce((s, lt) => s + (lt.actual || 0), 0)
+  const totalP = byLt.reduce((s, lt) => s + (lt.projected || 0), 0)
+  const totalT = byLt.reduce((s, lt) => s + (lt.total || 0), 0)
+
+  return (
+    <div style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9' }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#1e293b', marginBottom: byLt.length ? 5 : 0 }}>
+        {phase.phase_name}
+      </div>
+      {!byLt.length ? (
+        <div style={{ fontSize: 10, color: '#9ca3af' }}>No product types</div>
+      ) : (
+        <>
+          {/* Column headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 2, marginBottom: 3 }}>
+            <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Type</div>
+            <div style={{ fontSize: 9, color: '#64748b', fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>r</div>
+            <div style={{ fontSize: 9, color: '#0f766e', fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>p</div>
+            <div style={{ fontSize: 9, color: '#374151', fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>t</div>
+          </div>
+          {/* Lot type rows */}
+          {byLt.map(lt => (
+            <div key={lt.lot_type_id} style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 2, marginBottom: 2, alignItems: 'center' }}>
+              <div style={{ fontSize: 11, color: '#475569' }}>{lt.lot_type_short}</div>
+              <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center' }}>{lt.actual ?? 0}</div>
+              <div style={{ textAlign: 'center' }}>
+                <ProjectedInput
+                  value={lt.projected ?? 0}
+                  onSave={v => onProjectedCountChange(phase.phase_id, lt.lot_type_id, v)}
+                />
+              </div>
+              <div style={{ fontSize: 11, color: '#1e293b', textAlign: 'center', fontWeight: 600 }}>{lt.total ?? 0}</div>
+            </div>
+          ))}
+          {/* Total row (only shown when multiple lot types) */}
+          {byLt.length > 1 && (
+            <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 2, marginTop: 3, paddingTop: 3, borderTop: '1px solid #e2e8f0', alignItems: 'center' }}>
+              <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</div>
+              <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', fontWeight: 600 }}>{totalR}</div>
+              <div style={{ fontSize: 11, color: '#0f766e', textAlign: 'center', fontWeight: 600 }}>{totalP}</div>
+              <div style={{ fontSize: 11, color: '#1e293b', textAlign: 'center', fontWeight: 700 }}>{totalT}</div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// Shared editable projected-count input used in both UnitCountsPanel and the floating map editor.
+function ProjectedInput({ value, onSave, onCancel, autoFocus }) {
+  const [local, setLocal] = useState(String(value ?? 0))
+  // Sync when parent value changes (another editor may have saved the same field)
+  useEffect(() => { setLocal(String(value ?? 0)) }, [value])
+
+  function commit() {
+    const n = parseInt(local, 10)
+    if (!isNaN(n) && n >= 0 && n !== value) onSave(n)
+    else setLocal(String(value ?? 0))
+  }
+
+  return (
+    <input
+      type="number"
+      value={local}
+      min={0}
+      autoFocus={autoFocus}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+        if (e.key === 'Escape') { setLocal(String(value ?? 0)); onCancel?.(); e.currentTarget.blur() }
+      }}
+      style={{
+        width: autoFocus ? 72 : 34, textAlign: 'center', fontSize: autoFocus ? 14 : 11,
+        border: '1px solid #0d9488', borderRadius: 4, padding: autoFocus ? '4px 6px' : '1px 2px',
+        color: '#0f766e', fontWeight: 600, background: '#f0fdfa', outline: 'none',
+      }}
+    />
+  )
+}

@@ -107,6 +107,11 @@ export default function PdfCanvas({
   onBuildingGroupDrawn,       // (polygon:[{x,y}]) => void
   onBuildingGroupSelect,      // (building_group_id) => void
   onBuildingGroupContextMenu, // (building_group_id, svgX, svgY) => void
+  // Unit counts overlay props
+  rightPanelTab = 'assignment', // 'assignment' | 'unit-counts'
+  unitCountsSubtotal = false,   // false=totals on polygons, true=per-lot-type rows + editable p
+  phasesData = [],              // phases array with by_lot_type from SitePlanView
+  onEditProjected,              // (phase_id, lot_type_id, current_p, svgX, svgY) => void
 }) {
   const canvasRef    = useRef(null)
   const containerRef = useRef(null)
@@ -1288,6 +1293,112 @@ export default function PdfCanvas({
                 fill="rgba(13,148,136,0.5)" stroke="#0d9488" strokeWidth={1.5}
                 style={{ pointerEvents: 'none' }} />
             )}
+
+            {/* ── Unit count overlays ── */}
+            {rightPanelTab === 'unit-counts' && cssDims && boundaries.map(b => {
+              if (!b.phase_id) return null
+              const phaseData = phasesData.find(p => p.phase_id === b.phase_id)
+              if (!phaseData) return null
+
+              const byLt = (phaseData.by_lot_type || []).filter(lt => (lt.actual || 0) > 0 || (lt.projected || 0) > 0)
+
+              const pts   = JSON.parse(b.polygon_json)
+              const svg   = pts.map(p => normToScreen(p.x, p.y))
+              const cx    = svg.reduce((s,p) => s+p.x, 0) / svg.length
+              const cy    = svg.reduce((s,p) => s+p.y, 0) / svg.length
+
+              const totalR = byLt.reduce((s,lt) => s+(lt.actual||0), 0)
+              const totalP = byLt.reduce((s,lt) => s+(lt.projected||0), 0)
+              const totalT = byLt.reduce((s,lt) => s+(lt.total||0), 0)
+
+              const fs     = Math.max(8, 10.5 / zoom)
+              const lineH  = fs * 1.65
+              const charW  = fs * 0.6   // monospace approximation
+
+              if (!unitCountsSubtotal) {
+                // ── Totals mode ─────────────────────────────────
+                const label = `r:${totalR}  p:${totalP}  t:${totalT}`
+                const bw = label.length * charW + 10
+                return (
+                  <g key={`uc_${b.boundary_id}`} style={{ pointerEvents: 'none' }}>
+                    <rect x={cx - bw/2} y={cy - fs * 0.85} width={bw} height={fs * 1.35}
+                      rx={3} fill="rgba(255,255,255,0.84)" />
+                    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
+                      fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="600"
+                      style={{ userSelect: 'none' }}>
+                      {label}
+                    </text>
+                  </g>
+                )
+              }
+
+              // ── Subtotal by product type ─────────────────────
+              if (!byLt.length) return null
+              const rowCount = byLt.length
+              const maxLabelLen = Math.max(...byLt.map(lt => `${lt.lot_type_short}: r:${lt.actual||0}  p:${lt.projected||0}  t:${lt.total||0}`.length))
+              const boxW  = maxLabelLen * charW + 12
+              const boxH  = rowCount * lineH + 6
+              const startY = cy - boxH / 2 + lineH * 0.5
+
+              return (
+                <g key={`uc_${b.boundary_id}`}>
+                  {/* Background card */}
+                  <rect x={cx - boxW/2 - 2} y={startY - lineH * 0.75}
+                    width={boxW + 4} height={boxH}
+                    rx={4} fill="rgba(255,255,255,0.88)"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                  {byLt.map((lt, i) => {
+                    const rowY   = startY + i * lineH
+                    const prefix = `${lt.lot_type_short}: r:${lt.actual||0}  `
+                    const pText  = `p:${lt.projected||0}`
+                    const suffix = `  t:${lt.total||0}`
+                    const prefixW = prefix.length * charW
+                    const pW      = pText.length  * charW
+                    const startX  = cx - (prefix.length + pText.length + suffix.length) * charW / 2
+
+                    return (
+                      <g key={lt.lot_type_id}
+                        style={{ cursor: 'pointer', pointerEvents: 'all' }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onEditProjected?.(b.phase_id, lt.lot_type_id, lt.projected||0, cx, rowY + lineH * 0.4)
+                        }}
+                      >
+                        {/* Hit area */}
+                        <rect x={cx - boxW/2} y={rowY - lineH * 0.72} width={boxW} height={lineH}
+                          fill="transparent" />
+                        {/* Gray prefix: "SF: r:5  " */}
+                        <text x={startX} y={rowY} dominantBaseline="auto"
+                          fontFamily="monospace" fontSize={fs} fill="#64748b"
+                          stroke="rgba(255,255,255,0.8)" strokeWidth={2/zoom} paintOrder="stroke"
+                          style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                          {prefix}
+                        </text>
+                        {/* Teal p value */}
+                        <text x={startX + prefixW} y={rowY} dominantBaseline="auto"
+                          fontFamily="monospace" fontSize={fs} fill="#0f766e" fontWeight="700"
+                          stroke="rgba(255,255,255,0.8)" strokeWidth={2/zoom} paintOrder="stroke"
+                          style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                          {pText}
+                        </text>
+                        {/* Underline under p value */}
+                        <line x1={startX + prefixW} y1={rowY + fs * 0.18}
+                          x2={startX + prefixW + pW} y2={rowY + fs * 0.18}
+                          stroke="#0d9488" strokeWidth={Math.max(0.8, 1.2/zoom)} />
+                        {/* Dark suffix: "  t:10" */}
+                        <text x={startX + prefixW + pW} y={rowY} dominantBaseline="auto"
+                          fontFamily="monospace" fontSize={fs} fill="#374151"
+                          stroke="rgba(255,255,255,0.8)" strokeWidth={2/zoom} paintOrder="stroke"
+                          style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                          {suffix}
+                        </text>
+                      </g>
+                    )
+                  })}
+                </g>
+              )
+            })}
 
             {/* ── Lot markers ── */}
             {cssDims && Object.entries(lotPositions).map(([lotIdStr, pos]) => {
