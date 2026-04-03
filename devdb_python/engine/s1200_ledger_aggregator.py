@@ -9,6 +9,11 @@ Rules:   Bucket logic per D-006: highest reached milestone determines status.
          D_end per D-140: date_dev set AND date_td null or future.
          Never returns partial or misleading counts.
          Not Own: any modification to sim_lots or any other table.
+         All date comparisons use DATE_TRUNC('MONTH', ...) to normalize actual dates
+         (which can be any day) to first-of-month, consistent with the calendar_month
+         spine. This prevents mid-month actual dates from appearing in two buckets
+         simultaneously (e.g. date_cls = Jun 15 would satisfy both uc_end's
+         cls_eff > Jun 1 guard AND closed_cumulative's DATE_TRUNC = Jun 1).
 """
 
 from .connection import DBConnection
@@ -73,46 +78,46 @@ def ledger_aggregator(conn: DBConnection) -> None:
                        THEN 1 END) AS cls_plan,
 
             COUNT(CASE WHEN
-                            (l.date_ent IS NULL OR l.date_ent > m.calendar_month)
-                            AND (l.date_dev IS NULL OR l.date_dev > m.calendar_month)
-                            AND (l.date_td_hold IS NULL OR l.date_td_hold > m.calendar_month)
-                            AND (l.date_td IS NULL OR l.date_td > m.calendar_month)
+                            (l.date_ent IS NULL OR DATE_TRUNC('MONTH', l.date_ent)::DATE > m.calendar_month)
+                            AND (l.date_dev IS NULL OR DATE_TRUNC('MONTH', l.date_dev)::DATE > m.calendar_month)
+                            AND (l.date_td_hold IS NULL OR DATE_TRUNC('MONTH', l.date_td_hold)::DATE > m.calendar_month)
+                            AND (l.date_td IS NULL OR DATE_TRUNC('MONTH', l.date_td)::DATE > m.calendar_month)
                             AND (COALESCE(l.date_str, l.date_str_projected) IS NULL
-                                 OR COALESCE(l.date_str, l.date_str_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE > m.calendar_month)
                             AND (COALESCE(l.date_cmp, l.date_cmp_projected) IS NULL
-                                 OR COALESCE(l.date_cmp, l.date_cmp_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_cmp, l.date_cmp_projected))::DATE > m.calendar_month)
                             AND (COALESCE(l.date_cls, l.date_cls_projected) IS NULL
-                                 OR COALESCE(l.date_cls, l.date_cls_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected))::DATE > m.calendar_month)
                        THEN 1 END) AS p_end,
-            COUNT(CASE WHEN l.date_ent <= m.calendar_month
-                            AND (l.date_dev IS NULL OR l.date_dev > m.calendar_month)
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_ent)::DATE <= m.calendar_month
+                            AND (l.date_dev IS NULL OR DATE_TRUNC('MONTH', l.date_dev)::DATE > m.calendar_month)
                             AND (COALESCE(l.date_str, l.date_str_projected) IS NULL
-                                 OR COALESCE(l.date_str, l.date_str_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE > m.calendar_month)
                        THEN 1 END) AS e_end,
-            COUNT(CASE WHEN l.date_dev <= m.calendar_month
-                            AND (l.date_td IS NULL OR l.date_td > m.calendar_month)
-                            AND (l.date_td_hold IS NULL OR l.date_td_hold > m.calendar_month)
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_dev)::DATE <= m.calendar_month
+                            AND (l.date_td IS NULL OR DATE_TRUNC('MONTH', l.date_td)::DATE > m.calendar_month)
+                            AND (l.date_td_hold IS NULL OR DATE_TRUNC('MONTH', l.date_td_hold)::DATE > m.calendar_month)
                             AND (COALESCE(l.date_str, l.date_str_projected) IS NULL
-                                 OR COALESCE(l.date_str, l.date_str_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE > m.calendar_month)
                        THEN 1 END) AS d_end,
-            COUNT(CASE WHEN l.date_td_hold <= m.calendar_month
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_td_hold)::DATE <= m.calendar_month
                             AND l.date_td IS NULL
                             AND (COALESCE(l.date_str, l.date_str_projected) IS NULL
-                                 OR COALESCE(l.date_str, l.date_str_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE > m.calendar_month)
                        THEN 1 END) AS h_end,
-            COUNT(CASE WHEN l.date_td <= m.calendar_month
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_td)::DATE <= m.calendar_month
                             AND (COALESCE(l.date_str, l.date_str_projected) IS NULL
-                                 OR COALESCE(l.date_str, l.date_str_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE > m.calendar_month)
                        THEN 1 END) AS u_end,
-            COUNT(CASE WHEN COALESCE(l.date_str, l.date_str_projected) <= m.calendar_month
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE <= m.calendar_month
                             AND (COALESCE(l.date_cmp, l.date_cmp_projected) IS NULL
-                                 OR COALESCE(l.date_cmp, l.date_cmp_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_cmp, l.date_cmp_projected))::DATE > m.calendar_month)
                             AND (COALESCE(l.date_cls, l.date_cls_projected) IS NULL
-                                 OR COALESCE(l.date_cls, l.date_cls_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected))::DATE > m.calendar_month)
                        THEN 1 END) AS uc_end,
-            COUNT(CASE WHEN COALESCE(l.date_cmp, l.date_cmp_projected) <= m.calendar_month
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_cmp, l.date_cmp_projected))::DATE <= m.calendar_month
                             AND (COALESCE(l.date_cls, l.date_cls_projected) IS NULL
-                                 OR COALESCE(l.date_cls, l.date_cls_projected) > m.calendar_month)
+                                 OR DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected))::DATE > m.calendar_month)
                        THEN 1 END) AS c_end,
 
             SUM(COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected)) = m.calendar_month
