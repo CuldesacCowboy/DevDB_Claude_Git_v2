@@ -105,6 +105,11 @@ def _snap_to_window(d: date, ws: int, we: int) -> date:
     return date(d.year, m, 1)
 
 
+def _months_between(d1: date, d2: date) -> int:
+    """Months from d1 to d2, clamped to 0 if d2 <= d1."""
+    return max(0, (d2.year - d1.year) * 12 + (d2.month - d1.month))
+
+
 # ---------------------------------------------------------------------------
 # Main module
 # ---------------------------------------------------------------------------
@@ -321,21 +326,30 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         p["window_end"] = we
 
     # ------------------------------------------------------------------
-    # Step 4b: Load projected D-balance from ALL lots in the DB.
+    # Step 4b: Load projected D-balance from DB.
     #
-    # Includes real lots AND sim lots from all deliveries (locked and
-    # auto-scheduled from previous convergence iterations).  On
-    # iteration 1 only real lots exist; on iteration 2+ the previous
-    # engine run's sim lots give an accurate D trajectory so P-0000
-    # only schedules where D will actually hit the floor.
-    #
-    # _apply_delivery_to_balance() then adds the projected contribution
-    # of each NEW delivery scheduled in the current P-0000 run on top
-    # of this base.  These new lots don't exist in the DB yet (engine
-    # hasn't run), so the approximation covers them only.
+    # Includes ONLY real lots and sim lots from LOCKED delivery phases.
+    # Auto-delivery sim lots are excluded here because:
+    #   (a) they frequently have date_str < date_dev (demand pool assigned
+    #       them pre-delivery slots) making them invisible to the D_end
+    #       condition, and
+    #   (b) _apply_delivery_to_balance() handles auto-delivery contributions
+    #       with an accurate drain-delay model — including them in both
+    #       places would double-count.
     # ------------------------------------------------------------------
     all_dev_ids_for_query = [int(d) for d in all_phases_df["dev_id"].unique()]
     d_balance: dict[int, dict[date, int]] = {d: {} for d in all_dev_ids_for_query}
+
+    # Build lot-source filter: real lots always included; locked-phase sim
+    # lots included so their confirmed D trajectory is captured accurately.
+    if locked_phase_ids:
+        _locked_phase_list = ", ".join(str(p) for p in sorted(locked_phase_ids))
+        _lot_filter = (
+            f"AND (sl.lot_source = 'real' "
+            f"OR sl.phase_id IN ({_locked_phase_list}))"
+        )
+    else:
+        _lot_filter = "AND sl.lot_source = 'real'"
 
     if all_dev_ids_for_query:
         dev_values = ", ".join(f"({d})" for d in all_dev_ids_for_query)
@@ -360,6 +374,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 AND sl.date_dev <= f.m
                 AND (sl.date_td     IS NULL OR sl.date_td     > f.m)
                 AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
+                {_lot_filter}
             GROUP BY devs.dev_id, f.m
             ORDER BY devs.dev_id, f.m
         """)
@@ -368,6 +383,17 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             m = dr["calendar_month"]
             m = m.date() if hasattr(m, "date") else m
             d_balance[d_id][m] = int(dr["d_end"])
+
+    # Per-dev demand pool tracking.
+    #
+    # The demand allocator (S-0700/S-0800) assigns demand slots from a per-dev
+    # pool starting at demand_start = first month after the last locked delivery.
+    # Real lots and locked-phase sim lots consume the earliest slots; auto-delivery
+    # sim lots get whatever is left.  If the pool has only advanced to, say,
+    # August 2028 by the time a May 2030 delivery is scheduled, those lots sit
+    # in D from May 2030 until August 2028 demand slots arrive — a 20-month delay.
+    # _apply_delivery_to_balance must account for this "drain delay" so that P-0000
+    # does not find false D-floor violations earlier than they will actually occur.
 
     # Per-dev last locked delivery date (scan floor — skip pre-delivery zeros).
     last_locked_per_dev: dict[int, date] = {}
@@ -388,18 +414,71 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 d_val = d_raw.date() if hasattr(d_raw, "date") else d_raw
                 last_locked_per_dev[int(llr["dev_id"])] = d_val
 
+    # Compute per-dev demand pool state from DB.
+    # demand_start = first month after each dev's last locked delivery.
+    # demand_consumed = count of lots (real + locked-phase sim) with date_str
+    # >= demand_start; represents how far the demand pool has advanced.
+    global_demand_start_per_dev: dict[int, date] = {}
+    for _dev in all_dev_ids_for_query:
+        _ll = last_locked_per_dev.get(_dev)
+        global_demand_start_per_dev[_dev] = _add_months(_ll, 1) if _ll else today_first
+
+    demand_consumed: dict[int, int] = {}
+    for _dev in all_dev_ids_for_query:
+        _ds = global_demand_start_per_dev[_dev]
+        _ds_str = _ds.strftime("%Y-%m-%d")
+        if locked_phase_ids:
+            _lp_str = ", ".join(str(p) for p in sorted(locked_phase_ids))
+            _dc_filter = f"AND (lot_source = 'real' OR phase_id IN ({_lp_str}))"
+        else:
+            _dc_filter = "AND lot_source = 'real'"
+        _dc_df = conn.read_df(f"""
+            SELECT COUNT(*) AS cnt FROM sim_lots
+            WHERE dev_id = {_dev}
+              AND date_str IS NOT NULL
+              AND date_str >= '{_ds_str}'::date
+              {_dc_filter}
+        """)
+        demand_consumed[_dev] = int(_dc_df.iloc[0]["cnt"]) if not _dc_df.empty else 0
+        print(f"P-00: Dev {_dev}: demand_start={_ds}, "
+              f"demand_consumed={demand_consumed[_dev]}")
+
+    def _compute_drain_delay(dev_id_key: int, delivery_m: date) -> int:
+        """
+        Months from delivery_m until the demand pool reaches this delivery's
+        first lot.  If the pool is already past delivery_m, delay = 0
+        (drain starts immediately).
+        """
+        pace = dev_monthly_pace.get(dev_id_key, 1.0)
+        if pace <= 0:
+            return 0
+        consumed = demand_consumed.get(dev_id_key, 0)
+        pool_months = int(consumed / pace)
+        ds = global_demand_start_per_dev.get(dev_id_key, today_first)
+        pool_pos = _add_months(ds, pool_months)
+        return _months_between(delivery_m, pool_pos)
+
     def _apply_delivery_to_balance(dev_id_key: int, delivery_month: date,
-                                    n_lots: int, monthly_pace: float) -> None:
+                                    n_lots: int, monthly_pace: float,
+                                    drain_delay: int = 0) -> None:
         """Add a delivery's D contribution to d_balance[dev_id_key].
-        Approximates: lots_in_D(k months after delivery) = n_lots - floor(pace*k)."""
+
+        drain_delay: months from delivery_month before lots start leaving D.
+        During the delay, all n_lots sit in D waiting for demand to arrive.
+        After the delay, lots drain at monthly_pace lots/month.
+        """
         if n_lots <= 0 or monthly_pace <= 0:
             return
         bal = d_balance.setdefault(dev_id_key, {})
         for k in range(500):
             m = _add_months(delivery_month, k)
-            contrib = n_lots - min(n_lots, int(monthly_pace * k))
-            if contrib <= 0:
-                break
+            if k <= drain_delay:
+                contrib = n_lots  # demand hasn't arrived yet; all lots in D
+            else:
+                drain_elapsed = k - drain_delay
+                contrib = n_lots - min(n_lots, int(monthly_pace * drain_elapsed))
+                if contrib <= 0:
+                    break
             bal[m] = bal.get(m, 0) + contrib
 
     def _find_violation_month(dev_id_key: int, scan_floor: date) -> date | None:
@@ -565,9 +644,15 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
 
             # Always take the first queued phase, then apply its D contribution
             # incrementally so d_balance reflects this delivery going forward.
+            # drain_delay: months from delivery until demand pool reaches these lots.
             batch = [dev_phases[dev_id].pop(0)]
             first_lots = sum(_get_phase_lots(conn, batch[0]["phase_id"]))
-            _apply_delivery_to_balance(dev_id, event_date, first_lots, pace)
+            _delay = _compute_drain_delay(dev_id, event_date)
+            _apply_delivery_to_balance(dev_id, event_date, first_lots, pace, _delay)
+            demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + first_lots
+            print(f"P-00: Dev {dev_id}: delivery {event_date}, "
+                  f"lots={first_lots}, drain_delay={_delay}mo, "
+                  f"demand_consumed→{demand_consumed[dev_id]}")
 
             # Batch more phases if first phase alone can't bridge to next year
             # (D-139 batching rule).  Each extra phase's contribution is added
@@ -584,7 +669,9 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 extra = dev_phases[dev_id].pop(0)
                 batch.append(extra)
                 extra_lots = sum(_get_phase_lots(conn, extra["phase_id"]))
-                _apply_delivery_to_balance(dev_id, event_date, extra_lots, pace)
+                _delay_extra = _compute_drain_delay(dev_id, event_date)
+                _apply_delivery_to_balance(dev_id, event_date, extra_lots, pace, _delay_extra)
+                demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + extra_lots
 
             # Advance scan floor so next scan starts after this delivery.
             dev_scan_floor[dev_id] = event_date
