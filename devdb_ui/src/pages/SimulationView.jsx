@@ -39,8 +39,8 @@ function periodLabel(key, period) {
 }
 
 /** Collapse raw API rows (multiple builder_ids per month) into one row per month,
- *  overlay entitlement-event additions, then group into the chosen period. */
-function buildLedgerRows(rawRows, entEvents, selectedDevIds, period, ledgerStartDate, utilization) {
+ *  then group into the chosen period. */
+function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate, utilization) {
   // 1. Filter by selected devs
   const filtered = selectedDevIds === null
     ? rawRows
@@ -58,30 +58,16 @@ function buildLedgerRows(rawRows, entEvents, selectedDevIds, period, ledgerStart
     for (const col of NUMERIC_COLS) agg[col] += (r[col] || 0)
   }
 
-  // 3. Overlay entitlement events (already baked into ent_plan by the API,
-  //    but events for non-represented months may still be present)
-  for (const ev of entEvents) {
-    if (selectedDevIds !== null && !selectedDevIds.includes(ev.dev_id)) continue
-    const key = ev.event_date.slice(0, 7) + '-01'
-    if (!monthMap.has(key)) {
-      monthMap.set(key, { calendar_month: key })
-      for (const col of NUMERIC_COLS) monthMap.get(key)[col] = 0
-    }
-    // Events are already in ent_plan from the API — don't double-add
-  }
-
-  // 4. Sort months
+  // 3. Sort months
   let sorted = [...monthMap.values()].sort((a, b) => a.calendar_month.localeCompare(b.calendar_month))
 
-  // 5. Filter to date_paper (First Paper Lots) if set
+  // 4. Filter to date_paper (Plan Start Date) if set
   if (ledgerStartDate) {
     sorted = sorted.filter(r => r.calendar_month >= ledgerStartDate)
   }
 
-  // 5b. Recompute p_end: all lots start in P at date_paper and drain
-  //     as entitlement events fire.  p_end = totalPlannedLots - cumulativeEntitled.
-  //     This replaces the DB view's "all dates null" test which fails for real
-  //     lots that already have MARKsystems dates.
+  // 5. Recompute p_end: all lots start in P at date_paper and drain as entitlement fires.
+  //    p_end = totalPlannedLots - cumulativeEntitled.
   const filteredUtil = utilization
     ? (selectedDevIds === null ? utilization : utilization.filter(u => selectedDevIds.includes(u.dev_id)))
     : []
@@ -281,15 +267,15 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved }) {
     finally { setSaving(false) }
   }
 
-  const inputStyle = (dirty, cur) => ({
+  const inputStyle = (saved, cur) => ({
     width: 120, padding: '3px 7px', fontSize: 12, borderRadius: 4,
-    border: `1px solid ${cur !== (dirty ?? '') ? '#2563eb' : '#d1d5db'}`,
+    border: `1px solid ${cur !== (saved ?? '') ? '#2563eb' : '#d1d5db'}`,
   })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>First Paper Lots</span>
+        <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>Plan Start Date</span>
         <input type="text" placeholder="YYYY-MM-DD" value={paperVal}
           onChange={e => { setPaperVal(e.target.value); setErr(null); setLotsMsg(null) }}
           style={inputStyle(datePaper, paperVal)} />
@@ -322,7 +308,7 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved }) {
   )
 }
 
-function FloorTolerancesSection({ entGroupId, deliveryConfig, onSaved }) {
+function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState(null)
@@ -333,10 +319,26 @@ function FloorTolerancesSection({ entGroupId, deliveryConfig, onSaved }) {
     return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '')
   }
 
+  function setVal(key, v) { setEdits(p => ({ ...p, [key]: v })) }
+
   async function save() {
     setSaving(true); setErr(null)
     const body = {}
+    // Floor tolerances
     for (const key of FLOOR_KEYS) {
+      const v = valFor(key)
+      body[key] = v === '' ? null : parseInt(v, 10)
+    }
+    // Delivery scheduling
+    for (const key of ['delivery_window_start', 'delivery_window_end', 'max_deliveries_per_year']) {
+      const v = valFor(key)
+      body[key] = v === '' ? null : parseInt(v, 10)
+    }
+    // auto_schedule_enabled: store as bool or null
+    const asVal = valFor('auto_schedule_enabled')
+    body['auto_schedule_enabled'] = asVal === '' ? null : asVal === true || asVal === 'true'
+    // Build lag fallbacks
+    for (const key of ['default_cmp_lag_days', 'default_cls_lag_days']) {
       const v = valFor(key)
       body[key] = v === '' ? null : parseInt(v, 10)
     }
@@ -352,34 +354,96 @@ function FloorTolerancesSection({ entGroupId, deliveryConfig, onSaved }) {
     finally { setSaving(false) }
   }
 
+  const numInput = (key, width = 56, placeholder = '—') => (
+    <input key={key} type="number" min="0" placeholder={placeholder}
+      value={valFor(key)}
+      onChange={e => setVal(key, e.target.value)}
+      style={{ width, padding: '2px 5px', fontSize: 12, borderRadius: 4,
+               border: `1px solid ${edits[key] !== undefined ? '#2563eb' : '#d1d5db'}`,
+               textAlign: 'right' }} />
+  )
+
+  const saveBtn = isDirty && (
+    <button disabled={saving} onClick={save}
+      style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
+               background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
+               cursor: saving ? 'default' : 'pointer' }}>
+      {saving ? 'Saving…' : 'Save'}
+    </button>
+  )
+
   return (
-    <div>
-      <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
-        Inventory floor tolerances
-        <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>
-          highlighted orange in ledger when below floor
-        </span>
-      </div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        {FLOOR_KEYS.map(key => (
-          <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280', minWidth: 20 }}>{FLOOR_LABELS[key]}</span>
-            <input type="number" min="0" placeholder="—"
-              value={valFor(key)}
-              onChange={e => setEdits(p => ({ ...p, [key]: e.target.value }))}
-              style={{ width: 56, padding: '2px 5px', fontSize: 12, borderRadius: 4,
-                       border: `1px solid ${edits[key] !== undefined ? '#2563eb' : '#d1d5db'}`,
-                       textAlign: 'right' }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+      {/* Delivery scheduling */}
+      <div>
+        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
+          Delivery scheduling
+        </div>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+            <span style={{ color: '#6b7280' }}>Window start (mo)</span>
+            {numInput('delivery_window_start', 48, '5')}
           </label>
-        ))}
-        {isDirty && (
-          <button disabled={saving} onClick={save}
-            style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-                     background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
-                     cursor: saving ? 'default' : 'pointer' }}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        )}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+            <span style={{ color: '#6b7280' }}>Window end (mo)</span>
+            {numInput('delivery_window_end', 48, '11')}
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+            <span style={{ color: '#6b7280' }}>Max deliveries/yr</span>
+            {numInput('max_deliveries_per_year', 48, '1')}
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+            <input type="checkbox"
+              checked={valFor('auto_schedule_enabled') === true || valFor('auto_schedule_enabled') === 'true'}
+              onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
+              style={{ width: 14, height: 14, accentColor: '#2563eb',
+                       outline: edits['auto_schedule_enabled'] !== undefined ? '2px solid #2563eb' : 'none' }} />
+            <span style={{ color: '#6b7280' }}>Auto-schedule enabled</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Build lag fallback constants */}
+      <div>
+        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
+          Build lag fallbacks
+          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>
+            used when no empirical curve exists for a lot type
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+            <span style={{ color: '#6b7280' }}>STR→CMP (days)</span>
+            {numInput('default_cmp_lag_days', 56, '270')}
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+            <span style={{ color: '#6b7280' }}>CMP→CLS (days)</span>
+            {numInput('default_cls_lag_days', 56, '45')}
+          </label>
+        </div>
+      </div>
+
+      {/* Inventory floor tolerances */}
+      <div>
+        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
+          Inventory floor tolerances
+          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>
+            highlighted orange in ledger when below floor
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          {FLOOR_KEYS.map(key => (
+            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+              <span style={{ color: '#6b7280', minWidth: 20 }}>{FLOOR_LABELS[key]}</span>
+              {numInput(key, 56)}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {saveBtn}
         {err && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
       </div>
     </div>
@@ -401,18 +465,22 @@ function StartsTargetsSection({ entGroupId, params, onSaved }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         {params.map(p => {
           const edit = edits[p.dev_id] || {}
-          const val  = edit.value !== undefined ? edit.value : (p.annual_starts_target ?? '')
-          const dirty = edit.value !== undefined && edit.value !== String(p.annual_starts_target ?? '')
+          const annualVal   = edit.annual   !== undefined ? edit.annual   : (p.annual_starts_target ?? '')
+          const maxMonthVal = edit.maxMonth !== undefined ? edit.maxMonth : (p.max_starts_per_month ?? '')
+          const annualDirty   = edit.annual   !== undefined && edit.annual   !== String(p.annual_starts_target ?? '')
+          const maxMonthDirty = edit.maxMonth !== undefined && edit.maxMonth !== String(p.max_starts_per_month ?? '')
+          const dirty = annualDirty || maxMonthDirty
           const DOT = { ok: '#16a34a', stale: '#d97706', missing: '#dc2626' }
 
           async function save() {
-            const n = parseInt(val, 10)
+            const n = parseInt(annualVal, 10)
             if (!n || n < 1) return
+            const maxN = maxMonthVal === '' ? null : parseInt(maxMonthVal, 10)
             setEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], saving: true } }))
             try {
               const res = await fetch(`${API}/developments/${p.dev_id}/sim-params`, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ annual_starts_target: n }),
+                body: JSON.stringify({ annual_starts_target: n, max_starts_per_month: maxN }),
               })
               if (!res.ok) throw new Error(await res.text())
               setEdits(prev => { const next = { ...prev }; delete next[p.dev_id]; return next })
@@ -427,13 +495,18 @@ function StartsTargetsSection({ entGroupId, params, onSaved }) {
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
                              background: DOT[p.status] ?? '#9ca3af', flexShrink: 0 }} />
               <span style={{ fontSize: 12, color: '#374151', minWidth: 180 }}>{p.dev_name}</span>
-              <input type="number" min="1" placeholder="starts/yr" value={val}
-                onChange={e => setEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], value: e.target.value } }))}
+              <input type="number" min="1" placeholder="starts/yr" value={annualVal}
+                onChange={e => setEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], annual: e.target.value } }))}
                 style={{ width: 68, padding: '2px 5px', fontSize: 12, borderRadius: 4,
-                         border: `1px solid ${dirty ? '#2563eb' : '#d1d5db'}` }} />
+                         border: `1px solid ${annualDirty ? '#2563eb' : '#d1d5db'}` }} />
               <span style={{ fontSize: 11, color: '#9ca3af' }}>/ yr</span>
+              <input type="number" min="1" placeholder="max/mo" value={maxMonthVal}
+                onChange={e => setEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], maxMonth: e.target.value } }))}
+                style={{ width: 60, padding: '2px 5px', fontSize: 12, borderRadius: 4,
+                         border: `1px solid ${maxMonthDirty ? '#2563eb' : '#d1d5db'}` }} />
+              <span style={{ fontSize: 11, color: '#9ca3af' }}>max/mo</span>
               {dirty && (
-                <button disabled={edit.saving || !val} onClick={save}
+                <button disabled={edit.saving || !annualVal} onClick={save}
                   style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4, border: 'none',
                            background: edit.saving ? '#d1d5db' : '#2563eb', color: '#fff',
                            cursor: edit.saving ? 'default' : 'pointer' }}>
@@ -445,116 +518,6 @@ function StartsTargetsSection({ entGroupId, params, onSaved }) {
           )
         })}
       </div>
-    </div>
-  )
-}
-
-function EntitlementEventsSection({ entGroupId, events, devList, onChanged }) {
-  const [adding, setAdding]   = useState(false)
-  const [newRow, setNewRow]   = useState({ dev_id: '', event_date: '', lots_entitled: '', notes: '' })
-  const [saving, setSaving]   = useState(false)
-  const [err, setErr]         = useState(null)
-
-  async function createEvent() {
-    if (!newRow.dev_id || !newRow.event_date || !newRow.lots_entitled) {
-      setErr('Development, date, and lot count are required'); return
-    }
-    setSaving(true); setErr(null)
-    try {
-      const res = await fetch(`${API}/entitlement-groups/${entGroupId}/entitlement-events`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dev_id: parseInt(newRow.dev_id, 10),
-          event_date: newRow.event_date,
-          lots_entitled: parseInt(newRow.lots_entitled, 10),
-          notes: newRow.notes || null,
-        }),
-      })
-      if (!res.ok) throw new Error(await res.text())
-      setNewRow({ dev_id: '', event_date: '', lots_entitled: '', notes: '' })
-      setAdding(false)
-      onChanged()
-    } catch (e) { setErr(String(e)) }
-    finally { setSaving(false) }
-  }
-
-  async function deleteEvent(id) {
-    await fetch(`${API}/entitlement-groups/${entGroupId}/entitlement-events/${id}`, { method: 'DELETE' })
-    onChanged()
-  }
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-        <span style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>Entitlement events</span>
-        <button onClick={() => setAdding(a => !a)}
-          style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4,
-                   border: '1px solid #d1d5db', background: adding ? '#f1f5f9' : '#fff',
-                   color: '#374151', cursor: 'pointer' }}>
-          {adding ? 'Cancel' : '+ Add event'}
-        </button>
-      </div>
-
-      {adding && (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
-                      padding: '8px 10px', background: '#f8fafc', borderRadius: 4,
-                      border: '1px solid #e2e8f0', marginBottom: 8 }}>
-          <select value={newRow.dev_id} onChange={e => setNewRow(r => ({ ...r, dev_id: e.target.value }))}
-            style={{ fontSize: 12, padding: '3px 6px', borderRadius: 4, border: '1px solid #d1d5db', minWidth: 140 }}>
-            <option value="">Development…</option>
-            {devList.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-          <input type="text" placeholder="YYYY-MM-DD" value={newRow.event_date}
-            onChange={e => setNewRow(r => ({ ...r, event_date: e.target.value }))}
-            style={{ width: 110, padding: '3px 6px', fontSize: 12, borderRadius: 4, border: '1px solid #d1d5db' }} />
-          <input type="number" min="1" placeholder="Lots" value={newRow.lots_entitled}
-            onChange={e => setNewRow(r => ({ ...r, lots_entitled: e.target.value }))}
-            style={{ width: 60, padding: '3px 6px', fontSize: 12, borderRadius: 4, border: '1px solid #d1d5db' }} />
-          <input type="text" placeholder="Notes (optional)" value={newRow.notes}
-            onChange={e => setNewRow(r => ({ ...r, notes: e.target.value }))}
-            style={{ width: 160, padding: '3px 6px', fontSize: 12, borderRadius: 4, border: '1px solid #d1d5db' }} />
-          <button disabled={saving} onClick={createEvent}
-            style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-                     background: saving ? '#d1d5db' : '#16a34a', color: '#fff',
-                     cursor: saving ? 'default' : 'pointer' }}>
-            {saving ? 'Saving…' : 'Add'}
-          </button>
-          {err && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
-        </div>
-      )}
-
-      {events.length === 0 && !adding && (
-        <div style={{ fontSize: 11, color: '#9ca3af' }}>No entitlement events recorded.</div>
-      )}
-
-      {events.length > 0 && (
-        <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
-          <thead>
-            <tr style={{ background: '#f9fafb' }}>
-              {['Date','Development','Lots','Notes',''].map(h => (
-                <th key={h} style={{ padding: '3px 8px', textAlign: h === 'Lots' ? 'right' : 'left',
-                                     fontSize: 11, fontWeight: 600, color: '#6b7280',
-                                     borderBottom: '1px solid #e5e7eb' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {events.map(ev => (
-              <tr key={ev.event_id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                <td style={{ padding: '3px 8px', fontSize: 12, color: '#374151' }}>{fmt(ev.event_date)}</td>
-                <td style={{ padding: '3px 8px', fontSize: 12, color: '#374151' }}>{ev.dev_name}</td>
-                <td style={{ padding: '3px 8px', fontSize: 12, textAlign: 'right' }}>{ev.lots_entitled}</td>
-                <td style={{ padding: '3px 8px', fontSize: 11, color: '#6b7280' }}>{ev.notes ?? ''}</td>
-                <td style={{ padding: '3px 8px' }}>
-                  <button onClick={() => deleteEvent(ev.event_id)}
-                    style={{ fontSize: 11, color: '#dc2626', background: 'none', border: 'none',
-                             cursor: 'pointer', padding: '1px 4px' }}>×</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
     </div>
   )
 }
@@ -727,7 +690,6 @@ export default function SimulationView() {
   const [staleParams, setStaleParams]     = useState([])
   const [deliveryConfig, setDeliveryConfig]   = useState(null)
   const [ledgerConfig, setLedgerConfig]       = useState(null)
-  const [entEvents, setEntEvents]             = useState([])
   const [view, setView]             = useState('ledger')
   const [lots, setLots]             = useState([])
   const [lotsLoading, setLotsLoading] = useState(false)
@@ -764,12 +726,10 @@ export default function SimulationView() {
     Promise.all([
       fetch(`${API}/entitlement-groups/${id}/delivery-config`).then(r => r.json()),
       fetch(`${API}/entitlement-groups/${id}/ledger-config`).then(r => r.json()),
-      fetch(`${API}/entitlement-groups/${id}/entitlement-events`).then(r => r.json()),
     ])
-      .then(([dc, lc, ev]) => {
+      .then(([dc, lc]) => {
         setDeliveryConfig(dc)
         setLedgerConfig(lc)
-        setEntEvents(Array.isArray(ev) ? ev : [])
       })
       .catch(() => {})
   }, [])
@@ -840,8 +800,8 @@ export default function SimulationView() {
   // ── Build ledger rows ──────────────────────────────────────────────────────
 
   const ledgerRows = useMemo(() => buildLedgerRows(
-    byDev, entEvents, selectedDevIds, period, ledgerConfig?.date_paper ?? null, utilization,
-  ), [byDev, entEvents, selectedDevIds, period, ledgerConfig, utilization])
+    byDev, selectedDevIds, period, ledgerConfig?.date_paper ?? null, utilization,
+  ), [byDev, selectedDevIds, period, ledgerConfig, utilization])
 
   const filteredUtilization = useMemo(() => {
     if (selectedDevIds === null) return utilization
@@ -854,7 +814,6 @@ export default function SimulationView() {
 
   function toggleDev(devId) {
     if (selectedDevIds === null) {
-      // "All" → select single dev
       setSelectedDevIds([devId])
     } else if (selectedDevIds.includes(devId)) {
       const next = selectedDevIds.filter(d => d !== devId)
@@ -920,7 +879,7 @@ export default function SimulationView() {
               entGroupId={entGroupId}
               datePaper={ledgerConfig.date_paper}
               dateEnt={ledgerConfig.date_ent}
-              onSaved={() => loadConfig(entGroupId)}
+              onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
             />
           )}
 
@@ -934,22 +893,13 @@ export default function SimulationView() {
 
           {deliveryConfig !== null && (
             <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
-              <FloorTolerancesSection
+              <DeliveryConfigSection
                 entGroupId={entGroupId}
                 deliveryConfig={deliveryConfig}
                 onSaved={() => loadConfig(entGroupId)}
               />
             </div>
           )}
-
-          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
-            <EntitlementEventsSection
-              entGroupId={entGroupId}
-              events={entEvents}
-              devList={devList}
-              onChanged={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
-            />
-          </div>
         </div>
       )}
 

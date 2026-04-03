@@ -46,18 +46,6 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
         ledger_start = bounds["date_paper"]
         max_month    = bounds["max_activity_month"]
 
-        # Also consider entitlement event dates for the end bound
-        cur.execute(
-            "SELECT MAX(event_date) AS max_ev FROM sim_entitlement_events WHERE ent_group_id = %s",
-            (ent_group_id,),
-        )
-        ev_max = cur.fetchone()["max_ev"]
-        if ev_max:
-            from datetime import date
-            ev_month = ev_max.replace(day=1) if hasattr(ev_max, 'replace') else date.fromisoformat(str(ev_max)).replace(day=1)
-            if ev_month > max_month:
-                max_month = ev_month
-
         # Main ledger rows — bounded range, no activity filter
         cur.execute(
             """

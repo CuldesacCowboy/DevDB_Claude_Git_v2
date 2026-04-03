@@ -104,9 +104,11 @@ def _expand_timing(temp_lots: list, curves: dict, rng: random.Random) -> list:
     independently (D-012/D-075).
 
     Falls back to default constant lags when no empirical curve is available.
+    Default lags are sourced from sim_entitlement_delivery_config (migration 024)
+    and injected into the curves dict as _default_cmp / _default_cls keys.
     """
-    DEFAULT_CMP_LAG = 270
-    DEFAULT_CLS_LAG = 45
+    DEFAULT_CMP_LAG = curves.get("_default_cmp", 270)
+    DEFAULT_CLS_LAG = curves.get("_default_cls", 45)
 
     # Sample str_to_cmp lag once per building group (shared date_cmp, D-022).
     bg_cmp_lag: dict[int, int] = {}
@@ -237,8 +239,8 @@ def _write_real_lot_projections(
         str_cmp_curve = curves_for(build_lag_curves, "str_to_cmp", lt_id)
         cmp_cls_curve = curves_for(build_lag_curves, "cmp_to_cls", lt_id)
 
-        DEFAULT_CMP_LAG = 270
-        DEFAULT_CLS_LAG = 45
+        DEFAULT_CMP_LAG = build_lag_curves.get("_default_cmp", 270)
+        DEFAULT_CLS_LAG = build_lag_curves.get("_default_cls", 45)
         lag_str_cmp = _sample_lag(rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
         lag_cmp_cls = _sample_lag(rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
 
@@ -553,17 +555,23 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         builder_splits = _load_builder_splits(conn)
         build_lag_curves = _load_build_lag_curves(conn)
 
-        # Fetch group-level entitlement date — the sole authority for date_ent on
-        # all lots in this group.  Stamped back after each dev's starts pipeline
-        # because s1100 (persistence_writer) inserts fresh sim lots with date_ent=None.
-        _ent_row = conn.read_df(
-            f"SELECT date_ent_actual FROM sim_entitlement_groups WHERE ent_group_id = {ent_group_id}"
+        # Load build lag fallback constants from delivery config (migration 024).
+        # Injected into build_lag_curves dict so _expand_timing and
+        # _write_real_lot_projections can use them without signature changes.
+        _lag_row = conn.read_df(
+            f"""
+            SELECT default_cmp_lag_days, default_cls_lag_days
+            FROM sim_entitlement_delivery_config
+            WHERE ent_group_id = {ent_group_id}
+            """
         )
-        _group_date_ent = (
-            _ent_row["date_ent_actual"].iloc[0]
-            if not _ent_row.empty and not pd.isnull(_ent_row["date_ent_actual"].iloc[0])
-            else None
-        )
+        if not _lag_row.empty:
+            _cmp = _lag_row["default_cmp_lag_days"].iloc[0]
+            _cls = _lag_row["default_cls_lag_days"].iloc[0]
+            if not pd.isnull(_cmp):
+                build_lag_curves["_default_cmp"] = int(_cmp)
+            if not pd.isnull(_cls):
+                build_lag_curves["_default_cls"] = int(_cls)
 
         # Seeded RNG: sim_run_id is date-based (YYYYMMDD), giving reproducibility
         # within a day. Each ent_group run gets its own seed.
@@ -590,16 +598,20 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
                                     builder_splits, build_lag_curves, rng)
                 if needs_config:
                     missing_params_devs.add(dev_id)
-                # Re-stamp group entitlement date on all lots for this dev.
+                # Re-stamp date_ent on all lots for this dev from their phase.
                 # s1100 inserts fresh sim lots with date_ent=None; this restores
-                # the group's Entitlements Date as the sole authority for date_ent.
-                if _group_date_ent is not None:
-                    conn.execute(
-                        f"""
-                        UPDATE sim_lots SET date_ent = '{_group_date_ent}'::DATE
-                        WHERE dev_id = {dev_id}
-                        """
-                    )
+                # the phase-level Entitlements Date (migration 023).
+                # Lots in phases with no date_ent set remain NULL.
+                conn.execute(
+                    f"""
+                    UPDATE sim_lots sl
+                    SET date_ent = sdp.date_ent
+                    FROM sim_dev_phases sdp
+                    WHERE sl.phase_id = sdp.phase_id
+                      AND sl.dev_id   = {dev_id}
+                      AND sdp.date_ent IS NOT NULL
+                    """
+                )
 
             # Step 2: Run supply pipeline
             print(f"  Running supply pipeline for ent_group_id={ent_group_id}...")

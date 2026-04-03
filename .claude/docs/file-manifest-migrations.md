@@ -104,6 +104,21 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Tables: sim_lots (ALTER COLUMN phase_id DROP NOT NULL)
 - Last commit: 2026-03-26
 
+### devdb_python/migrations/023_phase_date_ent_plan_start.sql
+- Owns: Adds date_ent and date_plan_start (DATE NULL) to sim_dev_phases; populates from existing group-level values (date_ent_actual → phases, date_paper → phases)
+- Tables: sim_dev_phases (ADD COLUMNS + UPDATE)
+- Last commit: 2026-04-03
+
+### devdb_python/migrations/024_delivery_config_lag_constants.sql
+- Owns: Adds default_cmp_lag_days and default_cls_lag_days (INT NULL) to sim_entitlement_delivery_config; populates existing rows with historic defaults (270/45). Moves hardcoded coordinator constants to DB.
+- Tables: sim_entitlement_delivery_config (ADD COLUMNS + UPDATE)
+- Last commit: 2026-04-03
+
+### devdb_python/migrations/025_drop_entitlement_events.sql
+- Owns: Drops sim_entitlement_events table — functionality replaced by phase-level date_ent (migration 023)
+- Tables: sim_entitlement_events (DROP TABLE)
+- Last commit: 2026-04-03
+
 ### devdb_python/migrations/add_display_order.py (superseded)
 - Owns: Superseded by 011_add_display_order.sql. Original standalone migration that added display_order to sim_dev_phases.
 - Tables: sim_dev_phases

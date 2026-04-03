@@ -47,18 +47,18 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/eg_validation.py
-- Owns: split-check, param-check, delivery-config GET/PUT, ledger-config GET/PUT
+- Owns: split-check, param-check (now includes max_starts_per_month), delivery-config GET/PUT (now includes delivery_window_start/end, max_deliveries_per_year, auto_schedule_enabled, default_cmp_lag_days, default_cls_lag_days), ledger-config GET/PUT (now propagates date_ent to sim_dev_phases + sim_lots per-phase; propagates date_plan_start to sim_dev_phases; date_ent truncated to first-of-month)
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
-- Tables: sim_dev_phases, sim_legal_instruments, sim_ent_group_developments, sim_phase_product_splits, sim_ent_group_developments, sim_dev_params, sim_entitlement_delivery_config, sim_entitlement_groups
-- Last commit: 2026-04-02
+- Tables: sim_dev_phases, sim_legal_instruments, sim_ent_group_developments, sim_phase_product_splits, sim_dev_params, sim_entitlement_delivery_config, sim_entitlement_groups, sim_lots
+- Last commit: 2026-04-03
 
 ### devdb_python/api/routers/eg_views.py
-- Owns: lot-phase-view route (delegates to eg_lot_phase_service), entitlement events CRUD
-- Imports: api.deps, api.db, api.models.lot_models, services.eg_lot_phase_service, pydantic, fastapi
+- Owns: lot-phase-view route only (delegates to eg_lot_phase_service); entitlement events CRUD removed — table dropped in migration 025
+- Imports: api.deps, api.models.lot_models, services.eg_lot_phase_service, fastapi
 - Imported by: api/main.py
-- Tables: sim_entitlement_events, dim_development, developments (via service for lot-phase-view)
-- Last commit: 2026-04-02
+- Tables: none directly (via service for lot-phase-view)
+- Last commit: 2026-04-03
 
 ### devdb_python/api/routers/instruments.py
 - Owns: POST and PATCH for sim_legal_instruments (create, rename)
@@ -159,11 +159,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/services/ledger_service.py
-- Owns: Ledger query logic extracted from routers/ledger.py; query_ledger_by_dev(conn, ent_group_id) — bounded date range, entitlement event overlay, synthetic start-date rows; _ledger_row() dict serializer
+- Owns: Ledger query logic extracted from routers/ledger.py; query_ledger_by_dev(conn, ent_group_id) — bounded date range, synthetic start-date rows; _ledger_row() dict serializer. Entitlement event overlay removed (sim_entitlement_events dropped in migration 025).
 - Imports: api.db.dict_cursor
 - Imported by: routers/ledger.py
-- Tables: v_sim_ledger_monthly, sim_entitlement_groups, sim_ent_group_developments, sim_lots, sim_entitlement_events, dim_development, developments
-- Last commit: 2026-04-02
+- Tables: v_sim_ledger_monthly, sim_entitlement_groups, sim_ent_group_developments, sim_lots, dim_development, developments
+- Last commit: 2026-04-03
 
 ### devdb_python/services/lot_assignment_service.py
 - Owns: Lot phase reassignment, lot-type change, lot unassignment with validation and audit logging

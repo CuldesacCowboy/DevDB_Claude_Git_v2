@@ -19,11 +19,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/pages/SimulationView.jsx
-- Owns: Simulation run trigger, monthly ledger view (by-dev), lot ledger tab (LotLedger with projected-date display in italic blue), phase utilization bars (UtilizationPanel), always-visible starts-target editor (SimParams), run-error warning banner, view toggle (Monthly Ledger / Lot List)
-- Imports: react (useState, useEffect, useCallback)
+- Owns: Simulation run trigger, monthly ledger view (by-dev), lot ledger tab, delivery schedule audit tab, phase utilization bars, settings panel: LedgerConfigSection (Plan Start Date + Entitlements Date), StartsTargetsSection (annual_starts_target + max_starts_per_month per dev), DeliveryConfigSection (delivery scheduling params + build lag fallbacks + inventory floor tolerances). EntitlementEventsSection removed — sim_entitlement_events table dropped.
+- Imports: react (useState, useEffect, useCallback, useMemo)
 - Imported by: App.jsx
 - Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params)
-- Last commit: 2026-04-02
+- Last commit: 2026-04-03
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker sidebar; add instrument inline form (replaces modal — expands in page header matching TDA pattern)
