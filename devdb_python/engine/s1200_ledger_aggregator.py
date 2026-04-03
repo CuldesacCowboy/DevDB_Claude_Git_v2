@@ -107,6 +107,8 @@ def ledger_aggregator(conn: DBConnection) -> None:
             COUNT(CASE WHEN COALESCE(l.date_str, l.date_str_projected) <= m.calendar_month
                             AND (COALESCE(l.date_cmp, l.date_cmp_projected) IS NULL
                                  OR COALESCE(l.date_cmp, l.date_cmp_projected) > m.calendar_month)
+                            AND (COALESCE(l.date_cls, l.date_cls_projected) IS NULL
+                                 OR COALESCE(l.date_cls, l.date_cls_projected) > m.calendar_month)
                        THEN 1 END) AS uc_end,
             COUNT(CASE WHEN COALESCE(l.date_cmp, l.date_cmp_projected) <= m.calendar_month
                             AND (COALESCE(l.date_cls, l.date_cls_projected) IS NULL
