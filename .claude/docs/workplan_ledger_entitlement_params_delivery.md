@@ -3,6 +3,41 @@
 
 ---
 
+## Session Log
+
+### 2026-04-03
+
+**Section 5 — Delivery scheduling over-early SC deliveries (D-153, D-154)**
+
+Root cause identified and fixed. The Section 5 description of `<` vs `<=` was already
+resolved in a prior commit (code uses `<=` at line 493). The actual remaining problem
+was a pace calculation mismatch:
+
+- **D-153** (data fix): `annual_starts_target` for dev 48 corrected from 14 to 12 in
+  `sim_dev_params`. Workaround only — the real fix is D-154.
+
+- **D-154** (code fix): `P-0000` was computing `monthly_pace = annual_starts_target / 12`,
+  but `S-0600` rounds each month's slots as `round(weight * target)` independently.
+  With `balanced_2yr` weights, any target in the range 8–16 rounds to exactly 12 slots/year,
+  making `annual_starts_target / 12` wrong for any non-multiple of 12.
+  Fix: new `engine/seasonal_weights.py` module with `WEIGHT_SETS` dict and
+  `effective_annual_pace(weight_set_name, target)` helper. Both S-0600 and P-0000
+  now import from the shared module. P-0000 uses `effective_annual_pace / 12` as its
+  drain estimate, matching actual simulation output for all target values.
+
+**Stop_DevDB.bat hang fix (maintenance)**
+
+`netstat | findstr ":8765 "` was matching TIME_WAIT client connections after the server
+process was killed, causing the wait loop to spin for ~2 minutes. Fixed by piping through
+`findstr "LISTENING"` so the loop exits as soon as the port is no longer bound.
+
+**Status after today's session:**
+- Section 5 — delivery scheduling: fix committed and pushed; Waterton Station re-run
+  needed to verify D-at-delivery is now ~0 for all SC phases. Mark COMPLETE after re-run.
+- Sections 1–4: not yet started.
+
+---
+
 ## How to use this document
 
 Each section ends with a **STOP — decision needed** block. Do not begin the next section until you have confirmed decisions in the current one. Sections that are purely implementation (no decisions) are marked **IMPLEMENT — no decisions needed**.
@@ -227,72 +262,53 @@ or to sim_dev_params so they're editable without a code change?
 
 ## Section 5 — Delivery Event Scheduling Fix
 
-**IMPLEMENT — no decisions needed. Highest priority: implement today.**
+**STATUS: Fix committed (D-153, D-154). Re-run Waterton Station to verify.**
 
 ### Problem statement
-Months exist where a development's D-status inventory (Developed, awaiting takedown)
-drops to zero between the last confirmed delivery event and the next auto-scheduled
-event. The requirement: from the moment the last locked delivery event occurs, D
-inventory MUST NEVER reach zero until all entitlement inventory has been consumed.
+Auto-scheduled delivery events for Waterton Station SF Site Condo phases were firing
+3–4 months too early, with D-at-delivery growing at each successive SC phase
+(27 → 31 → 35 → 39+). The requirement: D inventory should be near 0 at each delivery.
 
-### Root cause (confirmed by code analysis)
+### Root cause (confirmed by DB analysis and code review)
 
-`_find_violation_month` in `p0000_placeholder_rebuilder.py`:
+Two issues found and resolved:
 
-```python
-def _find_violation_month(dev_id_key: int, scan_floor: date) -> date | None:
-    bal = d_balance.get(dev_id_key, {})
-    for m in sorted(bal.keys()):
-        if m <= scan_floor:
-            continue
-        if bal[m] < min_buffer:   # ← BUG: uses strict less-than
-            return m
-    return None
-```
+**Issue 1 — `<` vs `<=` in `_find_violation_month` (already fixed prior to this session):**
+The violation condition is `bal[m] <= min_buffer` (line 493) — the `<=` fix was
+already in the codebase. The D-floor protection was working; the problem was that
+the wrong pace fed into the balance calculation.
 
-When `min_d_count` is not configured (defaults to 0), `min_buffer = 0`. The
-condition `bal[m] < 0` can never be satisfied for a non-negative d_balance. The
-function always returns `None`. The D-floor protection is **completely disabled**.
-Scheduling then falls through to the `demand_date` fallback, which schedules based
-on when starts are needed — not when D inventory will be exhausted.
+**Issue 2 — Pace calculation mismatch (fixed in D-154):**
+`P-0000` used `monthly_pace = annual_starts_target / 12`. But `S-0600` computes
+monthly slots as `round(weight * annual_starts_target)` independently per month.
+With `balanced_2yr` weights, any target in roughly 8–16 rounds to exactly 12 slots/year
+regardless of the parameter value. So P-0000's `14/12 = 1.167/month` was wrong
+when the actual simulation output was `1.0/month`, causing it to model SC phases
+exhausting ~17% sooner than reality.
 
-### The fix
+Fix: `engine/seasonal_weights.py` shared module + `effective_annual_pace()` helper.
+P-0000 now uses `effective_annual_pace(weight_set, target) / 12` as its drain estimate.
+Correct for all target values, not just multiples of 12. (D-154, commit 5649db8)
 
-Change `bal[m] < min_buffer` → `bal[m] <= min_buffer`.
+Data fix: `annual_starts_target` for dev 48 updated from 14 to 12 to reflect actual
+behavior. This is honest but not strictly required after D-154. (D-153, commit c18fbd6)
 
-With this fix:
-- `min_buffer = 0`: violation fires when D hits 0 (true exhaustion). Delivery is
-  scheduled at the latest window month before exhaustion.
-- `min_buffer = N > 0`: violation fires when D drops to N or below. Delivery
-  is scheduled to maintain at least N lots in D at all times.
-
-### Additional hardening to apply in the same change
+### Additional hardening (still open)
 
 1. **Scan horizon**: the d_balance query currently goes 10 years forward. Replace
    `INTERVAL '10 years'` with the group's sellout horizon (MAX date_cls across all
    sim lots) or 30 years — whichever is larger — to ensure violations near the end
    of the projection are detected.
 
-2. **Demand-date fallback removed**: once the D-floor analysis works correctly,
-   remove the fallback path that uses `demand_date` as the scheduling anchor. The
-   D-balance analysis is the authoritative mechanism. The `demand_date` should
-   remain as a signal only (for phases where d_balance never shows a violation
-   because they have no sim lots from locked phases yet — handle as: if no
-   d_balance data exists for a phase's dev, schedule at `max(today_first, demand_date_window_snap)`).
+2. **Demand-date fallback**: review whether the fallback path using `demand_date`
+   as scheduling anchor is still needed or should be removed now that the D-balance
+   analysis uses the correct pace.
 
-3. **Per-dev constraint correctness**: `last_event_year` is currently a global
-   counter shared across all devs. D-119 says no auto-scheduled event in the same
-   year as the **last locked** event. Verify this is scoped per-dev (or that the
-   cross-dev bundling makes global correct).
-
-### Verification after fix
-After implementing and re-running the simulation:
-- Inspect `v_sim_ledger_monthly` for all devs in ent_group 9002.
-- Confirm D_end > 0 for every month from the last locked delivery date forward,
-  until the phase sequence is exhausted.
-- Confirm that where D_end does eventually reach 0, it is because all lots have
-  moved to U/UC/C/Closed (no more entitlement inventory to develop), not because
-  a delivery event arrived too late.
+### Verification needed
+Re-run Waterton Station (ent_group 9002) and check delivery schedule audit tab:
+- D at delivery should be ~0 for all SC phases (ph.2 through ph.6).
+- No growing D-at-delivery pattern across successive phases.
+- Delivery dates should fall ~26 months after phase delivery (not ~22 months).
 
 ---
 
