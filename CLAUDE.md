@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: April 2026 (2026-04-03) | Architecture v20 | Decision Log: D-001 through D-153 | Next ID: D-154*
+*Last updated: April 2026 (2026-04-03) | Architecture v20 | Decision Log: D-001 through D-154 | Next ID: D-155*
 
 ---
 
@@ -18,7 +18,7 @@
 | schedhousedetail load | Complete | 266,554 rows loaded from 3-part CSV export |
 | Engine modules | Complete | S-0100 through S-0900 PASS. S-1000 through S-1200 PASS. P-01 through P-08 PASS. Convergence coordinator PASS. S-0050 NOT IMPLEMENTED. S-0810 and S-0820 implemented 2026-03-25. |
 | End-to-end run | Needs retest | Auto-delivery scheduling overhauled 2026-04-03: (1) D-119 hard-year guard replaced with _constrain_date using max_per_year; (2) events_per_year replaced with delivery_date_per_year — one delivery DATE per year per community; any number of phases land on that date. Re-run Waterton Station to verify delivery schedule in new Delivery Schedule Audit tab. |
-| Decision log | Current | D-153 added. Next ID: D-154. |
+| Decision log | Current | D-154 added. Next ID: D-155. |
 | React/FastAPI phase endpoints | Complete | Route ordering fixed — specific sub-routes now registered before catch-all /{phase_id}. DELETE /phases/{id}/lot-type and all phase endpoints visible in OpenAPI spec. |
 | Session tooling | Complete | /start and /end Claude Code skills (.claude/skills/). Start_DevDB_Session.bat opens session windows via devdb_open_session_windows.ps1. Stop_DevDB.bat kills backend (uvicorn + detached python.exe), frontend (Vite), and Chrome DevDB windows. End_DevDB_Session.bat, devdb_run_claude.py, devdb_generate_handoff.py, Save_DevDB_Window_Positions.bat, devdb_save_window_positions.ps1 removed. |
 | Postgres migration | Complete | All 35 tables migrated from Databricks to local PostgreSQL 16 (devdb.devdb). migrate_to_postgres.py. 23.5s total. 266,554 schedhousedetail rows. Engine now runs against local Postgres. Run time 0.5s (was 7+ min on Databricks serverless). |
@@ -404,6 +404,25 @@ The equalization logic in usePhaseEqualization.js runs after paint to match row 
 - Migration files are numbered sequentially: `000_`, `001_`, `002_`, etc.
 - The auto-apply runner in `api/main.py` applies unapplied migrations on every backend startup. New files are picked up automatically.
 - After creating a migration file, grep `devdb_python/` for all references to renamed or dropped columns and update every one before committing.
+
+## Decision Log — D-154
+
+D-154: P-0000 effective monthly pace mirrors S-0600 rounding via seasonal_weights.py
+
+S-0600 computes monthly slots as round(weight * annual_starts_target). The true
+annual output is sum(round(w * target)) — not annual_starts_target itself. With
+balanced_2yr weights, targets 8–16 all produce exactly 12 slots/year due to rounding.
+P-0000's pace estimate of annual_starts_target/12 was wrong for any target that is
+not an exact multiple of 12 (e.g., target=10 and target=14 both produce 12/yr, but
+P-0000 modeled them at 0.833/mo and 1.167/mo respectively — both wrong).
+
+Fix: new shared module seasonal_weights.py contains WEIGHT_SETS dict and
+effective_annual_pace(weight_set_name, annual_starts_target) -> float. Both S-0600
+and P-0000 import from it. P-0000's annual_target_map now stores effective monthly
+pace (effective_annual_pace / 12) instead of raw annual_starts_target, and the
+/12 division in dev_monthly_pace is removed. Works correctly for all target values.
+
+---
 
 ## Decision Log — D-153
 
