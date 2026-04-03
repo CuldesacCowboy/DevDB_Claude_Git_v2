@@ -72,23 +72,28 @@ def ledger_aggregator(conn: DBConnection) -> None:
             COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected)) = m.calendar_month
                        THEN 1 END) AS cls_plan,
 
-            COUNT(CASE WHEN l.date_ent             IS NULL
-                            AND l.date_dev         IS NULL
-                            AND l.date_td          IS NULL
-                            AND l.date_td_hold     IS NULL
-                            AND l.date_str         IS NULL
-                            AND l.date_cmp         IS NULL
-                            AND l.date_cls         IS NULL
-                            AND l.date_str_projected IS NULL
-                            AND l.date_cmp_projected IS NULL
-                            AND l.date_cls_projected IS NULL
+            COUNT(CASE WHEN
+                            (l.date_ent IS NULL OR l.date_ent > m.calendar_month)
+                            AND (l.date_dev IS NULL OR l.date_dev > m.calendar_month)
+                            AND (l.date_td_hold IS NULL OR l.date_td_hold > m.calendar_month)
+                            AND (l.date_td IS NULL OR l.date_td > m.calendar_month)
+                            AND (COALESCE(l.date_str, l.date_str_projected) IS NULL
+                                 OR COALESCE(l.date_str, l.date_str_projected) > m.calendar_month)
+                            AND (COALESCE(l.date_cmp, l.date_cmp_projected) IS NULL
+                                 OR COALESCE(l.date_cmp, l.date_cmp_projected) > m.calendar_month)
+                            AND (COALESCE(l.date_cls, l.date_cls_projected) IS NULL
+                                 OR COALESCE(l.date_cls, l.date_cls_projected) > m.calendar_month)
                        THEN 1 END) AS p_end,
             COUNT(CASE WHEN l.date_ent <= m.calendar_month
                             AND (l.date_dev IS NULL OR l.date_dev > m.calendar_month)
+                            AND (COALESCE(l.date_str, l.date_str_projected) IS NULL
+                                 OR COALESCE(l.date_str, l.date_str_projected) > m.calendar_month)
                        THEN 1 END) AS e_end,
             COUNT(CASE WHEN l.date_dev <= m.calendar_month
                             AND (l.date_td IS NULL OR l.date_td > m.calendar_month)
                             AND (l.date_td_hold IS NULL OR l.date_td_hold > m.calendar_month)
+                            AND (COALESCE(l.date_str, l.date_str_projected) IS NULL
+                                 OR COALESCE(l.date_str, l.date_str_projected) > m.calendar_month)
                        THEN 1 END) AS d_end,
             COUNT(CASE WHEN l.date_td_hold <= m.calendar_month
                             AND l.date_td IS NULL
