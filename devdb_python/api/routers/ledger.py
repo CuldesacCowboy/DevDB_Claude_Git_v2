@@ -28,20 +28,25 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
     try:
         cur.execute(
             """
+            WITH phase_splits AS (
+                SELECT phase_id, COALESCE(SUM(projected_count), 0)::int AS projected_count
+                FROM sim_phase_product_splits
+                GROUP BY phase_id
+            )
             SELECT
                 sdp.phase_id,
                 sdp.phase_name,
                 sdp.dev_id,
                 d.dev_name,
                 sli.instrument_name,
-                COALESCE(SUM(sps.projected_count), 0)::int                              AS projected_count,
-                COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'sim')::int              AS sim_count,
-                COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'real')::int             AS real_count,
-                (COUNT(sl.lot_id)::int)                                                  AS total_count,
+                COALESCE(ps.projected_count, 0)                              AS projected_count,
+                COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'sim')::int   AS sim_count,
+                COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'real')::int  AS real_count,
+                COUNT(sl.lot_id)::int                                         AS total_count,
                 CASE
-                    WHEN COALESCE(SUM(sps.projected_count), 0) = 0 THEN NULL
+                    WHEN COALESCE(ps.projected_count, 0) = 0 THEN NULL
                     ELSE ROUND(
-                        COUNT(sl.lot_id)::numeric / SUM(sps.projected_count) * 100, 1
+                        COUNT(sl.lot_id)::numeric / ps.projected_count * 100, 1
                     )
                 END AS utilization_pct
             FROM sim_dev_phases sdp
@@ -49,11 +54,11 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
             JOIN dim_development dd ON dd.development_id = sdp.dev_id
             JOIN developments d ON d.marks_code = dd.dev_code2
             JOIN sim_legal_instruments sli ON sdp.instrument_id = sli.instrument_id
-            LEFT JOIN sim_phase_product_splits sps ON sps.phase_id = sdp.phase_id
+            LEFT JOIN phase_splits ps ON ps.phase_id = sdp.phase_id
             LEFT JOIN sim_lots sl ON sl.phase_id = sdp.phase_id
             WHERE segd.ent_group_id = %s
             GROUP BY sdp.phase_id, sdp.phase_name, sdp.dev_id, d.dev_name,
-                     sli.instrument_name, sdp.sequence_number
+                     sli.instrument_name, sdp.sequence_number, ps.projected_count
             ORDER BY sdp.dev_id, sdp.sequence_number
             """,
             (ent_group_id,),
