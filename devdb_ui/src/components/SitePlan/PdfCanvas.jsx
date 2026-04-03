@@ -81,6 +81,15 @@ function lotLabel(lotNumber) {
   return m ? `${m[1]}-${parseInt(m[2], 10)}` : (lotNumber || '?')
 }
 
+// Return a darkened version of a '#rrggbb' hex color (factor 0–1).
+function darkenHex(hex, factor = 0.45) {
+  if (!hex || !hex.startsWith('#') || hex.length < 7) return hex
+  const r = Math.round(parseInt(hex.slice(1, 3), 16) * (1 - factor))
+  const g = Math.round(parseInt(hex.slice(3, 5), 16) * (1 - factor))
+  const b = Math.round(parseInt(hex.slice(5, 7), 16) * (1 - factor))
+  return `rgb(${r},${g},${b})`
+}
+
 const LOT_HIT_PX = 10
 
 export default function PdfCanvas({
@@ -1031,9 +1040,20 @@ export default function PdfCanvas({
               const strokeW = isDeleteHover ? 3 : isSelected ? 3 : isTarget ? 2.5 : 2
               const fillOpacity = isDeleteHover ? 0.55 : isTarget ? 0.6 : b.phase_id ? 0.45 : 0.20
               const fillActual = isDeleteHover ? '#ef4444' : fillColor
-              // Centroid for label
-              const cx = svg.reduce((s,p)=>s+p.x,0)/svg.length
-              const cy = svg.reduce((s,p)=>s+p.y,0)/svg.length
+              // Visual center: vertex average, then snap to nearest positioned lot in this phase.
+              // This keeps the label inside concave or oddly-shaped polygons.
+              const avgCx = svg.reduce((s,p)=>s+p.x,0)/svg.length
+              const avgCy = svg.reduce((s,p)=>s+p.y,0)/svg.length
+              let cx = avgCx, cy = avgCy
+              if (b.phase_id) {
+                let best = Infinity
+                for (const [lidStr, pos] of Object.entries(lotPositions)) {
+                  if (lotMeta[Number(lidStr)]?.phase_id !== b.phase_id) continue
+                  const sp = normToScreen(pos.x, pos.y)
+                  const d = Math.hypot(sp.x - avgCx, sp.y - avgCy)
+                  if (d < best) { best = d; cx = sp.x; cy = sp.y }
+                }
+              }
               return (
                 <g key={b.boundary_id}
                   onClick={inDeletePhases
@@ -1057,8 +1077,8 @@ export default function PdfCanvas({
                   />
                   {b.label && (
                     <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle"
-                      fontSize={12 / zoom * 1.2} fill="#1e293b" fontWeight="700"
-                      stroke="rgba(255,255,255,0.8)" strokeWidth={3 / zoom}
+                      fontSize={Math.max(9, Math.min(15, 13 / Math.sqrt(zoom)))} fill="#1e293b" fontWeight="700"
+                      stroke="rgba(255,255,255,0.85)" strokeWidth={Math.max(2, 3 / Math.sqrt(zoom))}
                       paintOrder="stroke"
                       style={{ pointerEvents:'none', userSelect:'none' }}>
                       {b.label}
@@ -1301,101 +1321,206 @@ export default function PdfCanvas({
               if (!phaseData) return null
 
               const byLt = (phaseData.by_lot_type || []).filter(lt => (lt.actual || 0) > 0 || (lt.projected || 0) > 0)
+              if (!byLt.length && !unitCountsSubtotal) {
+                // In totals mode with no data skip silently
+              }
 
-              const pts   = JSON.parse(b.polygon_json)
-              const svg   = pts.map(p => normToScreen(p.x, p.y))
-              const cx    = svg.reduce((s,p) => s+p.x, 0) / svg.length
-              const cy    = svg.reduce((s,p) => s+p.y, 0) / svg.length
+              const pts = JSON.parse(b.polygon_json)
+              const svg = pts.map(p => normToScreen(p.x, p.y))
+
+              // Visual center: vertex average → snap to nearest positioned lot in this phase
+              const avgCx = svg.reduce((s,p) => s+p.x, 0) / svg.length
+              const avgCy = svg.reduce((s,p) => s+p.y, 0) / svg.length
+              let labelCx = avgCx, labelCy = avgCy
+              {
+                let best = Infinity
+                for (const [lidStr, pos] of Object.entries(lotPositions)) {
+                  if (lotMeta[Number(lidStr)]?.phase_id !== b.phase_id) continue
+                  const sp = normToScreen(pos.x, pos.y)
+                  const d = Math.hypot(sp.x - avgCx, sp.y - avgCy)
+                  if (d < best) { best = d; labelCx = sp.x; labelCy = sp.y }
+                }
+              }
 
               const totalR = byLt.reduce((s,lt) => s+(lt.actual||0), 0)
               const totalP = byLt.reduce((s,lt) => s+(lt.projected||0), 0)
               const totalT = byLt.reduce((s,lt) => s+(lt.total||0), 0)
 
-              const fs     = Math.max(8, 10.5 / zoom)
-              const lineH  = fs * 1.65
-              const charW  = fs * 0.6   // monospace approximation
+              // Scaled font: grows gently when zoomed out, stays readable when zoomed in
+              const fs    = Math.max(9, Math.min(14, 11.5 / Math.sqrt(zoom)))
+              const lineH = fs * 1.6
+              const charW = fs * 0.58
+
+              // Phase border color for the card
+              const phaseColor   = (b.phase_id && phaseColorMap[b.phase_id]) || UNASSIGNED_COLOR
+              const borderColor  = darkenHex(phaseColor, 0.4)
 
               if (!unitCountsSubtotal) {
-                // ── Totals mode ─────────────────────────────────
-                const label = `r:${totalR}  p:${totalP}  t:${totalT}`
-                const bw = label.length * charW + 10
+                // ── Totals mode: compact styled badge ────────────────
+                const parts = [`R ${totalR}`, `P ${totalP}`, `T ${totalT}`]
+                const bw    = parts.join('  ').length * charW + 14
+                const bh    = fs * 1.6
+                const bx    = labelCx - bw / 2
+                const by    = labelCy - bh / 2
                 return (
                   <g key={`uc_${b.boundary_id}`} style={{ pointerEvents: 'none' }}>
-                    <rect x={cx - bw/2} y={cy - fs * 0.85} width={bw} height={fs * 1.35}
-                      rx={3} fill="rgba(255,255,255,0.84)" />
-                    <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
+                    <rect x={bx} y={by} width={bw} height={bh} rx={4}
+                      fill="rgba(255,255,255,0.92)" stroke={borderColor} strokeWidth={Math.max(0.8, 1.2/zoom)} />
+                    <text x={labelCx} y={labelCy} textAnchor="middle" dominantBaseline="central"
                       fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="600"
                       style={{ userSelect: 'none' }}>
-                      {label}
+                      R {totalR}{'   '}P {totalP}{'   '}T {totalT}
                     </text>
                   </g>
                 )
               }
 
-              // ── Subtotal by product type ─────────────────────
+              // ── By-type mode: table card ──────────────────────────
               if (!byLt.length) return null
-              const rowCount = byLt.length
-              const maxLabelLen = Math.max(...byLt.map(lt => `${lt.lot_type_short}: r:${lt.actual||0}  p:${lt.projected||0}  t:${lt.total||0}`.length))
-              const boxW  = maxLabelLen * charW + 12
-              const boxH  = rowCount * lineH + 6
-              const startY = cy - boxH / 2 + lineH * 0.5
+
+              const multiLt   = byLt.length > 1
+              const headerRows = 1
+              const dataRows   = byLt.length
+              const totalRows  = multiLt ? 1 : 0
+              const rowCount   = headerRows + dataRows + totalRows
+
+              // Column widths
+              const typeColW = Math.max(
+                4 * charW,
+                ...byLt.map(lt => (lt.lot_type_short || '').length * charW)
+              )
+              const valColW  = Math.max(2 * charW, String(Math.max(totalR, totalP, totalT, 9)).length * charW + charW * 0.5)
+              const gapW     = charW * 1.0
+              const padX     = 7
+              const padY     = 5
+              const innerW   = typeColW + gapW + valColW + gapW + valColW + gapW + valColW
+              const boxW     = innerW + padX * 2
+              const boxH     = rowCount * lineH + padY * 2
+              const boxX     = labelCx - boxW / 2
+              const boxY     = labelCy - boxH / 2
+
+              // Column x anchors (left edge of each column)
+              const col0x = boxX + padX                                   // Type (left-align)
+              const col1x = col0x + typeColW + gapW + valColW             // R (right-align to col1x)
+              const col2x = col1x + gapW + valColW                        // P (right-align to col2x)
+              const col3x = col2x + gapW + valColW                        // T (right-align to col3x)
+
+              const rowY  = (i) => boxY + padY + (i + 0.78) * lineH      // baseline for row i
+              const headerY = rowY(0)
+              const sepY1   = boxY + padY + lineH                         // after header
+              const sepY2   = multiLt ? boxY + padY + (1 + dataRows) * lineH : null  // before total
 
               return (
                 <g key={`uc_${b.boundary_id}`}>
-                  {/* Background card */}
-                  <rect x={cx - boxW/2 - 2} y={startY - lineH * 0.75}
-                    width={boxW + 4} height={boxH}
-                    rx={4} fill="rgba(255,255,255,0.88)"
-                    style={{ pointerEvents: 'none' }}
-                  />
+                  {/* Card background + border */}
+                  <rect x={boxX} y={boxY} width={boxW} height={boxH} rx={5}
+                    fill="rgba(255,255,255,0.94)" stroke={borderColor}
+                    strokeWidth={Math.max(0.8, 1.5/zoom)}
+                    style={{ pointerEvents: 'none' }} />
+
+                  {/* Header row */}
+                  <text x={col0x} y={headerY} dominantBaseline="auto"
+                    fontFamily="sans-serif" fontSize={fs * 0.82} fill="#94a3b8" fontWeight="700"
+                    textTransform="uppercase" style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                    Type
+                  </text>
+                  {['R','P','T'].map((hdr, hi) => {
+                    const colRightX = [col1x, col2x, col3x][hi]
+                    return (
+                      <text key={hdr} x={colRightX} y={headerY} textAnchor="end" dominantBaseline="auto"
+                        fontFamily="sans-serif" fontSize={fs * 0.82}
+                        fill={hi === 1 ? '#0f766e' : hi === 0 ? '#64748b' : '#374151'}
+                        fontWeight="700"
+                        style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                        {hdr}
+                      </text>
+                    )
+                  })}
+
+                  {/* Separator line after header */}
+                  <line x1={boxX + 3} y1={sepY1} x2={boxX + boxW - 3} y2={sepY1}
+                    stroke={borderColor} strokeOpacity={0.4} strokeWidth={Math.max(0.5, 0.8/zoom)}
+                    style={{ pointerEvents: 'none' }} />
+
+                  {/* Data rows */}
                   {byLt.map((lt, i) => {
-                    const rowY   = startY + i * lineH
-                    const prefix = `${lt.lot_type_short}: r:${lt.actual||0}  `
-                    const pText  = `p:${lt.projected||0}`
-                    const suffix = `  t:${lt.total||0}`
-                    const prefixW = prefix.length * charW
-                    const pW      = pText.length  * charW
-                    const startX  = cx - (prefix.length + pText.length + suffix.length) * charW / 2
+                    const ry     = rowY(i + 1)
+                    const pText  = String(lt.projected || 0)
+                    const pW     = pText.length * charW * 1.05
 
                     return (
                       <g key={lt.lot_type_id}
                         style={{ cursor: 'pointer', pointerEvents: 'all' }}
                         onClick={(e) => {
                           e.stopPropagation()
-                          onEditProjected?.(b.phase_id, lt.lot_type_id, lt.projected||0, cx, rowY + lineH * 0.4)
+                          onEditProjected?.(b.phase_id, lt.lot_type_id, lt.projected||0, labelCx, ry)
                         }}
                       >
                         {/* Hit area */}
-                        <rect x={cx - boxW/2} y={rowY - lineH * 0.72} width={boxW} height={lineH}
+                        <rect x={boxX} y={ry - lineH * 0.85} width={boxW} height={lineH}
                           fill="transparent" />
-                        {/* Gray prefix: "SF: r:5  " */}
-                        <text x={startX} y={rowY} dominantBaseline="auto"
-                          fontFamily="monospace" fontSize={fs} fill="#64748b"
-                          stroke="rgba(255,255,255,0.8)" strokeWidth={2/zoom} paintOrder="stroke"
+                        {/* Type label */}
+                        <text x={col0x} y={ry} dominantBaseline="auto"
+                          fontFamily="monospace" fontSize={fs} fill="#475569"
                           style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                          {prefix}
+                          {lt.lot_type_short || '—'}
                         </text>
-                        {/* Teal p value */}
-                        <text x={startX + prefixW} y={rowY} dominantBaseline="auto"
+                        {/* R value */}
+                        <text x={col1x} y={ry} textAnchor="end" dominantBaseline="auto"
+                          fontFamily="monospace" fontSize={fs} fill="#64748b"
+                          style={{ userSelect: 'none', pointerEvents: 'none' }}>
+                          {lt.actual || 0}
+                        </text>
+                        {/* P value — teal + underline */}
+                        <text x={col2x} y={ry} textAnchor="end" dominantBaseline="auto"
                           fontFamily="monospace" fontSize={fs} fill="#0f766e" fontWeight="700"
-                          stroke="rgba(255,255,255,0.8)" strokeWidth={2/zoom} paintOrder="stroke"
+                          stroke="rgba(255,255,255,0.6)" strokeWidth={1.5/zoom} paintOrder="stroke"
                           style={{ userSelect: 'none', pointerEvents: 'none' }}>
                           {pText}
                         </text>
-                        {/* Underline under p value */}
-                        <line x1={startX + prefixW} y1={rowY + fs * 0.18}
-                          x2={startX + prefixW + pW} y2={rowY + fs * 0.18}
-                          stroke="#0d9488" strokeWidth={Math.max(0.8, 1.2/zoom)} />
-                        {/* Dark suffix: "  t:10" */}
-                        <text x={startX + prefixW + pW} y={rowY} dominantBaseline="auto"
-                          fontFamily="monospace" fontSize={fs} fill="#374151"
-                          stroke="rgba(255,255,255,0.8)" strokeWidth={2/zoom} paintOrder="stroke"
+                        <line x1={col2x - pW} y1={ry + fs * 0.15}
+                          x2={col2x} y2={ry + fs * 0.15}
+                          stroke="#0d9488" strokeWidth={Math.max(0.6, 1/zoom)} />
+                        {/* T value */}
+                        <text x={col3x} y={ry} textAnchor="end" dominantBaseline="auto"
+                          fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="600"
                           style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                          {suffix}
+                          {lt.total || 0}
                         </text>
                       </g>
                     )
                   })}
+
+                  {/* Total row (only if multiple lot types) */}
+                  {multiLt && (() => {
+                    const ty = rowY(1 + dataRows)
+                    return (
+                      <g key="total" style={{ pointerEvents: 'none' }}>
+                        <line x1={boxX + 3} y1={sepY2} x2={boxX + boxW - 3} y2={sepY2}
+                          stroke={borderColor} strokeOpacity={0.4} strokeWidth={Math.max(0.5, 0.8/zoom)} />
+                        <text x={col0x} y={ty} dominantBaseline="auto"
+                          fontFamily="sans-serif" fontSize={fs * 0.82} fill="#94a3b8" fontWeight="700"
+                          style={{ userSelect: 'none' }}>
+                          Total
+                        </text>
+                        <text x={col1x} y={ty} textAnchor="end" dominantBaseline="auto"
+                          fontFamily="monospace" fontSize={fs} fill="#64748b" fontWeight="600"
+                          style={{ userSelect: 'none' }}>
+                          {totalR}
+                        </text>
+                        <text x={col2x} y={ty} textAnchor="end" dominantBaseline="auto"
+                          fontFamily="monospace" fontSize={fs} fill="#0f766e" fontWeight="700"
+                          style={{ userSelect: 'none' }}>
+                          {totalP}
+                        </text>
+                        <text x={col3x} y={ty} textAnchor="end" dominantBaseline="auto"
+                          fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="700"
+                          style={{ userSelect: 'none' }}>
+                          {totalT}
+                        </text>
+                      </g>
+                    )
+                  })()}
                 </g>
               )
             })}

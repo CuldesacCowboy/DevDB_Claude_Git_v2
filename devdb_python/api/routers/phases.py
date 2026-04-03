@@ -149,6 +149,56 @@ async def reassign_phase_instrument(
     )
 
 
+@router.post("/{phase_id}/lot-type/{lot_type_id}", response_model=dict, status_code=201)
+async def add_lot_type_to_phase(
+    phase_id: int,
+    lot_type_id: int,
+    conn=Depends(get_db_conn),
+):
+    """Add a new lot-type split (projected_count=0) to a phase. 409 if already present."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT split_id FROM devdb.sim_phase_product_splits WHERE phase_id = %s AND lot_type_id = %s",
+            (phase_id, lot_type_id),
+        )
+        if cur.fetchone():
+            raise HTTPException(status_code=409, detail="Lot type already assigned to this phase")
+
+        cur.execute("SELECT lot_type_short FROM devdb.ref_lot_types WHERE lot_type_id = %s", (lot_type_id,))
+        lt_row = cur.fetchone()
+        if not lt_row:
+            raise HTTPException(status_code=404, detail="Lot type not found")
+
+        cur.execute(
+            """
+            INSERT INTO devdb.sim_phase_product_splits (phase_id, lot_type_id, projected_count)
+            VALUES (%s, %s, 0)
+            RETURNING split_id
+            """,
+            (phase_id, lot_type_id),
+        )
+        split_id = cur.fetchone()["split_id"]
+        conn.commit()
+        return {
+            "split_id": split_id,
+            "phase_id": phase_id,
+            "lot_type_id": lot_type_id,
+            "lot_type_short": lt_row["lot_type_short"],
+            "projected_count": 0,
+            "actual": 0,
+            "total": 0,
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
 @router.delete("/{phase_id}/lot-type/{lot_type_id}", status_code=204)
 async def delete_lot_type_from_phase(
     phase_id: int,

@@ -66,6 +66,10 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   const [pendingBuildingGroup, setPendingBuildingGroup]       = useState(null) // {lots, polygon}
   const [bgContextMenu, setBgContextMenu]                     = useState(null) // {x,y,id}
 
+  // Unit counts — lot type management
+  const [allLotTypes, setAllLotTypes]         = useState([])   // [{lot_type_id, lot_type_short}]
+  const [pendingDeleteLotType, setPendingDeleteLotType] = useState(null) // {phase_id, lot_type_id, lot_type_short, phase_name}
+
   // Lot bank + positioning
   const [allLots, setAllLots]             = useState([])   // all real lots for this ent_group
   const [lotPositions, setLotPositions]   = useState({})   // {lot_id: {x,y}} — local (unsaved)
@@ -85,6 +89,14 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
       .then(r => r.json())
       .then(gs => setEntGroups(gs.sort((a, b) => a.ent_group_name.localeCompare(b.ent_group_name))))
       .catch(() => setError('Could not load entitlement groups'))
+  }, [])
+
+  // Load all lot types once for the "add product type" picker
+  useEffect(() => {
+    fetch(`${API}/phases/lot-types`)
+      .then(r => r.ok ? r.json() : [])
+      .then(setAllLotTypes)
+      .catch(() => {})
   }, [])
 
   // Load plan when group changes
@@ -576,7 +588,51 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
           }),
         }
       }))
+      // If p=0 and r=0, offer to remove the product type from the phase
+      if (newValue === 0 && (data.actual || 0) === 0) {
+        const ph = phases.find(p => p.phase_id === phaseId)
+        const lt = (ph?.by_lot_type || []).find(l => l.lot_type_id === lotTypeId)
+        setPendingDeleteLotType({
+          phase_id: phaseId,
+          lot_type_id: lotTypeId,
+          lot_type_short: lt?.lot_type_short || String(lotTypeId),
+          phase_name: ph?.phase_name || String(phaseId),
+        })
+      }
     }
+  }
+
+  async function handleAddLotType(phaseId, lotTypeId) {
+    const res = await fetch(`${API}/phases/${phaseId}/lot-type/${lotTypeId}`, { method: 'POST' })
+    if (res.ok) {
+      const data = await res.json()  // {split_id, phase_id, lot_type_id, lot_type_short, projected_count, actual, total}
+      setPhases(prev => prev.map(ph => {
+        if (ph.phase_id !== phaseId) return ph
+        const already = (ph.by_lot_type || []).some(lt => lt.lot_type_id === lotTypeId)
+        if (already) return ph
+        return {
+          ...ph,
+          by_lot_type: [...(ph.by_lot_type || []), {
+            lot_type_id: data.lot_type_id,
+            lot_type_short: data.lot_type_short,
+            actual: 0,
+            projected: 0,
+            total: 0,
+          }],
+        }
+      }))
+    }
+  }
+
+  async function handleDeleteLotType(phaseId, lotTypeId) {
+    const res = await fetch(`${API}/phases/${phaseId}/lot-type/${lotTypeId}`, { method: 'DELETE' })
+    if (res.ok || res.status === 204) {
+      setPhases(prev => prev.map(ph => {
+        if (ph.phase_id !== phaseId) return ph
+        return { ...ph, by_lot_type: (ph.by_lot_type || []).filter(lt => lt.lot_type_id !== lotTypeId) }
+      }))
+    }
+    setPendingDeleteLotType(null)
   }
 
   // ─── Building group helpers ─────────────────────────────────────────────────
@@ -816,10 +872,10 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     return m
   }, [allLots, instrumentColors])
 
-  // lot_id → metadata for PdfCanvas
+  // lot_id → metadata for PdfCanvas (phase_id used for visual-center label placement)
   const lotMeta = useMemo(() => {
     const m = {}
-    for (const l of allLots) m[l.lot_id] = { lot_number: l.lot_number, instrument_id: l.instrument_id }
+    for (const l of allLots) m[l.lot_id] = { lot_number: l.lot_number, instrument_id: l.instrument_id, phase_id: l.phase_id }
     return m
   }, [allLots])
 
@@ -1253,6 +1309,13 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
                 unitCountsSubtotal={unitCountsSubtotal}
                 onToggleSubtotal={setUnitCountsSubtotal}
                 onProjectedCountChange={handleProjectedCountChange}
+                instrumentColors={instrumentColors}
+                onInstrumentColorChange={handleInstrumentColorChange}
+                allLotTypes={allLotTypes}
+                onAddLotType={handleAddLotType}
+                onDeleteLotType={handleDeleteLotType}
+                pendingDeleteLotType={pendingDeleteLotType}
+                onClearPendingDelete={() => setPendingDeleteLotType(null)}
               />
             )}
           </div>
@@ -1672,7 +1735,14 @@ const btnGray = { fontSize: 12, padding: '4px 10px', borderRadius: 4, border: '1
 
 // ─── Unit Counts Panel ────────────────────────────────────────────────────────
 
-function UnitCountsPanel({ phases, unitCountsSubtotal, onToggleSubtotal, onProjectedCountChange }) {
+function UnitCountsPanel({
+  phases, unitCountsSubtotal, onToggleSubtotal, onProjectedCountChange,
+  instrumentColors = {}, onInstrumentColorChange,
+  allLotTypes = [], onAddLotType, onDeleteLotType,
+  pendingDeleteLotType, onClearPendingDelete,
+}) {
+  const [expanded, setExpanded] = useState(false)
+
   // Group phases by instrument (same logic as PhasePanel)
   const byInstrument = []
   const instrSeen = {}
@@ -1691,51 +1761,90 @@ function UnitCountsPanel({ phases, unitCountsSubtotal, onToggleSubtotal, onProje
     byInstrument[instrSeen[ph.instrument_id]].phases.push(ph)
   }
 
+  const panelW = expanded ? 320 : 256
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minWidth: 256 }}>
-      {/* Toggle: controls what the map polygons show */}
-      <div style={{ padding: '8px 10px', borderBottom: '1px solid #e5e7eb', background: '#f8fafc', display: 'flex', gap: 6, flexShrink: 0 }}>
-        <button
-          onClick={() => onToggleSubtotal(false)}
-          style={{
-            flex: 1, padding: '4px 6px', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontWeight: !unitCountsSubtotal ? 600 : 400,
-            border: `1px solid ${!unitCountsSubtotal ? '#0d9488' : '#d1d5db'}`,
-            background: !unitCountsSubtotal ? '#f0fdfa' : '#fff',
-            color: !unitCountsSubtotal ? '#0f766e' : '#6b7280',
-          }}
-        >
-          Totals on map
-        </button>
-        <button
-          onClick={() => onToggleSubtotal(true)}
-          style={{
-            flex: 1, padding: '4px 6px', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontWeight: unitCountsSubtotal ? 600 : 400,
-            border: `1px solid ${unitCountsSubtotal ? '#0d9488' : '#d1d5db'}`,
-            background: unitCountsSubtotal ? '#f0fdfa' : '#fff',
-            color: unitCountsSubtotal ? '#0f766e' : '#6b7280',
-          }}
-        >
-          By type on map
-        </button>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minWidth: panelW, width: panelW, transition: 'width 0.15s' }}>
+
+      {/* Controls row */}
+      <div style={{ padding: '6px 10px', borderBottom: '1px solid #e5e7eb', background: '#f8fafc', display: 'flex', gap: 5, flexShrink: 0, alignItems: 'center' }}>
+        {/* Map overlay toggle */}
+        <button onClick={() => onToggleSubtotal(false)} style={{
+          flex: 1, padding: '4px 4px', borderRadius: 5, fontSize: 10, cursor: 'pointer', fontWeight: !unitCountsSubtotal ? 600 : 400,
+          border: `1px solid ${!unitCountsSubtotal ? '#0d9488' : '#d1d5db'}`,
+          background: !unitCountsSubtotal ? '#f0fdfa' : '#fff',
+          color: !unitCountsSubtotal ? '#0f766e' : '#6b7280',
+        }}>Totals on map</button>
+        <button onClick={() => onToggleSubtotal(true)} style={{
+          flex: 1, padding: '4px 4px', borderRadius: 5, fontSize: 10, cursor: 'pointer', fontWeight: unitCountsSubtotal ? 600 : 400,
+          border: `1px solid ${unitCountsSubtotal ? '#0d9488' : '#d1d5db'}`,
+          background: unitCountsSubtotal ? '#f0fdfa' : '#fff',
+          color: unitCountsSubtotal ? '#0f766e' : '#6b7280',
+        }}>By type on map</button>
+        {/* Expanded/compressed view toggle */}
+        <button onClick={() => setExpanded(v => !v)} title={expanded ? 'Compact view' : 'Expanded view'} style={{
+          padding: '4px 7px', borderRadius: 5, fontSize: 10, cursor: 'pointer', flexShrink: 0,
+          border: `1px solid ${expanded ? '#6366f1' : '#d1d5db'}`,
+          background: expanded ? '#eef2ff' : '#fff',
+          color: expanded ? '#4338ca' : '#6b7280', fontWeight: expanded ? 600 : 400,
+        }}>{expanded ? '⊟' : '⊞'}</button>
       </div>
+
+      {/* Pending delete lot type banner */}
+      {pendingDeleteLotType && (
+        <div style={{
+          padding: '7px 10px', background: '#fef9c3', borderBottom: '1px solid #fde68a',
+          display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
+        }}>
+          <div style={{ flex: 1, fontSize: 11, color: '#92400e', lineHeight: 1.4 }}>
+            <strong>{pendingDeleteLotType.lot_type_short}</strong> has no units in{' '}
+            <strong>{pendingDeleteLotType.phase_name}</strong>. Remove product type?
+          </div>
+          <button onClick={() => onDeleteLotType(pendingDeleteLotType.phase_id, pendingDeleteLotType.lot_type_id)}
+            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, border: '1px solid #f59e0b', background: '#fffbeb', color: '#92400e', cursor: 'pointer', fontWeight: 600, flexShrink: 0 }}>
+            Remove
+          </button>
+          <button onClick={onClearPendingDelete}
+            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, border: '1px solid #e5e7eb', background: '#fff', color: '#6b7280', cursor: 'pointer', flexShrink: 0 }}>
+            Keep
+          </button>
+        </div>
+      )}
 
       {/* Scrollable phase list */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '6px 0' }}>
-        {byInstrument.map(inst => (
-          <div key={inst.instrument_id} style={{ marginBottom: 4 }}>
-            <div style={{
-              padding: '4px 10px', fontSize: 10, fontWeight: 700, color: '#374151', letterSpacing: '0.04em',
-              background: '#f1f5f9', borderTop: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
-              display: 'flex', alignItems: 'baseline', gap: 6,
-            }}>
-              {inst.instrument_name}
-              {inst.dev_name && <span style={{ fontWeight: 400, color: '#9ca3af', fontSize: 10 }}>{inst.dev_name}</span>}
+        {byInstrument.map(inst => {
+          const instrColor = instrumentColors[inst.instrument_id] || UNASSIGNED_COLOR
+          return (
+            <div key={inst.instrument_id} style={{ marginBottom: 4 }}>
+              <div style={{
+                padding: '4px 10px', fontSize: 10, fontWeight: 700, color: '#374151', letterSpacing: '0.04em',
+                background: '#f1f5f9', borderTop: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                {/* Color swatch with picker — mirrors Phase Assignment tab */}
+                <div title="Click to change instrument color" style={{ position: 'relative', width: 12, height: 12, borderRadius: 2, flexShrink: 0, background: instrColor, cursor: 'pointer', border: '1px solid rgba(0,0,0,0.2)' }}>
+                  <input type="color" value={instrColor}
+                    onChange={e => onInstrumentColorChange?.(inst.instrument_id, e.target.value)}
+                    style={{ position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%', cursor: 'pointer', padding: 0, border: 'none' }}
+                  />
+                </div>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                  {inst.instrument_name}
+                </span>
+                {inst.dev_name && <span style={{ fontWeight: 400, color: '#9ca3af', fontSize: 10, flexShrink: 0 }}>{inst.dev_name}</span>}
+              </div>
+              {inst.phases.map(ph => (
+                <PhaseUnitBlock key={ph.phase_id} phase={ph} expanded={expanded}
+                  allLotTypes={allLotTypes}
+                  onProjectedCountChange={onProjectedCountChange}
+                  onAddLotType={onAddLotType}
+                  pendingDeleteLotTypeId={pendingDeleteLotType?.phase_id === ph.phase_id ? pendingDeleteLotType?.lot_type_id : null}
+                />
+              ))}
             </div>
-            {inst.phases.map(ph => (
-              <PhaseUnitBlock key={ph.phase_id} phase={ph} onProjectedCountChange={onProjectedCountChange} />
-            ))}
-          </div>
-        ))}
+          )
+        })}
         {noInstrumentPhases.length > 0 && (
           <div>
             <div style={{
@@ -1745,7 +1854,12 @@ function UnitCountsPanel({ phases, unitCountsSubtotal, onToggleSubtotal, onProje
               Unassigned phases
             </div>
             {noInstrumentPhases.map(ph => (
-              <PhaseUnitBlock key={ph.phase_id} phase={ph} onProjectedCountChange={onProjectedCountChange} />
+              <PhaseUnitBlock key={ph.phase_id} phase={ph} expanded={expanded}
+                allLotTypes={allLotTypes}
+                onProjectedCountChange={onProjectedCountChange}
+                onAddLotType={onAddLotType}
+                pendingDeleteLotTypeId={pendingDeleteLotType?.phase_id === ph.phase_id ? pendingDeleteLotType?.lot_type_id : null}
+              />
             ))}
           </div>
         )}
@@ -1754,52 +1868,102 @@ function UnitCountsPanel({ phases, unitCountsSubtotal, onToggleSubtotal, onProje
   )
 }
 
-function PhaseUnitBlock({ phase, onProjectedCountChange }) {
+function PhaseUnitBlock({ phase, expanded, allLotTypes, onProjectedCountChange, onAddLotType, pendingDeleteLotTypeId }) {
+  const [showAddPicker, setShowAddPicker] = useState(false)
   const byLt = phase.by_lot_type || []
   const totalR = byLt.reduce((s, lt) => s + (lt.actual || 0), 0)
   const totalP = byLt.reduce((s, lt) => s + (lt.projected || 0), 0)
   const totalT = byLt.reduce((s, lt) => s + (lt.total || 0), 0)
 
+  // Lot types not yet on this phase (for the add picker)
+  const existingIds = new Set(byLt.map(lt => lt.lot_type_id))
+  const availableTypes = allLotTypes.filter(lt => !existingIds.has(lt.lot_type_id))
+
+  const pad  = expanded ? '8px 12px' : '6px 10px'
+  const colT = expanded ? '72px' : '56px'
+  const cols = `${colT} 1fr 1fr 1fr`
+
   return (
-    <div style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9' }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#1e293b', marginBottom: byLt.length ? 5 : 0 }}>
+    <div style={{ padding: pad, borderBottom: '1px solid #f1f5f9' }}>
+      <div style={{ fontSize: expanded ? 12 : 11, fontWeight: 600, color: '#1e293b', marginBottom: byLt.length ? 5 : 2 }}>
         {phase.phase_name}
       </div>
       {!byLt.length ? (
-        <div style={{ fontSize: 10, color: '#9ca3af' }}>No product types</div>
+        <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 4 }}>No product types</div>
       ) : (
         <>
           {/* Column headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 2, marginBottom: 3 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 2, marginBottom: expanded ? 4 : 3 }}>
             <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Type</div>
-            <div style={{ fontSize: 9, color: '#64748b', fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>r</div>
-            <div style={{ fontSize: 9, color: '#0f766e', fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>p</div>
-            <div style={{ fontSize: 9, color: '#374151', fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>t</div>
+            <div style={{ fontSize: 9, color: '#64748b', fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>R</div>
+            <div style={{ fontSize: 9, color: '#0f766e', fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>P</div>
+            <div style={{ fontSize: 9, color: '#374151', fontWeight: 700, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.04em' }}>T</div>
           </div>
           {/* Lot type rows */}
-          {byLt.map(lt => (
-            <div key={lt.lot_type_id} style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 2, marginBottom: 2, alignItems: 'center' }}>
-              <div style={{ fontSize: 11, color: '#475569' }}>{lt.lot_type_short}</div>
-              <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center' }}>{lt.actual ?? 0}</div>
-              <div style={{ textAlign: 'center' }}>
-                <ProjectedInput
-                  value={lt.projected ?? 0}
-                  onSave={v => onProjectedCountChange(phase.phase_id, lt.lot_type_id, v)}
-                />
+          {byLt.map(lt => {
+            const isPendingDelete = lt.lot_type_id === pendingDeleteLotTypeId
+            return (
+              <div key={lt.lot_type_id}
+                style={{
+                  display: 'grid', gridTemplateColumns: cols, gap: 2,
+                  marginBottom: expanded ? 3 : 2, alignItems: 'center',
+                  background: isPendingDelete ? '#fef9c3' : 'transparent',
+                  borderRadius: isPendingDelete ? 3 : 0,
+                  padding: isPendingDelete ? '1px 2px' : 0,
+                }}>
+                <div style={{ fontSize: expanded ? 12 : 11, color: '#475569' }}>{lt.lot_type_short}</div>
+                <div style={{ fontSize: expanded ? 12 : 11, color: '#64748b', textAlign: 'center' }}>{lt.actual ?? 0}</div>
+                <div style={{ textAlign: 'center' }}>
+                  <ProjectedInput
+                    value={lt.projected ?? 0}
+                    onSave={v => onProjectedCountChange(phase.phase_id, lt.lot_type_id, v)}
+                  />
+                </div>
+                <div style={{ fontSize: expanded ? 12 : 11, color: '#1e293b', textAlign: 'center', fontWeight: 600 }}>{lt.total ?? 0}</div>
               </div>
-              <div style={{ fontSize: 11, color: '#1e293b', textAlign: 'center', fontWeight: 600 }}>{lt.total ?? 0}</div>
-            </div>
-          ))}
+            )
+          })}
           {/* Total row (only shown when multiple lot types) */}
           {byLt.length > 1 && (
-            <div style={{ display: 'grid', gridTemplateColumns: '56px 1fr 1fr 1fr', gap: 2, marginTop: 3, paddingTop: 3, borderTop: '1px solid #e2e8f0', alignItems: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 2, marginTop: 3, paddingTop: 3, borderTop: '1px solid #e2e8f0', alignItems: 'center' }}>
               <div style={{ fontSize: 9, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</div>
-              <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', fontWeight: 600 }}>{totalR}</div>
-              <div style={{ fontSize: 11, color: '#0f766e', textAlign: 'center', fontWeight: 600 }}>{totalP}</div>
-              <div style={{ fontSize: 11, color: '#1e293b', textAlign: 'center', fontWeight: 700 }}>{totalT}</div>
+              <div style={{ fontSize: expanded ? 12 : 11, color: '#64748b', textAlign: 'center', fontWeight: 600 }}>{totalR}</div>
+              <div style={{ fontSize: expanded ? 12 : 11, color: '#0f766e', textAlign: 'center', fontWeight: 600 }}>{totalP}</div>
+              <div style={{ fontSize: expanded ? 12 : 11, color: '#1e293b', textAlign: 'center', fontWeight: 700 }}>{totalT}</div>
             </div>
           )}
         </>
+      )}
+      {/* Add product type */}
+      {!showAddPicker ? (
+        <button onClick={() => setShowAddPicker(true)}
+          style={{ marginTop: 4, fontSize: 10, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', fontWeight: 500 }}>
+          + Add product type
+        </button>
+      ) : (
+        <div style={{ marginTop: 4, display: 'flex', gap: 4, alignItems: 'center' }}>
+          {availableTypes.length === 0 ? (
+            <span style={{ fontSize: 10, color: '#9ca3af' }}>All types assigned</span>
+          ) : (
+            <select
+              autoFocus
+              defaultValue=""
+              onChange={e => {
+                const id = parseInt(e.target.value, 10)
+                if (id) { onAddLotType?.(phase.phase_id, id); setShowAddPicker(false) }
+              }}
+              onBlur={() => setShowAddPicker(false)}
+              style={{ fontSize: 11, borderRadius: 4, border: '1px solid #6366f1', padding: '2px 4px', color: '#374151' }}
+            >
+              <option value="">Select type...</option>
+              {availableTypes.map(lt => (
+                <option key={lt.lot_type_id} value={lt.lot_type_id}>{lt.lot_type_short}</option>
+              ))}
+            </select>
+          )}
+          <button onClick={() => setShowAddPicker(false)}
+            style={{ fontSize: 10, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer' }}>×</button>
+        </div>
       )}
     </div>
   )
