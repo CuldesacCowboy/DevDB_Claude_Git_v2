@@ -47,8 +47,9 @@ function SitePlanViewInner() {
   const [traceUndoSignal, setTraceUndoSignal] = useState(0)   // increment → PdfCanvas pops last trace point
   const [placeHistory, setPlaceHistory]       = useState([])  // [{lotId, prevPos}] for undo in place mode
   const [instrumentColors, setInstrumentColors] = useState({})  // {instrument_id: color}
-  const [lotBankCollapsed, setLotBankCollapsed]       = useState(false)
-  const [phasePanelCollapsed, setPhasePanelCollapsed] = useState(false)
+  const [lotBankCollapsed, setLotBankCollapsed]             = useState(false)
+  const [phasePanelCollapsed, setPhasePanelCollapsed]       = useState(false)
+  const [unassignedBarCollapsed, setUnassignedBarCollapsed] = useState(false)
 
   // Lot bank + positioning
   const [allLots, setAllLots]             = useState([])   // all real lots for this ent_group
@@ -546,6 +547,20 @@ function SitePlanViewInner() {
     } catch { /* ignore */ }
   }
 
+  async function assignPhaseToBoundary(boundaryId, phaseId) {
+    try {
+      const res = await fetch(`${API}/phase-boundaries/${boundaryId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phase_id: phaseId }),
+      })
+      if (res.ok) {
+        const updated = await res.json()
+        setBoundaries(bs => bs.map(b => b.boundary_id === boundaryId ? updated : b))
+      }
+    } catch { /* ignore */ }
+  }
+
   async function unassignBoundary(boundaryId) {
     try {
       const res = await fetch(`${API}/phase-boundaries/${boundaryId}`, {
@@ -569,6 +584,12 @@ function SitePlanViewInner() {
   // Build maps for the side panel
   const phaseMap       = Object.fromEntries(phases.map(p => [p.phase_id, p]))
   const assignedPhaseIds = new Set(boundaries.filter(b => b.phase_id).map(b => b.phase_id))
+  // phase_id → boundary_id (for drag-to-unassign)
+  const phaseToBoundaryId = useMemo(() => {
+    const m = {}
+    for (const b of boundaries) if (b.phase_id) m[b.phase_id] = b.boundary_id
+    return m
+  }, [boundaries])
 
   // Build phase_id → color map from instrument color state
   const phaseColorMap = Object.fromEntries(
@@ -814,6 +835,7 @@ function SitePlanViewInner() {
             phases={phases}
             phaseMap={phaseMap}
             phaseColorMap={phaseColorMap}
+            phaseToBoundaryId={phaseToBoundaryId}
             instrumentColors={instrumentColors}
             selectedBoundaryId={selectedBoundaryId}
             selectedBoundary={selectedBoundary}
@@ -821,11 +843,24 @@ function SitePlanViewInner() {
             onSelectBoundary={id => setSelectedBoundaryId(prev => prev === id ? null : id)}
             onDeleteBoundary={handleDeleteBoundary}
             onAssign={assignPhaseToSelected}
+            onAssignBoundaryToPhase={assignPhaseToBoundary}
             onUnassign={unassignBoundary}
             onInstrumentColorChange={handleInstrumentColorChange}
             mode={mode}
             collapsed={phasePanelCollapsed}
             onCollapseToggle={() => setPhasePanelCollapsed(v => !v)}
+          />
+        )}
+
+        {/* Unassigned regions bar — collapsible, to the right of phases panel */}
+        {hasPlan && (
+          <UnassignedRegionsBar
+            boundaries={boundaries}
+            selectedBoundaryId={selectedBoundaryId}
+            onSelectBoundary={id => setSelectedBoundaryId(prev => prev === id ? null : id)}
+            onUnassignBoundary={unassignBoundary}
+            collapsed={unassignedBarCollapsed}
+            onCollapseToggle={() => setUnassignedBarCollapsed(v => !v)}
           />
         )}
       </div>
@@ -847,22 +882,55 @@ const panelCollapseBtn = {
 }
 
 function PhasePanel({
-  boundaries, phases, phaseMap, phaseColorMap,
+  boundaries, phases, phaseMap, phaseColorMap, phaseToBoundaryId,
   instrumentColors, selectedBoundaryId, selectedBoundary, assignedPhaseIds,
-  onSelectBoundary, onDeleteBoundary, onAssign, onUnassign, onInstrumentColorChange, mode,
-  collapsed, onCollapseToggle,
+  onSelectBoundary, onDeleteBoundary, onAssign, onAssignBoundaryToPhase, onUnassign,
+  onInstrumentColorChange, mode, collapsed, onCollapseToggle,
 }) {
-  // Group phases by instrument_id; unassigned (null) go into a separate list
+  const [dropTargetPhaseId, setDropTargetPhaseId] = useState(null)
+
+  // Group phases by instrument_id; phases with no instrument go into a separate list
   const byInstrument = []  // [{instrument_id, instrument_name, phases[]}]
   const instrSeen = {}
-  const unassigned = []
+  const unassignedPhases = []
   for (const ph of phases) {
-    if (ph.instrument_id == null) { unassigned.push(ph); continue }
+    if (ph.instrument_id == null) { unassignedPhases.push(ph); continue }
     if (!(ph.instrument_id in instrSeen)) {
       instrSeen[ph.instrument_id] = byInstrument.length
       byInstrument.push({ instrument_id: ph.instrument_id, instrument_name: ph.instrument_name || `Instrument ${ph.instrument_id}`, phases: [] })
     }
     byInstrument[instrSeen[ph.instrument_id]].phases.push(ph)
+  }
+
+  // Only show assigned boundaries in this panel (unassigned are in UnassignedRegionsBar)
+  const assignedBoundaries = boundaries.filter(b => b.phase_id != null)
+
+  function handlePhaseDragStart(e, ph) {
+    const bId = phaseToBoundaryId?.[ph.phase_id]
+    if (!bId) { e.preventDefault(); return }
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('devdb_drag_type', 'assigned_phase')
+    e.dataTransfer.setData('devdb_boundary_id', String(bId))
+  }
+
+  function handlePhaseDragOver(e, ph) {
+    // dataTransfer.types IS available on dragover; getData is not (security restriction).
+    // Accept any drop with our custom type onto phases that don't yet have a region.
+    const hasBoundaryData = Array.from(e.dataTransfer.types).includes('devdb_drag_type')
+    if (hasBoundaryData && !assignedPhaseIds.has(ph.phase_id)) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDropTargetPhaseId(ph.phase_id)
+    }
+  }
+
+  function handlePhaseDrop(e, ph) {
+    e.preventDefault()
+    setDropTargetPhaseId(null)
+    if (assignedPhaseIds.has(ph.phase_id)) return  // already has a region
+    const boundaryId = parseInt(e.dataTransfer.getData('devdb_boundary_id'), 10)
+    if (!boundaryId) return
+    onAssignBoundaryToPhase(boundaryId, ph.phase_id)
   }
 
   // ── Collapsed strip ──────────────────────────────────────────────────────────
@@ -879,7 +947,7 @@ function PhasePanel({
           writingMode: 'vertical-rl', letterSpacing: '0.06em',
           textTransform: 'uppercase', userSelect: 'none',
         }}>
-          {boundaries.length > 0 ? `Phases (${boundaries.length})` : 'Phases'}
+          {assignedPhaseIds.size > 0 ? `Phases (${assignedPhaseIds.size})` : 'Phases'}
         </span>
       </div>
     )
@@ -916,75 +984,77 @@ function PhasePanel({
         </div>
       )}
 
-      {/* Boundary list — phase name is the primary label */}
-      <div style={{ borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
-        {boundaries.map((b, i) => {
-          const ap = b.phase_id ? phaseMap[b.phase_id] : null
-          const isSel = b.boundary_id === selectedBoundaryId
-          const swatchColor = (b.phase_id && phaseColorMap[b.phase_id]) || UNASSIGNED_COLOR
-          return (
-            <div
-              key={b.boundary_id}
-              onClick={() => onSelectBoundary(b.boundary_id)}
-              style={{
-                padding: '5px 8px 5px 8px', cursor: 'pointer',
-                borderBottom: '1px solid #f3f4f6',
-                background: isSel ? '#ede9fe' : 'transparent',
-                borderLeft: `4px solid ${isSel ? '#7c3aed' : 'transparent'}`,
-                display: 'flex', alignItems: 'center', gap: 4,
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{
-                    width: 10, height: 10, borderRadius: 2, flexShrink: 0,
-                    background: swatchColor,
-                    outline: isSel ? '2px solid #c4b5fd' : 'none',
-                    outlineOffset: 1,
-                  }} />
-                  <span style={{
-                    fontSize: 11, fontWeight: isSel ? 700 : ap ? 500 : 400,
-                    color: ap ? '#1e293b' : '#9ca3af',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {ap ? ap.phase_name : 'Unassigned'}
-                  </span>
+      {/* Assigned boundary list — only shows regions that have a phase assigned */}
+      {assignedBoundaries.length > 0 && (
+        <div style={{ borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
+          {assignedBoundaries.map((b, i) => {
+            const ap = phaseMap[b.phase_id]
+            const isSel = b.boundary_id === selectedBoundaryId
+            const swatchColor = phaseColorMap[b.phase_id] || UNASSIGNED_COLOR
+            return (
+              <div
+                key={b.boundary_id}
+                onClick={() => onSelectBoundary(b.boundary_id)}
+                style={{
+                  padding: '5px 8px', cursor: 'pointer',
+                  borderBottom: '1px solid #f3f4f6',
+                  background: isSel ? '#ede9fe' : 'transparent',
+                  borderLeft: `4px solid ${isSel ? '#7c3aed' : 'transparent'}`,
+                  display: 'flex', alignItems: 'center', gap: 4,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{
+                      width: 10, height: 10, borderRadius: 2, flexShrink: 0,
+                      background: swatchColor,
+                      outline: isSel ? '2px solid #c4b5fd' : 'none',
+                      outlineOffset: 1,
+                    }} />
+                    <span style={{
+                      fontSize: 11, fontWeight: isSel ? 700 : 500,
+                      color: '#1e293b',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {ap?.phase_name ?? '—'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 10, marginTop: 1, paddingLeft: 16, color: '#d1d5db' }}>
+                    Region {i + 1}
+                  </div>
                 </div>
-                <div style={{ fontSize: 10, marginTop: 1, paddingLeft: 16, color: '#d1d5db' }}>
-                  Region {i + 1}
-                </div>
+                {onDeleteBoundary && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onDeleteBoundary(b.boundary_id) }}
+                    title="Delete region"
+                    style={{
+                      flexShrink: 0, width: 18, height: 18, borderRadius: 3,
+                      border: '1px solid #fecaca', background: '#fff5f5',
+                      color: '#ef4444', cursor: 'pointer', fontSize: 12,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      lineHeight: 1, padding: 0,
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
-              {onDeleteBoundary && (
-                <button
-                  onClick={e => { e.stopPropagation(); onDeleteBoundary(b.boundary_id) }}
-                  title="Delete region"
-                  style={{
-                    flexShrink: 0, width: 18, height: 18, borderRadius: 3,
-                    border: '1px solid #fecaca', background: '#fff5f5',
-                    color: '#ef4444', cursor: 'pointer', fontSize: 12,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    lineHeight: 1, padding: 0,
-                  }}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Phase assignment header */}
       <div style={{ padding: '6px 12px 4px', borderBottom: '1px solid #e5e7eb', background: '#fff', flexShrink: 0 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#374151' }}>
           Assign Phase
           {selectedBoundaryId
-            ? <span style={{ color: '#7c3aed', fontWeight: 400 }}> — click to assign</span>
-            : <span style={{ color: '#9ca3af', fontWeight: 400 }}> — select region first</span>}
+            ? <span style={{ color: '#7c3aed', fontWeight: 400 }}> — click or drop region</span>
+            : <span style={{ color: '#9ca3af', fontWeight: 400 }}> — select or drag a region</span>}
         </div>
       </div>
 
-      {/* Phase list — grouped by legal instrument */}
+      {/* Phase list — grouped by legal instrument, drag-drop enabled */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {phases.length === 0 && (
           <div style={{ padding: '12px', fontSize: 11, color: '#9ca3af' }}>No phases found</div>
@@ -1017,18 +1087,28 @@ function PhasePanel({
               {instrPhases.map(ph => {
                 const isAssignedHere  = selectedBoundary?.phase_id === ph.phase_id
                 const isAssignedElsew = assignedPhaseIds.has(ph.phase_id) && !isAssignedHere
+                const hasRegion       = assignedPhaseIds.has(ph.phase_id)
+                const isDrop          = dropTargetPhaseId === ph.phase_id
                 return (
                   <div
                     key={ph.phase_id}
+                    draggable={hasRegion}
+                    onDragStart={e => handlePhaseDragStart(e, ph)}
+                    onDragEnd={() => setDropTargetPhaseId(null)}
+                    onDragOver={e => handlePhaseDragOver(e, ph)}
+                    onDragLeave={() => setDropTargetPhaseId(null)}
+                    onDrop={e => handlePhaseDrop(e, ph)}
                     onClick={() => {
                       if (!selectedBoundaryId) return
                       if (isAssignedHere) onUnassign(selectedBoundaryId)
-                      else onAssign(ph.phase_id)
+                      else if (!hasRegion) onAssign(ph.phase_id)
                     }}
                     style={{
                       padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 4,
-                      cursor: selectedBoundaryId ? 'pointer' : 'default',
-                      background: isAssignedHere ? '#f5f3ff' : 'transparent',
+                      cursor: hasRegion ? 'grab' : (selectedBoundaryId && !hasRegion) ? 'pointer' : 'default',
+                      background: isDrop ? '#ede9fe' : isAssignedHere ? '#f5f3ff' : 'transparent',
+                      outline: isDrop ? '2px solid #c4b5fd' : 'none',
+                      outlineOffset: -2,
                       opacity: isAssignedElsew ? 0.4 : 1,
                     }}
                   >
@@ -1040,6 +1120,7 @@ function PhasePanel({
                       {ph.phase_name}
                     </span>
                     {isAssignedHere && <span style={{ fontSize: 10, color: '#7c3aed' }}>✓</span>}
+                    {hasRegion && !isAssignedHere && <span style={{ fontSize: 9, color: '#9ca3af' }}>⠿</span>}
                   </div>
                 )
               })}
@@ -1047,30 +1128,40 @@ function PhasePanel({
           )
         })}
 
-        {/* Unassigned phases (no instrument) */}
-        {unassigned.length > 0 && (
+        {/* Phases with no instrument */}
+        {unassignedPhases.length > 0 && (
           <div>
             <div style={{
               padding: '3px 12px', fontSize: 10, fontWeight: 600, color: '#9ca3af',
               background: '#f3f4f6', textTransform: 'uppercase', letterSpacing: '0.05em',
             }}>
-              Unassigned
+              No Instrument
             </div>
-            {unassigned.map(ph => {
+            {unassignedPhases.map(ph => {
               const isAssignedHere  = selectedBoundary?.phase_id === ph.phase_id
               const isAssignedElsew = assignedPhaseIds.has(ph.phase_id) && !isAssignedHere
+              const hasRegion       = assignedPhaseIds.has(ph.phase_id)
+              const isDrop          = dropTargetPhaseId === ph.phase_id
               return (
                 <div
                   key={ph.phase_id}
+                  draggable={hasRegion}
+                  onDragStart={e => handlePhaseDragStart(e, ph)}
+                  onDragEnd={() => setDropTargetPhaseId(null)}
+                  onDragOver={e => handlePhaseDragOver(e, ph)}
+                  onDragLeave={() => setDropTargetPhaseId(null)}
+                  onDrop={e => handlePhaseDrop(e, ph)}
                   onClick={() => {
                     if (!selectedBoundaryId) return
                     if (isAssignedHere) onUnassign(selectedBoundaryId)
-                    else onAssign(ph.phase_id)
+                    else if (!hasRegion) onAssign(ph.phase_id)
                   }}
                   style={{
                     padding: '4px 12px', display: 'flex', alignItems: 'center', gap: 4,
-                    cursor: selectedBoundaryId ? 'pointer' : 'default',
-                    background: isAssignedHere ? '#f5f3ff' : 'transparent',
+                    cursor: hasRegion ? 'grab' : (selectedBoundaryId && !hasRegion) ? 'pointer' : 'default',
+                    background: isDrop ? '#ede9fe' : isAssignedHere ? '#f5f3ff' : 'transparent',
+                    outline: isDrop ? '2px solid #c4b5fd' : 'none',
+                    outlineOffset: -2,
                     opacity: isAssignedElsew ? 0.4 : 1,
                   }}
                 >
@@ -1078,11 +1169,146 @@ function PhasePanel({
                     {ph.phase_name}
                   </span>
                   {isAssignedHere && <span style={{ fontSize: 10, color: '#7c3aed' }}>✓</span>}
+                  {hasRegion && !isAssignedHere && <span style={{ fontSize: 9, color: '#9ca3af' }}>⠿</span>}
                 </div>
               )
             })}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Unassigned Regions Bar ───────────────────────────────────────────────────
+
+function UnassignedRegionsBar({
+  boundaries, selectedBoundaryId, onSelectBoundary, onUnassignBoundary,
+  collapsed, onCollapseToggle,
+}) {
+  const [isBarDragOver, setIsBarDragOver] = useState(false)
+
+  const unassigned = boundaries.filter(b => b.phase_id == null)
+
+  if (collapsed) {
+    return (
+      <div style={{
+        width: 28, borderLeft: '1px solid #e5e7eb', background: '#f9fafb',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        flexShrink: 0, padding: '8px 0', gap: 10,
+      }}>
+        <button onClick={onCollapseToggle} title="Show Unassigned Regions" style={panelCollapseBtn}>‹</button>
+        <span style={{
+          fontSize: 10, color: '#9ca3af', fontWeight: 600,
+          writingMode: 'vertical-rl', letterSpacing: '0.06em',
+          textTransform: 'uppercase', userSelect: 'none',
+        }}>
+          {unassigned.length > 0 ? `Unassigned (${unassigned.length})` : 'Unassigned'}
+        </span>
+      </div>
+    )
+  }
+
+  function handleBarDragOver(e) {
+    const types = Array.from(e.dataTransfer.types)
+    if (types.includes('devdb_drag_type')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setIsBarDragOver(true)
+    }
+  }
+
+  function handleBarDrop(e) {
+    e.preventDefault()
+    setIsBarDragOver(false)
+    const dragType = e.dataTransfer.getData('devdb_drag_type')
+    if (dragType === 'assigned_phase') {
+      const boundaryId = parseInt(e.dataTransfer.getData('devdb_boundary_id'), 10)
+      if (boundaryId) onUnassignBoundary(boundaryId)
+    }
+  }
+
+  return (
+    <div
+      onDragOver={handleBarDragOver}
+      onDragLeave={() => setIsBarDragOver(false)}
+      onDrop={handleBarDrop}
+      style={{
+        width: 180, borderLeft: '1px solid #e5e7eb', background: isBarDragOver ? '#f5f3ff' : '#f9fafb',
+        display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
+        outline: isBarDragOver ? '2px solid #c4b5fd' : 'none', outlineOffset: -2,
+        transition: 'background 0.1s',
+      }}
+    >
+      {/* Header */}
+      <div style={{
+        padding: '8px 10px', borderBottom: '1px solid #e5e7eb', background: '#fff',
+        flexShrink: 0, display: 'flex', alignItems: 'flex-start', gap: 6,
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Unassigned</div>
+          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 1 }}>
+            {unassigned.length > 0
+              ? `${unassigned.length} region${unassigned.length !== 1 ? 's' : ''} · drag to phase`
+              : 'No unassigned regions'}
+          </div>
+        </div>
+        <button onClick={onCollapseToggle} title="Collapse" style={panelCollapseBtn}>›</button>
+      </div>
+
+      {/* Instruction when drag-over */}
+      {isBarDragOver && (
+        <div style={{
+          padding: '6px 10px', background: '#ede9fe', fontSize: 11,
+          color: '#7c3aed', fontWeight: 500, flexShrink: 0,
+        }}>
+          Drop to unassign region
+        </div>
+      )}
+
+      {/* Unassigned boundary list */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {unassigned.length === 0 && !isBarDragOver && (
+          <div style={{ padding: '12px 10px', fontSize: 11, color: '#9ca3af', lineHeight: 1.5 }}>
+            All regions assigned.{'\n'}Drag a phase here to unassign it.
+          </div>
+        )}
+        {unassigned.map((b, i) => {
+          const isSel = b.boundary_id === selectedBoundaryId
+          return (
+            <div
+              key={b.boundary_id}
+              draggable
+              onDragStart={e => {
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('devdb_drag_type', 'unassigned_boundary')
+                e.dataTransfer.setData('devdb_boundary_id', String(b.boundary_id))
+              }}
+              onClick={() => onSelectBoundary(b.boundary_id)}
+              title="Drag to a phase to assign"
+              style={{
+                padding: '5px 10px', cursor: 'grab', userSelect: 'none',
+                borderBottom: '1px solid #f3f4f6',
+                background: isSel ? '#ede9fe' : 'transparent',
+                borderLeft: `4px solid ${isSel ? '#7c3aed' : 'transparent'}`,
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <div style={{
+                width: 10, height: 10, borderRadius: 2, flexShrink: 0,
+                background: UNASSIGNED_COLOR,
+                outline: isSel ? '2px solid #c4b5fd' : 'none', outlineOffset: 1,
+              }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: isSel ? 700 : 400, color: '#6b7280' }}>
+                  Region {boundaries.indexOf(b) + 1}
+                </div>
+                <div style={{ fontSize: 9, color: '#d1d5db', marginTop: 1 }}>drag to assign</div>
+              </div>
+              <span style={{ fontSize: 10, color: '#d1d5db', flexShrink: 0 }}>⠿</span>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

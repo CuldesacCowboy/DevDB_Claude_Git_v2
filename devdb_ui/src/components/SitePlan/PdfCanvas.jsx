@@ -35,6 +35,29 @@ const SHARED_VERTEX_TOL  = 1e-5  // normalized-space tolerance for "same vertex"
 
 const UNASSIGNED_COLOR = '#9ca3af'
 
+// ─── Rotation coordinate helpers ─────────────────────────────────────────────
+// Coordinates are stored in un-rotated normalized [0,1] space.
+// These helpers convert to/from the rotated display space so SVG overlays
+// stay aligned with the PDF at any rotation angle.
+
+function applyRotationToNorm(nx, ny, rotation) {
+  switch (rotation) {
+    case 90:  return [ny, 1 - nx]        // 90° CCW
+    case 180: return [1 - nx, 1 - ny]
+    case 270: return [1 - ny, nx]        // 270° CCW (= 90° CW)
+    default:  return [nx, ny]
+  }
+}
+
+function unapplyRotationFromNorm(rx, ry, rotation) {
+  switch (rotation) {
+    case 90:  return [1 - ry, rx]        // inverse of 90° CCW
+    case 180: return [1 - rx, 1 - ry]
+    case 270: return [ry, 1 - rx]        // inverse of 270° CCW
+    default:  return [rx, ry]
+  }
+}
+
 // ─── Parcel edit hit detection (SVG space) ────────────────────────────────────
 function getEditTarget(sx, sy, svgPts) {
   for (let i = 0; i < svgPts.length; i++) {
@@ -83,7 +106,10 @@ export default function PdfCanvas({
   const [cssDims, setCssDims]       = useState(null)
   const [pan, setPan]               = useState({ x: 0, y: 0 })
   const [zoom, setZoom]             = useState(1.0)
-  const [rotation, setRotation]     = useState(0)
+  const [rotation, setRotation]     = useState(() => {
+    const saved = localStorage.getItem(`siteplan_rotation_${planId}`)
+    return saved ? parseInt(saved, 10) : 0
+  })
   const [pdfError, setPdfError]     = useState(null)
 
   // Parcel
@@ -125,6 +151,11 @@ export default function PdfCanvas({
   const editRef  = useRef(null)
 
   useEffect(() => { setSavedParcel(initialParcel || null) }, [initialParcel])
+
+  // Persist rotation across sessions
+  useEffect(() => {
+    if (planId) localStorage.setItem(`siteplan_rotation_${planId}`, String(rotation))
+  }, [planId, rotation])
 
   // Granular undo for trace mode: pop the last placed point
   useEffect(() => {
@@ -183,13 +214,17 @@ export default function PdfCanvas({
   // ─── Coord helpers ────────────────────────────────────────────────────────────
   const screenToNorm = useCallback((sx, sy) => {
     if (!cssDims) return null
-    return { x: (sx - pan.x) / zoom / cssDims.width, y: (sy - pan.y) / zoom / cssDims.height }
-  }, [cssDims, pan, zoom])
+    const rx = (sx - pan.x) / zoom / cssDims.width
+    const ry = (sy - pan.y) / zoom / cssDims.height
+    const [nx, ny] = unapplyRotationFromNorm(rx, ry, rotation)
+    return { x: nx, y: ny }
+  }, [cssDims, pan, zoom, rotation])
 
   const normToScreen = useCallback((nx, ny) => {
     if (!cssDims) return { x: 0, y: 0 }
-    return { x: nx * cssDims.width * zoom + pan.x, y: ny * cssDims.height * zoom + pan.y }
-  }, [cssDims, pan, zoom])
+    const [rx, ry] = applyRotationToNorm(nx, ny, rotation)
+    return { x: rx * cssDims.width * zoom + pan.x, y: ry * cssDims.height * zoom + pan.y }
+  }, [cssDims, pan, zoom, rotation])
 
   function svgXY(e) {
     const rect = containerRef.current.getBoundingClientRect()
