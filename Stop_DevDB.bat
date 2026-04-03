@@ -31,7 +31,7 @@ echo Waiting for port 8765 to be released...
 set /a attempts=0
 :wait_loop
 set /a attempts+=1
-netstat -aon | findstr ":8765 " >nul 2>&1
+netstat -aon | findstr ":8765 " | findstr "LISTENING" >nul 2>&1
 if errorlevel 1 goto port_free
 if %attempts% geq 30 goto port_timeout
 timeout /t 1 /nobreak >nul
