@@ -5,7 +5,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Component } from 'react'
 import PdfCanvas from '../components/SitePlan/PdfCanvas'
 import LotBank from '../components/SitePlan/LotBank'
-import { normalizeSharedVertices, mergeAdjacentPolygons } from '../components/SitePlan/splitPolygon'
+import { useBoundaryManager } from '../hooks/useBoundaryManager'
+import { useSitePlanState } from '../hooks/useSitePlanState'
+import { useBuildingGroups } from '../hooks/useBuildingGroups'
 
 class SitePlanErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null } }
@@ -33,6 +35,7 @@ const INSTRUMENT_COLORS = [
 const UNASSIGNED_COLOR = '#9ca3af'
 
 function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedGroupId: _setSelectedGroupIdProp }) {
+  // ─── Page-level state ───────────────────────────────────────────────────────
   const [entGroups, setEntGroups]             = useState([])
   const selectedGroupId    = _selectedGroupIdProp    ?? ''
   const setSelectedGroupId = _setSelectedGroupIdProp ?? (() => {})
@@ -41,49 +44,58 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   const [uploading, setUploading]             = useState(false)
   const [error, setError]                     = useState(null)
   const [mode, setMode]                       = useState('view')
-  const [boundaries, setBoundaries]           = useState([])
-  const [selectedBoundaryId, setSelectedBoundaryId] = useState(null)
+  const [traceUndoSignal, setTraceUndoSignal] = useState(0)
+  const [instrumentColors, setInstrumentColors] = useState({})
   const [phases, setPhases]                   = useState([])
-  const [undoStack, setUndoStack]             = useState([])
-  const [traceUndoSignal, setTraceUndoSignal] = useState(0)   // increment → PdfCanvas pops last trace point
-  const [placeHistory, setPlaceHistory]       = useState([])  // [{lotId, prevPos}] for undo in place mode
-  const [instrumentColors, setInstrumentColors] = useState({})  // {instrument_id: color}
+  const [allLotTypes, setAllLotTypes]         = useState([])
   const [lotBankCollapsed, setLotBankCollapsed]             = useState(false)
   const [phasePanelCollapsed, setPhasePanelCollapsed]       = useState(false)
   const [unassignedBarCollapsed, setUnassignedBarCollapsed] = useState(false)
+  const [rightPanelTab, setRightPanelTab]             = useState('assignment')
+  const [unitCountsSubtotal, setUnitCountsSubtotal]   = useState(false)
+  const [editProjected, setEditProjected]             = useState(null)
+  const [pendingDeleteLotType, setPendingDeleteLotType] = useState(null)
 
-  // Right panel tab + unit counts
-  const [rightPanelTab, setRightPanelTab]             = useState('assignment')  // 'assignment' | 'unit-counts'
-  const [unitCountsSubtotal, setUnitCountsSubtotal]   = useState(false)         // false=totals on map, true=by-type on map
-  const [editProjected, setEditProjected]             = useState(null)           // {phase_id, lot_type_id, value, sx, sy}
+  const fileInputRef = useRef(null)
 
-  // Building groups
-  const [showBuildingGroups, setShowBuildingGroups] = useState(() => {
-    try { return localStorage.getItem('devdb_siteplan_show_bg') === 'true' } catch { return false }
+  // ─── Domain hooks ───────────────────────────────────────────────────────────
+  const boundaryMgr = useBoundaryManager({ planId: plan?.plan_id, setMode, setError })
+  const sitePlan    = useSitePlanState({ planId: plan?.plan_id, boundaries: boundaryMgr.boundaries, setMode })
+  const bgGroups    = useBuildingGroups({
+    plan,
+    lotPositions: sitePlan.lotPositions,
+    allLots: sitePlan.allLots,
+    boundaries: boundaryMgr.boundaries,
+    phases,
+    mode,
+    setMode,
   })
-  const [buildingGroups, setBuildingGroups]                   = useState([])
-  const [selectedBgIds, setSelectedBgIds]                     = useState(new Set())
-  const [pendingBuildingGroup, setPendingBuildingGroup]       = useState(null) // {lots, polygon}
-  const [bgContextMenu, setBgContextMenu]                     = useState(null) // {x,y,id}
 
-  // Unit counts — lot type management
-  const [allLotTypes, setAllLotTypes]         = useState([])   // [{lot_type_id, lot_type_short}]
-  const [pendingDeleteLotType, setPendingDeleteLotType] = useState(null) // {phase_id, lot_type_id, lot_type_short, phase_name}
+  const {
+    boundaries, selectedBoundaryId, setSelectedBoundaryId, undoStack,
+    handleDeleteBoundary, handleDeleteAllBoundaries, clearBoundaries,
+    onSplitConfirm, onBoundarySelect, onVertexEditComplete, handleBoundaryUndo,
+    handleCleanupPolygons, assignPhaseToBoundary, swapBoundaryAssignments, unassignBoundary,
+  } = boundaryMgr
 
-  // Lot bank + positioning
-  const [allLots, setAllLots]             = useState([])   // all real lots for this ent_group
-  const [lotPositions, setLotPositions]   = useState({})   // {lot_id: {x,y}} — local (unsaved)
-  const [savedPositions, setSavedPositions] = useState({}) // {lot_id: {x,y}} — last saved
-  const [isDirty, setIsDirty]             = useState(false)
-  const [placeQueue, setPlaceQueue]       = useState([])   // [{lot_id, lot_number,...}] click-to-set queue
+  const {
+    allLots, lotPositions, isDirty, placeQueue, placeHistory,
+    bankLots, currentPlacingLot, lotMeta,
+    handleLotDrop, handleLotMove, handlePlaceLot, startPlaceFromLot, endPlaceMode,
+    handleSaveLotPositions, handleDiscardLotPositions, handlePlaceUndo,
+  } = sitePlan
 
-  const fileInputRef      = useRef(null)
-  const boundariesRef     = useRef(boundaries)
-  const lotPositionsRef   = useRef(lotPositions)
-  useEffect(() => { boundariesRef.current   = boundaries   }, [boundaries])
-  useEffect(() => { lotPositionsRef.current = lotPositions }, [lotPositions])
+  const {
+    buildingGroups, selectedBgIds, setSelectedBgIds,
+    pendingBuildingGroup, clearPendingBuildingGroup, bgContextMenu, setBgContextMenu,
+    showBuildingGroups, toggleShowBuildingGroups,
+    handleBuildingGroupDrawn, handleBuildingGroupConfirm, handleBuildingGroupCancel,
+    handleBuildingGroupSelect, handleDeleteSelectedBuildingGroups,
+    handleDeleteSingleBuildingGroup, handleBuildingGroupContextMenu,
+  } = bgGroups
 
-  // Load entitlement groups
+  // ─── Data loading ───────────────────────────────────────────────────────────
+
   useEffect(() => {
     fetch(`${API}/entitlement-groups`)
       .then(r => r.json())
@@ -91,7 +103,6 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
       .catch(() => setError('Could not load entitlement groups'))
   }, [])
 
-  // Load all lot types once for the "add product type" picker
   useEffect(() => {
     fetch(`${API}/phases/lot-types`)
       .then(r => r.ok ? r.json() : [])
@@ -99,14 +110,11 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
       .catch(() => {})
   }, [])
 
-  // Load plan when group changes
   useEffect(() => {
     if (!selectedGroupId) {
-      setPlan(null); setMode('view'); setBoundaries([]); setPhases([])
-      setSelectedBoundaryId(null); setUndoStack([])
+      setPlan(null); setMode('view'); setPhases([])
       return
     }
-    setUndoStack([])
     setLoading(true)
     setError(null)
     fetch(`${API}/site-plans/ent-group/${selectedGroupId}`)
@@ -115,16 +123,6 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
       .catch(() => { setError('Could not load site plan'); setLoading(false) })
   }, [selectedGroupId])
 
-  // Load boundaries when plan changes
-  useEffect(() => {
-    if (!plan) { setBoundaries([]); setSelectedBoundaryId(null); return }
-    fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
-      .then(r => r.ok ? r.json() : [])
-      .then(bs => setBoundaries(bs))
-      .catch(() => setBoundaries([]))
-  }, [plan?.plan_id])
-
-  // Load stored instrument colors when group changes
   useEffect(() => {
     if (!selectedGroupId) { setInstrumentColors({}); return }
     try {
@@ -133,7 +131,6 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     } catch { setInstrumentColors({}) }
   }, [selectedGroupId])
 
-  // Load phases for the side panel
   useEffect(() => {
     if (!selectedGroupId) { setPhases([]); return }
     fetch(`${API}/entitlement-groups/${selectedGroupId}/lot-phase-view`)
@@ -154,7 +151,6 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
       .catch(() => setPhases([]))
   }, [selectedGroupId])
 
-  // Auto-assign colors for any instrument not yet in instrumentColors
   useEffect(() => {
     if (!selectedGroupId || !phases.length) return
     const ids = [...new Set(phases.filter(p => p.instrument_id != null).map(p => p.instrument_id))]
@@ -184,144 +180,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     })
   }, [selectedGroupId])
 
-  // Load building groups when plan changes or toggle turns on
-  useEffect(() => {
-    if (!plan || !showBuildingGroups) { setBuildingGroups([]); return }
-    fetch(`${API}/building-groups/plan/${plan.plan_id}`)
-      .then(r => r.ok ? r.json() : [])
-      .then(setBuildingGroups)
-      .catch(() => setBuildingGroups([]))
-  }, [plan?.plan_id, showBuildingGroups])
-
-  // Load lot positions when plan changes
-  useEffect(() => {
-    if (!plan) {
-      setAllLots([]); setLotPositions({}); setSavedPositions({}); setIsDirty(false); setPlaceQueue([])
-      return
-    }
-    fetch(`${API}/lot-positions/plan/${plan.plan_id}`)
-      .then(r => r.ok ? r.json() : { positioned: [], bank: [] })
-      .then(data => {
-        const all = [...(data.positioned || []), ...(data.bank || [])]
-        setAllLots(all)
-        const pos = {}
-        for (const l of (data.positioned || [])) pos[l.lot_id] = { x: l.x, y: l.y }
-        setLotPositions(pos)
-        setSavedPositions(pos)
-        setIsDirty(false)
-      })
-      .catch(() => {})
-  }, [plan?.plan_id])
-
-  // ─── Point-in-polygon (ray casting, normalized coords) ─────────────────────
-  function pointInPolygon(px, py, polygon) {
-    let inside = false
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-      const xi = polygon[i].x, yi = polygon[i].y
-      const xj = polygon[j].x, yj = polygon[j].y
-      if (((yi > py) !== (yj > py)) && px < ((xj - xi) * (py - yi) / (yj - yi) + xi))
-        inside = !inside
-    }
-    return inside
-  }
-
-  // Returns phase_id (may be null) if inside any boundary, or undefined if outside all.
-  function findPhaseForPosition(x, y) {
-    for (const b of boundaries) {
-      const poly = JSON.parse(b.polygon_json)
-      if (pointInPolygon(x, y, poly)) return b.phase_id  // null if unassigned boundary
-    }
-    return undefined  // outside all polygons
-  }
-
-  // ─── Lot placement handlers ─────────────────────────────────────────────────
-  const handleLotDrop = useCallback((lotId, normPos) => {
-    const prevPos = lotPositionsRef.current[lotId] || null
-    setPlaceHistory(h => [...h, { lotId, prevPos }])
-    setLotPositions(prev => ({ ...prev, [lotId]: normPos }))
-    setIsDirty(true)
-  }, [])
-
-  const handleLotMove = useCallback((lotId, normPos) => {
-    const prevPos = lotPositionsRef.current[lotId] || null
-    setPlaceHistory(h => [...h, { lotId, prevPos }])
-    setLotPositions(prev => ({ ...prev, [lotId]: normPos }))
-    setIsDirty(true)
-  }, [])
-
-  // Called by PdfCanvas when user clicks in 'place' mode
-  const handlePlaceLot = useCallback((normPos) => {
-    setPlaceQueue(prev => {
-      if (!prev.length) return prev
-      const [current, ...rest] = prev
-      const prevPos = lotPositionsRef.current[current.lot_id] || null
-      setPlaceHistory(h => [...h, { lotId: current.lot_id, prevPos }])
-      setLotPositions(lp => ({ ...lp, [current.lot_id]: normPos }))
-      setIsDirty(true)
-      if (!rest.length) setMode('view')  // exhausted the queue
-      return rest
-    })
-  }, [])
-
-  function startPlaceFromLot(lot) {
-    // Build queue starting from this lot, continuing through rest of bank in order
-    const idx = bankLots.findIndex(l => l.lot_id === lot.lot_id)
-    const queue = idx >= 0 ? [...bankLots.slice(idx), ...bankLots.slice(0, idx)] : bankLots
-    setPlaceQueue(queue)
-    setMode('place')
-  }
-
-  function endPlaceMode() {
-    setPlaceQueue([])
-    setMode('view')
-  }
-
-  // ─── Save / Discard ────────────────────────────────────────────────────────
-  async function handleSaveLotPositions() {
-    if (!plan) return
-    const updates = [], removes = []
-    for (const [lotIdStr, pos] of Object.entries(lotPositions)) {
-      const lotId = Number(lotIdStr)
-      const phase = findPhaseForPosition(pos.x, pos.y)
-      // Always keep the lot at its position. If outside all polygons or inside an
-      // unassigned polygon, phase_id is null — the lot stays on the map, unassigned.
-      updates.push({ lot_id: lotId, x: pos.x, y: pos.y, phase_id: phase ?? null })
-    }
-    // Only remove lots the user explicitly took off the map (present in savedPositions
-    // but absent from current lotPositions — i.e., dragged back to the bank).
-    for (const lotIdStr of Object.keys(savedPositions)) {
-      const lotId = Number(lotIdStr)
-      if (!(lotId in lotPositions)) removes.push(lotId)
-    }
-    try {
-      const res = await fetch(`${API}/lot-positions/plan/${plan.plan_id}/save`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ updates, removes: [...new Set(removes)] }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        const all = [...(data.positioned || []), ...(data.bank || [])]
-        setAllLots(all)
-        const pos = {}
-        for (const l of (data.positioned || [])) pos[l.lot_id] = { x: l.x, y: l.y }
-        setLotPositions(pos)
-        setSavedPositions(pos)
-        setIsDirty(false)
-        setPlaceQueue([])
-        setPlaceHistory([])
-        setMode('view')
-      }
-    } catch { /* ignore */ }
-  }
-
-  function handleDiscardLotPositions() {
-    setLotPositions(savedPositions)
-    setIsDirty(false)
-    setPlaceQueue([])
-    setPlaceHistory([])
-    setMode('view')
-  }
+  // ─── Plan management ────────────────────────────────────────────────────────
 
   async function handleFileChange(e) {
     const file = e.target.files?.[0]
@@ -334,8 +193,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     setUploading(true)
     setError(null)
     setMode('view')
-    setBoundaries([])
-    setSelectedBoundaryId(null)
+    clearBoundaries()
     try {
       const form = new FormData()
       form.append('file', file)
@@ -356,62 +214,9 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
       })
       if (res.ok) {
         setPlan(p => ({ ...p, parcel_json: null }))
-        setBoundaries([])
-        setSelectedBoundaryId(null)
+        clearBoundaries()
         setMode('view')
       }
-    } catch { /* ignore */ }
-  }
-
-  async function handleDeleteBoundary(boundaryId) {
-    const current = boundariesRef.current
-    const toDelete = current.find(b => b.boundary_id === boundaryId)
-    if (!toDelete) return
-
-    try {
-      // Find the best neighbor to absorb the deleted polygon's area.
-      // "Best" = most shared vertices (longest shared boundary).
-      const poly1 = JSON.parse(toDelete.polygon_json)
-      let bestNeighbor = null, bestShared = 0
-      for (const b of current) {
-        if (b.boundary_id === boundaryId) continue
-        const poly2 = JSON.parse(b.polygon_json)
-        const shared = poly1.filter(p1 =>
-          poly2.some(p2 => Math.hypot(p1.x - p2.x, p1.y - p2.y) < 2e-4)
-        ).length
-        if (shared > bestShared) { bestShared = shared; bestNeighbor = b }
-      }
-
-      if (bestNeighbor && bestShared >= 2) {
-        const poly2 = JSON.parse(bestNeighbor.polygon_json)
-        const merged = mergeAdjacentPolygons(poly1, poly2)
-        if (merged) {
-          await fetch(`${API}/phase-boundaries/${bestNeighbor.boundary_id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ polygon_json: JSON.stringify(merged) }),
-          })
-        }
-      }
-
-      await fetch(`${API}/phase-boundaries/${boundaryId}`, { method: 'DELETE' })
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
-      setBoundaries(fresh.ok ? await fresh.json() : current.filter(b => b.boundary_id !== boundaryId))
-      setSelectedBoundaryId(prev => prev === boundaryId ? null : prev)
-      setUndoStack([])
-    } catch { /* ignore */ }
-  }
-
-  async function handleDeleteAllBoundaries() {
-    if (!plan || !boundaries.length) return
-    try {
-      await Promise.all(boundaries.map(b =>
-        fetch(`${API}/phase-boundaries/${b.boundary_id}`, { method: 'DELETE' })
-      ))
-      setBoundaries([])
-      setSelectedBoundaryId(null)
-      setUndoStack([])
-      setMode('view')
     } catch { /* ignore */ }
   }
 
@@ -419,156 +224,25 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     if (!plan) return
     if (!window.confirm('Delete the community boundary and all phases? This cannot be undone.')) return
     try {
-      // Delete all boundaries from DB
-      await Promise.all(boundaries.map(b =>
-        fetch(`${API}/phase-boundaries/${b.boundary_id}`, { method: 'DELETE' })
-      ))
-      // Clear parcel from DB
-      await fetch(`${API}/site-plans/${plan.plan_id}/parcel`, {
+      await handleDeleteAllBoundaries()
+      const res = await fetch(`${API}/site-plans/${plan.plan_id}/parcel`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parcel_json: null }),
       })
-      setPlan(p => ({ ...p, parcel_json: null }))
-      setBoundaries([])
-      setSelectedBoundaryId(null)
-      setUndoStack([])
-      setMode('view')
+      if (res.ok) setPlan(p => ({ ...p, parcel_json: null }))
     } catch { /* ignore */ }
   }
 
-  const onSplitConfirm = useCallback(async (originalBoundaryId, polyA, polyB) => {
-    if (!plan) return
-    const original = originalBoundaryId != null
-      ? boundariesRef.current.find(b => b.boundary_id === originalBoundaryId)
-      : null
-
-    // Normalize shared vertices between the two new polygons before persisting
-    // to eliminate any floating-point micro-gaps from the split geometry.
-    const synthetic = [
-      { boundary_id: '_a', polygon_json: JSON.stringify(polyA) },
-      { boundary_id: '_b', polygon_json: JSON.stringify(polyB) },
-    ]
-    const normChanges = normalizeSharedVertices(synthetic)
-    const normMap = Object.fromEntries(normChanges.map(n => [n.boundary_id, JSON.parse(n.polygon_json)]))
-    const finalPolyA = normMap['_a'] || polyA
-    const finalPolyB = normMap['_b'] || polyB
-
-    try {
-      const res = await fetch(`${API}/phase-boundaries/split`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan_id: plan.plan_id,
-          original_boundary_id: originalBoundaryId ?? null,
-          polygon_a: JSON.stringify(finalPolyA),
-          polygon_b: JSON.stringify(finalPolyB),
-        }),
-      })
-      if (!res.ok) throw new Error('Split failed')
-      const newPair = await res.json()  // [{boundary_id, ...}, {boundary_id, ...}]
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
-      setBoundaries(fresh.ok ? await fresh.json() : [])
-      setSelectedBoundaryId(null)
-      if (original) {
-        setUndoStack(prev => [...prev.slice(-19), {
-          type: 'split',
-          deleted: original,
-          addedIds: newPair.map(b => b.boundary_id),
-        }])
-      }
-    } catch (err) { setError(err.message) }
-  }, [plan?.plan_id])
-
-  const onBoundarySelect = useCallback((id) => {
-    setSelectedBoundaryId(prev => prev === id ? null : id)
-  }, [])
-
-  // Called by PdfCanvas before/after vertex edits — push undo entry
-  const onVertexEditComplete = useCallback((oldStates) => {
-    if (!oldStates?.length) return
-    setUndoStack(prev => [...prev.slice(-19), { type: 'edit', oldStates }])
-  }, [])
-
-  function handlePlaceUndo() {
-    setPlaceHistory(h => {
-      if (!h.length) return h
-      const { lotId, prevPos } = h[h.length - 1]
-      if (prevPos === null) {
-        setLotPositions(lp => { const next = { ...lp }; delete next[lotId]; return next })
-      } else {
-        setLotPositions(lp => ({ ...lp, [lotId]: prevPos }))
-      }
-      return h.slice(0, -1)
-    })
-  }
+  // ─── Undo coordinator (trace / place / boundary) ───────────────────────────
 
   async function handleUndo() {
-    if (mode === 'trace') {
-      setTraceUndoSignal(s => s + 1)
-      return
-    }
-    if (mode === 'place') {
-      handlePlaceUndo()
-      return
-    }
-    if (!undoStack.length || !plan) return
-    const entry = undoStack[undoStack.length - 1]
-    setUndoStack(prev => prev.slice(0, -1))
-    setError(null)
-    try {
-      if (entry.type === 'split') {
-        // Delete the two child boundaries, then re-create the original
-        for (const id of entry.addedIds) {
-          await fetch(`${API}/phase-boundaries/${id}`, { method: 'DELETE' })
-        }
-        await fetch(`${API}/phase-boundaries`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            plan_id: plan.plan_id,
-            polygon_json: entry.deleted.polygon_json,
-            label: entry.deleted.label ?? undefined,
-            phase_id: entry.deleted.phase_id ?? undefined,
-            split_order: entry.deleted.split_order,
-          }),
-        })
-      } else if (entry.type === 'edit') {
-        for (const { boundary_id, old_polygon_json } of entry.oldStates) {
-          await fetch(`${API}/phase-boundaries/${boundary_id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ polygon_json: old_polygon_json }),
-          })
-        }
-      }
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
-      setBoundaries(fresh.ok ? await fresh.json() : [])
-      setSelectedBoundaryId(null)
-    } catch (err) {
-      setError('Undo failed: ' + err.message)
-      setUndoStack(prev => [...prev, entry])  // re-push on failure
-    }
+    if (mode === 'trace') { setTraceUndoSignal(s => s + 1); return }
+    if (mode === 'place') { handlePlaceUndo(); return }
+    await handleBoundaryUndo()
   }
 
-  async function handleCleanupPolygons() {
-    if (!plan || !boundaries.length) return
-    const modified = normalizeSharedVertices(boundaries)
-    if (!modified.length) return
-    try {
-      await Promise.all(modified.map(m =>
-        fetch(`${API}/phase-boundaries/${m.boundary_id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ polygon_json: m.polygon_json }),
-        })
-      ))
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
-      setBoundaries(fresh.ok ? await fresh.json() : boundaries)
-    } catch { /* ignore */ }
-  }
-
-  // ─── Unit counts helpers ────────────────────────────────────────────────────
+  // ─── Unit counts ────────────────────────────────────────────────────────────
 
   async function handleProjectedCountChange(phaseId, lotTypeId, newValue) {
     const res = await fetch(`${API}/phases/${phaseId}/lot-type/${lotTypeId}/projected`, {
@@ -577,7 +251,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
       body: JSON.stringify({ projected_count: newValue }),
     })
     if (res.ok) {
-      const data = await res.json()  // {phase_id, lot_type_id, projected_count, actual, total}
+      const data = await res.json()
       setPhases(prev => prev.map(ph => {
         if (ph.phase_id !== phaseId) return ph
         return {
@@ -588,7 +262,6 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
           }),
         }
       }))
-      // If p=0 and r=0, offer to remove the product type from the phase
       if (newValue === 0 && (data.actual || 0) === 0) {
         const ph = phases.find(p => p.phase_id === phaseId)
         const lt = (ph?.by_lot_type || []).find(l => l.lot_type_id === lotTypeId)
@@ -605,7 +278,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   async function handleAddLotType(phaseId, lotTypeId) {
     const res = await fetch(`${API}/phases/${phaseId}/lot-type/${lotTypeId}`, { method: 'POST' })
     if (res.ok) {
-      const data = await res.json()  // {split_id, phase_id, lot_type_id, lot_type_short, projected_count, actual, total}
+      const data = await res.json()
       setPhases(prev => prev.map(ph => {
         if (ph.phase_id !== phaseId) return ph
         const already = (ph.by_lot_type || []).some(lt => lt.lot_type_id === lotTypeId)
@@ -635,195 +308,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     setPendingDeleteLotType(null)
   }
 
-  // ─── Building group helpers ─────────────────────────────────────────────────
-
-  async function loadBuildingGroups() {
-    if (!plan) return
-    const res = await fetch(`${API}/building-groups/plan/${plan.plan_id}`)
-    if (res.ok) setBuildingGroups(await res.json())
-  }
-
-  function toggleShowBuildingGroups() {
-    setShowBuildingGroups(prev => {
-      const next = !prev
-      try { localStorage.setItem('devdb_siteplan_show_bg', String(next)) } catch {}
-      if (!next) {
-        setBuildingGroups([])
-        setSelectedBgIds(new Set())
-        setPendingBuildingGroup(null)
-        setBgContextMenu(null)
-        if (mode === 'draw-building' || mode === 'delete-building') setMode('view')
-      }
-      return next
-    })
-  }
-
-  // Called by PdfCanvas when user finishes drawing a building group polygon.
-  // Detects which positioned lots are inside, within the same phase, and not already grouped.
-  const handleBuildingGroupDrawn = useCallback((polygon) => {
-    if (!polygon || polygon.length < 3) return
-
-    // Determine the phase context from the first polygon point
-    const firstPhaseId = findPhaseForPosition(polygon[0].x, polygon[0].y)
-
-    // Collect lot_ids already assigned to any building group
-    const assignedLotIds = new Set()
-    for (const bg of buildingGroups) {
-      for (const l of bg.lots) assignedLotIds.add(l.lot_id)
-    }
-
-    // Filter positioned lots: inside polygon + matching phase + not already grouped
-    const insideLots = []
-    for (const [lotIdStr, pos] of Object.entries(lotPositions)) {
-      const lotId = Number(lotIdStr)
-      if (assignedLotIds.has(lotId)) continue
-      if (!pointInPolygon(pos.x, pos.y, polygon)) continue
-      // Phase filter: only include lots whose position falls in the same phase as first click
-      const lotPhase = findPhaseForPosition(pos.x, pos.y)
-      if (firstPhaseId !== undefined && lotPhase !== firstPhaseId) continue
-      const meta = allLots.find(l => l.lot_id === lotId)
-      if (meta) insideLots.push({ lot_id: lotId, lot_number: meta.lot_number, phase_id: meta.phase_id })
-    }
-
-    if (!insideLots.length) {
-      // Nothing to group — stay in draw mode so user can try again
-      return
-    }
-
-    setPendingBuildingGroup({ lots: insideLots, polygon, phaseId: firstPhaseId })
-  }, [buildingGroups, lotPositions, allLots, boundaries]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function handleBuildingGroupConfirm() {
-    if (!pendingBuildingGroup || !plan) return
-    const { lots } = pendingBuildingGroup
-
-    // Resolve dev_id from any lot's phase
-    const firstLot = allLots.find(l => l.lot_id === lots[0].lot_id)
-    const phaseInfo = phases.find(p => p.phase_id === firstLot?.phase_id)
-    const devId = phaseInfo?.dev_id ?? 0  // 0 as last resort; NOT NULL constraint in DB
-
-    try {
-      const res = await fetch(`${API}/building-groups`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lot_ids: lots.map(l => l.lot_id), dev_id: devId, plan_id: plan.plan_id }),
-      })
-      if (res.ok) {
-        setPendingBuildingGroup(null)
-        setMode('view')
-        await loadBuildingGroups()
-      }
-    } catch { /* ignore */ }
-  }
-
-  function handleBuildingGroupCancel() {
-    setPendingBuildingGroup(null)
-    setMode('view')
-  }
-
-  const handleBuildingGroupSelect = useCallback((id) => {
-    setSelectedBgIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }, [])
-
-  async function handleDeleteSelectedBuildingGroups() {
-    const ids = [...selectedBgIds]
-    if (!ids.length) return
-    try {
-      const res = await fetch(`${API}/building-groups/bulk-delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ building_group_ids: ids }),
-      })
-      if (res.ok) {
-        setSelectedBgIds(new Set())
-        setMode('view')
-        await loadBuildingGroups()
-      }
-    } catch { /* ignore */ }
-  }
-
-  async function handleDeleteSingleBuildingGroup(id) {
-    try {
-      const res = await fetch(`${API}/building-groups/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        setSelectedBgIds(prev => { const next = new Set(prev); next.delete(id); return next })
-        setBgContextMenu(null)
-        await loadBuildingGroups()
-      }
-    } catch { /* ignore */ }
-  }
-
-  const handleBuildingGroupContextMenu = useCallback((id, x, y) => {
-    setBgContextMenu({ id, x, y })
-  }, [])
-
-  async function assignPhaseToSelected(phaseId) {
-    if (!selectedBoundaryId) return
-    try {
-      const res = await fetch(`${API}/phase-boundaries/${selectedBoundaryId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phase_id: phaseId }),
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setBoundaries(bs => bs.map(b => b.boundary_id === selectedBoundaryId ? updated : b))
-      }
-    } catch { /* ignore */ }
-  }
-
-  async function assignPhaseToBoundary(boundaryId, phaseId) {
-    try {
-      const res = await fetch(`${API}/phase-boundaries/${boundaryId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phase_id: phaseId }),
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setBoundaries(bs => bs.map(b => b.boundary_id === boundaryId ? updated : b))
-      }
-    } catch { /* ignore */ }
-  }
-
-  async function swapBoundaryAssignments(draggedBoundaryId, draggedPhaseId, targetBoundaryId, targetPhaseId) {
-    try {
-      // Unassign target first to avoid any unique-constraint conflict
-      await fetch(`${API}/phase-boundaries/${targetBoundaryId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phase_id: null }),
-      })
-      await fetch(`${API}/phase-boundaries/${draggedBoundaryId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phase_id: targetPhaseId }),
-      })
-      await fetch(`${API}/phase-boundaries/${targetBoundaryId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phase_id: draggedPhaseId }),
-      })
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${plan.plan_id}`)
-      if (fresh.ok) setBoundaries(await fresh.json())
-    } catch { /* ignore */ }
-  }
-
-  async function unassignBoundary(boundaryId) {
-    try {
-      const res = await fetch(`${API}/phase-boundaries/${boundaryId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phase_id: null }),
-      })
-      if (res.ok) {
-        const updated = await res.json()
-        setBoundaries(bs => bs.map(b => b.boundary_id === boundaryId ? updated : b))
-      }
-    } catch { /* ignore */ }
-  }
+  // ─── Derived state ──────────────────────────────────────────────────────────
 
   const initialParcel = plan?.parcel_json ? JSON.parse(plan.parcel_json) : null
   const pdfUrl        = plan ? `${API}/site-plans/${plan.plan_id}/file` : null
@@ -831,38 +316,23 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   const hasParcel     = !!(plan?.parcel_json)
   const hasBoundaries = boundaries.length > 0
 
-  // Build maps for the side panel
-  const phaseMap       = Object.fromEntries(phases.map(p => [p.phase_id, p]))
+  const phaseMap         = Object.fromEntries(phases.map(p => [p.phase_id, p]))
   const assignedPhaseIds = new Set(boundaries.filter(b => b.phase_id).map(b => b.phase_id))
-  // selectedBoundaryId, but only when that boundary has no phase assigned (for click-to-assign flow)
   const unassignedSelectedBoundaryId = selectedBoundaryId
     && boundaries.find(b => b.boundary_id === selectedBoundaryId)?.phase_id == null
     ? selectedBoundaryId : null
 
-  // phase_id → boundary_id (for drag-to-unassign)
   const phaseToBoundaryId = useMemo(() => {
     const m = {}
     for (const b of boundaries) if (b.phase_id) m[b.phase_id] = b.boundary_id
     return m
   }, [boundaries])
 
-  // Build phase_id → color map from instrument color state
   const phaseColorMap = Object.fromEntries(
     phases.filter(p => p.instrument_id != null && instrumentColors[p.instrument_id])
       .map(p => [p.phase_id, instrumentColors[p.instrument_id]])
   )
-  const selectedBoundary = selectedBoundaryId
-    ? boundaries.find(b => b.boundary_id === selectedBoundaryId)
-    : null
 
-  // Lot bank derived state
-  const bankLots = useMemo(
-    () => allLots.filter(l => !(l.lot_id in lotPositions)),
-    [allLots, lotPositions]
-  )
-  const currentPlacingLot = placeQueue[0] || null
-
-  // lot_id → color (by instrument)
   const lotColorMap = useMemo(() => {
     const m = {}
     for (const l of allLots) {
@@ -871,13 +341,6 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     }
     return m
   }, [allLots, instrumentColors])
-
-  // lot_id → metadata for PdfCanvas (phase_id used for visual-center label placement)
-  const lotMeta = useMemo(() => {
-    const m = {}
-    for (const l of allLots) m[l.lot_id] = { lot_number: l.lot_number, instrument_id: l.instrument_id, phase_id: l.phase_id }
-    return m
-  }, [allLots])
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 44px)' }}>
@@ -951,7 +414,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
             {showBuildingGroups && (
               <>
                 <button
-                  onClick={() => { setPendingBuildingGroup(null); setMode('draw-building') }}
+                  onClick={() => { clearPendingBuildingGroup(); setMode('draw-building') }}
                   style={btn('#0f766e', '#f0fdfa', '#5eead4')}
                   title="Draw a boundary around lots to group them into a building"
                 >
@@ -986,7 +449,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
           </>
         )}
         {hasPlan && mode === 'draw-building' && (
-          <button onClick={() => { setPendingBuildingGroup(null); setMode('view') }} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Cancel</button>
+          <button onClick={handleBuildingGroupCancel} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Cancel</button>
         )}
         {hasPlan && mode === 'delete-building' && (
           <>
@@ -1065,7 +528,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
               onBoundarySelect={onBoundarySelect}
               onBoundaryDelete={handleDeleteBoundary}
               onSplitConfirm={onSplitConfirm}
-              onBoundaryUpdated={updated => setBoundaries(bs => bs.map(b => b.boundary_id === updated.boundary_id ? updated : b))}
+              onBoundaryUpdated={updated => boundaryMgr.setBoundaries(bs => bs.map(b => b.boundary_id === updated.boundary_id ? updated : b))}
               onVertexEditComplete={onVertexEditComplete}
               traceUndoSignal={traceUndoSignal}
               lotPositions={lotPositions}

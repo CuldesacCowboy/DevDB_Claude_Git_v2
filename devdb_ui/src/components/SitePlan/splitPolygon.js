@@ -435,3 +435,15 @@ export function mergeAdjacentPolygons(poly1, poly2, tol = 2e-4) {
   const merged = [jBefore1, ...chain1, jAfter1, ...chain2]
   return merged.length >= 3 ? merged : null
 }
+
+// ─── Point-in-polygon (ray casting, normalized coords) ────────────────────────
+export function pointInPolygon(px, py, polygon) {
+  let inside = false
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y
+    const xj = polygon[j].x, yj = polygon[j].y
+    if (((yi > py) !== (yj > py)) && px < ((xj - xi) * (py - yi) / (yj - yi) + xi))
+      inside = !inside
+  }
+  return inside
+}
