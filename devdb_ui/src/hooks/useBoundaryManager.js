@@ -31,6 +31,7 @@ export function useBoundaryManager({ planId, setMode, setError }) {
     const current = boundariesRef.current
     const toDelete = current.find(b => b.boundary_id === boundaryId)
     if (!toDelete) return
+    setError(null)
     try {
       const poly1 = JSON.parse(toDelete.polygon_json)
       let bestNeighbor = null, bestShared = 0
@@ -58,12 +59,13 @@ export function useBoundaryManager({ planId, setMode, setError }) {
       setBoundaries(fresh.ok ? await fresh.json() : current.filter(b => b.boundary_id !== boundaryId))
       setSelectedBoundaryId(prev => prev === boundaryId ? null : prev)
       setUndoStack([])
-    } catch { /* ignore */ }
+    } catch (err) { setError('Delete failed: ' + err.message) }
   }
 
   async function handleDeleteAllBoundaries() {
     const current = boundariesRef.current
     if (!planId || !current.length) return
+    setError(null)
     try {
       await Promise.all(current.map(b =>
         fetch(`${API}/phase-boundaries/${b.boundary_id}`, { method: 'DELETE' })
@@ -72,7 +74,7 @@ export function useBoundaryManager({ planId, setMode, setError }) {
       setSelectedBoundaryId(null)
       setUndoStack([])
       setMode('view')
-    } catch { /* ignore */ }
+    } catch (err) { setError('Delete all failed: ' + err.message) }
   }
 
   function clearBoundaries() {
@@ -183,6 +185,7 @@ export function useBoundaryManager({ planId, setMode, setError }) {
     if (!planId || !current.length) return
     const modified = normalizeSharedVertices(current)
     if (!modified.length) return
+    setError(null)
     try {
       await Promise.all(modified.map(m =>
         fetch(`${API}/phase-boundaries/${m.boundary_id}`, {
@@ -193,12 +196,13 @@ export function useBoundaryManager({ planId, setMode, setError }) {
       ))
       const fresh = await fetch(`${API}/phase-boundaries/plan/${planId}`)
       setBoundaries(fresh.ok ? await fresh.json() : current)
-    } catch { /* ignore */ }
+    } catch (err) { setError('Cleanup failed: ' + err.message) }
   }
 
   // ─── Phase assignment ───────────────────────────────────────────────────────
 
   async function assignPhaseToBoundary(boundaryId, phaseId) {
+    setError(null)
     try {
       const res = await fetch(`${API}/phase-boundaries/${boundaryId}`, {
         method: 'PATCH',
@@ -208,11 +212,15 @@ export function useBoundaryManager({ planId, setMode, setError }) {
       if (res.ok) {
         const updated = await res.json()
         setBoundaries(bs => bs.map(b => b.boundary_id === boundaryId ? updated : b))
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(body.detail || `Phase assignment failed (${res.status})`)
       }
-    } catch { /* ignore */ }
+    } catch (err) { setError('Phase assignment failed: ' + err.message) }
   }
 
   async function swapBoundaryAssignments(draggedBoundaryId, draggedPhaseId, targetBoundaryId, targetPhaseId) {
+    setError(null)
     try {
       await fetch(`${API}/phase-boundaries/${targetBoundaryId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -228,10 +236,11 @@ export function useBoundaryManager({ planId, setMode, setError }) {
       })
       const fresh = await fetch(`${API}/phase-boundaries/plan/${planId}`)
       if (fresh.ok) setBoundaries(await fresh.json())
-    } catch { /* ignore */ }
+    } catch (err) { setError('Swap failed: ' + err.message) }
   }
 
   async function unassignBoundary(boundaryId) {
+    setError(null)
     try {
       const res = await fetch(`${API}/phase-boundaries/${boundaryId}`, {
         method: 'PATCH',
@@ -241,8 +250,11 @@ export function useBoundaryManager({ planId, setMode, setError }) {
       if (res.ok) {
         const updated = await res.json()
         setBoundaries(bs => bs.map(b => b.boundary_id === boundaryId ? updated : b))
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setError(body.detail || `Unassign failed (${res.status})`)
       }
-    } catch { /* ignore */ }
+    } catch (err) { setError('Unassign failed: ' + err.message) }
   }
 
   return {
