@@ -7,7 +7,7 @@
 
 | # | Item | Severity | Status |
 |---|---|---|---|
-| 1 | Surface lot positions load failure | High | Not started |
+| 1 | Surface lot positions load failure | High | Complete |
 | 2 | Surface PdfCanvas save failures to user | High | Not started |
 | 3 | Instrument order / dev_id persistence decision | Medium | Not started |
 | 4 | Add top-level React Error Boundary | Medium | Not started |
@@ -191,3 +191,4 @@ Largest task on the list. Low risk if done carefully (no logic changes). Recomme
 
 | Date | Item | What was done |
 |---|---|---|
+| 2026-04-04 | Task 1 — Lot positions load failure | Added loadError state to useSitePlanState; surfaced in LotBank panel; empty-state suppressed when error present |
