@@ -10,8 +10,8 @@
 | 1 | Replace window.confirm() with inline confirmation | Complete |
 | 2 | Surface boundary operation errors to user | Complete |
 | 3 | Bulk-delete endpoint for boundaries | Complete |
-| 4 | Move fetchOk to module level / utils | Not started |
-| 5 | Move @keyframes spin to global CSS | Not started |
+| 4 | Move fetchOk to module level / utils | Complete |
+| 5 | Move @keyframes spin to global CSS | Complete |
 
 ---
 
@@ -77,12 +77,12 @@ Completed 2026-04-04. Route registered before /{boundary_id} per FastAPI orderin
 **Scope:** `devdb_ui/src/pages/SimulationView.jsx`
 
 ### Sub-tasks
-- [ ] Move `fetchOk` above the component function (module-level constant)
-- [ ] Confirm no closure dependencies on component state (it has none — pure fetch wrapper)
+- [x] Move `fetchOk` above the component function (module-level constant)
+- [x] Confirm no closure dependencies on component state (it has none — pure fetch wrapper)
 - [ ] If any other file adds a similar helper, consolidate into `src/utils/fetchOk.js`
 
 ### Notes
-_Add implementation notes here as work progresses._
+Completed 2026-04-04. Hoisted to module level above the SimulationView component. No closure deps confirmed.
 
 ---
 
@@ -93,11 +93,11 @@ _Add implementation notes here as work progresses._
 **Scope:** `devdb_ui/src/pages/SimulationView.jsx`, `devdb_ui/src/index.css`
 
 ### Sub-tasks
-- [ ] Add `@keyframes spin { to { transform: rotate(360deg) } }` to `src/index.css`
-- [ ] Remove the inline `<style>` tag from SimulationView render
+- [x] Add `@keyframes spin { to { transform: rotate(360deg) } }` to `src/index.css`
+- [x] Remove the inline `<style>` tag from SimulationView render
 
 ### Notes
-_Add implementation notes here as work progresses._
+Completed 2026-04-04.
 
 ---
 
@@ -108,3 +108,5 @@ _Add implementation notes here as work progresses._
 | 2026-04-04 | Task 1 — window.confirm() | Added `pendingDeleteBoundary` state; inline red banner with Delete/Cancel; removed `window.confirm()` |
 | 2026-04-04 | Task 2 — Boundary errors | Wired setError into all 6 silent catch blocks; setError(null) clears stale errors at start of each op |
 | 2026-04-04 | Task 3 — Bulk-delete endpoint | POST /phase-boundaries/bulk-delete; handleDeleteAllBoundaries uses single request instead of N parallel DELETEs |
+| 2026-04-04 | Task 4 — fetchOk hoist | Moved to module level above SimulationView component |
+| 2026-04-04 | Task 5 — @keyframes spin | Moved to src/index.css; removed inline style tag |
