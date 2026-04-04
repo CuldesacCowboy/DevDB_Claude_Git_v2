@@ -8,6 +8,15 @@ import ErrorBoundary from './components/ErrorBoundary'
 const LS_KEY = 'devdb_active_community'
 const LS_TEST_KEY = 'devdb_show_test_communities'
 
+const navLinkStyle = ({ isActive }) => ({
+  padding: '0 16px', height: '44px',
+  display: 'flex', alignItems: 'center',
+  fontSize: 13, fontWeight: 500,
+  color: isActive ? '#2563eb' : '#6b7280',
+  borderBottom: isActive ? '2px solid #2563eb' : '2px solid transparent',
+  textDecoration: 'none',
+})
+
 export default function App() {
   const [selectedGroupId, setSelectedGroupId] = useState(() => {
     try {
@@ -40,41 +49,32 @@ export default function App() {
         <span style={{ fontWeight: 700, fontSize: 15, color: '#111827', marginRight: 16 }}>
           DevDB
         </span>
-        <NavLink to="/" end style={({ isActive }) => ({
-          padding: '0 16px', height: '44px',
-          display: 'flex', alignItems: 'center',
-          fontSize: 13, fontWeight: 500,
-          color: isActive ? '#2563eb' : '#6b7280',
-          borderBottom: isActive ? '2px solid #2563eb' : '2px solid transparent',
-          textDecoration: 'none',
-        })}>
-          Lot · Phase
-        </NavLink>
-        <NavLink to="/site-plan" style={({ isActive }) => ({
-          padding: '0 16px', height: '44px',
-          display: 'flex', alignItems: 'center',
-          fontSize: 13, fontWeight: 500,
-          color: isActive ? '#2563eb' : '#6b7280',
-          borderBottom: isActive ? '2px solid #2563eb' : '2px solid transparent',
-          textDecoration: 'none',
-        })}>
-          Site Plan
-        </NavLink>
-        <NavLink to="/simulation" style={({ isActive }) => ({
-          padding: '0 16px', height: '44px',
-          display: 'flex', alignItems: 'center',
-          fontSize: 13, fontWeight: 500,
-          color: isActive ? '#2563eb' : '#6b7280',
-          borderBottom: isActive ? '2px solid #2563eb' : '2px solid transparent',
-          textDecoration: 'none',
-        })}>
-          Simulation
-        </NavLink>
+        <NavLink to="/" end style={navLinkStyle}>Lot · Phase</NavLink>
+        <NavLink to="/site-plan" style={navLinkStyle}>Site Plan</NavLink>
+        <NavLink to="/simulation" style={navLinkStyle}>Simulation</NavLink>
+
+        <div style={{ marginLeft: 'auto', paddingRight: 16 }}>
+          <button
+            onClick={() => setShowTestCommunities(v => !v)}
+            title={showTestCommunities ? 'Exit test mode' : 'Enter test mode (Pokemon communities)'}
+            style={{
+              fontSize: 11, fontWeight: 600, letterSpacing: '0.05em',
+              padding: '3px 10px', borderRadius: 4,
+              border: showTestCommunities ? '1px solid #d97706' : '1px solid #d1d5db',
+              background: showTestCommunities ? '#fef3c7' : 'transparent',
+              color: showTestCommunities ? '#b45309' : '#9ca3af',
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+          >
+            TEST
+          </button>
+        </div>
       </nav>
 
       <ErrorBoundary>
         <Routes>
-          <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} setShowTestCommunities={setShowTestCommunities} />} />
+          <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
         </Routes>
