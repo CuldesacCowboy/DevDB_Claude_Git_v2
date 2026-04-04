@@ -710,6 +710,13 @@ function LotLedger({ lots, loading }) {
   )
 }
 
+// Fetch helper — throws on non-2xx so .catch() blocks see real API errors.
+async function fetchOk(url) {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${res.status} from ${url}`)
+  return res.json()
+}
+
 // ─── Main view ───────────────────────────────────────────────────────────────
 
 export default function SimulationView({ selectedGroupId, setSelectedGroupId }) {
@@ -742,14 +749,7 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
     [byDev],
   )
 
-  // Fetch helper that throws on non-2xx so Promise.all catch blocks see real errors.
-  async function fetchOk(url) {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`${res.status} from ${url}`)
-    return res.json()
-  }
-
-  const loadLedger = useCallback((id) => {
+const loadLedger = useCallback((id) => {
     setLoading(true)
     setLoadError(null)
     Promise.all([
@@ -961,9 +961,6 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
           )}
         </button>
       </div>
-      {/* Spinner keyframe (injected once) */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-
       {/* ── Data load error banner ── */}
       {loadError && (
         <div style={{

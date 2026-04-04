@@ -4,3 +4,7 @@ body {
   margin: 0;
   background: #f8fafc;
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg) }
+}
