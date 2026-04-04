@@ -39,12 +39,15 @@ def demand_derived_date_writer(conn: DBConnection, temp_lots: list) -> None:
     for phase_id, derived_date in phase_min.items():
         if derived_date is None:
             continue
-        conn.execute(f"""
+        conn.execute(
+            """
             UPDATE sim_dev_phases
-            SET date_dev_demand_derived = '{derived_date}'
-            WHERE phase_id = {phase_id}
+            SET date_dev_demand_derived = %s
+            WHERE phase_id = %s
               AND (date_dev_demand_derived IS NULL
-                   OR date_dev_demand_derived != '{derived_date}')
-        """)
+                   OR date_dev_demand_derived != %s)
+            """,
+            (derived_date, phase_id, derived_date),
+        )
 
     print(f"S-10: Wrote date_dev_demand_derived for {len(phase_min)} phase(s).")

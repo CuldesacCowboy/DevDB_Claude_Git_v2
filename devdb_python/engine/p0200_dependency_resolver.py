@@ -25,11 +25,10 @@ def dependency_resolver(conn: DBConnection, ent_group_id: int,
 
     Read-only module -- no table writes.
     """
-    all_events_df = conn.read_df(f"""
-        SELECT delivery_event_id
-        FROM sim_delivery_events
-        WHERE ent_group_id = {ent_group_id}
-    """)
+    all_events_df = conn.read_df(
+        "SELECT delivery_event_id FROM sim_delivery_events WHERE ent_group_id = %s",
+        (ent_group_id,),
+    )
     all_event_ids = set(int(r) for r in all_events_df["delivery_event_id"])
     locked_set = set(locked_event_ids)
     queue = all_event_ids - locked_set
@@ -38,12 +37,15 @@ def dependency_resolver(conn: DBConnection, ent_group_id: int,
         print(f"P-02: No unresolved events for ent_group_id={ent_group_id}.")
         return [], []
 
-    queue_list_str = ", ".join(str(e) for e in queue)
-    predecessors_df = conn.read_df(f"""
+    queue_list = list(queue)
+    predecessors_df = conn.read_df(
+        """
         SELECT event_id, predecessor_event_id
         FROM sim_delivery_event_predecessors
-        WHERE event_id IN ({queue_list_str})
-    """)
+        WHERE event_id = ANY(%s)
+        """,
+        (queue_list,),
+    )
 
     unresolved_preds = defaultdict(set)
     for _, row in predecessors_df.iterrows():

@@ -129,17 +129,19 @@ def date_actualizer(conn: DBConnection, lot_snapshot: pd.DataFrame) -> pd.DataFr
         df.drop(columns=["_dev_code", "_lot_seq"], inplace=True)
         return df
 
-    dev_codes_sql = ", ".join(f"'{dc}'" for dc in dev_codes)
-    act_codes_sql = ", ".join(f"'{c}'" for c in _ACT_MAP)
+    act_codes = list(_ACT_MAP.keys())
 
-    # Pull only relevant rows server-side
-    sched_raw = conn.read_df(f"""
+    # Pull only relevant rows server-side — ANY(%s) avoids dynamic IN-list construction
+    sched_raw = conn.read_df(
+        """
         SELECT developmentcode, housenumber, activitycode,
                actualfinishdate, rvearlyfinshdate, earlyfinishdate, inactive
         FROM schedhousedetail
-        WHERE developmentcode IN ({dev_codes_sql})
-          AND activitycode IN ({act_codes_sql})
-    """)
+        WHERE developmentcode = ANY(%s)
+          AND activitycode    = ANY(%s)
+        """,
+        (dev_codes, act_codes),
+    )
 
     if sched_raw.empty:
         df.drop(columns=["_dev_code", "_lot_seq"], inplace=True)

@@ -23,22 +23,20 @@ def phase_date_propagator(conn: DBConnection, resolved_events: list) -> None:
         if projected_date is None:
             continue
 
-        child_phases_df = conn.read_df(f"""
-            SELECT phase_id
-            FROM sim_delivery_event_phases
-            WHERE delivery_event_id = {event_id}
-        """)
+        child_phases_df = conn.read_df(
+            "SELECT phase_id FROM sim_delivery_event_phases WHERE delivery_event_id = %s",
+            (event_id,),
+        )
 
         if child_phases_df.empty:
             print(f"P-06: Event {event_id} has no child phases. Skipping.")
             continue
 
-        phase_ids_str = ", ".join(str(int(p)) for p in child_phases_df["phase_id"])
+        phase_ids = child_phases_df["phase_id"].astype(int).tolist()
 
-        conn.execute(f"""
-            UPDATE sim_dev_phases
-            SET date_dev_projected = '{projected_date}'
-            WHERE phase_id IN ({phase_ids_str})
-        """)
+        conn.execute(
+            "UPDATE sim_dev_phases SET date_dev_projected = %s WHERE phase_id = ANY(%s)",
+            (projected_date, phase_ids),
+        )
 
     print(f"P-06: Propagated dates for {len(resolved_events)} resolved events.")

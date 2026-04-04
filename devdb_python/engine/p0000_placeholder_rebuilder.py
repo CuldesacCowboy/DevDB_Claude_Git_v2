@@ -117,7 +117,7 @@ def _months_between(d1: date, d2: date) -> int:
 
 def _get_phase_lots(conn, phase_id: int):
     """Return list of projected_count values from sim_phase_product_splits for a phase."""
-    df = conn.read_df(f"SELECT projected_count FROM sim_phase_product_splits WHERE phase_id = {phase_id}")
+    df = conn.read_df("SELECT projected_count FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
     if df.empty:
         return [0]
     return [int(x) for x in df["projected_count"] if x is not None]
@@ -135,13 +135,16 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # ------------------------------------------------------------------
     # Step 1: Check auto_schedule flag
     # ------------------------------------------------------------------
-    config_df = conn.read_df(f"""
+    config_df = conn.read_df(
+        """
         SELECT auto_schedule_enabled, max_deliveries_per_year, min_gap_months,
                delivery_window_start, delivery_window_end,
                COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count
         FROM sim_entitlement_delivery_config
-        WHERE ent_group_id = {ent_group_id}
-    """)
+        WHERE ent_group_id = %s
+        """,
+        (ent_group_id,),
+    )
 
     if config_df.empty:
         print(f"P-00: No delivery config for ent_group_id={ent_group_id}. Skipping.")
@@ -161,29 +164,35 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # ------------------------------------------------------------------
     # Step 2: Delete existing placeholder events
     # ------------------------------------------------------------------
-    placeholder_df = conn.read_df(f"""
+    placeholder_df = conn.read_df(
+        """
         SELECT delivery_event_id
         FROM sim_delivery_events
-        WHERE ent_group_id = {ent_group_id}
+        WHERE ent_group_id = %s
           AND date_dev_actual IS NULL
-    """)
+        """,
+        (ent_group_id,),
+    )
 
     if not placeholder_df.empty:
-        ids_str = ", ".join(str(int(x)) for x in placeholder_df["delivery_event_id"])
+        placeholder_ids = placeholder_df["delivery_event_id"].astype(int).tolist()
 
-        conn.execute(f"""
+        conn.execute(
+            """
             DELETE FROM sim_delivery_event_predecessors
-            WHERE event_id IN ({ids_str})
-               OR predecessor_event_id IN ({ids_str})
-        """)
-        conn.execute(f"""
-            DELETE FROM sim_delivery_event_phases
-            WHERE delivery_event_id IN ({ids_str})
-        """)
-        conn.execute(f"""
-            DELETE FROM sim_delivery_events
-            WHERE delivery_event_id IN ({ids_str})
-        """)
+            WHERE event_id = ANY(%s)
+               OR predecessor_event_id = ANY(%s)
+            """,
+            (placeholder_ids, placeholder_ids),
+        )
+        conn.execute(
+            "DELETE FROM sim_delivery_event_phases WHERE delivery_event_id = ANY(%s)",
+            (placeholder_ids,),
+        )
+        conn.execute(
+            "DELETE FROM sim_delivery_events WHERE delivery_event_id = ANY(%s)",
+            (placeholder_ids,),
+        )
         print(f"P-00: Deleted {len(placeholder_df)} placeholder event(s).")
     else:
         print("P-00: No placeholder events to delete.")
@@ -192,28 +201,34 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # Step 3: Collect undelivered phases
     # ------------------------------------------------------------------
     # Get all phases for this ent_group
-    all_phases_df = conn.read_df(f"""
+    all_phases_df = conn.read_df(
+        """
         SELECT sdp.phase_id, sdp.dev_id, sdp.date_dev_demand_derived,
                sdp.sequence_number
         FROM sim_dev_phases sdp
         JOIN sim_ent_group_developments egd
              ON egd.dev_id = sdp.dev_id
-        WHERE egd.ent_group_id = {ent_group_id}
-    """)
+        WHERE egd.ent_group_id = %s
+        """,
+        (ent_group_id,),
+    )
 
     if all_phases_df.empty:
         print(f"P-00: No phases found for ent_group_id={ent_group_id}.")
         return []
 
     # Phases covered by locked events
-    locked_phases_df = conn.read_df(f"""
+    locked_phases_df = conn.read_df(
+        """
         SELECT DISTINCT dep.phase_id
         FROM sim_delivery_event_phases dep
         JOIN sim_delivery_events de
              ON de.delivery_event_id = dep.delivery_event_id
-        WHERE de.ent_group_id = {ent_group_id}
+        WHERE de.ent_group_id = %s
           AND de.date_dev_actual IS NOT NULL
-    """)
+        """,
+        (ent_group_id,),
+    )
     locked_phase_ids = set(int(x) for x in locked_phases_df["phase_id"]) if not locked_phases_df.empty else set()
 
     undelivered = []
@@ -240,15 +255,18 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # all PGs for this ent_group. Used to drop phases whose demand is
     # beyond the projection horizon.
     # ------------------------------------------------------------------
-    sellout_df = conn.read_df(f"""
+    sellout_df = conn.read_df(
+        """
         SELECT MAX(sl.date_cls) AS sellout_date
         FROM sim_lots sl
         WHERE sl.lot_source = 'sim'
           AND sl.dev_id IN (
               SELECT dev_id FROM sim_ent_group_developments
-              WHERE ent_group_id = {ent_group_id}
+              WHERE ent_group_id = %s
           )
-    """)
+        """,
+        (ent_group_id,),
+    )
     import pandas as pd
     sellout_raw = sellout_df.iloc[0]["sellout_date"] if not sellout_df.empty else None
     if sellout_raw is not None and not pd.isnull(sellout_raw):
@@ -267,11 +285,10 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         demand = p["demand_date"]
 
         # Check sim lot count for this phase
-        sim_count_df = conn.read_df(f"""
-            SELECT COUNT(*) AS cnt
-            FROM sim_lots
-            WHERE phase_id = {ph_id} AND lot_source = 'sim'
-        """)
+        sim_count_df = conn.read_df(
+            "SELECT COUNT(*) AS cnt FROM sim_lots WHERE phase_id = %s AND lot_source = 'sim'",
+            (ph_id,),
+        )
         sim_count = int(sim_count_df.iloc[0]["cnt"]) if not sim_count_df.empty else 0
 
         # (a) Null demand with no sim lots -- no delivery needed
@@ -300,16 +317,19 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # ------------------------------------------------------------------
     # Step 4: Get window parameters per phase (via phase -> PG mapping)
     # ------------------------------------------------------------------
-    phase_ids_str = ", ".join(str(p["phase_id"]) for p in undelivered)
+    undelivered_phase_ids = [p["phase_id"] for p in undelivered]
 
     # Delivery window is ent-group level (D-135); annual_starts_target is per-dev.
-    pg_annual_df = conn.read_df(f"""
+    pg_annual_df = conn.read_df(
+        """
         SELECT DISTINCT sdp.phase_id, sdvp.annual_starts_target,
                COALESCE(sdvp.seasonal_weight_set, 'balanced_2yr') AS seasonal_weight_set
         FROM sim_dev_phases sdp
         JOIN sim_dev_params sdvp ON sdvp.dev_id = sdp.dev_id
-        WHERE sdp.phase_id IN ({phase_ids_str})
-    """)
+        WHERE sdp.phase_id = ANY(%s)
+        """,
+        (undelivered_phase_ids,),
+    )
 
     # All phases share the ent-group-level window (D-135)
     window_map = {p["phase_id"]: (window_start_default, window_end_default)
@@ -343,44 +363,42 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     all_dev_ids_for_query = [int(d) for d in all_phases_df["dev_id"].unique()]
     d_balance: dict[int, dict[date, int]] = {d: {} for d in all_dev_ids_for_query}
 
-    # Build lot-source filter: real lots always included; locked-phase sim
-    # lots included so their confirmed D trajectory is captured accurately.
-    if locked_phase_ids:
-        _locked_phase_list = ", ".join(str(p) for p in sorted(locked_phase_ids))
-        _lot_filter = (
-            f"AND (sl.lot_source = 'real' "
-            f"OR sl.phase_id IN ({_locked_phase_list}))"
-        )
-    else:
-        _lot_filter = "AND sl.lot_source = 'real'"
-
     if all_dev_ids_for_query:
-        dev_values = ", ".join(f"({d})" for d in all_dev_ids_for_query)
-        d_proj_df = conn.read_df(f"""
+        # Build parameterized lot-source filter: real lots always included;
+        # locked-phase sim lots included so their confirmed D trajectory is captured.
+        # Column names (lot_source, phase_id) are trusted schema constants — not user input.
+        if locked_phase_ids:
+            _lot_filter_sql = "AND (sl.lot_source = 'real' OR sl.phase_id = ANY(%s))"
+            _lot_filter_params = [list(locked_phase_ids)]
+        else:
+            _lot_filter_sql = "AND sl.lot_source = 'real'"
+            _lot_filter_params = []
+
+        d_proj_df = conn.read_df(
+            f"""
             WITH future AS (
                 SELECT generate_series(
                     DATE_TRUNC('MONTH', CURRENT_DATE)::DATE,
                     (DATE_TRUNC('MONTH', CURRENT_DATE) + INTERVAL '30 years')::DATE,
                     INTERVAL '1 month'
                 )::DATE AS m
-            ),
-            devs (dev_id) AS (
-                VALUES {dev_values}
             )
-            SELECT devs.dev_id, f.m AS calendar_month,
+            SELECT sl_devs.dev_id, f.m AS calendar_month,
                    COUNT(sl.lot_id) AS d_end
             FROM future f
-            CROSS JOIN devs
+            CROSS JOIN (SELECT UNNEST(%s::int[]) AS dev_id) AS sl_devs
             LEFT JOIN sim_lots sl
-                ON  sl.dev_id = devs.dev_id
+                ON  sl.dev_id = sl_devs.dev_id
                 AND sl.date_dev IS NOT NULL
                 AND sl.date_dev <= f.m
                 AND (sl.date_td     IS NULL OR sl.date_td     > f.m)
                 AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
-                {_lot_filter}
-            GROUP BY devs.dev_id, f.m
-            ORDER BY devs.dev_id, f.m
-        """)
+                {_lot_filter_sql}
+            GROUP BY sl_devs.dev_id, f.m
+            ORDER BY sl_devs.dev_id, f.m
+            """,
+            [all_dev_ids_for_query] + _lot_filter_params,
+        )
         for _, dr in d_proj_df.iterrows():
             d_id = int(dr["dev_id"])
             m = dr["calendar_month"]
@@ -401,16 +419,16 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # Per-dev last locked delivery date (scan floor — skip pre-delivery zeros).
     last_locked_per_dev: dict[int, date] = {}
     if locked_phase_ids:
-        llpd_df = conn.read_df(f"""
+        llpd_df = conn.read_df("""
             SELECT sdp.dev_id, MAX(sde.date_dev_actual) AS last_locked
             FROM sim_delivery_events sde
             JOIN sim_delivery_event_phases dep
                  ON dep.delivery_event_id = sde.delivery_event_id
             JOIN sim_dev_phases sdp ON sdp.phase_id = dep.phase_id
-            WHERE sde.ent_group_id = {ent_group_id}
+            WHERE sde.ent_group_id = %s
               AND sde.date_dev_actual IS NOT NULL
             GROUP BY sdp.dev_id
-        """)
+        """, (ent_group_id,))
         for _, llr in llpd_df.iterrows():
             d_raw = llr["last_locked"]
             if d_raw is not None:
@@ -429,19 +447,22 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     demand_consumed: dict[int, int] = {}
     for _dev in all_dev_ids_for_query:
         _ds = global_demand_start_per_dev[_dev]
-        _ds_str = _ds.strftime("%Y-%m-%d")
         if locked_phase_ids:
-            _lp_str = ", ".join(str(p) for p in sorted(locked_phase_ids))
-            _dc_filter = f"AND (lot_source = 'real' OR phase_id IN ({_lp_str}))"
+            _dc_filter_sql = "AND (lot_source = 'real' OR phase_id = ANY(%s))"
+            _dc_params = (_dev, _ds, list(locked_phase_ids))
         else:
-            _dc_filter = "AND lot_source = 'real'"
-        _dc_df = conn.read_df(f"""
+            _dc_filter_sql = "AND lot_source = 'real'"
+            _dc_params = (_dev, _ds)
+        _dc_df = conn.read_df(
+            f"""
             SELECT COUNT(*) AS cnt FROM sim_lots
-            WHERE dev_id = {_dev}
+            WHERE dev_id = %s
               AND date_str IS NOT NULL
-              AND date_str >= '{_ds_str}'::date
-              {_dc_filter}
-        """)
+              AND date_str >= %s
+              {_dc_filter_sql}
+            """,
+            _dc_params,
+        )
         demand_consumed[_dev] = int(_dc_df.iloc[0]["cnt"]) if not _dc_df.empty else 0
         print(f"P-00: Dev {_dev}: demand_start={_ds}, "
               f"demand_consumed={demand_consumed[_dev]}")
@@ -526,12 +547,12 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     last_date: date | None = None
 
     # Account for locked events already scheduled this/prior years
-    locked_dates_df = conn.read_df(f"""
+    locked_dates_df = conn.read_df("""
         SELECT date_dev_actual
         FROM sim_delivery_events
-        WHERE ent_group_id = {ent_group_id}
+        WHERE ent_group_id = %s
           AND date_dev_actual IS NOT NULL
-    """)
+    """, (ent_group_id,))
     last_locked_date: date | None = None
     for _, r in locked_dates_df.iterrows():
         d = r["date_dev_actual"]
@@ -710,7 +731,8 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         first_phase_id = ev["phases"][0]
         ws, we = window_map.get(first_phase_id, (5, 11))
 
-        conn.execute(f"""
+        conn.execute(
+            """
             INSERT INTO sim_delivery_events
                 (delivery_event_id, ent_group_id, event_name,
                  delivery_window_start, delivery_window_end,
@@ -718,13 +740,15 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                  is_auto_created, is_placeholder,
                  created_at, updated_at)
             VALUES (
-                {event_id}, {ent_group_id}, '{event_name}',
-                {ws}, {we},
-                NULL, '{projected_date}',
+                %s, %s, %s,
+                %s, %s,
+                NULL, %s,
                 TRUE, TRUE,
                 current_timestamp, current_timestamp
             )
-        """)
+            """,
+            (event_id, ent_group_id, event_name, ws, we, projected_date),
+        )
 
         for ph_id in ev["phases"]:
             # Advance the sequence for each phase link row (migration 028).
@@ -732,11 +756,14 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 "SELECT nextval('devdb.sim_delivery_event_phases_id_seq') AS next_id"
             )
             next_link_id = int(link_seq_df.iloc[0]["next_id"])
-            conn.execute(f"""
+            conn.execute(
+                """
                 INSERT INTO sim_delivery_event_phases
                     (id, delivery_event_id, phase_id)
-                VALUES ({next_link_id}, {event_id}, {ph_id})
-            """)
+                VALUES (%s, %s, %s)
+                """,
+                (next_link_id, event_id, ph_id),
+            )
 
         new_event_ids.append(event_id)
         event_counter += 1

@@ -32,11 +32,10 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
         )
     try:
         # Step 1: Delete previous sim lots for this development (idempotency guard D-086)
-        conn.execute(f"""
-            DELETE FROM sim_lots
-            WHERE lot_source = 'sim'
-              AND dev_id = {dev_id}
-        """)
+        conn.execute(
+            "DELETE FROM sim_lots WHERE lot_source = 'sim' AND dev_id = %s",
+            (dev_id,),
+        )
 
         # Step 2: Insert new temp lots
         if temp_lots:

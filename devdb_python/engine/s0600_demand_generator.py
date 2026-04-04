@@ -26,12 +26,15 @@ def demand_generator(conn: DBConnection, dev_id: int,
     """
     from dateutil.relativedelta import relativedelta
 
-    params_df = conn.read_df(f"""
+    params_df = conn.read_df(
+        """
         SELECT annual_starts_target, max_starts_per_month, seasonal_weight_set
         FROM sim_dev_params
-        WHERE dev_id = {dev_id}
+        WHERE dev_id = %s
         LIMIT 1
-    """)
+        """,
+        (dev_id,),
+    )
 
     if params_df.empty:
         return pd.DataFrame(columns=["year", "month", "slots"]), True
@@ -53,19 +56,22 @@ def demand_generator(conn: DBConnection, dev_id: int,
     #   - Started/closed real lots (date_str IS NOT NULL): phase slot already consumed
     #     historically; no sim lot can use it.
     # Both categories must be subtracted so demand never exceeds actual sim slot supply.
-    avail_df = conn.read_df(f"""
+    avail_df = conn.read_df(
+        """
         SELECT
             COALESCE(SUM(sps.projected_count), 0) AS total_capacity,
             COALESCE((
                 SELECT COUNT(*)
                 FROM sim_lots
-                WHERE dev_id = {dev_id}
+                WHERE dev_id = %s
                   AND lot_source = 'real'
             ), 0) AS real_lots
         FROM sim_phase_product_splits sps
         JOIN sim_dev_phases sdp ON sps.phase_id = sdp.phase_id
-        WHERE sdp.dev_id = {dev_id}
-    """)
+        WHERE sdp.dev_id = %s
+        """,
+        (dev_id, dev_id),
+    )
     total_capacity     = int(avail_df.iloc[0]["total_capacity"])
     real_lots          = int(avail_df.iloc[0]["real_lots"])
     available_capacity = max(0, total_capacity - real_lots)
@@ -75,16 +81,19 @@ def demand_generator(conn: DBConnection, dev_id: int,
         return pd.DataFrame(columns=["year", "month", "slots"]), False
 
     # Step 2a: Demand starts no earlier than the last locked delivery date.
-    locked_df = conn.read_df(f"""
+    locked_df = conn.read_df(
+        """
         SELECT MAX(date_dev_actual) AS last_locked_date
         FROM sim_delivery_events
         WHERE ent_group_id = (
             SELECT ent_group_id FROM sim_ent_group_developments
-            WHERE dev_id = {dev_id}
+            WHERE dev_id = %s
             LIMIT 1
         )
         AND date_dev_actual IS NOT NULL
-    """)
+        """,
+        (dev_id,),
+    )
     last_locked = locked_df.iloc[0]["last_locked_date"]
     if last_locked is not None:
         ll = last_locked.date() if hasattr(last_locked, "date") else last_locked

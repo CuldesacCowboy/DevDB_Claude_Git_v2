@@ -18,10 +18,13 @@ def lot_loader(conn: DBConnection, dev_id: int) -> pd.DataFrame:
     Returns immutable DataFrame snapshot.
     Never filters by date or derives status.
     """
-    snapshot = conn.read_df(f"""
+    snapshot = conn.read_df(
+        """
         SELECT *
         FROM sim_lots
         WHERE lot_source = 'real'
-          AND dev_id = {dev_id}
-    """)
+          AND dev_id = %s
+        """,
+        (dev_id,),
+    )
     return snapshot

@@ -26,12 +26,15 @@ def constraint_urgency_ranker(conn: DBConnection, eligible_pool: list) -> list:
     null_demand_events = []
 
     for event_id in eligible_pool:
-        phases_df = conn.read_df(f"""
+        phases_df = conn.read_df(
+            """
             SELECT dp.date_dev_demand_derived
             FROM sim_delivery_event_phases dep
             JOIN sim_dev_phases dp ON dep.phase_id = dp.phase_id
-            WHERE dep.delivery_event_id = {event_id}
-        """)
+            WHERE dep.delivery_event_id = %s
+            """,
+            (event_id,),
+        )
 
         if phases_df.empty or phases_df["date_dev_demand_derived"].isna().all():
             null_demand_events.append(event_id)

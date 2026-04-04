@@ -128,22 +128,30 @@ class PGConnection:
         )
         self._conn.autocommit = False
 
-    def read_df(self, query: str) -> pd.DataFrame:
-        """Execute a SELECT query and return results as a pandas DataFrame."""
+    def read_df(self, query: str, params=None) -> pd.DataFrame:
+        """Execute a SELECT query and return results as a pandas DataFrame.
+
+        Use %s placeholders and pass params to avoid f-string SQL injection.
+        Example: conn.read_df("SELECT * FROM sim_lots WHERE dev_id = %s", (dev_id,))
+        """
         query = query.replace("main.devdb.", "")
         with self._conn.cursor() as cur:
-            cur.execute(query)
+            cur.execute(query, params)
             if cur.description is None:
                 return pd.DataFrame()
             columns = [desc[0] for desc in cur.description]
             rows = cur.fetchall()
         return pd.DataFrame(rows, columns=columns)
 
-    def execute(self, query: str) -> int:
-        """Execute a DML or DDL statement. Returns rowcount."""
+    def execute(self, query: str, params=None) -> int:
+        """Execute a DML or DDL statement. Returns rowcount.
+
+        Use %s placeholders and pass params to avoid f-string SQL injection.
+        Example: conn.execute("UPDATE sim_lots SET x = %s WHERE dev_id = %s", (val, dev_id))
+        """
         query = query.replace("main.devdb.", "")
         with self._conn.cursor() as cur:
-            cur.execute(query)
+            cur.execute(query, params)
             rowcount = cur.rowcount
         self._conn.commit()
         return rowcount

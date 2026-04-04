@@ -40,13 +40,10 @@ def sync_flag_writer(conn: DBConnection, pre_run_dates: dict,
         print("P-08: No phase dates changed.")
         return []
 
-    phase_ids_str = ", ".join(str(p) for p in changed_phases)
-
-    affected_df = conn.read_df(f"""
-        SELECT DISTINCT dev_id
-        FROM sim_lots
-        WHERE phase_id IN ({phase_ids_str})
-    """)
+    affected_df = conn.read_df(
+        "SELECT DISTINCT dev_id FROM sim_lots WHERE phase_id = ANY(%s)",
+        (list(changed_phases),),
+    )
 
     if affected_df.empty:
         print(f"P-08: Changed phases {changed_phases} have no lots.")

@@ -172,37 +172,46 @@ def _write_real_lot_projections(
     from dateutil.relativedelta import relativedelta
 
     # 1. Clear all projected dates on real lots for this dev.
-    conn.execute(f"""
+    conn.execute(
+        """
         UPDATE sim_lots
         SET date_str_projected = NULL,
             date_cmp_projected = NULL,
             date_cls_projected = NULL
         WHERE lot_source = 'real'
-          AND dev_id = {dev_id}
-    """)
+          AND dev_id = %s
+        """,
+        (dev_id,),
+    )
 
     # 2. Real P lots: no actual start, takedown, or hold date — ordered by lot_id.
-    p_lots_df = conn.read_df(f"""
+    p_lots_df = conn.read_df(
+        """
         SELECT lot_id, lot_type_id
         FROM sim_lots
         WHERE lot_source = 'real'
-          AND dev_id       = {dev_id}
+          AND dev_id       = %s
           AND date_str     IS NULL
           AND date_td      IS NULL
           AND date_td_hold IS NULL
         ORDER BY lot_id
-    """)
+        """,
+        (dev_id,),
+    )
 
     if p_lots_df.empty:
         return 0
 
     # 3. Get annual_starts_target from sim_dev_params.
-    params_df = conn.read_df(f"""
+    params_df = conn.read_df(
+        """
         SELECT annual_starts_target, max_starts_per_month
         FROM sim_dev_params
-        WHERE dev_id = {dev_id}
+        WHERE dev_id = %s
         LIMIT 1
-    """)
+        """,
+        (dev_id,),
+    )
     if params_df.empty:
         return 0
 
@@ -303,16 +312,19 @@ def _load_phase_delivery_dates(conn: DBConnection, dev_id: int) -> dict:
     Used by S-03 no-anchor fallback (Scenario 7): lots with zero milestone dates
     get date_dev = phase delivery date as anchor.
     """
-    df = conn.read_df(f"""
+    df = conn.read_df(
+        """
         SELECT DISTINCT sdp.phase_id, sdp.date_dev_projected
         FROM sim_dev_phases sdp
-        WHERE sdp.dev_id = {dev_id}
+        WHERE sdp.dev_id = %s
           AND sdp.phase_id IN (
               SELECT DISTINCT phase_id FROM sim_lots
-              WHERE dev_id = {dev_id}
+              WHERE dev_id = %s
                 AND lot_source = 'real'
           )
-    """)
+        """,
+        (dev_id, dev_id),
+    )
     result = {}
     for _, r in df.iterrows():
         d = r["date_dev_projected"]
@@ -329,13 +341,16 @@ def _persist_violations(conn: DBConnection, violations_df, dev_id: int,
     from S-04 to sim_lot_date_violations.
     resolution = 'pending' for all new rows (Path A/B UI resolution deferred).
     """
-    conn.execute(f"""
+    conn.execute(
+        """
         DELETE FROM sim_lot_date_violations
         WHERE lot_id IN (
             SELECT lot_id FROM sim_lots
-            WHERE dev_id = {dev_id}
+            WHERE dev_id = %s
         )
-    """)
+        """,
+        (dev_id,),
+    )
 
     if violations_df is None or (hasattr(violations_df, 'empty') and violations_df.empty):
         return
@@ -445,13 +460,16 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
     Returns (post_run_phases dict, affected_dev_ids list).
     """
     # Snapshot pre-run delivery dates -- scoped to phases in this ent_group
-    pre_df = conn.read_df(f"""
+    pre_df = conn.read_df(
+        """
         SELECT DISTINCT sdp.phase_id, sdp.date_dev_projected
         FROM sim_dev_phases sdp
         JOIN sim_delivery_event_phases dep ON sdp.phase_id = dep.phase_id
         JOIN sim_delivery_events sde ON dep.delivery_event_id = sde.delivery_event_id
-        WHERE sde.ent_group_id = {ent_group_id}
-    """)
+        WHERE sde.ent_group_id = %s
+        """,
+        (ent_group_id,),
+    )
     pre_run_phases = {int(r["phase_id"]): r["date_dev_projected"]
                       for _, r in pre_df.iterrows()}
 
@@ -491,10 +509,10 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
     # P-07
     child_phases = []
     for event_id, projected in resolved_events:
-        phases_df = conn.read_df(f"""
-            SELECT phase_id FROM sim_delivery_event_phases
-            WHERE delivery_event_id = {event_id}
-        """)
+        phases_df = conn.read_df(
+            "SELECT phase_id FROM sim_delivery_event_phases WHERE delivery_event_id = %s",
+            (event_id,),
+        )
         for _, r in phases_df.iterrows():
             child_phases.append((int(r["phase_id"]), projected))
     lot_date_propagator(conn, child_phases)
@@ -504,13 +522,16 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
     ledger_aggregator(conn)
 
     # P-08 -- scoped to same phases as pre-run snapshot
-    post_df = conn.read_df(f"""
+    post_df = conn.read_df(
+        """
         SELECT DISTINCT sdp.phase_id, sdp.date_dev_projected
         FROM sim_dev_phases sdp
         JOIN sim_delivery_event_phases dep ON sdp.phase_id = dep.phase_id
         JOIN sim_delivery_events sde ON dep.delivery_event_id = sde.delivery_event_id
-        WHERE sde.ent_group_id = {ent_group_id}
-    """)
+        WHERE sde.ent_group_id = %s
+        """,
+        (ent_group_id,),
+    )
     post_run_phases = {int(r["phase_id"]): r["date_dev_projected"]
                        for _, r in post_df.iterrows()}
     affected_devs = sync_flag_writer(conn, pre_run_phases, post_run_phases)
@@ -531,12 +552,15 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
 
     with DBConnection() as conn:
         # Get all developments for this entitlement group
-        dev_df = conn.read_df(f"""
+        dev_df = conn.read_df(
+            """
             SELECT dev_id
             FROM sim_ent_group_developments
-            WHERE ent_group_id = {ent_group_id}
+            WHERE ent_group_id = %s
             ORDER BY dev_id
-        """)
+            """,
+            (ent_group_id,),
+        )
 
         if dev_df.empty:
             print(f"No developments found for ent_group_id={ent_group_id}. Aborting.")
@@ -554,11 +578,12 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         # Injected into build_lag_curves dict so _expand_timing and
         # _write_real_lot_projections can use them without signature changes.
         _lag_row = conn.read_df(
-            f"""
+            """
             SELECT default_cmp_lag_days, default_cls_lag_days
             FROM sim_entitlement_delivery_config
-            WHERE ent_group_id = {ent_group_id}
-            """
+            WHERE ent_group_id = %s
+            """,
+            (ent_group_id,),
         )
         if not _lag_row.empty:
             _cmp = _lag_row["default_cmp_lag_days"].iloc[0]
@@ -578,11 +603,14 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
             print(f"\n--- Iteration {iteration} ---")
 
             # Snapshot delivery event projected dates before this iteration
-            pre_df = conn.read_df(f"""
+            pre_df = conn.read_df(
+                """
                 SELECT delivery_event_id, date_dev_projected
                 FROM sim_delivery_events
-                WHERE ent_group_id = {ent_group_id}
-            """)
+                WHERE ent_group_id = %s
+                """,
+                (ent_group_id,),
+            )
             pre_iter_dates = {int(r["delivery_event_id"]): r["date_dev_projected"]
                               for _, r in pre_df.iterrows()}
 
@@ -598,14 +626,15 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
                 # the phase-level Entitlements Date (migration 023).
                 # Lots in phases with no date_ent set remain NULL.
                 conn.execute(
-                    f"""
+                    """
                     UPDATE sim_lots sl
                     SET date_ent = sdp.date_ent
                     FROM sim_dev_phases sdp
                     WHERE sl.phase_id = sdp.phase_id
-                      AND sl.dev_id   = {dev_id}
+                      AND sl.dev_id   = %s
                       AND sdp.date_ent IS NOT NULL
-                    """
+                    """,
+                    (dev_id,),
                 )
 
             # Step 2: Run supply pipeline
@@ -613,11 +642,14 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
             _, affected_devs = run_supply_pipeline(conn, ent_group_id)
 
             # Step 3: Check if any delivery event projected dates changed
-            post_df = conn.read_df(f"""
+            post_df = conn.read_df(
+                """
                 SELECT delivery_event_id, date_dev_projected
                 FROM sim_delivery_events
-                WHERE ent_group_id = {ent_group_id}
-            """)
+                WHERE ent_group_id = %s
+                """,
+                (ent_group_id,),
+            )
             post_iter_dates = {int(r["delivery_event_id"]): r["date_dev_projected"]
                                for _, r in post_df.iterrows()}
 

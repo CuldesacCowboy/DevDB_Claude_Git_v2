@@ -28,22 +28,24 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
     """
     import pandas as pd
 
-    current_df = conn.read_df(f"""
-        SELECT date_dev_projected, is_placeholder
-        FROM sim_delivery_events
-        WHERE delivery_event_id = {delivery_event_id}
-    """)
+    current_df = conn.read_df(
+        "SELECT date_dev_projected, is_placeholder FROM sim_delivery_events WHERE delivery_event_id = %s",
+        (delivery_event_id,),
+    )
     current_projected = current_df.iloc[0]["date_dev_projected"] if not current_df.empty else None
     is_placeholder = bool(current_df.iloc[0]["is_placeholder"]) if not current_df.empty else False
 
     # Window comes from sim_entitlement_delivery_config (ent-group level).
     import pandas as pd
-    window_df = conn.read_df(f"""
+    window_df = conn.read_df(
+        """
         SELECT delivery_window_start AS window_start,
                delivery_window_end   AS window_end
         FROM sim_entitlement_delivery_config
-        WHERE ent_group_id = {ent_group_id}
-    """)
+        WHERE ent_group_id = %s
+        """,
+        (ent_group_id,),
+    )
     if window_df.empty or window_df.iloc[0]["window_start"] is None:
         raise ValueError(
             f"P-04: delivery_window_start/end not configured for ent_group {ent_group_id}. "
@@ -53,12 +55,15 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
     window_end   = int(window_df.iloc[0]["window_end"])
 
 
-    min_df = conn.read_df(f"""
+    min_df = conn.read_df(
+        """
         SELECT MIN(dp.date_dev_demand_derived) AS min_date
         FROM sim_delivery_event_phases dep
         JOIN sim_dev_phases dp ON dep.phase_id = dp.phase_id
-        WHERE dep.delivery_event_id = {delivery_event_id}
-    """)
+        WHERE dep.delivery_event_id = %s
+        """,
+        (delivery_event_id,),
+    )
 
     min_date = min_df.iloc[0]["min_date"] if not min_df.empty else None
     if min_date is None or pd.isnull(min_date):
@@ -91,12 +96,15 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
     # same calendar year as any locked event.
     today_first = date.today().replace(day=1)
 
-    locked_df = conn.read_df(f"""
+    locked_df = conn.read_df(
+        """
         SELECT MAX(date_dev_actual) AS last_locked
         FROM sim_delivery_events
-        WHERE ent_group_id = {ent_group_id}
+        WHERE ent_group_id = %s
           AND date_dev_actual IS NOT NULL
-    """)
+        """,
+        (ent_group_id,),
+    )
     last_locked_raw = locked_df.iloc[0]["last_locked"] if not locked_df.empty else None
     if last_locked_raw is not None and not pd.isnull(last_locked_raw):
         last_locked = last_locked_raw.date() if hasattr(last_locked_raw, "date") else last_locked_raw
@@ -132,11 +140,10 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
     if cur is not None and is_placeholder and projected < cur:
         return cur  # never move placeholder earlier — P-00's lean date is authoritative
 
-    conn.execute(f"""
-        UPDATE sim_delivery_events
-        SET date_dev_projected = '{projected}'
-        WHERE delivery_event_id = {delivery_event_id}
-    """)
+    conn.execute(
+        "UPDATE sim_delivery_events SET date_dev_projected = %s WHERE delivery_event_id = %s",
+        (projected, delivery_event_id),
+    )
 
     print(f"P-04: Event {delivery_event_id} date_dev_projected = {projected}.")
     return projected

@@ -32,16 +32,17 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame,
     if not snapshot_lot_ids:
         return lot_snapshot, []
 
-    ids_sql = ", ".join(str(i) for i in snapshot_lot_ids)
-
     # Find active TDA agreements covering lots in snapshot
-    tda_lots = conn.read_df(f"""
+    tda_lots = conn.read_df(
+        """
         SELECT tal.tda_id, tal.lot_id
         FROM sim_takedown_agreement_lots tal
         JOIN sim_takedown_agreements ta ON tal.tda_id = ta.tda_id
         WHERE ta.status = 'active'
-          AND tal.lot_id IN ({ids_sql})
-    """)
+          AND tal.lot_id = ANY(%s)
+        """,
+        (snapshot_lot_ids,),
+    )
 
     if tda_lots.empty:
         return lot_snapshot, []
@@ -60,22 +61,24 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame,
 
     for tda_id, covered_lot_ids in tda_lot_map.items():
         # Load TDA config + lead days
-        tda_row = conn.read_df(f"""
-            SELECT tda_id, anchor_date, status, checkpoint_lead_days
-            FROM sim_takedown_agreements
-            WHERE tda_id = {tda_id}
-        """)
+        tda_row = conn.read_df(
+            "SELECT tda_id, anchor_date, status, checkpoint_lead_days FROM sim_takedown_agreements WHERE tda_id = %s",
+            (tda_id,),
+        )
         if tda_row.empty:
             continue
         lead = int(tda_row.iloc[0]["checkpoint_lead_days"] or _DEFAULT_LEAD_DAYS)
 
         # Load checkpoints in order
-        checkpoints = conn.read_df(f"""
+        checkpoints = conn.read_df(
+            """
             SELECT checkpoint_id, checkpoint_number, lots_required_cumulative, checkpoint_date
             FROM sim_takedown_checkpoints
-            WHERE tda_id = {tda_id}
+            WHERE tda_id = %s
             ORDER BY checkpoint_number
-        """)
+            """,
+            (tda_id,),
+        )
         if checkpoints.empty:
             continue
 

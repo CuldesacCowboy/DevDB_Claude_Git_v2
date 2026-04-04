@@ -30,11 +30,10 @@ def eligibility_updater(conn: DBConnection, resolved_event_id: int,
 
     newly_eligible = []
     for event_id in remaining_queue:
-        preds_df = conn.read_df(f"""
-            SELECT predecessor_event_id
-            FROM sim_delivery_event_predecessors
-            WHERE event_id = {event_id}
-        """)
+        preds_df = conn.read_df(
+            "SELECT predecessor_event_id FROM sim_delivery_event_predecessors WHERE event_id = %s",
+            (event_id,),
+        )
         pred_ids = set(int(p) for p in preds_df["predecessor_event_id"]) if not preds_df.empty else set()
         if pred_ids.issubset(resolved_so_far):
             newly_eligible.append(event_id)

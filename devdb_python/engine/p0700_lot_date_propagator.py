@@ -24,22 +24,23 @@ def lot_date_propagator(conn: DBConnection, updated_phases: list) -> None:
         if projected_date is None:
             continue
 
-        conn.execute(f"""
-            UPDATE sim_lots
-            SET date_dev = '{projected_date}'
-            WHERE phase_id = {phase_id}
-              AND lot_source = 'sim'
-        """)
+        conn.execute(
+            "UPDATE sim_lots SET date_dev = %s WHERE phase_id = %s AND lot_source = 'sim'",
+            (projected_date, phase_id),
+        )
 
-        conn.execute(f"""
+        conn.execute(
+            """
             UPDATE sim_lots
-            SET date_dev = '{projected_date}'
-            WHERE phase_id = {phase_id}
+            SET date_dev = %s
+            WHERE phase_id = %s
               AND lot_source = 'real'
               AND date_dev IS NULL
               AND date_str IS NULL
               AND date_cmp IS NULL
               AND date_cls IS NULL
-        """)
+            """,
+            (projected_date, phase_id),
+        )
 
     print(f"P-07: Propagated date_dev for {len(updated_phases)} phases.")
