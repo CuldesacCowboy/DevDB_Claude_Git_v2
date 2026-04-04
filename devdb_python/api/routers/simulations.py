@@ -66,5 +66,5 @@ def run_simulation(req: SimulationRunRequest, conn=Depends(get_db_conn)):
         )
     except Exception as exc:
         elapsed_ms = int((time.monotonic() - t0) * 1000)
-        detail = traceback.format_exc()
-        raise HTTPException(status_code=500, detail=detail) from exc
+        print(traceback.format_exc())  # full trace to server terminal for debugging
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
