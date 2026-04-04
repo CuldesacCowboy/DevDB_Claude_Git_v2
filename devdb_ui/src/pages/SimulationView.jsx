@@ -384,6 +384,12 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
   const isDirty  = Object.keys(edits).length > 0
   const isLocked = disabled || saving
 
+  const wsRaw = valFor('delivery_window_start')
+  const weRaw = valFor('delivery_window_end')
+  const wsNum = wsRaw !== '' ? parseInt(wsRaw, 10) : null
+  const weNum = weRaw !== '' ? parseInt(weRaw, 10) : null
+  const windowInvalid = wsNum !== null && weNum !== null && !isNaN(wsNum) && !isNaN(weNum) && weNum < wsNum
+
   function valFor(key) { return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '') }
   function setVal(key, v) { setEdits(p => ({ ...p, [key]: v })) }
 
@@ -412,14 +418,18 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
     finally { setSaving(false) }
   }
 
-  const numInput = (key, width = 56, placeholder = '—') => (
-    <input key={key} type="number" min="0" placeholder={placeholder}
-      value={valFor(key)} disabled={isLocked}
-      onChange={e => setVal(key, e.target.value)}
-      style={{ width, padding: '2px 5px', fontSize: 12, borderRadius: 4, textAlign: 'right',
-               background: isLocked ? '#f3f4f6' : '#fff',
-               border: `1px solid ${edits[key] !== undefined ? '#2563eb' : '#d1d5db'}` }} />
-  )
+  const numInput = (key, width = 56, placeholder = '—') => {
+    const isWindowErr = windowInvalid && key === 'delivery_window_end'
+    const borderColor = isWindowErr ? '#dc2626' : edits[key] !== undefined ? '#2563eb' : '#d1d5db'
+    return (
+      <input key={key} type="number" min="0" placeholder={placeholder}
+        value={valFor(key)} disabled={isLocked}
+        onChange={e => setVal(key, e.target.value)}
+        style={{ width, padding: '2px 5px', fontSize: 12, borderRadius: 4, textAlign: 'right',
+                 background: isLocked ? '#f3f4f6' : '#fff',
+                 border: `1px solid ${borderColor}` }} />
+    )
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -434,6 +444,9 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
             <span style={{ color: '#6b7280' }}>Window end (month, 1–12)</span>
             {numInput('delivery_window_end', 48, '11')}
           </label>
+          {windowInvalid && (
+            <span style={{ fontSize: 11, color: '#dc2626' }}>End must be ≥ start</span>
+          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
             <span style={{ color: '#6b7280' }}>Max deliveries/yr (≥1)</span>
             {numInput('max_deliveries_per_year', 48, '1')}
@@ -480,10 +493,10 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {isDirty && (
-          <button disabled={isLocked} onClick={save}
+          <button disabled={isLocked || windowInvalid} onClick={save}
             style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-                     background: isLocked ? '#d1d5db' : '#2563eb', color: '#fff',
-                     cursor: isLocked ? 'default' : 'pointer' }}>
+                     background: (isLocked || windowInvalid) ? '#d1d5db' : '#2563eb', color: '#fff',
+                     cursor: (isLocked || windowInvalid) ? 'default' : 'pointer' }}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         )}
