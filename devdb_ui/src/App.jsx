@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import LotPhaseView from './pages/LotPhaseView'
 import SitePlanView from './pages/SitePlanView'
 import SimulationView from './pages/SimulationView'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const LS_KEY = 'devdb_active_community'
 
@@ -62,11 +63,13 @@ export default function App() {
         </NavLink>
       </nav>
 
-      <Routes>
-        <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
-        <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
-        <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
-      </Routes>
+      <ErrorBoundary>
+        <Routes>
+          <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
+          <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
+          <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
+        </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   )
 }
