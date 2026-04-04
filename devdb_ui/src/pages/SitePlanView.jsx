@@ -35,6 +35,17 @@ const INSTRUMENT_COLORS = [
 ]
 const UNASSIGNED_COLOR = '#9ca3af'
 
+// Single source of truth for each mode's display label, chip color, and canvas instruction.
+const MODE_META = {
+  trace:           { label: 'Trace Parcel',    color: '#2563eb', instruction: 'Click to place vertices · click first vertex to close · Esc to cancel' },
+  edit:            { label: 'Edit Vertices',   color: '#374151', instruction: 'Drag vertices · click edge to add point · right-click to remove · Esc to exit' },
+  split:           { label: 'Split Region',    color: '#7c3aed', instruction: 'Click any boundary edge to begin · draw across the region · click boundary edge to split · Esc to cancel' },
+  'delete-phases': { label: 'Delete Phases',  color: '#b45309', instruction: 'Click a phase region to delete it · or use Delete All in the toolbar · Esc to exit' },
+  'draw-building': { label: 'Draw Group',     color: '#0f766e', instruction: 'Click to add points · double-click or near first point to close · or click-and-drag for freehand · Esc to cancel' },
+  'delete-building':{ label: 'Delete Groups', color: '#b45309', instruction: 'Click a building oval to select · right-click for quick delete · use toolbar to delete selected · Esc to exit' },
+  place:           { label: 'Place Lots',     color: '#7c3aed', instruction: 'Click on the map to place the next lot · Esc to stop placing' },
+}
+
 function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedGroupId: _setSelectedGroupIdProp }) {
   // ─── Page-level state ───────────────────────────────────────────────────────
   const [entGroups, setEntGroups]             = useState([])
@@ -243,6 +254,25 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     await handleBoundaryUndo()
   }
 
+  // ─── Escape to exit any active mode ────────────────────────────────────────
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key !== 'Escape') return
+      // Don't steal Escape from input/textarea elements
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return
+      if (mode === 'trace')          { setMode('view'); return }
+      if (mode === 'edit')           { setMode('view'); return }
+      if (mode === 'split')          { setMode('view'); setSelectedBoundaryId(null); return }
+      if (mode === 'delete-phases')  { setMode('view'); return }
+      if (mode === 'draw-building')  { handleBuildingGroupCancel(); return }
+      if (mode === 'delete-building'){ setSelectedBgIds(new Set()); setMode('view'); return }
+      if (mode === 'place')          { endPlaceMode(); return }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [mode, handleBuildingGroupCancel, setSelectedBgIds, endPlaceMode, setSelectedBoundaryId])
+
   // ─── Unit counts ────────────────────────────────────────────────────────────
 
   async function handleProjectedCountChange(phaseId, lotTypeId, newValue) {
@@ -385,6 +415,10 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
             <Button variant="purple" onClick={() => { setMode('split'); setSelectedBoundaryId(null) }}>
               Split Region
             </Button>
+
+            {/* Separator: geometry tools above / manage+delete tools below */}
+            {(hasBoundaries || hasParcel) && <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />}
+
             {hasBoundaries && (
               <Button variant="warning" onClick={() => { setMode('delete-phases'); setSelectedBoundaryId(null) }}>
                 Delete Phases
@@ -431,7 +465,18 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
           </>
         )}
 
-        {/* Active-mode exit buttons — instructions shown as canvas overlay instead */}
+        {/* Active-mode: label chip + exit buttons — instruction detail shown as canvas overlay */}
+        {hasPlan && mode !== 'view' && MODE_META[mode] && (
+          <span style={{
+            fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 10,
+            background: MODE_META[mode].color + '18',
+            color: MODE_META[mode].color,
+            border: `1px solid ${MODE_META[mode].color}44`,
+            whiteSpace: 'nowrap', letterSpacing: '0.01em',
+          }}>
+            {MODE_META[mode].label}
+          </span>
+        )}
         {hasPlan && mode === 'trace' && (
           <Button variant="default" onClick={() => setMode('view')}>Cancel</Button>
         )}
@@ -553,21 +598,16 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
           )}
 
           {/* Mode instruction overlay — floats at top-center of canvas */}
-          {hasPlan && mode !== 'view' && mode !== 'place' && (
+          {hasPlan && mode !== 'view' && MODE_META[mode] && (
             <div style={{
               position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
               zIndex: 20, pointerEvents: 'none',
-              background: 'rgba(15,23,42,0.80)', borderRadius: 20,
+              background: 'rgba(15,23,42,0.82)', borderRadius: 20,
               padding: '5px 18px', backdropFilter: 'blur(4px)',
               whiteSpace: 'nowrap',
             }}>
               <span style={{ fontSize: 12, color: '#e2e8f0', fontWeight: 500 }}>
-                {mode === 'trace'           && 'Click to place vertices · click first vertex to close'}
-                {mode === 'edit'            && 'Drag vertices · click edge to add point · right-click to remove'}
-                {mode === 'split'           && 'Click any boundary edge to begin · draw across the region · click any boundary edge to split'}
-                {mode === 'delete-phases'   && 'Click a phase region to delete it · or use Delete All in the toolbar'}
-                {mode === 'draw-building'   && 'Click to add points · double-click or near first point to close · or click-and-drag for freehand'}
-                {mode === 'delete-building' && 'Click a building oval to select · right-click for quick delete · use toolbar to delete selected'}
+                {MODE_META[mode].instruction}
               </span>
             </div>
           )}
