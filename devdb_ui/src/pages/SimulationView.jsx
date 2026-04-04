@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  AreaChart, Area, BarChart, Bar,
+  AreaChart, Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { STATUS_CFG, STATUS_COLOR, StatusBadge } from '../utils/statusConfig'
@@ -203,34 +203,56 @@ function LedgerTable({ rows, floors, period }) {
 
 const GRAPH_TOOLTIP_STYLE = { fontSize: 11, border: '1px solid #e5e7eb', background: '#fff', borderRadius: 4 }
 
+const CHART_LABEL = (text) => (
+  <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase',
+                letterSpacing: '0.05em', marginBottom: 8 }}>
+    {text}
+  </div>
+)
+
 function LedgerGraph({ rows, period }) {
   if (!rows.length) return null
 
-  // Thin X axis labels: monthly → every 12th, quarterly → every 4th, annual → all
   const xInterval = period === 'monthly' ? 11 : period === 'quarterly' ? 3 : 0
-
   const tickStyle = { fontSize: 10, fill: '#9ca3af' }
+  const commonProps = { margin: { top: 4, right: 8, bottom: 0, left: 0 } }
+  const tooltipProps = {
+    contentStyle: GRAPH_TOOLTIP_STYLE,
+    formatter: (v, name) => [v > 0 ? v : '—', name],
+    itemStyle: { fontSize: 11 },
+  }
+  const axisProps = { tick: tickStyle, tickLine: false, axisLine: false }
+  const legendProps = { wrapperStyle: { fontSize: 11, paddingTop: 8 } }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 36 }}>
 
-      {/* ── Inventory stacked area ── */}
+      {/* ── 1. Backlog: P + E ── */}
       <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase',
-                      letterSpacing: '0.05em', marginBottom: 8 }}>
-          End-of-period inventory
-        </div>
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+        {CHART_LABEL('Backlog — paper & entitled inventory')}
+        <ResponsiveContainer width="100%" height={160}>
+          <AreaChart data={rows} {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-            <XAxis dataKey="_label" interval={xInterval} tick={tickStyle} tickLine={false} axisLine={false} />
-            <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={34} />
-            <Tooltip contentStyle={GRAPH_TOOLTIP_STYLE}
-              formatter={(v, name) => [v > 0 ? v : '—', name]}
-              itemStyle={{ fontSize: 11 }} />
-            <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-            <Area type="monotone" dataKey="p_end"  stackId="s" stroke={STATUS_COLOR.P}  fill={STATUS_COLOR.P}  fillOpacity={0.85} name={`${STATUS_CFG.P.shape} P`}  />
-            <Area type="monotone" dataKey="e_end"  stackId="s" stroke={STATUS_COLOR.E}  fill={STATUS_COLOR.E}  fillOpacity={0.85} name={`${STATUS_CFG.E.shape} E`}  />
+            <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
+            <YAxis {...axisProps} width={40} />
+            <Tooltip {...tooltipProps} />
+            <Legend {...legendProps} />
+            <Area type="monotone" dataKey="p_end" stackId="s" stroke={STATUS_COLOR.P} fill={STATUS_COLOR.P} fillOpacity={0.85} name={`${STATUS_CFG.P.shape} P`} />
+            <Area type="monotone" dataKey="e_end" stackId="s" stroke={STATUS_COLOR.E} fill={STATUS_COLOR.E} fillOpacity={0.85} name={`${STATUS_CFG.E.shape} E`} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ── 2. Active pipeline: D / H / U / UC / C ── */}
+      <div>
+        {CHART_LABEL('Active pipeline — developed through completed')}
+        <ResponsiveContainer width="100%" height={220}>
+          <AreaChart data={rows} {...commonProps}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+            <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
+            <YAxis {...axisProps} width={34} />
+            <Tooltip {...tooltipProps} />
+            <Legend {...legendProps} />
             <Area type="monotone" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.85} name={`${STATUS_CFG.D.shape} D`}  />
             <Area type="monotone" dataKey="h_end"  stackId="s" stroke={STATUS_COLOR.H}  fill={STATUS_COLOR.H}  fillOpacity={0.85} name={`${STATUS_CFG.H.shape} H`}  />
             <Area type="monotone" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name={`${STATUS_CFG.U.shape} U`}  />
@@ -240,21 +262,36 @@ function LedgerGraph({ rows, period }) {
         </ResponsiveContainer>
       </div>
 
-      {/* ── Activity bar chart ── */}
+      {/* ── 3. Pipeline velocity: lot transitions per period ── */}
       <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase',
-                      letterSpacing: '0.05em', marginBottom: 8 }}>
-          Activity per period — STR / CMP / CLS
-        </div>
+        {CHART_LABEL('Pipeline velocity — lot transitions per period')}
         <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={rows} margin={{ top: 4, right: 8, bottom: 0, left: 0 }} barCategoryGap="30%">
+          <LineChart data={rows} {...commonProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-            <XAxis dataKey="_label" interval={xInterval} tick={tickStyle} tickLine={false} axisLine={false} />
-            <YAxis tick={tickStyle} tickLine={false} axisLine={false} width={34} />
-            <Tooltip contentStyle={GRAPH_TOOLTIP_STYLE}
-              formatter={(v, name) => [v > 0 ? v : '—', name]}
-              itemStyle={{ fontSize: 11 }} />
-            <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+            <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
+            <YAxis {...axisProps} width={34} />
+            <Tooltip {...tooltipProps} />
+            <Legend {...legendProps} />
+            <Line type="monotone" dataKey="ent_plan" stroke="#f59e0b" strokeWidth={1.5} dot={false} name="ENT" />
+            <Line type="monotone" dataKey="dev_plan" stroke="#a8a29e" strokeWidth={1.5} dot={false} name="DEV" />
+            <Line type="monotone" dataKey="td_plan"  stroke="#818cf8" strokeWidth={1.5} dot={false} name="TD"  />
+            <Line type="monotone" dataKey="str_plan" stroke={STATUS_COLOR.U}   strokeWidth={1.5} dot={false} name="STR" />
+            <Line type="monotone" dataKey="cmp_plan" stroke={STATUS_COLOR.C}   strokeWidth={1.5} dot={false} name="CMP" />
+            <Line type="monotone" dataKey="cls_plan" stroke={STATUS_COLOR.OUT} strokeWidth={2}   dot={false} name="CLS" />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ── 4. Closings bar chart: STR / CMP / CLS ── */}
+      <div>
+        {CHART_LABEL('Closings activity — STR / CMP / CLS per period')}
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={rows} {...commonProps} barCategoryGap="30%">
+            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+            <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
+            <YAxis {...axisProps} width={34} />
+            <Tooltip {...tooltipProps} />
+            <Legend {...legendProps} />
             <Bar dataKey="str_plan" fill={STATUS_COLOR.U}   name="STR" radius={[2,2,0,0]} />
             <Bar dataKey="cmp_plan" fill={STATUS_COLOR.C}   name="CMP" radius={[2,2,0,0]} />
             <Bar dataKey="cls_plan" fill={STATUS_COLOR.OUT} name="CLS" radius={[2,2,0,0]} />
