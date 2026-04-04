@@ -16,6 +16,7 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
   const [placeHistory, setPlaceHistory]   = useState([])
   const [savePending, setSavePending]     = useState(false)
   const [saveError, setSaveError]         = useState(null)
+  const [loadError, setLoadError]         = useState(null)
 
   const lotPositionsRef = useRef(lotPositions)
   const boundariesRef   = useRef(boundaries)
@@ -27,10 +28,15 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
     if (!planId) {
       setAllLots([]); setLotPositions({}); setSavedPositions({})
       setIsDirty(false); setPlaceQueue([]); setPlaceHistory([])
+      setLoadError(null)
       return
     }
+    setLoadError(null)
     fetch(`${API}/lot-positions/plan/${planId}`)
-      .then(r => r.ok ? r.json() : { positioned: [], bank: [] })
+      .then(r => {
+        if (!r.ok) throw new Error(`Server returned ${r.status}`)
+        return r.json()
+      })
       .then(data => {
         const all = [...(data.positioned || []), ...(data.bank || [])]
         setAllLots(all)
@@ -40,7 +46,7 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
         setSavedPositions(pos)
         setIsDirty(false)
       })
-      .catch(() => {})
+      .catch(err => setLoadError(`Could not load lot positions — ${err.message}`))
   }, [planId])
 
   // Phase lookup using the freshest boundaries (via ref)
@@ -193,6 +199,7 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
     handlePlaceLot,
     startPlaceFromLot,
     endPlaceMode,
+    loadError,
     saveError,
     savePending,
     clearSaveError: () => setSaveError(null),

@@ -34,6 +34,7 @@ export default function LotBank({
   lots, instrumentColors, placingLotId,
   onLotDragStart, onLotClick,
   collapsed, onCollapseToggle,
+  loadError,
 }) {
   // Group by instrument_name (stable order: preserve first-appearance)
   const groups = useMemo(() => {
@@ -92,8 +93,15 @@ export default function LotBank({
         )}
       </div>
 
+      {/* Load error */}
+      {loadError && (
+        <div style={{ padding: '8px 10px', fontSize: 11, color: '#dc2626', background: '#fef2f2', borderBottom: '1px solid #fecaca', lineHeight: 1.4 }}>
+          {loadError}
+        </div>
+      )}
+
       {/* Empty state */}
-      {lots.length === 0 && (
+      {!loadError && lots.length === 0 && (
         <div style={{ padding: '14px 10px', fontSize: 11, color: '#9ca3af', lineHeight: 1.5 }}>
           All lots have been placed on the plan.
         </div>

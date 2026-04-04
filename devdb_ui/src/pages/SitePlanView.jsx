@@ -94,6 +94,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   const {
     allLots, lotPositions, isDirty, placeQueue, placeHistory,
     bankLots, currentPlacingLot, lotMeta,
+    loadError,
     saveError, savePending, clearSaveError,
     handleLotDrop, handleLotMove, handlePlaceLot, startPlaceFromLot, endPlaceMode,
     handleSaveLotPositions, handleDiscardLotPositions, handlePlaceUndo,
@@ -580,6 +581,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
             onLotClick={startPlaceFromLot}
             collapsed={lotBankCollapsed}
             onCollapseToggle={() => setLotBankCollapsed(v => !v)}
+            loadError={loadError}
           />
         )}
 
