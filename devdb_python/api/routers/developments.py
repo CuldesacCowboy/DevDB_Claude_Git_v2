@@ -269,12 +269,14 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
 
     cur = dict_cursor(conn)
     try:
-        # Verify dev exists (at least one phase)
+        # Verify dev exists and load dev_name
         cur.execute(
-            "SELECT COUNT(*) AS n FROM sim_dev_phases WHERE dev_id = %s", (dev_id,)
+            "SELECT dev_name FROM developments WHERE dev_id = %s", (dev_id,)
         )
-        if cur.fetchone()["n"] == 0:
+        dev_row = cur.fetchone()
+        if dev_row is None:
             raise HTTPException(status_code=404, detail=f"dev_id {dev_id} not found.")
+        dev_name = dev_row["dev_name"]
 
         # Load phases ordered by sequence_number, phase_id
         cur.execute(
@@ -291,7 +293,7 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
 
         if not phase_ids:
             return DevLotPhaseViewResponse(
-                dev_id=dev_id, dev_name=f"dev {dev_id}", unassigned=[], phases=[]
+                dev_id=dev_id, dev_name=dev_name, unassigned=[], phases=[]
             )
 
         # Load unassigned real lots (phase_id IS NULL, belonging to this dev via PG)
@@ -415,7 +417,7 @@ def lot_phase_view(dev_id: int, conn=Depends(get_db_conn)):
 
         return DevLotPhaseViewResponse(
             dev_id=dev_id,
-            dev_name=f"dev {dev_id}",
+            dev_name=dev_name,
             unassigned=unassigned_out,
             phases=phases_out,
         )

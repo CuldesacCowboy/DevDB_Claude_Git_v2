@@ -539,10 +539,15 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
 
 
 def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
-                             max_iterations: int = 10) -> int:
+                             max_iterations: int = 10,
+                             rng_seed: int | None = None) -> int:
     """
     Run starts and supply pipelines iteratively until delivery dates stabilize.
     Returns number of iterations to convergence.
+
+    rng_seed: explicit seed for the random number generator (test-time control).
+              Default None uses a date-based seed (YYYYMMDD * 1000 + ent_group_id)
+              for within-day reproducibility.
     """
     if run_start_date is None:
         run_start_date = date.today().replace(day=1)
@@ -592,9 +597,10 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
             if not pd.isnull(_cls):
                 build_lag_curves["_default_cls"] = int(_cls)
 
-        # Seeded RNG: sim_run_id is date-based (YYYYMMDD), giving reproducibility
-        # within a day. Each ent_group run gets its own seed.
-        rng = random.Random(sim_run_id * 1000 + ent_group_id)
+        # Seeded RNG: date-based by default (YYYYMMDD), giving reproducibility
+        # within a day. Pass rng_seed explicitly for test-time control.
+        _seed = rng_seed if rng_seed is not None else sim_run_id * 1000 + ent_group_id
+        rng = random.Random(_seed)
 
         missing_params_devs: set[int] = set()
 

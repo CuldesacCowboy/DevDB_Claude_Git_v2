@@ -49,13 +49,20 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
             )
             table_columns = [c for c in schema_df.columns if c != "lot_id"]
 
+            # Columns that are NOT NULL DEFAULT FALSE in sim_lots (migration 012).
+            # Sim lots are never locked; always write False rather than NULL.
+            _LOCKED_COLS = frozenset({
+                "date_ent_is_locked", "date_dev_is_locked", "date_td_hold_is_locked",
+                "date_td_is_locked", "date_str_is_locked", "date_frm_is_locked",
+                "date_cmp_is_locked", "date_cls_is_locked",
+            })
+
             rows_to_insert = []
             for lot in temp_lots:
                 row = {}
                 for col in table_columns:
                     val = lot.get(col)
-                    # _is_locked columns are NOT NULL DEFAULT FALSE; sim lots are never locked
-                    if val is None and col.endswith("_is_locked"):
+                    if val is None and col in _LOCKED_COLS:
                         val = False
                     row[col] = val
                 row["sim_run_id"] = sim_run_id
