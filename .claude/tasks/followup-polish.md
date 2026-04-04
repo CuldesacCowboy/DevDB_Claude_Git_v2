@@ -9,7 +9,7 @@
 |---|---|---|
 | 1 | Replace window.confirm() with inline confirmation | Complete |
 | 2 | Surface boundary operation errors to user | Complete |
-| 3 | Bulk-delete endpoint for boundaries | Not started |
+| 3 | Bulk-delete endpoint for boundaries | Complete |
 | 4 | Move fetchOk to module level / utils | Not started |
 | 5 | Move @keyframes spin to global CSS | Not started |
 
@@ -60,13 +60,13 @@ Completed 2026-04-04. All 6 catch blocks now call setError. assignPhaseToBoundar
 **Scope:** Backend router + `useBoundaryManager.js`
 
 ### Sub-tasks
-- [ ] Add `POST /phase-boundaries/bulk-delete` FastAPI route — accepts `{ boundary_ids: [...] }`, deletes all in one DB call
-- [ ] Update `handleDeleteAllBoundaries` in `useBoundaryManager.js` to use the bulk endpoint
-- [ ] Keep single-boundary DELETE route unchanged (used by split undo and individual deletes)
+- [x] Add `POST /phase-boundaries/bulk-delete` FastAPI route — accepts `{ boundary_ids: [...] }`, deletes all in one DB call
+- [x] Update `handleDeleteAllBoundaries` in `useBoundaryManager.js` to use the bulk endpoint
+- [x] Keep single-boundary DELETE route unchanged (used by split undo and individual deletes)
 - [ ] Test with Waterton Station (large boundary count)
 
 ### Notes
-_Add implementation notes here as work progresses._
+Completed 2026-04-04. Route registered before /{boundary_id} per FastAPI ordering requirement. Frontend now sends one POST instead of N parallel DELETEs. Single-boundary DELETE untouched.
 
 ---
 
@@ -107,3 +107,4 @@ _Add implementation notes here as work progresses._
 |---|---|---|
 | 2026-04-04 | Task 1 — window.confirm() | Added `pendingDeleteBoundary` state; inline red banner with Delete/Cancel; removed `window.confirm()` |
 | 2026-04-04 | Task 2 — Boundary errors | Wired setError into all 6 silent catch blocks; setError(null) clears stale errors at start of each op |
+| 2026-04-04 | Task 3 — Bulk-delete endpoint | POST /phase-boundaries/bulk-delete; handleDeleteAllBoundaries uses single request instead of N parallel DELETEs |
