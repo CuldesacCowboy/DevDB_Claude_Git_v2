@@ -121,6 +121,7 @@ export default function PdfCanvas({
   unitCountsSubtotal = false,   // false=totals on polygons, true=per-lot-type rows + editable p
   phasesData = [],              // phases array with by_lot_type from SitePlanView
   onEditProjected,              // (phase_id, lot_type_id, current_p, svgX, svgY) => void
+  onError,                      // (message: string) => void — surfaces save failures to SitePlanView toolbar
 }) {
   const canvasRef    = useRef(null)
   const containerRef = useRef(null)
@@ -368,7 +369,7 @@ export default function PdfCanvas({
     await fetch(`/api/site-plans/${planId}/parcel`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parcel_json: JSON.stringify(pts) }),
-    }).catch(console.error)
+    }).catch(err => onError?.('Parcel save failed: ' + err.message))
   }
 
   // ─── Parcel edit ──────────────────────────────────────────────────────────────
@@ -603,13 +604,13 @@ export default function PdfCanvas({
     await fetch(`/api/site-plans/${planId}/parcel`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parcel_json: JSON.stringify(pts) }),
-    }).catch(console.error)
+    }).catch(err => onError?.('Parcel save failed: ' + err.message))
   }
   async function saveBoundaryPoints(boundaryId, pts) {
     const res = await fetch(`/api/phase-boundaries/${boundaryId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ polygon_json: JSON.stringify(pts) }),
-    }).catch(console.error)
+    }).catch(err => { onError?.('Boundary save failed: ' + err.message); return null })
     if (res?.ok) onBoundaryUpdated?.(await res.json())
   }
 

@@ -631,6 +631,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
               onEditProjected={(phase_id, lot_type_id, value, sx, sy) =>
                 setEditProjected({ phase_id, lot_type_id, value, sx, sy })
               }
+              onError={setError}
             />
           )}
 
