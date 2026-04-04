@@ -3,6 +3,7 @@
 
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -12,6 +13,10 @@ from api.db import dict_cursor
 from engine.coordinator import convergence_coordinator
 
 router = APIRouter(prefix="/simulations", tags=["simulations"])
+
+_SIMULATION_TIMEOUT_S = 120  # seconds before returning 504
+
+_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="sim_run")
 
 
 class SimulationRunRequest(BaseModel):
@@ -30,10 +35,20 @@ def run_simulation(req: SimulationRunRequest, conn=Depends(get_db_conn)):
     """
     Trigger a full convergence run for the given entitlement group.
     Runs synchronously — typically completes in under 1 second.
+    Times out after 120 seconds and returns HTTP 504.
     """
     t0 = time.monotonic()
     try:
-        iterations, missing_params_devs = convergence_coordinator(req.ent_group_id)
+        future = _executor.submit(convergence_coordinator, req.ent_group_id)
+        try:
+            iterations, missing_params_devs = future.result(timeout=_SIMULATION_TIMEOUT_S)
+        except FuturesTimeoutError:
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            raise HTTPException(
+                status_code=504,
+                detail=f"Simulation timed out after {_SIMULATION_TIMEOUT_S}s "
+                       f"(ent_group_id={req.ent_group_id})",
+            )
         elapsed_ms = int((time.monotonic() - t0) * 1000)
 
         errors: list[str] = []
