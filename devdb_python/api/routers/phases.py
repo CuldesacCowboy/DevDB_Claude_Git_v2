@@ -92,22 +92,28 @@ async def create_phase(body: PhaseCreateRequest, conn=Depends(get_db_conn)):
 
         dev_id = int(instr["dev_id"])
 
-        # Compute next sequence_number
+        # Lock the instrument row to serialise concurrent phase inserts,
+        # then compute sequence_number as MAX+1 within the same transaction.
         cur.execute(
-            "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_seq FROM sim_dev_phases"
-            " WHERE instrument_id = %s",
+            "SELECT instrument_id FROM sim_legal_instruments WHERE instrument_id = %s FOR UPDATE",
             (body.instrument_id,),
         )
-        next_seq = int(cur.fetchone()["next_seq"])
 
         cur.execute(
             """
             INSERT INTO sim_dev_phases (phase_name, sequence_number, dev_id, instrument_id)
-            VALUES (%s, %s, %s, %s) RETURNING phase_id
+            VALUES (
+                %s,
+                (SELECT COALESCE(MAX(sequence_number), 0) + 1
+                 FROM sim_dev_phases WHERE instrument_id = %s),
+                %s, %s
+            ) RETURNING phase_id, sequence_number
             """,
-            (name, next_seq, dev_id, body.instrument_id),
+            (name, body.instrument_id, dev_id, body.instrument_id),
         )
-        new_phase_id = int(cur.fetchone()["phase_id"])
+        row = cur.fetchone()
+        new_phase_id = int(row["phase_id"])
+        next_seq = int(row["sequence_number"])
         conn.commit()
         return {
             "phase_id": new_phase_id,
