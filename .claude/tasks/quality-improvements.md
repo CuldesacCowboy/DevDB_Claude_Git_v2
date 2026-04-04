@@ -11,13 +11,11 @@
 
 ## HIGH
 
-- [ ] **3. Replace f-string SQL with parameterized queries in engine**
-  - File: `engine/coordinator.py` (15+ locations) and other engine modules
-  - Use `%s` substitution throughout
+- [x] **3. Replace f-string SQL with parameterized queries in engine** ✓ 2026-04-04
+  - All 17 engine modules converted; ANY(%s) for IN-lists, UNNEST for CTEs
 
-- [ ] **4. Remove `conn._conn` direct access in coordinator**
-  - File: `engine/coordinator.py:256-269` (`_write_real_lot_projections`)
-  - Add `execute_values()` method to `PGConnection`
+- [x] **4. Remove `conn._conn` direct access in coordinator** ✓ 2026-04-04
+  - Added PGConnection.execute_values(); coordinator + s0200 updated
 
 - [x] **5. Wrap each migration in an explicit transaction (rollback on failure)** ✓ 2026-04-04
   - api/main.py: autocommit=False; commit after schema_migrations INSERT; rollback+raise on failure
@@ -32,36 +30,31 @@
     useDragHandler.js, InstrumentContainer.jsx, CommunityDevelopmentsView.jsx updated
   - useApiMutation.js takes URL as param from callers — no change needed
 
-- [ ] **8. Add timeout to `POST /simulations/run`**
-  - File: `api/routers/simulations.py`
-  - Add timeout_seconds param to coordinator; raise HTTPException 504 if exceeded
+- [x] **8. Add timeout to `POST /simulations/run`** ✓ 2026-04-04
+  - ThreadPoolExecutor future with 120s timeout; returns HTTP 504 on breach
 
-- [ ] **9. Fix `MAX(sequence_number)` race in phase creation**
-  - File: `api/routers/phases.py:97`
-  - Use atomic CTE or SELECT FOR UPDATE
+- [x] **9. Fix `MAX(sequence_number)` race in phase creation** ✓ 2026-04-04
+  - SELECT FOR UPDATE on instrument row; MAX+1 subquery inside INSERT VALUES
 
 - [x] **10. Update file-manifest-migrations.md — add missing migrations 013-019 and 022** ✓ 2026-04-04
   - Added 013-019, 022, and 028 to file-manifest-migrations.md
 
 ## LOW / CODE QUALITY
 
-- [ ] **11. Replace `print()` with `logging` throughout engine**
-  - All engine modules; use `logging.getLogger("devdb.engine")`
+- [x] **11. Replace `print()` with `logging` throughout engine** ✓ 2026-04-04
+  - 15 modules converted; logger.info/warning per module __name__
 
 - [x] **12. Delete superseded `add_display_order.py` migration** ✓ 2026-04-04
   - File deleted
 
-- [ ] **13. Fix `_is_locked` column heuristic in s1100**
-  - File: `engine/s1100_persistence_writer.py:59-61`
-  - Enumerate known columns explicitly instead of suffix check
+- [x] **13. Fix `_is_locked` column heuristic in s1100** ✓ 2026-04-04
+  - Replaced suffix check with explicit frozenset of 8 known lock columns
 
-- [ ] **14. Fix hardcoded `dev_name` in lot-phase-view endpoint**
-  - File: `api/routers/developments.py`
-  - JOIN to developments table and return real dev_name
+- [x] **14. Fix hardcoded `dev_name` in lot-phase-view endpoint** ✓ 2026-04-04
+  - Fetches real dev_name from developments table; 404 if dev_id not found
 
-- [ ] **15. Add `rng_seed` override parameter to convergence coordinator**
-  - File: `engine/coordinator.py`
-  - Default None = date-based seed; explicit = test-time control
+- [x] **15. Add `rng_seed` override parameter to convergence coordinator** ✓ 2026-04-04
+  - rng_seed=None uses date-based seed; explicit int for test-time control
 
 ## OPEN / TRACKING
 
