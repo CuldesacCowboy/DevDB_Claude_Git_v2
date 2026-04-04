@@ -5,22 +5,6 @@ import { CSS } from '@dnd-kit/utilities'
 import LotCard from './LotCard'
 import LotTypePill from './LotTypePill'
 
-// Fallback lot types used when the instrument has no phases with known types yet.
-// These are the active sub-types from ref_lot_types (ids 101-111).
-const FALLBACK_LOT_TYPES = [
-  { lot_type_id: 101, lot_type_short: 'SF' },
-  { lot_type_id: 102, lot_type_short: 'SF-L' },
-  { lot_type_id: 103, lot_type_short: 'Villa' },
-  { lot_type_id: 104, lot_type_short: 'Duplex' },
-  { lot_type_id: 105, lot_type_short: 'Triplex' },
-  { lot_type_id: 106, lot_type_short: 'Quad' },
-  { lot_type_id: 107, lot_type_short: 'TH-F' },
-  { lot_type_id: 108, lot_type_short: 'TH-R' },
-  { lot_type_id: 109, lot_type_short: 'GW' },
-  { lot_type_id: 110, lot_type_short: 'RLS' },
-  { lot_type_id: 111, lot_type_short: 'CD' },
-]
-
 // Split "Waterton Station SF ph. 3" into prefix="Waterton Station SF" and suffix="ph. 3".
 // Falls back to { prefix: name, suffix: null } if no " ph." pattern is found.
 function splitPhaseName(name) {
@@ -145,10 +129,7 @@ export default function PhaseColumn({
   }
 
   function handleOpenAddLotType() {
-    const sourceTypes = (knownLotTypes && knownLotTypes.length > 0)
-      ? knownLotTypes
-      : FALLBACK_LOT_TYPES
-    const available = sourceTypes.filter(
+    const available = (knownLotTypes ?? []).filter(
       (lt) => !localByLotType.some((e) => e.lot_type_id === lt.lot_type_id)
     )
     setSelectedLtId(available[0]?.lot_type_id ?? null)
@@ -410,9 +391,13 @@ export default function PhaseColumn({
                   <select
                     value={selectedLtId ?? ''}
                     onChange={(e) => setSelectedLtId(Number(e.target.value))}
+                    disabled={!knownLotTypes?.length}
                     className="flex-1 text-[11px] border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:border-blue-400 bg-white"
                   >
-                    {((knownLotTypes && knownLotTypes.length > 0) ? knownLotTypes : FALLBACK_LOT_TYPES)
+                    {!knownLotTypes?.length && (
+                      <option value="">Loading...</option>
+                    )}
+                    {(knownLotTypes ?? [])
                       .filter((lt) => !localByLotType.some((e) => e.lot_type_id === lt.lot_type_id))
                       .map((lt) => (
                         <option key={lt.lot_type_id} value={lt.lot_type_id}>
