@@ -29,6 +29,8 @@ export default function App() {
     try { return localStorage.getItem(LS_TEST_KEY) === 'true' } catch { return false }
   })
 
+  const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false)
+
   useEffect(() => {
     if (selectedGroupId) {
       try { localStorage.setItem(LS_KEY, String(selectedGroupId)) } catch {}
@@ -69,13 +71,24 @@ export default function App() {
         <NavLink to="/site-plan" style={navLinkStyle}>Site Plan</NavLink>
         <NavLink to="/simulation" style={navLinkStyle}>Simulation</NavLink>
 
+        <button
+          onClick={() => setGlobalSettingsOpen(true)}
+          title="Global settings"
+          style={{
+            marginLeft: 'auto', marginRight: 12,
+            fontSize: 15, lineHeight: 1, padding: '4px 10px', borderRadius: 4,
+            border: '1px solid #d1d5db', background: '#fff',
+            color: '#6b7280', cursor: 'pointer',
+          }}>
+          ⚙
+        </button>
       </nav>
 
       <ErrorBoundary>
         <Routes>
           <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
-          <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
+          <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} globalSettingsOpen={globalSettingsOpen} onCloseGlobalSettings={() => setGlobalSettingsOpen(false)} />} />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>

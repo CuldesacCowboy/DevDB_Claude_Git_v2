@@ -994,7 +994,7 @@ async function fetchOk(url) {
 
 // ─── Main view ───────────────────────────────────────────────────────────────
 
-export default function SimulationView({ selectedGroupId, setSelectedGroupId, showTestCommunities }) {
+export default function SimulationView({ selectedGroupId, setSelectedGroupId, showTestCommunities, globalSettingsOpen, onCloseGlobalSettings }) {
   const entGroupId = selectedGroupId
   const setEntGroupId = setSelectedGroupId
   const [entGroups, setEntGroups]   = useState([])
@@ -1174,6 +1174,14 @@ const loadLedger = useCallback((id) => {
           ))}
         </select>
 
+        <button onClick={() => setModalOpen(true)}
+          title="Community settings"
+          style={{ fontSize: 15, lineHeight: 1, padding: '4px 10px', borderRadius: 4,
+                   border: '1px solid #d1d5db', background: '#fff',
+                   color: '#6b7280', cursor: 'pointer' }}>
+          ⚙
+        </button>
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <button onClick={handleRun} disabled={!entGroupId || isRunning}
             style={{ padding: '5px 16px', borderRadius: 4, fontSize: 13, fontWeight: 600,
@@ -1232,13 +1240,6 @@ const loadLedger = useCallback((id) => {
           </div>
         )}
 
-        <button onClick={() => setModalOpen(true)}
-          title="Simulation settings"
-          style={{ marginLeft: 'auto', fontSize: 15, lineHeight: 1, padding: '4px 10px', borderRadius: 4,
-                   border: '1px solid #d1d5db', background: '#fff',
-                   color: '#6b7280', cursor: 'pointer' }}>
-          ⚙
-        </button>
       </div>
       {/* ── Data load error banner ── */}
       {loadError && (
@@ -1258,10 +1259,24 @@ const loadLedger = useCallback((id) => {
         </div>
       )}
 
-      {/* ── Starts targets — always visible ── */}
+      {/* ── Starts targets — read-only summary ── */}
       {staleParams.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <StartsTargetsSection entGroupId={entGroupId} params={staleParams} onSaved={() => checkSplits(entGroupId)} disabled={isRunning} />
+        <div style={{ marginBottom: 12, display: 'flex', flexWrap: 'wrap', gap: '4px 16px', alignItems: 'center' }}>
+          {staleParams.map(p => {
+            const dotColor = { ok: '#16a34a', stale: '#d97706', missing: '#dc2626' }[p.status] ?? '#9ca3af'
+            const target = p.annual_starts_target != null ? `${p.annual_starts_target}/yr` : '—'
+            const cap    = p.max_starts_per_month  != null ? ` · ${p.max_starts_per_month}/mo` : ''
+            return (
+              <span key={p.dev_id} style={{ fontSize: 11, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, display: 'inline-block', flexShrink: 0 }} />
+                {p.dev_name} <span style={{ color: '#374151' }}>{target}{cap}</span>
+              </span>
+            )
+          })}
+          <button onClick={() => setModalOpen(true)} style={{
+            fontSize: 11, color: '#2563eb', background: 'none', border: 'none',
+            cursor: 'pointer', padding: 0,
+          }}>edit</button>
         </div>
       )}
 
@@ -1416,7 +1431,34 @@ const loadLedger = useCallback((id) => {
         </>
       )}
 
-      {/* ── Settings modal ── */}
+      {/* ── Global settings modal (triggered from nav) ── */}
+      {globalSettingsOpen && (
+        <div onClick={onCloseGlobalSettings} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)',
+          zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#fff', borderRadius: 8, padding: 24,
+            width: 580, maxHeight: '85vh', overflowY: 'auto',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <span style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>Global Settings</span>
+              <button onClick={onCloseGlobalSettings} style={{
+                fontSize: 18, lineHeight: 1, background: 'none', border: 'none',
+                cursor: 'pointer', color: '#9ca3af', padding: '0 4px',
+              }}>×</button>
+            </div>
+            <GlobalSettingsSection
+              globalSettings={globalSettings}
+              onSaved={loadGlobalSettings}
+              disabled={isRunning}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ── Community settings modal ── */}
       {modalOpen && (
         <div onClick={() => setModalOpen(false)} style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)',
@@ -1424,49 +1466,32 @@ const loadLedger = useCallback((id) => {
         }}>
           <div onClick={e => e.stopPropagation()} style={{
             background: '#fff', borderRadius: 8, padding: 24,
-            width: 640, maxHeight: '85vh', overflowY: 'auto',
+            width: 580, maxHeight: '85vh', overflowY: 'auto',
             boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <span style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>Simulation Settings</span>
+              <span style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>Community Settings</span>
               <button onClick={() => setModalOpen(false)} style={{
                 fontSize: 18, lineHeight: 1, background: 'none', border: 'none',
                 cursor: 'pointer', color: '#9ca3af', padding: '0 4px',
               }}>×</button>
             </div>
 
-            {/* Global defaults */}
-            <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em',
-                            textTransform: 'uppercase', color: '#9ca3af', marginBottom: 14 }}>
-                Global defaults
+            {ledgerConfig !== null && (
+              <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid #e5e7eb' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>Ledger dates</div>
+                <LedgerConfigSection
+                  entGroupId={entGroupId}
+                  datePaper={ledgerConfig.date_paper}
+                  dateEnt={ledgerConfig.date_ent}
+                  onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
+                  disabled={isRunning}
+                />
               </div>
-              <GlobalSettingsSection
-                globalSettings={globalSettings}
-                onSaved={loadGlobalSettings}
-                disabled={isRunning}
-              />
-            </div>
+            )}
 
-            {/* This community */}
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em',
-                            textTransform: 'uppercase', color: '#9ca3af', marginBottom: 14 }}>
-                This community
-              </div>
-              {ledgerConfig !== null && (
-                <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>Ledger dates</div>
-                  <LedgerConfigSection
-                    entGroupId={entGroupId}
-                    datePaper={ledgerConfig.date_paper}
-                    dateEnt={ledgerConfig.date_ent}
-                    onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
-                    disabled={isRunning}
-                  />
-                </div>
-              )}
-              {deliveryConfig !== null && (
+            {deliveryConfig !== null && (
+              <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid #e5e7eb' }}>
                 <DeliveryConfigSection
                   entGroupId={entGroupId}
                   deliveryConfig={deliveryConfig}
@@ -1474,7 +1499,17 @@ const loadLedger = useCallback((id) => {
                   onSaved={() => loadConfig(entGroupId)}
                   disabled={isRunning}
                 />
-              )}
+              </div>
+            )}
+
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>Annual starts pace</div>
+              <StartsTargetsSection
+                entGroupId={entGroupId}
+                params={staleParams}
+                onSaved={() => checkSplits(entGroupId)}
+                disabled={isRunning}
+              />
             </div>
           </div>
         </div>
