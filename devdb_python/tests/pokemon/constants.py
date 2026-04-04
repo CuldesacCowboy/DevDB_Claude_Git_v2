@@ -47,10 +47,10 @@ REGISTRY = {
     "fuchsia_city":   (7008, "Sc-3:  Building Group Close Dates"),
     "saffron_city":   (7009, "Sc-9:  Placeholder Auto-Scheduling"),
     "cinnabar_island":(7010, "Sc-10: Persistence Rollback"),
-    "goldenrod_city": (7011, "DS-A:  Narrow Delivery Window (Sep-Oct)"),
-    "ecruteak_city":  (7012, "DS-B:  Min-Gap 18 Months"),
-    "mahogany_town":  (7013, "DS-C:  Year-Boundary Window (Nov-Feb)"),
-    "azalea_town":    (7014, "DS-D:  Multi-Dev Urgency Race"),
+    "goldenrod_city": (7011, "Sc-11: Narrow Delivery Window (Sep-Oct)"),
+    "ecruteak_city":  (7012, "Sc-12: Min-Gap 18 Months"),
+    "mahogany_town":  (7013, "Sc-13: Year-Boundary Window (Nov-Feb)"),
+    "azalea_town":    (7014, "Sc-14: Multi-Dev Urgency Race"),
 }
 
 ALL_ENT_GROUP_IDS = [v[0] for v in REGISTRY.values()]

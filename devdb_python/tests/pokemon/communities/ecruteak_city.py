@@ -1,6 +1,6 @@
 """
 ecruteak_city.py — Johto Station: Ecruteak City
-Delivery Schedule B: Min-Gap 18 Months
+Scenario 12: Min-Gap 18 Months
 
 ENT_GROUP_ID  = 7012
 DEV_IDS       = [7012]
@@ -24,7 +24,7 @@ from tests.pokemon.db import (
 
 ENT_GROUP_ID   = 7012
 ENT_GROUP_NAME = "Johto Station — Ecruteak City"
-SCENARIO       = "DS-B: Min-Gap 18 Months"
+SCENARIO       = "Scenario 12: Min-Gap 18 Months"
 DEV_IDS        = [7012]
 
 

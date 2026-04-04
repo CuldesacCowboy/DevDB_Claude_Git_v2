@@ -1,6 +1,6 @@
 """
 mahogany_town.py — Johto Station: Mahogany Town
-Delivery Schedule C: Year-Boundary Window (Nov–Feb)
+Scenario 13: Year-Boundary Window (Nov–Feb)
 
 ENT_GROUP_ID  = 7013
 DEV_IDS       = [7013]
@@ -24,7 +24,7 @@ from tests.pokemon.db import (
 
 ENT_GROUP_ID   = 7013
 ENT_GROUP_NAME = "Johto Station — Mahogany Town"
-SCENARIO       = "DS-C: Year-Boundary Window (Nov-Feb)"
+SCENARIO       = "Scenario 13: Year-Boundary Window (Nov-Feb)"
 DEV_IDS        = [7013]
 
 

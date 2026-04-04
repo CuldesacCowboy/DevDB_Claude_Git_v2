@@ -1,6 +1,6 @@
 """
 goldenrod_city.py — Johto Station: Goldenrod City
-Delivery Schedule A: Narrow Delivery Window (Sep–Oct)
+Scenario 11: Narrow Delivery Window (Sep–Oct)
 
 ENT_GROUP_ID  = 7011
 DEV_IDS       = [7011]
@@ -24,7 +24,7 @@ from tests.pokemon.db import (
 
 ENT_GROUP_ID   = 7011
 ENT_GROUP_NAME = "Johto Station — Goldenrod City"
-SCENARIO       = "DS-A: Narrow Delivery Window (Sep-Oct)"
+SCENARIO       = "Scenario 11: Narrow Delivery Window (Sep-Oct)"
 DEV_IDS        = [7011]
 
 

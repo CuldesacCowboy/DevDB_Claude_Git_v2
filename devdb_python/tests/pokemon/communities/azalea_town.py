@@ -1,6 +1,6 @@
 """
 azalea_town.py — Johto Station: Azalea Town
-Delivery Schedule D: Multi-Dev Urgency Race
+Scenario 14: Multi-Dev Urgency Race
 
 ENT_GROUP_ID  = 7014
 DEV_IDS       = [7014, 7015, 7016]  (3 devs under 1 entitlement group)
@@ -28,7 +28,7 @@ from tests.pokemon.db import (
 
 ENT_GROUP_ID   = 7014
 ENT_GROUP_NAME = "Johto Station — Azalea Town"
-SCENARIO       = "DS-D: Multi-Dev Urgency Race"
+SCENARIO       = "Scenario 14: Multi-Dev Urgency Race"
 DEV_IDS        = [7014, 7015, 7016]
 
 # (dev_id, dev_name, marks_code, instrument_id, ph1, ph2, lot_prefix, phase_name_base)
