@@ -3,6 +3,7 @@ import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import InstrumentContainer from './InstrumentContainer'
+import { PANEL_HEADER_BG, PANEL_BODY_BG, TEXT_MUTED } from '../utils/designTokens'
 
 // Groups all legal instruments belonging to one dev_id (projection group).
 // The container itself is sortable (type='projection-group') so PGs can be reordered.
@@ -90,7 +91,7 @@ export default function ProjectionGroupContainer({
         flex: '0 0 auto',
         opacity: isDragging ? 0.4 : 1,
         width: 'fit-content',
-        background: '#F7F6F3',
+        background: PANEL_BODY_BG,
         boxShadow: '0 2px 6px rgba(0,0,0,0.07)',
       }}
       className={`
@@ -108,10 +109,10 @@ export default function ProjectionGroupContainer({
           cursor-grab active:cursor-grabbing
           ${tint?.border ?? 'border-gray-200'}
         `}
-        style={{ background: '#F0EEE8' }}
+        style={{ background: PANEL_HEADER_BG }}
       >
         <div className="flex flex-col gap-0.5">
-          <p className="text-[9px] font-semibold uppercase tracking-widest text-center leading-none mb-0.5" style={{ color: '#888780' }}>Development</p>
+          <p className="text-[9px] font-semibold uppercase tracking-widest text-center leading-none mb-0.5" style={{ color: TEXT_MUTED }}>Development</p>
           <div className="relative flex items-center justify-center">
             <span className="absolute left-0 text-gray-400 text-[10px] leading-none flex-shrink-0 cursor-grab active:cursor-grabbing select-none" aria-hidden>⠿</span>
             <p

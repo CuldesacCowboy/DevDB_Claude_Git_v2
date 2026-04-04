@@ -8,6 +8,7 @@ import LotBank from '../components/SitePlan/LotBank'
 import { useBoundaryManager } from '../hooks/useBoundaryManager'
 import { useSitePlanState } from '../hooks/useSitePlanState'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
+import { Button } from '../components/Button'
 
 class SitePlanErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null } }
@@ -367,66 +368,64 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
         {/* Undo — visible in trace mode (pops last point), place mode (reverts last placement),
                   or when undoStack has entries in other modes */}
         {hasPlan && (mode === 'trace' || (mode === 'place' && placeHistory.length > 0) || (undoStack.length > 0 && mode !== 'trace' && mode !== 'place')) && (
-          <button onClick={handleUndo} style={btn('#b45309', '#fffbeb', '#fde68a')}>↩ Undo</button>
+          <Button variant="warning" onClick={handleUndo}>↩ Undo</Button>
         )}
 
         {/* View mode tools */}
         {hasPlan && mode === 'view' && (
           <>
-            <button onClick={() => setMode('trace')} style={btn('#2563eb', '#eff6ff', '#bfdbfe')}>
+            <Button variant="primary" onClick={() => setMode('trace')}>
               {hasParcel ? 'Retrace Parcel' : 'Trace Parcel'}
-            </button>
+            </Button>
             {hasParcel && (
-              <button onClick={() => setMode('edit')} style={btn('#374151', '#f9fafb', '#e5e7eb')}>
+              <Button variant="default" onClick={() => setMode('edit')}>
                 Edit Vertices
-              </button>
+              </Button>
             )}
-            <button onClick={() => { setMode('split'); setSelectedBoundaryId(null) }} style={btn('#7c3aed', '#f5f3ff', '#ddd6fe')}>
+            <Button variant="purple" onClick={() => { setMode('split'); setSelectedBoundaryId(null) }}>
               Split Region
-            </button>
+            </Button>
             {hasBoundaries && (
-              <button onClick={() => { setMode('delete-phases'); setSelectedBoundaryId(null) }} style={btn('#b45309', '#fffbeb', '#fde68a')}>
+              <Button variant="warning" onClick={() => { setMode('delete-phases'); setSelectedBoundaryId(null) }}>
                 Delete Phases
-              </button>
+              </Button>
             )}
             {hasBoundaries && (
-              <button onClick={handleCleanupPolygons} style={btn('#374151', '#f9fafb', '#e5e7eb')} title="Snap near-coincident vertices to exact shared positions">
+              <Button variant="default" onClick={handleCleanupPolygons} title="Snap near-coincident vertices to exact shared positions">
                 Clean Up
-              </button>
+              </Button>
             )}
             {hasParcel && (
-              <button onClick={handleDeleteCommunityBoundary} style={btn('#dc2626', '#fef2f2', '#fecaca')}>
+              <Button variant="danger" onClick={handleDeleteCommunityBoundary}>
                 Delete Community Boundary
-              </button>
+              </Button>
             )}
 
             {/* Building group tools (only shown when toggle is ON) */}
             {hasPlan && <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />}
-            <button
+            <Button
+              variant={showBuildingGroups ? 'teal' : 'default'}
               onClick={toggleShowBuildingGroups}
-              style={showBuildingGroups
-                ? btn('#0d9488', '#f0fdfa', '#99f6e4')
-                : btn('#374151', '#f9fafb', '#e5e7eb')}
               title={showBuildingGroups ? 'Hide building groups' : 'Show building groups'}
             >
               {showBuildingGroups ? '⬡ Groups ON' : '⬡ Groups'}
-            </button>
+            </Button>
             {showBuildingGroups && (
               <>
-                <button
+                <Button
+                  variant="tealOn"
                   onClick={() => { clearPendingBuildingGroup(); setMode('draw-building') }}
-                  style={btn('#0f766e', '#f0fdfa', '#5eead4')}
                   title="Draw a boundary around lots to group them into a building"
                 >
                   Draw Group
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="warning"
                   onClick={() => { setSelectedBgIds(new Set()); setMode('delete-building') }}
-                  style={btn('#b45309', '#fffbeb', '#fde68a')}
                   title="Click building ovals to select and delete groups"
                 >
                   Delete Groups
-                </button>
+                </Button>
               </>
             )}
           </>
@@ -434,40 +433,40 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
 
         {/* Active-mode exit buttons — instructions shown as canvas overlay instead */}
         {hasPlan && mode === 'trace' && (
-          <button onClick={() => setMode('view')} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Cancel</button>
+          <Button variant="default" onClick={() => setMode('view')}>Cancel</Button>
         )}
         {hasPlan && mode === 'edit' && (
-          <button onClick={() => setMode('view')} style={btn('#1d4ed8', '#eff6ff', '#bfdbfe')}>Done</button>
+          <Button variant="primary" onClick={() => setMode('view')}>Done</Button>
         )}
         {hasPlan && mode === 'split' && (
-          <button onClick={() => { setMode('view'); setSelectedBoundaryId(null) }} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
+          <Button variant="default" onClick={() => { setMode('view'); setSelectedBoundaryId(null) }}>Done</Button>
         )}
         {hasPlan && mode === 'delete-phases' && (
           <>
-            <button onClick={handleDeleteAllBoundaries} style={btn('#dc2626', '#fef2f2', '#fecaca')}>Delete All</button>
-            <button onClick={() => setMode('view')} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
+            <Button variant="danger" onClick={handleDeleteAllBoundaries}>Delete All</Button>
+            <Button variant="default" onClick={() => setMode('view')}>Done</Button>
           </>
         )}
         {hasPlan && mode === 'draw-building' && (
-          <button onClick={handleBuildingGroupCancel} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Cancel</button>
+          <Button variant="default" onClick={handleBuildingGroupCancel}>Cancel</Button>
         )}
         {hasPlan && mode === 'delete-building' && (
           <>
             {selectedBgIds.size > 0 && (
-              <button onClick={handleDeleteSelectedBuildingGroups} style={btn('#dc2626', '#fef2f2', '#fecaca')}>
+              <Button variant="danger" onClick={handleDeleteSelectedBuildingGroups}>
                 Delete {selectedBgIds.size} group{selectedBgIds.size !== 1 ? 's' : ''}
-              </button>
+              </Button>
             )}
-            <button onClick={() => { setSelectedBgIds(new Set()); setMode('view') }} style={btn('#374151', '#f9fafb', '#e5e7eb')}>Done</button>
+            <Button variant="default" onClick={() => { setSelectedBgIds(new Set()); setMode('view') }}>Done</Button>
           </>
         )}
 
         {hasPlan && <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />}
 
         {hasPlan && (
-          <button onClick={() => fileInputRef.current?.click()} disabled={uploading} style={btnGray}>
+          <Button variant="default" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
             Replace PDF
-          </button>
+          </Button>
         )}
 
         {error && <span style={{ fontSize: 12, color: '#dc2626' }}>{error}</span>}
@@ -483,8 +482,8 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
           <span style={{ fontSize: 12, color: '#92400e', flex: 1 }}>
             Lot positions have unsaved changes
           </span>
-          <button onClick={handleSaveLotPositions} style={btn('#15803d', '#f0fdf4', '#bbf7d0')}>Save</button>
-          <button onClick={handleDiscardLotPositions} style={btn('#6b7280', '#f9fafb', '#e5e7eb')}>Discard</button>
+          <Button variant="success" onClick={handleSaveLotPositions}>Save</Button>
+          <Button variant="default" onClick={handleDiscardLotPositions}>Discard</Button>
         </div>
       )}
 
@@ -1189,12 +1188,6 @@ function Placeholder({ children }) {
     </div>
   )
 }
-
-function btn(color, bg, border) {
-  return { fontSize: 12, padding: '4px 10px', borderRadius: 4, border: `1px solid ${border}`, color, background: bg, cursor: 'pointer', fontWeight: 500 }
-}
-
-const btnGray = { fontSize: 12, padding: '4px 10px', borderRadius: 4, border: '1px solid #d1d5db', color: '#374151', background: '#f9fafb', cursor: 'pointer' }
 
 // ─── Unit Counts Panel ────────────────────────────────────────────────────────
 

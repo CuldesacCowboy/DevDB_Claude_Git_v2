@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { fmt, shortLot, parseLot } from '../utils/tdaUtils'
+import { PANEL_HEADER_BG, PANEL_BORDER, EDITOR_BORDER, EDITOR_BG, EDITOR_TEXT, TEXT_MUTED, DIVIDER_MED } from '../utils/designTokens'
 
 // ── Parse a free-form date string → ISO YYYY-MM-DD (or null) ─────
 // Accepts: MM/DD/YY, MM/DD/YYYY, M/D/YY, YYYY-MM-DD
@@ -27,7 +28,7 @@ function parseDate(str) {
 
 // ── Lock icon (SVG) ───────────────────────────────────────────────
 export function LockIcon({ locked }) {
-  const color = locked ? '#D97706' : '#B4B2A9'
+  const color = locked ? '#D97706' : DIVIDER_MED
   return locked ? (
     <svg width="13" height="15" viewBox="0 0 10 12" fill="none">
       <rect x="1" y="5.5" width="8" height="6" rx="1.5" fill={color} />
@@ -119,8 +120,8 @@ export function ProjectedDateField({ value, locked, onChange }) {
         }}
         style={{
           fontSize: 12, width: '100%', boxSizing: 'border-box',
-          border: '1px solid #3B6D11',
-          background: '#EAF3DE', color: '#27500A',
+          border: `1px solid ${EDITOR_BORDER}`,
+          background: EDITOR_BG, color: EDITOR_TEXT,
           borderRadius: 3, padding: '2px 4px',
           outline: 'none', lineHeight: '1.3',
         }}
@@ -133,9 +134,9 @@ export function ProjectedDateField({ value, locked, onChange }) {
       onClick={startEdit}
       title="Click to edit date (MM/DD/YY)"
       style={{
-        fontSize: 12, color: '#27500A',
-        border: '1px dashed #3B6D11',
-        background: '#EAF3DE',
+        fontSize: 12, color: EDITOR_TEXT,
+        border: `1px dashed ${EDITOR_BORDER}`,
+        background: EDITOR_BG,
         borderRadius: 3,
         padding: '2px 4px',
         lineHeight: '1.3',
@@ -180,7 +181,7 @@ export function PlaceholderPill({ daysToCP, condensed = false }) {
     else if (daysToCP <= 30) state = 'urgent'
   }
   const cfg = {
-    normal: { bg: 'transparent',  border: '1.5px dashed #888780', icon: '○', iconColor: '#B4B2A9', label: null },
+    normal: { bg: 'transparent',  border: `1.5px dashed ${TEXT_MUTED}`, icon: '○', iconColor: DIVIDER_MED, label: null },
     urgent: { bg: '#FFF3CD',      border: '1.5px dashed #BA7517', icon: '⚠', iconColor: '#854F0B', label: `${daysToCP} DAYS` },
     missed: { bg: '#FCEBEB',      border: '1.5px dashed #A32D2D', icon: '✕', iconColor: '#A32D2D', label: 'PAST DUE' },
   }[state]
@@ -257,7 +258,7 @@ export default function LotPill({
   // ── Condensed view ───────────────────────────────────────────────
   if (condensed) {
     const { code, seq } = parseLot(assignment.lot_number)
-    const codeColor = isExcess ? '#E24B4A' : isDelinquent ? '#dc2626' : isCaution ? '#D97706' : '#888780'
+    const codeColor = isExcess ? '#E24B4A' : isDelinquent ? '#dc2626' : isCaution ? '#D97706' : TEXT_MUTED
     return (
       <div
         ref={setNodeRef}
@@ -267,7 +268,7 @@ export default function LotPill({
         style={{
           width: 68, height: 34, flexShrink: 0,
           background: isSelected ? '#dbeafe' : isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : hasNoDates ? '#EEECEA' : '#FAFAF8',
-          border: isSelected ? '2px solid #2563eb' : isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? '1px dashed #C8C6BE' : '1px solid #E4E2DA',
+          border: isSelected ? '2px solid #2563eb' : isExcess ? '1.5px dashed #E24B4A' : isDelinquent ? '1.5px solid #dc2626' : isCaution ? '1.5px dashed #D97706' : hasNoDates ? `1px dashed #C8C6BE` : `1px solid ${PANEL_BORDER}`,
           borderRadius: 5,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '0 6px', boxSizing: 'border-box',
@@ -297,7 +298,7 @@ export default function LotPill({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
           <span style={{
             fontSize: 11, textTransform: 'uppercase',
-            color: isLocked ? '#92400E' : '#888780',
+            color: isLocked ? '#92400E' : TEXT_MUTED,
             letterSpacing: '0.04em',
             fontWeight: isLocked ? 700 : 400,
           }}>
@@ -315,8 +316,8 @@ export default function LotPill({
                 style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 1px', lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
               >
                 <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                  <path d="M10 6A4 4 0 1 1 8.5 2.8" stroke="#B4B2A9" strokeWidth="1.5" strokeLinecap="round"/>
-                  <polyline points="8.5,1 8.5,3 10.5,3" stroke="#B4B2A9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M10 6A4 4 0 1 1 8.5 2.8" stroke={DIVIDER_MED} strokeWidth="1.5" strokeLinecap="round"/>
+                  <polyline points="8.5,1 8.5,3 10.5,3" stroke={DIVIDER_MED} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </button>
             )}
@@ -327,7 +328,7 @@ export default function LotPill({
         {/* MARKS date — paddingLeft:4 aligns left edge with projected date field */}
         <div style={{
           fontSize: 12,
-          color: isLocked ? '#92400E' : '#B4B2A9',
+          color: isLocked ? '#92400E' : DIVIDER_MED,
           marginBottom: 4,
           paddingLeft: 4,
           whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
@@ -377,7 +378,7 @@ export default function LotPill({
           padding: '5px 8px 6px',
           cursor: 'grab',
           background: isSelected ? '#dbeafe' : isExcess ? '#FFF0F0' : isDelinquent ? '#fee2e2' : isCaution ? '#FEF3C7' : hasNoDates ? '#EEECEA' : '#FAFAF8',
-          borderBottom: `1px solid ${isSelected ? '#93c5fd' : isExcess ? '#FFCCC9' : isDelinquent ? '#fecaca' : isCaution ? '#FDE68A' : hasNoDates ? '#DDDBD3' : '#F0EEE8'}`,
+          borderBottom: `1px solid ${isSelected ? '#93c5fd' : isExcess ? '#FFCCC9' : isDelinquent ? '#fecaca' : isCaution ? '#FDE68A' : hasNoDates ? '#DDDBD3' : PANEL_HEADER_BG}`,
           userSelect: 'none',
         }}
       >
@@ -385,7 +386,7 @@ export default function LotPill({
           {shortLot(assignment.lot_number)}
         </div>
         {winningDate ? (
-          <div style={{ fontSize: 11, color: '#888780', marginTop: 2, lineHeight: 1 }}>
+          <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 2, lineHeight: 1 }}>
             {fmt(winningDate)}
           </div>
         ) : (
@@ -398,7 +399,7 @@ export default function LotPill({
         {col('HC',
           assignment.hc_marks_date,   localHcDate,   assignment.hc_is_locked,
           'hc_projected_date',   'hc_is_locked',   setLocalHcDate)}
-        <div style={{ width: 1, background: '#F0EEE8', flexShrink: 0 }} />
+        <div style={{ width: 1, background: PANEL_HEADER_BG, flexShrink: 0 }} />
         {col('BLDR',
           assignment.bldr_marks_date, localBldrDate, assignment.bldr_is_locked,
           'bldr_projected_date', 'bldr_is_locked', setLocalBldrDate)}
@@ -407,7 +408,7 @@ export default function LotPill({
       {/* DIG expansion — shown when showDig && !condensed */}
       {showDig && (
         <>
-          <div style={{ height: 1, background: '#F0EEE8', margin: '0 8px' }} />
+          <div style={{ height: 1, background: PANEL_HEADER_BG, margin: '0 8px' }} />
           <div style={{ padding: '4px 8px 6px' }}>
             {col('DIG',
               assignment.dig_marks_date,  localDigDate,  assignment.dig_is_locked,

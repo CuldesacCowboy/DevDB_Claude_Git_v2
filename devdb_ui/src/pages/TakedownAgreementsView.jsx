@@ -8,6 +8,7 @@ import TdaCard from '../components/TdaCard'
 import TdaPageHeader from '../components/TdaPageHeader'
 import TdaDragOverlay from '../components/TdaDragOverlay'
 import TdaNavBar from '../components/TdaNavBar'
+import { PANEL_BORDER, EDITOR_BORDER, EDITOR_BG, EDITOR_TEXT, TEXT_MUTED } from '../utils/designTokens'
 import ContextMenu from '../components/ContextMenu'
 import { UnassignedBank } from '../components/LeftPanel'
 import { buildContextMenuItems } from '../utils/tdaContextMenu'
@@ -132,7 +133,7 @@ export default function TakedownAgreementsView({ entGroupId }) {
   )
 
   // ── Master controls bar button helper ─────────────────────────────
-  function masterBtn(active, label, onClick, activeColor = '#3B6D11', activeBg = '#EAF3DE', activeText = '#27500A') {
+  function masterBtn(active, label, onClick, activeColor = EDITOR_BORDER, activeBg = EDITOR_BG, activeText = EDITOR_TEXT) {
     return (
       <button
         onClick={onClick}
@@ -204,11 +205,11 @@ export default function TakedownAgreementsView({ entGroupId }) {
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '6px 10px',
                 background: '#F5F5F2',
-                border: '1px solid #E4E2DA',
+                border: `1px solid ${PANEL_BORDER}`,
                 borderRadius: 6,
                 flexWrap: 'wrap',
               }}>
-                <span style={{ fontSize: 11, color: '#888780', fontWeight: 600, marginRight: 4, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: 11, color: TEXT_MUTED, fontWeight: 600, marginRight: 4, whiteSpace: 'nowrap' }}>
                   All Checkpoints:
                 </span>
                 {masterBtn(masterDateSeq > 0, dateDirLabel, handleMasterSortByDate, '#0f766e', '#ccfbf1', '#0f766e')}

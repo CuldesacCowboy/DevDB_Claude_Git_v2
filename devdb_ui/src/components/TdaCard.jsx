@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useDraggable, useDroppable } from '@dnd-kit/core'
 import { parseLot } from '../utils/tdaUtils'
+import { PANEL_HEADER_BG, PANEL_BODY_BG, PANEL_BORDER, EDITOR_BORDER, EDITOR_BG, TEXT_MUTED, DIVIDER_MED } from '../utils/designTokens'
 
 // ── Draggable pool lot pill (inline, inside TDA card) ─────────────
 function PoolLotPill({ lot, isSelected, onToggle, onContextMenu }) {
@@ -175,8 +176,8 @@ function EditableTdaName({ value, onSave }) {
         }}
         style={{
           fontSize: 16, fontWeight: 700, color: '#2C2C2A',
-          border: '1px dashed #3B6D11',
-          background: '#EAF3DE',
+          border: `1px dashed ${EDITOR_BORDER}`,
+          background: EDITOR_BG,
           borderRadius: 4, padding: '2px 8px',
           outline: 'none', minWidth: 140,
         }}
@@ -189,8 +190,8 @@ function EditableTdaName({ value, onSave }) {
       title="Click to rename"
       style={{
         fontWeight: 700, fontSize: 16, color: '#2C2C2A',
-        border: '1px dashed #3B6D11',
-        background: '#EAF3DE',
+        border: `1px dashed ${EDITOR_BORDER}`,
+        background: EDITOR_BG,
         borderRadius: 4, padding: '2px 8px',
         cursor: 'pointer', userSelect: 'none',
       }}
@@ -242,7 +243,7 @@ export default function TdaCard({
     }}>
       {/* Header */}
       <div style={{
-        background: '#F0EEE8', padding: '10px 16px',
+        background: PANEL_HEADER_BG, padding: '10px 16px',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <EditableTdaName
@@ -250,7 +251,7 @@ export default function TdaCard({
           onSave={(name) => onRenameTda && onRenameTda(detail.tda_id, name)}
         />
         <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginLeft: 14, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, color: '#888780', marginLeft: 10 }}>
+          <span style={{ fontSize: 12, color: TEXT_MUTED, marginLeft: 10 }}>
             pool:&nbsp;{poolCount}
           </span>
           {cpCounts.map((cp, i) => (
@@ -265,7 +266,7 @@ export default function TdaCard({
       </div>
 
       {/* Body */}
-      <div style={{ background: '#F7F6F3', padding: 14 }}>
+      <div style={{ background: PANEL_BODY_BG, padding: 14 }}>
         {/* In Agreement pool — droppable, above checkpoints */}
         <PoolSection
           lots={detail.pool_lots || []}
@@ -285,7 +286,7 @@ export default function TdaCard({
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8, marginTop: 4,
             padding: '10px 14px', background: '#fff',
-            borderRadius: 8, border: '1.5px solid #E4E2DA',
+            borderRadius: 8, border: `1.5px solid ${PANEL_BORDER}`,
           }}>
             <input
               autoFocus
@@ -343,7 +344,7 @@ export default function TdaCard({
             style={{
               marginTop: 4,
               fontSize: 13, padding: '6px 14px', borderRadius: 6,
-              border: '1.5px dashed #B4B2A9', background: 'transparent', color: '#888780',
+              border: `1.5px dashed ${DIVIDER_MED}`, background: 'transparent', color: TEXT_MUTED,
               cursor: 'pointer', width: '100%', textAlign: 'left',
             }}
           >

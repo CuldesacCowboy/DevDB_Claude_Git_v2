@@ -4,6 +4,7 @@ import LotPill, { StitchConnector, PlaceholderPill } from './LotPill'
 import CheckpointTimeline from './CheckpointTimeline'
 import { fmt, buildClusters } from '../utils/tdaUtils'
 import { useCheckpointControls } from '../contexts/CheckpointControlContext'
+import { PANEL_BORDER, EDITOR_BORDER, EDITOR_BG, EDITOR_TEXT, TEXT_MUTED, DIVIDER_MED } from '../utils/designTokens'
 
 // ── Editable inline value (green dashed style) ───────────────────
 export function EditableNumber({ value, onChange, onEditingChange }) {
@@ -30,8 +31,8 @@ export function EditableNumber({ value, onChange, onEditingChange }) {
         }}
         style={{
           width: 42, fontSize: 15, fontWeight: 700,
-          border: '1px dashed #3B6D11',
-          background: '#EAF3DE', color: '#27500A',
+          border: `1px dashed ${EDITOR_BORDER}`,
+          background: EDITOR_BG, color: EDITOR_TEXT,
           borderRadius: 3, padding: '1px 2px',
           outline: 'none', textAlign: 'center',
         }}
@@ -43,9 +44,9 @@ export function EditableNumber({ value, onChange, onEditingChange }) {
       onClick={startEditing}
       title="Click to edit"
       style={{
-        fontSize: 15, fontWeight: 700, color: '#27500A',
-        border: '1px dashed #3B6D11',
-        background: '#EAF3DE',
+        fontSize: 15, fontWeight: 700, color: EDITOR_TEXT,
+        border: `1px dashed ${EDITOR_BORDER}`,
+        background: EDITOR_BG,
         borderRadius: 3, padding: '1px 6px',
         cursor: 'pointer',
       }}
@@ -272,7 +273,7 @@ export default function CheckpointBand({
   }, [displayLots, slotCount, showLots, lotView, showDig])
 
   // ── Button style helpers ─────────────────────────────────────────
-  function ctrlBtn(active, activeColor = '#3B6D11', activeBg = '#EAF3DE', activeText = '#27500A') {
+  function ctrlBtn(active, activeColor = EDITOR_BORDER, activeBg = EDITOR_BG, activeText = EDITOR_TEXT) {
     return {
       fontSize: 11, padding: '2px 9px', borderRadius: 4,
       border: `1px solid ${active ? activeColor : '#D4D2CB'}`,
@@ -292,8 +293,8 @@ export default function CheckpointBand({
       ref={setNodeRef}
       style={{
         background: isOver ? '#f0f9ff' : '#ffffff',
-        border: isOver ? '1.5px solid #3b82f6' : isValidDrop ? '1.5px dashed #93c5fd' : '1.5px solid #E4E2DA',
-        borderLeft: isOver ? '1.5px solid #3b82f6' : isValidDrop ? '1.5px dashed #93c5fd' : statusCfg ? `4px solid ${statusCfg.border}` : '1.5px solid #E4E2DA',
+        border: isOver ? '1.5px solid #3b82f6' : isValidDrop ? '1.5px dashed #93c5fd' : `1.5px solid ${PANEL_BORDER}`,
+        borderLeft: isOver ? '1.5px solid #3b82f6' : isValidDrop ? '1.5px dashed #93c5fd' : statusCfg ? `4px solid ${statusCfg.border}` : `1.5px solid ${PANEL_BORDER}`,
         borderRadius: 8, marginBottom: 14,
         transition: 'all 0.15s',
       }}
@@ -333,9 +334,9 @@ export default function CheckpointBand({
           {/* Editable date */}
           <div style={{ position: 'relative', display: 'inline-block' }}>
             <div style={{
-              fontSize: 15, fontWeight: 700, color: '#27500A',
-              border: '1px dashed #3B6D11',
-              background: '#EAF3DE',
+              fontSize: 15, fontWeight: 700, color: EDITOR_TEXT,
+              border: `1px dashed ${EDITOR_BORDER}`,
+              background: EDITOR_BG,
               borderRadius: 3, padding: '1px 6px',
               cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
             }}>
@@ -433,7 +434,7 @@ export default function CheckpointBand({
         {/* Right: progress bars */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 240 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: overC ? '#A32D2D' : '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
+            <span style={{ fontSize: 11, color: overC ? '#A32D2D' : TEXT_MUTED, whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
               Completed
             </span>
             <div style={{ flex: 1, height: 8, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
@@ -444,11 +445,11 @@ export default function CheckpointBand({
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: overTotal ? '#A32D2D' : '#888780', whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
+            <span style={{ fontSize: 11, color: overTotal ? '#A32D2D' : TEXT_MUTED, whiteSpace: 'nowrap', flexShrink: 0, minWidth: 78 }}>
               + Planned
             </span>
             <div style={{ flex: 1, height: 8, background: '#F1EFE8', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ width: `${cpPct}%`, height: '100%', background: overTotal ? '#E24B4A' : '#B4B2A9', borderRadius: 3, transition: 'width 0.2s' }} />
+              <div style={{ width: `${cpPct}%`, height: '100%', background: overTotal ? '#E24B4A' : DIVIDER_MED, borderRadius: 3, transition: 'width 0.2s' }} />
             </div>
             <span style={{ fontSize: 12, fontWeight: 500, color: overTotal ? '#A32D2D' : '#444441', flexShrink: 0, minWidth: 52, textAlign: 'right' }}>
               {plannedTotal} of {t}

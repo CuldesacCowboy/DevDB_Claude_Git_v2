@@ -4,6 +4,7 @@ import { SortableContext, rectSortingStrategy, useSortable } from '@dnd-kit/sort
 import { CSS } from '@dnd-kit/utilities'
 import PhaseColumn from './PhaseColumn'
 import { computeCols } from '../utils/computeCols'
+import { PANEL_HEADER_BG, PANEL_BODY_BG, PANEL_BORDER, EDITOR_BORDER, EDITOR_BG, TEXT_MUTED } from '../utils/designTokens'
 
 // Color tints cycle by dev_id across the ent_group.
 const DEV_TINTS = [
@@ -235,12 +236,12 @@ export default function InstrumentContainer({
         width: instrWidth != null ? instrWidth + 'px' : 'fit-content',
         transform: CSS.Transform.toString(instrTransform),
         transition: instrTransition,
-        background: '#F7F6F3',
+        background: PANEL_BODY_BG,
         boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
       }}
     >
       {/* Container header */}
-      <div className={`px-3 py-2 rounded-t-xl border-b ${containerTint.border}`} style={{ background: '#F0EEE8' }}>
+      <div className={`px-3 py-2 rounded-t-xl border-b ${containerTint.border}`} style={{ background: PANEL_HEADER_BG }}>
         {isNoInstrument ? (
           <>
             <p className="font-bold text-sm text-gray-700">No Instrument</p>
@@ -250,7 +251,7 @@ export default function InstrumentContainer({
           </>
         ) : (
           <div className="flex flex-col gap-0.5">
-            <p className="text-[9px] font-semibold uppercase tracking-widest text-center leading-none mb-0.5" style={{ color: '#888780' }}>Legal Instrument</p>
+            <p className="text-[9px] font-semibold uppercase tracking-widest text-center leading-none mb-0.5" style={{ color: TEXT_MUTED }}>Legal Instrument</p>
             <div className="flex items-center gap-1.5">
               {/* Instrument drag handle */}
               <span
@@ -278,8 +279,8 @@ export default function InstrumentContainer({
                   style={{
                     fontSize: 14,
                     fontWeight: 700,
-                    border: '1px dashed #3B6D11',
-                    background: '#EAF3DE',
+                    border: `1px dashed ${EDITOR_BORDER}`,
+                    background: EDITOR_BG,
                     borderRadius: 3,
                     padding: '1px 4px',
                     outline: 'none',
@@ -376,7 +377,7 @@ export default function InstrumentContainer({
         <div
           style={{
             margin: '8px 8px 0', padding: '10px 14px',
-            background: '#fff', borderRadius: 8, border: '1.5px solid #E4E2DA',
+            background: '#fff', borderRadius: 8, border: `1.5px solid ${PANEL_BORDER}`,
             display: 'flex', flexDirection: 'column', gap: 8,
           }}
           onPointerDown={(e) => e.stopPropagation()}
