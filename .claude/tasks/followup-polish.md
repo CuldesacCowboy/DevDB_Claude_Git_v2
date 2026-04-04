@@ -8,7 +8,7 @@
 | # | Item | Status |
 |---|---|---|
 | 1 | Replace window.confirm() with inline confirmation | Complete |
-| 2 | Surface boundary operation errors to user | Not started |
+| 2 | Surface boundary operation errors to user | Complete |
 | 3 | Bulk-delete endpoint for boundaries | Not started |
 | 4 | Move fetchOk to module level / utils | Not started |
 | 5 | Move @keyframes spin to global CSS | Not started |
@@ -40,16 +40,16 @@ Completed 2026-04-04. Banner renders between toolbar and save/discard bar. Delet
 **Scope:** `devdb_ui/src/hooks/useBoundaryManager.js`
 
 ### Sub-tasks
-- [ ] `handleDeleteBoundary` — call `setError` in catch; surface merge-then-delete failures
-- [ ] `handleDeleteAllBoundaries` — call `setError` in catch
-- [ ] `handleCleanupPolygons` — call `setError` in catch
-- [ ] `assignPhaseToBoundary` — call `setError` in catch
-- [ ] `swapBoundaryAssignments` — call `setError` in catch
-- [ ] `unassignBoundary` — call `setError` in catch
-- [ ] Verify `setError(null)` is called at the start of each operation so stale errors clear
+- [x] `handleDeleteBoundary` — call `setError` in catch; surface merge-then-delete failures
+- [x] `handleDeleteAllBoundaries` — call `setError` in catch
+- [x] `handleCleanupPolygons` — call `setError` in catch
+- [x] `assignPhaseToBoundary` — call `setError` in catch; also surfaces non-2xx responses
+- [x] `swapBoundaryAssignments` — call `setError` in catch
+- [x] `unassignBoundary` — call `setError` in catch; also surfaces non-2xx responses
+- [x] Verify `setError(null)` is called at the start of each operation so stale errors clear
 
 ### Notes
-_Add implementation notes here as work progresses._
+Completed 2026-04-04. All 6 catch blocks now call setError. assignPhaseToBoundary and unassignBoundary also surface non-2xx API responses (not just network errors).
 
 ---
 
@@ -106,3 +106,4 @@ _Add implementation notes here as work progresses._
 | Date | Item | What was done |
 |---|---|---|
 | 2026-04-04 | Task 1 — window.confirm() | Added `pendingDeleteBoundary` state; inline red banner with Delete/Cancel; removed `window.confirm()` |
+| 2026-04-04 | Task 2 — Boundary errors | Wired setError into all 6 silent catch blocks; setError(null) clears stale errors at start of each op |
