@@ -80,12 +80,11 @@ def create_entitlement_group(body: EntGroupCreateRequest, conn=Depends(get_db_co
         raise HTTPException(status_code=422, detail="ent_group_name is required")
     cur = dict_cursor(conn)
     try:
-        cur.execute("SELECT COALESCE(MAX(ent_group_id), 0) + 1 AS new_id FROM sim_entitlement_groups")
-        new_id = int(cur.fetchone()["new_id"])
         cur.execute(
-            "INSERT INTO sim_entitlement_groups (ent_group_id, ent_group_name) VALUES (%s, %s)",
-            (new_id, name),
+            "INSERT INTO sim_entitlement_groups (ent_group_name) VALUES (%s) RETURNING ent_group_id",
+            (name,),
         )
+        new_id = int(cur.fetchone()["ent_group_id"])
         conn.commit()
         return {"ent_group_id": new_id, "ent_group_name": name}
     except Exception:

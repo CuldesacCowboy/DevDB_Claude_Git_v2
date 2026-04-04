@@ -70,16 +70,13 @@ def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
         legacy_dev_id = int(row["legacy_dev_id"])
 
         cur.execute(
-            "SELECT COALESCE(MAX(instrument_id), 0) + 1 AS new_id FROM sim_legal_instruments"
-        )
-        new_id = int(cur.fetchone()["new_id"])
-        cur.execute(
             """
-            INSERT INTO sim_legal_instruments (instrument_id, instrument_name, instrument_type, dev_id)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO sim_legal_instruments (instrument_name, instrument_type, dev_id)
+            VALUES (%s, %s, %s) RETURNING instrument_id
             """,
-            (new_id, name, body.instrument_type, legacy_dev_id),
+            (name, body.instrument_type, legacy_dev_id),
         )
+        new_id = int(cur.fetchone()["instrument_id"])
         conn.commit()
         return {
             "instrument_id": new_id,

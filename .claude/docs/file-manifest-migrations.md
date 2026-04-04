@@ -119,6 +119,16 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Tables: sim_entitlement_events (DROP TABLE)
 - Last commit: 2026-04-03
 
+### devdb_python/migrations/026_building_groups_sequence.sql
+- Owns: Adds auto-increment sequence to sim_building_groups.building_group_id (idempotent DO block; setval to current MAX so existing IDs never reused)
+- Tables: sim_building_groups
+- Last commit: 2026-04-02
+
+### devdb_python/migrations/027_pk_sequences.sql
+- Owns: Adds auto-increment sequences to 5 tables whose PKs were generated via SELECT MAX(id)+1 in application code (race condition under concurrent requests). Idempotent DO block. Tables: sim_entitlement_groups, sim_legal_instruments, sim_dev_phases, sim_phase_product_splits, sim_takedown_agreements. Pattern: CREATE SEQUENCE IF NOT EXISTS, setval to MAX+1, ALTER TABLE SET DEFAULT nextval() guarded by IF NOT EXISTS.
+- Tables: sim_entitlement_groups, sim_legal_instruments, sim_dev_phases, sim_phase_product_splits, sim_takedown_agreements
+- Last commit: 2026-04-04
+
 ### devdb_python/migrations/add_display_order.py (superseded)
 - Owns: Superseded by 011_add_display_order.sql. Original standalone migration that added display_order to sim_dev_phases.
 - Tables: sim_dev_phases

@@ -61,11 +61,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-03
 
 ### devdb_python/api/routers/instruments.py
-- Owns: POST and PATCH for sim_legal_instruments (create, rename)
-- Imports: api.deps, psycopg2.extras
+- Owns: POST and PATCH for sim_legal_instruments (create, rename, dev-id reassign, phase-order); INSERT uses RETURNING instrument_id (sequence-backed, no MAX query); PATCH /{id}/dev reassigns instrument to different dev_id; PATCH /{id}/phase-order; POST /{id}/phase-order/auto-sort
+- Imports: api.deps, api.db, pydantic, fastapi, re
 - Imported by: api/main.py
-- Tables: developments, dim_development, sim_legal_instruments
-- Last commit: 2026-04-02
+- Tables: developments, dim_development, sim_legal_instruments, sim_dev_phases
+- Last commit: 2026-04-04
 
 ### devdb_python/api/routers/lots.py
 - Owns: PATCH /{id}/phase, PATCH /{id}/lot-type, DELETE /{id}/phase -- all delegating to lot_assignment_service
@@ -75,11 +75,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-03-27
 
 ### devdb_python/api/routers/tda_crud.py
-- Owns: TDA list, create, rename, detail view (GET/POST/PATCH on /takedown-agreements)
+- Owns: TDA list, create, rename, detail view (GET/POST/PATCH on /takedown-agreements); INSERT uses RETURNING tda_id (sequence-backed via migration 027, no MAX query)
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments, sim_lots, sim_entitlement_groups
-- Last commit: 2026-04-02
+- Last commit: 2026-04-04
 
 ### devdb_python/api/routers/tda_checkpoints.py
 - Owns: Checkpoint create (POST /takedown-agreements/{tda_id}/checkpoints)
@@ -96,7 +96,7 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/phases.py
-- Owns: Phase CRUD, lot-type split management; GET /lot-types (all ref_lot_types for picker); POST /{phase_id}/lot-type/{lot_type_id} (add split with p=0, 409 if exists); DELETE /{phase_id}/lot-type/{lot_type_id} (requires p=0 AND r=0); PATCH /{phase_id}/lot-type/{lot_type_id}/projected; DELETE and PATCH routes registered BEFORE generic /{phase_id} (route ordering intentional)
+- Owns: Phase CRUD, lot-type split management; GET /lot-types (all ref_lot_types for picker); POST /{phase_id}/lot-type/{lot_type_id} (add split with p=0, 409 if exists); DELETE /{phase_id}/lot-type/{lot_type_id} (requires p=0 AND r=0); PATCH /{phase_id}/lot-type/{lot_type_id}/projected; DELETE and PATCH routes registered BEFORE generic /{phase_id} (route ordering intentional); phase INSERT and split INSERT both use RETURNING (sequence-backed via migration 027, no MAX query)
 - Imports: api.deps, api.models.phase_models, services.phase_assignment_service, psycopg2.extras
 - Imported by: api/main.py
 - Tables: sim_dev_phases, sim_legal_instruments, ref_lot_types, sim_phase_product_splits, sim_phase_builder_splits, sim_delivery_event_phases, sim_lots (devdb. prefix on lot-type queries)
@@ -124,11 +124,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/simulations.py
-- Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms, errors[]; looks up dev names for missing_params_devs via dim_development bridge
+- Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms, errors[]; looks up dev names for missing_params_devs via dim_development bridge; on exception prints full traceback to server terminal and returns only str(exc) to client (no traceback leak)
 - Imports: engine.coordinator, fastapi, pydantic, time, traceback, psycopg2.extras
 - Imported by: api/main.py
 - Tables: dim_development, developments (for dev_name lookup on missing params)
-- Last commit: 2026-04-02
+- Last commit: 2026-04-04
 
 ### devdb_python/api/routers/ledger.py
 - Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates); GET /ledger/{id}/delivery-schedule (one row per event+dev: date, source, phases, units, D/U/UC inventory at delivery month)

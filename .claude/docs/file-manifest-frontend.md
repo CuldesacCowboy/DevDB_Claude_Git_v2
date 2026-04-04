@@ -54,11 +54,32 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-03
 
 ### devdb_ui/src/components/SitePlan/PdfCanvas.jsx
-- Owns: PDF rendering canvas; parcel trace mode (traceUndoSignal prop — increment pops last point); parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (bestSplitSnap = vertex snap priority over edge snap; click-to-draw polyline, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion (rotation-aware: coords stored in unrotated space, applyRotationToNorm/unapplyRotationFromNorm for CW PDF.js convention); rotation persistence (localStorage per planId); buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay; building group draw mode: freehand (pointermove > DRAG_THRESHOLD) + multi-point click + dblclick detection via bgLastClick ref (350ms window); building group delete mode: hoveredBgId + selectedBgIds; bgEllipse({cx,cy,rx,ry}) from lot bounding box + 18px padding; right-click context menu via onBuildingGroupContextMenu; unit count overlays (rightPanelTab='unit-counts'): visual center via nearest lot to vertex avg (lotMeta.phase_id lookup); zoom scaling clamped max(9,min(14,11.5/√zoom)); both Totals and Lot Types modes render identical table-card format (header row + data rows + optional total row); Totals mode: single "Total" row; Lot Types mode: per-lot-type rows + multi-type total row; P values in both modes use green pill (fill #f0fdfa, stroke #0d9488, rx=3); phase name rendered above each card; darkenHex() utility
-- Imports: pdfjs-dist, react, splitPolygon (distToSeg, snapToVertices, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon, findBestSplit)
+- Owns: PDF rendering canvas orchestrator; parcel trace mode (traceUndoSignal prop — increment pops last point); parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (bestSplitSnap = vertex snap priority over edge snap; click-to-draw polyline, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion (rotation-aware: coords stored in unrotated space, applyRotationToNorm/unapplyRotationFromNorm for CW PDF.js convention); rotation persistence (localStorage per planId); buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay; building group draw/delete event handlers (delegates rendering to BuildingGroupsLayer); findBgAtPoint uses computeBgEllipse from BuildingGroupsLayer; hit-test lot markers (findLotAtPoint, lot drag state); composes BuildingGroupsLayer, UnitCountsOverlay, LotMarkersLayer as SVG children
+- Imports: pdfjs-dist, react, splitPolygon (distToSeg, snapToVertices, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon, findBestSplit), UnitCountsOverlay, BuildingGroupsLayer (+ computeBgEllipse), LotMarkersLayer
 - Imported by: SitePlanView.jsx
 - Tables: none (API calls via onParcelSaved, onSplitConfirm, onBoundaryUpdated props)
-- Last commit: 2026-04-03
+- Last commit: 2026-04-04
+
+### devdb_ui/src/components/SitePlan/UnitCountsOverlay.jsx
+- Owns: SVG overlay rendering r/p/t table cards per phase boundary in unit-counts panel mode; Totals mode (single "Total" row) and By-type mode (per-lot-type rows + optional total row); P values in green pill (fill #f0fdfa, stroke #0d9488, rx=3); visual center via nearest lot to vertex avg; darkenHex() utility; onEditProjected click handler
+- Imports: none
+- Imported by: PdfCanvas.jsx
+- Tables: none
+- Last commit: 2026-04-04
+
+### devdb_ui/src/components/SitePlan/BuildingGroupsLayer.jsx
+- Owns: SVG overlay rendering building group ellipses (dashed teal ovals, hover/select states) and draw-group preview (freehand + multi-point, snap ring, fill preview); exports computeBgEllipse(bg, normToScreen) used by PdfCanvas hit-testing (findBgAtPoint)
+- Imports: none
+- Imported by: PdfCanvas.jsx
+- Tables: none
+- Last commit: 2026-04-04
+
+### devdb_ui/src/components/SitePlan/LotMarkersLayer.jsx
+- Owns: SVG overlay rendering lot position markers (colored circles with lot-number labels, drag ghost) and place-mode cursor tooltip (lotLabel helper)
+- Imports: none
+- Imported by: PdfCanvas.jsx
+- Tables: none
+- Last commit: 2026-04-04
 
 ### devdb_ui/src/components/SitePlan/LotBank.jsx
 - Owns: Left panel on the site plan page showing unpositioned lots grouped by legal instrument; lot pills are draggable (HTML5 DnD) and clickable (enters click-to-set loop); active placing lot highlighted with instrument color; groups use stable insertion order; collapsed prop renders 28px vertical strip with label + expand button

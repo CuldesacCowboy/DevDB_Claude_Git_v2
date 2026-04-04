@@ -15,7 +15,7 @@
 | 6 | Extract `const API` to shared config | Low | Complete |
 | 7 | Fix traceback leak in simulations router | Low | Complete |
 | 8 | Fix race-condition PKs (phases, TDA, ent groups) | High | Complete |
-| 9 | Split PdfCanvas.jsx into smaller files | Low | Not started |
+| 9 | Split PdfCanvas.jsx into smaller files | Low | Complete |
 
 ---
 
@@ -199,3 +199,4 @@ Largest task on the list. Low risk if done carefully (no logic changes). Recomme
 | 2026-04-04 | Task 6 — Shared API_BASE | src/utils/api.js created; 5 duplicate const API declarations removed across hooks + pages |
 | 2026-04-04 | Task 7 — Traceback leak | Full trace now prints to server stdout; client receives str(exc) only |
 | 2026-04-04 | Task 8 — Race-condition PKs | Migration 027 adds sequences for 5 tables; all 4 routers updated to drop MAX query and use RETURNING |
+| 2026-04-04 | Task 9 — PdfCanvas split | Extracted UnitCountsOverlay, BuildingGroupsLayer (+ exported computeBgEllipse), LotMarkersLayer; PdfCanvas 1675→1248 lines |
