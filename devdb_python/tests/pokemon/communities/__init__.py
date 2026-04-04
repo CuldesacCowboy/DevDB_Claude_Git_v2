@@ -1,0 +1,1 @@
+# Pokemon test community modules.
