@@ -9,7 +9,11 @@ Rules:   Real lots with date_dev already set (P-01 actuals) are not overwritten 
          Not Own: writing any other lot date field, writing to phase or event tables.
 """
 
+import logging
+
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 
 def lot_date_propagator(conn: DBConnection, updated_phases: list) -> None:
@@ -43,4 +47,4 @@ def lot_date_propagator(conn: DBConnection, updated_phases: list) -> None:
             (projected_date, phase_id),
         )
 
-    print(f"P-07: Propagated date_dev for {len(updated_phases)} phases.")
+    logger.info(f"P-07: Propagated date_dev for {len(updated_phases)} phases.")

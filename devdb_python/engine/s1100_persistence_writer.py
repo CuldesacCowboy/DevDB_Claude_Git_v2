@@ -10,9 +10,13 @@ Rules:   Atomic delete+insert: deletes lot_source='sim' rows for dev_id, then in
          Not Own: modifying real lot rows, setting sim_run status.
 """
 
+import logging
+
 import pandas as pd
 from .connection import DBConnection
 from kernel.proposal import Proposal
+
+logger = logging.getLogger(__name__)
 
 
 def persistence_writer(conn: DBConnection, temp_lots: list,
@@ -59,9 +63,9 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
 
             conn.executemany_insert("sim_lots", rows_to_insert)
 
-        print(f"S-11: Wrote {len(temp_lots)} temp lots for "
-              f"dev_id={dev_id}, sim_run_id={sim_run_id}.")
+        logger.info(f"S-11: Wrote {len(temp_lots)} temp lots for "
+                    f"dev_id={dev_id}, sim_run_id={sim_run_id}.")
 
     except Exception as e:
-        print(f"ERROR: Simulation write failed. Previous results preserved. Detail: {e}")
+        logger.warning(f"ERROR: Simulation write failed. Previous results preserved. Detail: {e}")
         raise

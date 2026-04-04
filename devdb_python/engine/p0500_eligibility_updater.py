@@ -11,7 +11,11 @@ Rules:   After a delivery event is resolved, checks waiting events whose predece
          Not Own: setting any dates, any table modification.
 """
 
+import logging
+
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 
 def eligibility_updater(conn: DBConnection, resolved_event_id: int,
@@ -41,7 +45,7 @@ def eligibility_updater(conn: DBConnection, resolved_event_id: int,
     updated_pool = [e for e in eligible_pool if e != resolved_event_id] + newly_eligible
 
     if newly_eligible:
-        print(f"P-05: {len(newly_eligible)} newly eligible events after "
-              f"resolving event {resolved_event_id}: {newly_eligible}")
+        logger.info(f"P-05: {len(newly_eligible)} newly eligible events after "
+                    f"resolving event {resolved_event_id}: {newly_eligible}")
 
     return updated_pool

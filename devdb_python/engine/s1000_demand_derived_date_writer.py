@@ -10,8 +10,11 @@ Rules:   Computes MIN(date_str) per phase_id across temp lots.
          Not Own: any other field on sim_dev_phases, any lot table modification.
 """
 
+import logging
 from collections import defaultdict
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 
 def demand_derived_date_writer(conn: DBConnection, temp_lots: list) -> None:
@@ -50,4 +53,4 @@ def demand_derived_date_writer(conn: DBConnection, temp_lots: list) -> None:
             (derived_date, phase_id, derived_date),
         )
 
-    print(f"S-10: Wrote date_dev_demand_derived for {len(phase_min)} phase(s).")
+    logger.info(f"S-10: Wrote date_dev_demand_derived for {len(phase_min)} phase(s).")

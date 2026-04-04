@@ -9,7 +9,11 @@ Rules:   Ranks by shortest runway: earliest date_dev_demand_derived across child
          Not Own: setting any dates, any table modification.
 """
 
+import logging
+
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 
 def constraint_urgency_ranker(conn: DBConnection, eligible_pool: list) -> list:
@@ -45,6 +49,6 @@ def constraint_urgency_ranker(conn: DBConnection, eligible_pool: list) -> list:
     ranked.sort(key=lambda x: x[1])
     result = [e[0] for e in ranked] + null_demand_events
 
-    print(f"P-03: Ranked {len(result)} eligible events. "
-          f"{len(null_demand_events)} with null demand_derived ranked last.")
+    logger.info(f"P-03: Ranked {len(result)} eligible events. "
+               f"{len(null_demand_events)} with null demand_derived ranked last.")
     return result

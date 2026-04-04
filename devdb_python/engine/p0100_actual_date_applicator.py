@@ -14,7 +14,11 @@ Rules:   Propagates date_dev_actual from locked events to all lots in child phas
 """
 #           Actual delivery date is ground truth -- overwrites manual date_dev.
 
+import logging
+
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 
 def actual_date_applicator(conn: DBConnection, ent_group_id: int) -> list:
@@ -47,7 +51,7 @@ def actual_date_applicator(conn: DBConnection, ent_group_id: int) -> list:
         )
 
         if child_phases_df.empty:
-            print(f"P-01: Event {event_id} has actual date but no child phases. Skipping.")
+            logger.info(f"P-01: Event {event_id} has actual date but no child phases. Skipping.")
             locked_event_ids.append(event_id)
             continue
 
@@ -72,5 +76,5 @@ def actual_date_applicator(conn: DBConnection, ent_group_id: int) -> list:
 
         locked_event_ids.append(event_id)
 
-    print(f"P-01: Locked {len(locked_event_ids)} events for ent_group_id={ent_group_id}.")
+    logger.info(f"P-01: Locked {len(locked_event_ids)} events for ent_group_id={ent_group_id}.")
     return locked_event_ids

@@ -10,8 +10,11 @@ Rules:   Reads sim_delivery_event_predecessors to sort by dependency order.
          Not Own: setting any dates, ranking events, any table modification.
 """
 
+import logging
 from collections import defaultdict
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 
 def dependency_resolver(conn: DBConnection, ent_group_id: int,
@@ -34,7 +37,7 @@ def dependency_resolver(conn: DBConnection, ent_group_id: int,
     queue = all_event_ids - locked_set
 
     if not queue:
-        print(f"P-02: No unresolved events for ent_group_id={ent_group_id}.")
+        logger.info(f"P-02: No unresolved events for ent_group_id={ent_group_id}.")
         return [], []
 
     queue_list = list(queue)
@@ -77,6 +80,6 @@ def dependency_resolver(conn: DBConnection, ent_group_id: int,
             f"Project configuration is invalid."
         )
 
-    print(f"P-02: {len(sorted_queue)} events in queue, "
-          f"{len(eligible_pool)} initially eligible.")
+    logger.info(f"P-02: {len(sorted_queue)} events in queue, "
+               f"{len(eligible_pool)} initially eligible.")
     return sorted_queue, eligible_pool

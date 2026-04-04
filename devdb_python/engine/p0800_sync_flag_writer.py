@@ -10,9 +10,13 @@ Rules:   Compares pre-run and post-run date_dev_projected per phase.
          Not Own: clearing needs_rerun, modifying any table.
 """
 
+import logging
+
 import pandas as pd
 
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 
 def _dates_equal(a, b) -> bool:
@@ -37,7 +41,7 @@ def sync_flag_writer(conn: DBConnection, pre_run_dates: dict,
     ]
 
     if not changed_phases:
-        print("P-08: No phase dates changed.")
+        logger.info("P-08: No phase dates changed.")
         return []
 
     affected_df = conn.read_df(
@@ -46,10 +50,10 @@ def sync_flag_writer(conn: DBConnection, pre_run_dates: dict,
     )
 
     if affected_df.empty:
-        print(f"P-08: Changed phases {changed_phases} have no lots.")
+        logger.info(f"P-08: Changed phases {changed_phases} have no lots.")
         return []
 
     dev_ids = [int(r) for r in affected_df["dev_id"]]
-    print(f"P-08: {len(dev_ids)} development(s) affected by "
-          f"{len(changed_phases)} changed phase(s).")
+    logger.info(f"P-08: {len(dev_ids)} development(s) affected by "
+                f"{len(changed_phases)} changed phase(s).")
     return dev_ids

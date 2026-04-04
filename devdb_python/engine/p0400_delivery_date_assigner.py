@@ -11,9 +11,12 @@ Rules:   Computes MIN(date_dev_demand_derived) across child phases; adjusts for 
          Not Own: writing to phase or lot tables, ranking events.
 """
 
+import logging
 from datetime import date
 from dateutil.relativedelta import relativedelta
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 
 def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
@@ -67,7 +70,7 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
 
     min_date = min_df.iloc[0]["min_date"] if not min_df.empty else None
     if min_date is None or pd.isnull(min_date):
-        print(f"P-04: Event {delivery_event_id} all child phases null demand_derived. Skipping.")
+        logger.info(f"P-04: Event {delivery_event_id} all child phases null demand_derived. Skipping.")
         return None
 
     # Normalize to Python date
@@ -86,8 +89,8 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
                 break
         if projected is None:
             projected = min_date.replace(month=window_start, day=1)
-            print(f"P-04: Supply constraint warning -- event {delivery_event_id} "
-                  f"pulled to first permissible window month {projected}.")
+            logger.warning(f"P-04: Supply constraint warning -- event {delivery_event_id} "
+                           f"pulled to first permissible window month {projected}.")
 
     # Floor rule: projected must be >= the earliest permissible date, which is
     # the greater of (a) today's first-of-month and (b) the first eligible
@@ -120,8 +123,8 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
         hard_floor = hard_floor + relativedelta(months=1)
 
     if projected < hard_floor:
-        print(f"P-04: Floor applied -- event {delivery_event_id} "
-              f"clamped from {projected} to {hard_floor}.")
+        logger.info(f"P-04: Floor applied -- event {delivery_event_id} "
+                    f"clamped from {projected} to {hard_floor}.")
         projected = hard_floor
 
     # Never move date later -- unless current is a stale past date.
@@ -133,8 +136,8 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
         if hasattr(cur, 'date'):
             cur = cur.date()
         if projected > cur and cur >= today_first:
-            print(f"P-04: Projected date {projected} is later than current "
-                  f"{cur}. Keeping current.")
+            logger.info(f"P-04: Projected date {projected} is later than current "
+                        f"{cur}. Keeping current.")
             return cur
 
     if cur is not None and is_placeholder and projected < cur:
@@ -145,5 +148,5 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
         (projected, delivery_event_id),
     )
 
-    print(f"P-04: Event {delivery_event_id} date_dev_projected = {projected}.")
+    logger.info(f"P-04: Event {delivery_event_id} date_dev_projected = {projected}.")
     return projected

@@ -11,8 +11,12 @@ Rules:   Priority per D-029: actualfinishdate (inactive != 'Y') → rvearlyfinsh
          Not Own: filling nulls (S-03), validating order (S-04).
 """
 
+import logging
+
 import pandas as pd
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 # Activity code -> (target date column, source tag column or None)
 _ACT_MAP = {
@@ -108,7 +112,7 @@ def _write_back_dates(conn: DBConnection, df: pd.DataFrame) -> None:
         written_lot_ids.update(lid for lid, _ in pairs)
 
     if written_lot_ids:
-        print(f"S-02: Persisted actual dates for {len(written_lot_ids)} real lot(s).")
+        logger.info(f"S-02: Persisted actual dates for {len(written_lot_ids)} real lot(s).")
 
 
 def date_actualizer(conn: DBConnection, lot_snapshot: pd.DataFrame) -> pd.DataFrame:

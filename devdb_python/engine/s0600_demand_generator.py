@@ -11,9 +11,13 @@ Rules:   Translates annual_starts_target + seasonal weights into monthly demand 
          Not Own: reading lot data directly, determining supply availability.
 """
 
+import logging
+
 import pandas as pd
 from .connection import DBConnection
 from .seasonal_weights import WEIGHT_SETS, SUPPORTED_WEIGHT_SETS
+
+logger = logging.getLogger(__name__)
 
 
 def demand_generator(conn: DBConnection, dev_id: int,
@@ -77,7 +81,7 @@ def demand_generator(conn: DBConnection, dev_id: int,
     available_capacity = max(0, total_capacity - real_lots)
 
     if available_capacity == 0:
-        print(f"S-06: Dev {dev_id} available_capacity=0. No demand generated.")
+        logger.info(f"S-06: Dev {dev_id} available_capacity=0. No demand generated.")
         return pd.DataFrame(columns=["year", "month", "slots"]), False
 
     # Step 2a: Demand starts no earlier than the last locked delivery date.
@@ -130,9 +134,9 @@ def demand_generator(conn: DBConnection, dev_id: int,
     # Step 5: Drop zero-slot months to keep output lean.
     df = df[df["slots"] > 0].reset_index(drop=True)
 
-    print(f"S-06: Dev {dev_id} demand={available_capacity} slots "
-          f"across {len(df)} months "
-          f"(total_capacity={total_capacity}, real_lots={real_lots}, "
-          f"demand_start={demand_start}).")
+    logger.info(f"S-06: Dev {dev_id} demand={available_capacity} slots "
+               f"across {len(df)} months "
+               f"(total_capacity={total_capacity}, real_lots={real_lots}, "
+               f"demand_start={demand_start}).")
 
     return df[["year", "month", "slots"]], False

@@ -10,8 +10,12 @@ Rules:   Per D-087: both date_td AND date_td_hold count toward checkpoint fulfil
          Not Own: setting date_td, modifying any lot field besides date_td_hold.
 """
 
+import logging
+
 import pandas as pd
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_LEAD_DAYS = 16  # days before checkpoint to schedule hold
 
@@ -102,7 +106,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame,
             )
 
             if count_taken >= required:
-                print(f"  TDA {tda_id} CP{cp_num}: Met ({count_taken}/{required})")
+                logger.info(f"  TDA {tda_id} CP{cp_num}: Met ({count_taken}/{required})")
                 continue
 
             gap = required - count_taken
@@ -125,11 +129,11 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame,
                 scheduled += 1
 
             if scheduled >= gap:
-                print(f"  TDA {tda_id} CP{cp_num}: Managed "
-                      f"({scheduled} lots scheduled, hold date {hold_date})")
+                logger.info(f"  TDA {tda_id} CP{cp_num}: Managed "
+                            f"({scheduled} lots scheduled, hold date {hold_date})")
             else:
                 residual = gap - scheduled
-                print(f"  TDA {tda_id} CP{cp_num}: At Risk (residual gap = {residual})")
+                logger.warning(f"  TDA {tda_id} CP{cp_num}: At Risk (residual gap = {residual})")
                 residual_gaps.append({
                     "tda_id": tda_id,
                     "checkpoint_id": cp_id,

@@ -12,11 +12,14 @@ Rules:   Deletes all placeholder events (date_dev_actual IS NULL) for the ent_gr
          Not Own: touching locked events, writing to sim_lots or sim_dev_phases date fields.
 """
 
+import logging
 import math
 from datetime import date, timedelta
 from collections import defaultdict
 from .connection import DBConnection
 from .seasonal_weights import effective_annual_pace
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -147,12 +150,12 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     )
 
     if config_df.empty:
-        print(f"P-00: No delivery config for ent_group_id={ent_group_id}. Skipping.")
+        logger.info(f"P-00: No delivery config for ent_group_id={ent_group_id}. Skipping.")
         return []
 
     row = config_df.iloc[0]
     if not bool(row["auto_schedule_enabled"]):
-        print(f"P-00: auto_schedule_enabled=False for ent_group_id={ent_group_id}. Skipping.")
+        logger.info(f"P-00: auto_schedule_enabled=False for ent_group_id={ent_group_id}. Skipping.")
         return []
 
     max_per_year = int(row["max_deliveries_per_year"] or 1)
@@ -193,9 +196,9 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             "DELETE FROM sim_delivery_events WHERE delivery_event_id = ANY(%s)",
             (placeholder_ids,),
         )
-        print(f"P-00: Deleted {len(placeholder_df)} placeholder event(s).")
+        logger.info(f"P-00: Deleted {len(placeholder_df)} placeholder event(s).")
     else:
-        print("P-00: No placeholder events to delete.")
+        logger.info("P-00: No placeholder events to delete.")
 
     # ------------------------------------------------------------------
     # Step 3: Collect undelivered phases
@@ -214,7 +217,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     )
 
     if all_phases_df.empty:
-        print(f"P-00: No phases found for ent_group_id={ent_group_id}.")
+        logger.info(f"P-00: No phases found for ent_group_id={ent_group_id}.")
         return []
 
     # Phases covered by locked events
@@ -247,7 +250,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         })
 
     if not undelivered:
-        print(f"P-00: All phases are covered by locked events for ent_group_id={ent_group_id}.")
+        logger.info(f"P-00: All phases are covered by locked events for ent_group_id={ent_group_id}.")
         return []
 
     # ------------------------------------------------------------------
@@ -293,25 +296,25 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
 
         # (a) Null demand with no sim lots -- no delivery needed
         if demand is None and sim_count == 0:
-            print(f"P-00: Phase {ph_id} skipped -- null demand and no sim lots.")
+            logger.info(f"P-00: Phase {ph_id} skipped -- null demand and no sim lots.")
             continue
 
         # (b) Demand past sellout horizon
         if demand is not None and sellout_date is not None and demand > sellout_date:
-            print(f"P-00: Phase {ph_id} skipped -- demand {demand} is beyond sellout "
-                  f"horizon {sellout_date}.")
+            logger.info(f"P-00: Phase {ph_id} skipped -- demand {demand} is beyond sellout "
+                        f"horizon {sellout_date}.")
             continue
 
         filtered.append(p)
 
     skipped = len(undelivered) - len(filtered)
     if skipped:
-        print(f"P-00: {skipped} phase(s) skipped (null demand or beyond sellout). "
-              f"{len(filtered)} phase(s) proceeding to schedule.")
+        logger.info(f"P-00: {skipped} phase(s) skipped (null demand or beyond sellout). "
+                    f"{len(filtered)} phase(s) proceeding to schedule.")
     undelivered = filtered
 
     if not undelivered:
-        print(f"P-00: No schedulable phases remain for ent_group_id={ent_group_id}.")
+        logger.info(f"P-00: No schedulable phases remain for ent_group_id={ent_group_id}.")
         return []
 
     # ------------------------------------------------------------------
@@ -464,8 +467,8 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             _dc_params,
         )
         demand_consumed[_dev] = int(_dc_df.iloc[0]["cnt"]) if not _dc_df.empty else 0
-        print(f"P-00: Dev {_dev}: demand_start={_ds}, "
-              f"demand_consumed={demand_consumed[_dev]}")
+        logger.info(f"P-00: Dev {_dev}: demand_start={_ds}, "
+                    f"demand_consumed={demand_consumed[_dev]}")
 
     def _compute_drain_delay(dev_id_key: int, delivery_m: date) -> int:
         """
@@ -525,7 +528,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         lv = _snap_to_window(prev, ws_, we_)
         if lv < today_first:
             lv = _next_window_month_from(today_first, ws_, we_)
-        print(f"P-00: Dev {dev_id_key}: D-balance violation {violation}, lv={lv}")
+        logger.info(f"P-00: Dev {dev_id_key}: D-balance violation {violation}, lv={lv}")
         return lv
 
     # ------------------------------------------------------------------
@@ -650,7 +653,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         # current max_per_year / min_gap settings.
         violation_check = _find_violation_month(urgent_dev, dev_scan_floor[urgent_dev])
         if violation_check is not None and event_date >= violation_check:
-            print(
+            logger.warning(
                 f"P-00: WARNING: Dev {urgent_dev}: next delivery {event_date} "
                 f"cannot be moved before D-floor violation at {violation_check} "
                 f"(max_deliveries_per_year={max_per_year}, "
@@ -674,9 +677,9 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             _delay = _compute_drain_delay(dev_id, event_date)
             _apply_delivery_to_balance(dev_id, event_date, first_lots, pace, _delay)
             demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + first_lots
-            print(f"P-00: Dev {dev_id}: delivery {event_date}, "
-                  f"lots={first_lots}, drain_delay={_delay}mo, "
-                  f"demand_consumed→{demand_consumed[dev_id]}")
+            logger.info(f"P-00: Dev {dev_id}: delivery {event_date}, "
+                        f"lots={first_lots}, drain_delay={_delay}mo, "
+                        f"demand_consumed→{demand_consumed[dev_id]}")
 
             # Batch more phases if first phase alone can't bridge to next year
             # (D-139 batching rule).  Each extra phase's contribution is added
@@ -768,7 +771,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         new_event_ids.append(event_id)
         event_counter += 1
 
-    print(
+    logger.info(
         f"P-00: Created {len(new_event_ids)} placeholder delivery event(s) "
         f"for ent_group_id={ent_group_id}."
     )

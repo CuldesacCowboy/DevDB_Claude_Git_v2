@@ -9,7 +9,11 @@ Rules:   Writes date_dev_projected unconditionally to all child phases (D-123).
          Not Own: writing date_dev_demand_derived, writing date_dev_actual, writing to lot tables.
 """
 
+import logging
+
 from .connection import DBConnection
+
+logger = logging.getLogger(__name__)
 
 
 def phase_date_propagator(conn: DBConnection, resolved_events: list) -> None:
@@ -29,7 +33,7 @@ def phase_date_propagator(conn: DBConnection, resolved_events: list) -> None:
         )
 
         if child_phases_df.empty:
-            print(f"P-06: Event {event_id} has no child phases. Skipping.")
+            logger.info(f"P-06: Event {event_id} has no child phases. Skipping.")
             continue
 
         phase_ids = child_phases_df["phase_id"].astype(int).tolist()
@@ -39,4 +43,4 @@ def phase_date_propagator(conn: DBConnection, resolved_events: list) -> None:
             (projected_date, phase_ids),
         )
 
-    print(f"P-06: Propagated dates for {len(resolved_events)} resolved events.")
+    logger.info(f"P-06: Propagated dates for {len(resolved_events)} resolved events.")

@@ -11,10 +11,13 @@ Rules:   Runs per entitlement group. Alternates supply pipeline (P-modules) and
          No domain logic here — all logic lives in the individual pipeline modules.
 """
 
+import logging
 import random
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from .connection import PGConnection as DBConnection
 from .s0100_lot_loader import lot_loader
@@ -273,7 +276,7 @@ def _write_real_lot_projections(
         updates,
     )
 
-    print(f"  Projected dates written to {len(updates)} real P lot(s) for dev {dev_id}.")
+    logger.info(f"  Projected dates written to {len(updates)} real P lot(s) for dev {dev_id}.")
     return len(updates)
 
 
@@ -370,8 +373,8 @@ def _persist_violations(conn: DBConnection, violations_df, dev_id: int,
         })
 
     conn.executemany_insert("sim_lot_date_violations", rows)
-    print(f"  S-04: Persisted {len(rows)} violation(s) for dev {dev_id} "
-          f"(sim_run_id={sim_run_id}).")
+    logger.info(f"  S-04: Persisted {len(rows)} violation(s) for dev {dev_id} "
+               f"(sim_run_id={sim_run_id}).")
 
 
 def run_starts_pipeline(conn: DBConnection, dev_id: int,
@@ -398,7 +401,7 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     snapshot, violations, has_violations = chronology_validator(snapshot)
     if has_violations:
         vcount = len(violations) if hasattr(violations, '__len__') else violations.shape[0]
-        print(f"  WARNING: {vcount} chronology violations in dev {dev_id}. Run continues.")
+        logger.warning(f"  WARNING: {vcount} chronology violations in dev {dev_id}. Run continues.")
     _persist_violations(conn, violations, dev_id, sim_run_id)
 
     # S-05
@@ -407,7 +410,7 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     # S-06
     demand_series, needs_config = demand_generator(conn, dev_id, run_start_date)
     if needs_config:
-        print(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
+        logger.warning(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
         demand_series = pd.DataFrame(columns=["year", "month", "slots"])
 
     # S-07 through S-0820: kernel planning pass
@@ -418,7 +421,7 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     proposal = plan(frozen)
     if proposal.warnings:
         for w in proposal.warnings:
-            print(f"  {w}")
+            logger.info(f"  {w}")
 
     # Shell timing expansion: derive date_cmp and date_cls from assignment anchors.
     # Building groups get a shared date_cmp lag (D-022); date_cls is per unit (D-012).
@@ -427,9 +430,9 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     # S-0820 (shell stage): discard temp lots with chronology violations post-expansion.
     temp_lots, discarded_lots, guard_warnings = post_generation_chronology_guard(temp_lots)
     for w in guard_warnings:
-        print(f"  {w}")
+        logger.info(f"  {w}")
     if discarded_lots:
-        print(f"  S-0820: {len(discarded_lots)} temp lot(s) discarded for chronology violations.")
+        logger.info(f"  S-0820: {len(discarded_lots)} temp lot(s) discarded for chronology violations.")
 
     # S-09
     temp_lots = builder_assignment(temp_lots, builder_splits)
@@ -559,12 +562,12 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         )
 
         if dev_df.empty:
-            print(f"No developments found for ent_group_id={ent_group_id}. Aborting.")
+            logger.warning(f"No developments found for ent_group_id={ent_group_id}. Aborting.")
             return 0, set()
 
         dev_ids = [int(r) for r in dev_df["dev_id"]]
-        print(f"Convergence coordinator: ent_group_id={ent_group_id}, "
-              f"{len(dev_ids)} development(s): {dev_ids}")
+        logger.info(f"Convergence coordinator: ent_group_id={ent_group_id}, "
+                    f"{len(dev_ids)} development(s): {dev_ids}")
 
         # Load shared config once (does not change per iteration)
         builder_splits = _load_builder_splits(conn)
@@ -596,7 +599,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         missing_params_devs: set[int] = set()
 
         for iteration in range(1, max_iterations + 1):
-            print(f"\n--- Iteration {iteration} ---")
+            logger.info(f"\n--- Iteration {iteration} ---")
 
             # Snapshot delivery event projected dates before this iteration
             pre_df = conn.read_df(
@@ -612,7 +615,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
 
             # Step 1: Run starts pipeline for ALL developments
             for dev_id in dev_ids:
-                print(f"  Running starts pipeline for dev {dev_id}...")
+                logger.info(f"  Running starts pipeline for dev {dev_id}...")
                 _, needs_config = run_starts_pipeline(conn, dev_id, sim_run_id, run_start_date,
                                     builder_splits, build_lag_curves, rng)
                 if needs_config:
@@ -634,7 +637,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
                 )
 
             # Step 2: Run supply pipeline
-            print(f"  Running supply pipeline for ent_group_id={ent_group_id}...")
+            logger.info(f"  Running supply pipeline for ent_group_id={ent_group_id}...")
             _, affected_devs = run_supply_pipeline(conn, ent_group_id)
 
             # Step 3: Check if any delivery event projected dates changed
@@ -664,10 +667,10 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
             ]
 
             if not changed:
-                print(f"\nConvergence reached after {iteration} iteration(s).")
+                logger.info(f"\nConvergence reached after {iteration} iteration(s).")
                 return iteration, missing_params_devs
 
-            print(f"  {len(changed)} delivery event date(s) changed: {changed}. Re-running.")
+            logger.info(f"  {len(changed)} delivery event date(s) changed: {changed}. Re-running.")
 
-    print(f"WARNING: Max iterations ({max_iterations}) reached without convergence.")
+    logger.warning(f"WARNING: Max iterations ({max_iterations}) reached without convergence.")
     return max_iterations, missing_params_devs
