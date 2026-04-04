@@ -185,7 +185,7 @@ def setup(conn) -> None:
 
 def assert_results(conn) -> bool:
     """Run assertions. Returns True if all pass."""
-    convergence_coordinator(ENT_GROUP_ID)
+    convergence_coordinator(ENT_GROUP_ID, rng_seed=42)
 
     results = [
         check_violations(conn, ENT_GROUP_ID, expected_count=0),

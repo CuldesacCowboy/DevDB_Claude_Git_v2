@@ -169,7 +169,7 @@ def setup(conn) -> None:
 
 def assert_results(conn) -> bool:
     """Run assertions. Returns True if all pass."""
-    convergence_coordinator(ENT_GROUP_ID)
+    convergence_coordinator(ENT_GROUP_ID, rng_seed=42)
 
     # Phase 70013 lots should have date_dev from the locked event (via P-07)
     dev_df = conn.read_df(

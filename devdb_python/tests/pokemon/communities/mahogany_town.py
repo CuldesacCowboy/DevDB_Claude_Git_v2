@@ -1,13 +1,14 @@
 """
-pewter_city.py — Kanto Station: Pewter City
-Scenario 6: Chronology Violation
+mahogany_town.py — Johto Station: Mahogany Town
+Delivery Schedule C: Year-Boundary Window (Nov–Feb)
 
-ENT_GROUP_ID  = 7003
-DEV_IDS       = [7003]
-Phases        : 70007 (PWT-001..020), 70008 (PWT-021..040)
-Locked event  : 2022-05-01 on phase 70007
-Setup         : PWT-001..005 have date_cmp BEFORE date_str (violation);
-                PWT-006..015 have valid order
+ENT_GROUP_ID  = 7013
+DEV_IDS       = [7013]
+Phases        : 70029 (MAH-001..020), 70030 (MAH-021..040), 70031 (MAH-041..060)
+Locked event  : 2022-11-01 on phase 70029
+Delivery window: Nov (11) – Feb (2), crosses year boundary, max 1/year
+Setup         : None — lots at P status
+Assert        : All auto-created delivery event dates fall in months 11, 12, 1, or 2
 """
 
 import sys, os
@@ -16,19 +17,19 @@ from datetime import date
 from engine.connection import PGConnection as DBConnection
 from engine.coordinator import convergence_coordinator
 from tests.pokemon.db import (
-    make_lots, reset_mutable_state, get_lot_ids_for_phase,
+    make_lots, reset_mutable_state,
     check_violations, check_sim_lots_exist, check_delivery_events,
-    check_no_duplicate_lot_ids, _pass,
+    check_no_duplicate_lot_ids,
 )
 
-ENT_GROUP_ID  = 7003
-ENT_GROUP_NAME = "Kanto Station — Pewter City"
-SCENARIO      = "Scenario 6: Chronology Violation"
-DEV_IDS       = [7003]
+ENT_GROUP_ID   = 7013
+ENT_GROUP_NAME = "Johto Station — Mahogany Town"
+SCENARIO       = "DS-C: Year-Boundary Window (Nov-Feb)"
+DEV_IDS        = [7013]
 
 
 def install(conn) -> None:
-    """Insert all permanent objects for Pewter City. Idempotent — skips if already installed."""
+    """Insert all permanent objects for Mahogany Town. Idempotent — skips if already installed."""
     exists = conn.read_df(
         "SELECT 1 FROM sim_entitlement_groups WHERE ent_group_id = %s",
         (ENT_GROUP_ID,),
@@ -41,7 +42,6 @@ def install(conn) -> None:
     state_df  = conn.read_df("SELECT state_id FROM dim_state LIMIT 1")
     state_id  = int(state_df.iloc[0]["state_id"])
 
-    # Entitlement group
     conn.execute(
         """
         INSERT INTO sim_entitlement_groups (ent_group_id, ent_group_name, is_test,
@@ -51,29 +51,25 @@ def install(conn) -> None:
         (ENT_GROUP_ID, ENT_GROUP_NAME),
     )
 
-    # Development
     conn.execute(
         """
         INSERT INTO developments (dev_id, dev_name, marks_code, in_marks,
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7003, "Pewter City SF", "PW", county_id, state_id, ENT_GROUP_ID),
+        (7013, "Mahogany Town Retreat", "MT", county_id, state_id, ENT_GROUP_ID),
     )
 
-    # Link dev to ent group
     conn.execute(
         "INSERT INTO sim_ent_group_developments (id, ent_group_id, dev_id) VALUES (%s, %s, %s)",
-        (7003, ENT_GROUP_ID, 7003),
+        (7013, ENT_GROUP_ID, 7013),
     )
 
-    # Dev defaults
     conn.execute(
         "INSERT INTO sim_dev_defaults (dev_id, default_lot_type_id, default_county_id) VALUES (%s, %s, %s)",
-        (7003, 101, county_id),
+        (7013, 101, county_id),
     )
 
-    # Dev params
     conn.execute(
         """
         INSERT INTO sim_dev_params (dev_id, annual_starts_target, max_starts_per_month,
@@ -85,23 +81,22 @@ def install(conn) -> None:
             seasonal_weight_set  = EXCLUDED.seasonal_weight_set,
             updated_at           = now()
         """,
-        (7003, 20, 2, "balanced_2yr"),
+        (7013, 24, 2, "balanced_2yr"),
     )
 
-    # Legal instrument
     conn.execute(
         """
         INSERT INTO sim_legal_instruments (instrument_id, dev_id, instrument_name,
             instrument_type, created_at, updated_at)
         VALUES (%s, %s, %s, %s, now(), now())
         """,
-        (70007, 7003, "Pewter City Plat No. 1", "plat"),
+        (70029, 7013, "Mahogany Town Plat No. 1", "plat"),
     )
 
-    # Phases
     for phase_id, name, seq in [
-        (70007, "Boulder Badge Court Ph. 1", 1),
-        (70008, "Boulder Badge Court Ph. 2", 2),
+        (70029, "Lake of Rage Ph. 1", 1),
+        (70030, "Lake of Rage Ph. 2", 2),
+        (70031, "Lake of Rage Ph. 3", 3),
     ]:
         conn.execute(
             """
@@ -109,23 +104,23 @@ def install(conn) -> None:
                 sequence_number, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, now(), now())
             """,
-            (phase_id, 7003, 70007, name, seq),
+            (phase_id, 7013, 70029, name, seq),
         )
 
-    # Lots
     lots = (
-        make_lots(70007, 7003, 101, "PWT",  1, 20) +
-        make_lots(70008, 7003, 101, "PWT", 21, 20)
+        make_lots(70029, 7013, 101, "MAH",  1, 20) +
+        make_lots(70030, 7013, 101, "MAH", 21, 20) +
+        make_lots(70031, 7013, 101, "MAH", 41, 20)
     )
     conn.executemany_insert("sim_lots", lots)
 
-    # Product splits
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70007, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70008, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70029, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70030, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70031, "lot_type_id": 101, "lot_count": 20},
     ])
 
-    # Delivery config
+    # Year-boundary window Nov–Feb
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
@@ -133,10 +128,10 @@ def install(conn) -> None:
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
         VALUES (%s, %s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 5, 11, 0, 1, True),
+        (ENT_GROUP_ID, 11, 2, 0, 1, True),
     )
 
-    # Locked delivery event
+    # Locked delivery event on phase 1 (Nov anchor)
     event_df = conn.read_df(
         """
         INSERT INTO sim_delivery_events
@@ -145,64 +140,32 @@ def install(conn) -> None:
         VALUES (%s, %s, %s, FALSE, FALSE, now(), now())
         RETURNING delivery_event_id
         """,
-        (ENT_GROUP_ID, date(2022, 5, 1), date(2022, 5, 1)),
+        (ENT_GROUP_ID, date(2022, 11, 1), date(2022, 11, 1)),
     )
     event_id = int(event_df.iloc[0]["delivery_event_id"])
-
     conn.execute(
         "INSERT INTO sim_delivery_event_phases (delivery_event_id, phase_id) VALUES (%s, %s)",
-        (event_id, 70007),
+        (event_id, 70029),
     )
 
 
 def reset(conn) -> None:
-    """Reset mutable engine state before each test run."""
     reset_mutable_state(conn, ENT_GROUP_ID)
 
 
 def setup(conn) -> None:
-    """Set scenario-specific date state: chronology violations on PWT-001..005."""
-    # PWT-001 to PWT-005: date_cmp BEFORE date_str (VIOLATION)
-    conn.execute(
-        """
-        UPDATE sim_lots
-        SET date_str = %s, date_cmp = %s
-        WHERE lot_source = 'real' AND dev_id = 7003
-          AND lot_number IN (
-              'PWT-001','PWT-002','PWT-003','PWT-004','PWT-005'
-          )
-        """,
-        (date(2023, 6, 1), date(2023, 1, 1)),
-    )
-    # PWT-006 to PWT-015: valid chronological order
-    conn.execute(
-        """
-        UPDATE sim_lots
-        SET date_str = %s, date_cmp = %s
-        WHERE lot_source = 'real' AND dev_id = 7003
-          AND lot_number IN (
-              'PWT-006','PWT-007','PWT-008','PWT-009','PWT-010',
-              'PWT-011','PWT-012','PWT-013','PWT-014','PWT-015'
-          )
-        """,
-        (date(2023, 3, 1), date(2023, 7, 1)),
-    )
+    pass
 
 
 def assert_results(conn) -> bool:
     """Run assertions. Returns True if all pass."""
     convergence_coordinator(ENT_GROUP_ID, rng_seed=42)
 
-    df = conn.read_df(
-        """
-        SELECT COUNT(*) AS n FROM sim_lot_date_violations v
-        JOIN sim_lots sl ON sl.lot_id = v.lot_id
-        WHERE sl.dev_id = 7003
-        """
-    )
-    actual = int(df.iloc[0]["n"]) if not df.empty else 0
     results = [
-        _pass("Violations detected for inverted dates", actual >= 5,
-              f"actual={actual}"),
+        check_violations(conn, ENT_GROUP_ID, expected_count=0),
+        check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=1),
+        check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
+        # window_start=11 > window_end=2 triggers year-boundary logic in check_delivery_events
+        check_delivery_events(conn, ENT_GROUP_ID, window_start=11, window_end=2),
     ]
     return all(results)

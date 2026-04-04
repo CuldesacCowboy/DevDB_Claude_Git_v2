@@ -1,13 +1,14 @@
 """
-pewter_city.py — Kanto Station: Pewter City
-Scenario 6: Chronology Violation
+saffron_city.py — Kanto Station: Saffron City
+Scenario 9: Placeholder Auto-Scheduling
 
-ENT_GROUP_ID  = 7003
-DEV_IDS       = [7003]
-Phases        : 70007 (PWT-001..020), 70008 (PWT-021..040)
-Locked event  : 2022-05-01 on phase 70007
-Setup         : PWT-001..005 have date_cmp BEFORE date_str (violation);
-                PWT-006..015 have valid order
+ENT_GROUP_ID  = 7009
+DEV_IDS       = [7009]
+Phases        : 70018 (SAF-001..020), 70019 (SAF-021..040), 70020 (SAF-041..060)
+Locked event  : 2022-07-01 on phase 70018 (anchor for scheduling)
+Setup         : None — all lots remain at P status
+Assert        : Engine auto-creates 2 delivery events for phases 70019 and 70020
+                All auto event dates fall within delivery window
 """
 
 import sys, os
@@ -16,19 +17,19 @@ from datetime import date
 from engine.connection import PGConnection as DBConnection
 from engine.coordinator import convergence_coordinator
 from tests.pokemon.db import (
-    make_lots, reset_mutable_state, get_lot_ids_for_phase,
+    make_lots, reset_mutable_state,
     check_violations, check_sim_lots_exist, check_delivery_events,
     check_no_duplicate_lot_ids, _pass,
 )
 
-ENT_GROUP_ID  = 7003
-ENT_GROUP_NAME = "Kanto Station — Pewter City"
-SCENARIO      = "Scenario 6: Chronology Violation"
-DEV_IDS       = [7003]
+ENT_GROUP_ID   = 7009
+ENT_GROUP_NAME = "Kanto Station — Saffron City"
+SCENARIO       = "Scenario 9: Placeholder Auto-Scheduling"
+DEV_IDS        = [7009]
 
 
 def install(conn) -> None:
-    """Insert all permanent objects for Pewter City. Idempotent — skips if already installed."""
+    """Insert all permanent objects for Saffron City. Idempotent — skips if already installed."""
     exists = conn.read_df(
         "SELECT 1 FROM sim_entitlement_groups WHERE ent_group_id = %s",
         (ENT_GROUP_ID,),
@@ -58,22 +59,19 @@ def install(conn) -> None:
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7003, "Pewter City SF", "PW", county_id, state_id, ENT_GROUP_ID),
+        (7009, "Saffron City Heights", "SF", county_id, state_id, ENT_GROUP_ID),
     )
 
-    # Link dev to ent group
     conn.execute(
         "INSERT INTO sim_ent_group_developments (id, ent_group_id, dev_id) VALUES (%s, %s, %s)",
-        (7003, ENT_GROUP_ID, 7003),
+        (7009, ENT_GROUP_ID, 7009),
     )
 
-    # Dev defaults
     conn.execute(
         "INSERT INTO sim_dev_defaults (dev_id, default_lot_type_id, default_county_id) VALUES (%s, %s, %s)",
-        (7003, 101, county_id),
+        (7009, 101, county_id),
     )
 
-    # Dev params
     conn.execute(
         """
         INSERT INTO sim_dev_params (dev_id, annual_starts_target, max_starts_per_month,
@@ -85,7 +83,7 @@ def install(conn) -> None:
             seasonal_weight_set  = EXCLUDED.seasonal_weight_set,
             updated_at           = now()
         """,
-        (7003, 20, 2, "balanced_2yr"),
+        (7009, 24, 2, "balanced_2yr"),
     )
 
     # Legal instrument
@@ -95,13 +93,14 @@ def install(conn) -> None:
             instrument_type, created_at, updated_at)
         VALUES (%s, %s, %s, %s, now(), now())
         """,
-        (70007, 7003, "Pewter City Plat No. 1", "plat"),
+        (70018, 7009, "Saffron City Plat No. 1", "plat"),
     )
 
     # Phases
     for phase_id, name, seq in [
-        (70007, "Boulder Badge Court Ph. 1", 1),
-        (70008, "Boulder Badge Court Ph. 2", 2),
+        (70018, "Silph Co. Ph. 1", 1),
+        (70019, "Silph Co. Ph. 2", 2),
+        (70020, "Silph Co. Ph. 3", 3),
     ]:
         conn.execute(
             """
@@ -109,23 +108,25 @@ def install(conn) -> None:
                 sequence_number, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, now(), now())
             """,
-            (phase_id, 7003, 70007, name, seq),
+            (phase_id, 7009, 70018, name, seq),
         )
 
     # Lots
     lots = (
-        make_lots(70007, 7003, 101, "PWT",  1, 20) +
-        make_lots(70008, 7003, 101, "PWT", 21, 20)
+        make_lots(70018, 7009, 101, "SAF",  1, 20) +
+        make_lots(70019, 7009, 101, "SAF", 21, 20) +
+        make_lots(70020, 7009, 101, "SAF", 41, 20)
     )
     conn.executemany_insert("sim_lots", lots)
 
     # Product splits
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70007, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70008, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70018, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70019, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70020, "lot_type_id": 101, "lot_count": 20},
     ])
 
-    # Delivery config
+    # Delivery config — auto-scheduling enabled
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
@@ -133,10 +134,10 @@ def install(conn) -> None:
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
         VALUES (%s, %s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 5, 11, 0, 1, True),
+        (ENT_GROUP_ID, 5, 11, 0, 2, True),
     )
 
-    # Locked delivery event
+    # Locked delivery event for phase 1 (anchor)
     event_df = conn.read_df(
         """
         INSERT INTO sim_delivery_events
@@ -145,13 +146,12 @@ def install(conn) -> None:
         VALUES (%s, %s, %s, FALSE, FALSE, now(), now())
         RETURNING delivery_event_id
         """,
-        (ENT_GROUP_ID, date(2022, 5, 1), date(2022, 5, 1)),
+        (ENT_GROUP_ID, date(2022, 7, 1), date(2022, 7, 1)),
     )
     event_id = int(event_df.iloc[0]["delivery_event_id"])
-
     conn.execute(
         "INSERT INTO sim_delivery_event_phases (delivery_event_id, phase_id) VALUES (%s, %s)",
-        (event_id, 70007),
+        (event_id, 70018),
     )
 
 
@@ -161,48 +161,19 @@ def reset(conn) -> None:
 
 
 def setup(conn) -> None:
-    """Set scenario-specific date state: chronology violations on PWT-001..005."""
-    # PWT-001 to PWT-005: date_cmp BEFORE date_str (VIOLATION)
-    conn.execute(
-        """
-        UPDATE sim_lots
-        SET date_str = %s, date_cmp = %s
-        WHERE lot_source = 'real' AND dev_id = 7003
-          AND lot_number IN (
-              'PWT-001','PWT-002','PWT-003','PWT-004','PWT-005'
-          )
-        """,
-        (date(2023, 6, 1), date(2023, 1, 1)),
-    )
-    # PWT-006 to PWT-015: valid chronological order
-    conn.execute(
-        """
-        UPDATE sim_lots
-        SET date_str = %s, date_cmp = %s
-        WHERE lot_source = 'real' AND dev_id = 7003
-          AND lot_number IN (
-              'PWT-006','PWT-007','PWT-008','PWT-009','PWT-010',
-              'PWT-011','PWT-012','PWT-013','PWT-014','PWT-015'
-          )
-        """,
-        (date(2023, 3, 1), date(2023, 7, 1)),
-    )
+    """No additional date state — all lots remain at P status for auto-scheduling test."""
+    pass
 
 
 def assert_results(conn) -> bool:
     """Run assertions. Returns True if all pass."""
     convergence_coordinator(ENT_GROUP_ID, rng_seed=42)
 
-    df = conn.read_df(
-        """
-        SELECT COUNT(*) AS n FROM sim_lot_date_violations v
-        JOIN sim_lots sl ON sl.lot_id = v.lot_id
-        WHERE sl.dev_id = 7003
-        """
-    )
-    actual = int(df.iloc[0]["n"]) if not df.empty else 0
     results = [
-        _pass("Violations detected for inverted dates", actual >= 5,
-              f"actual={actual}"),
+        check_violations(conn, ENT_GROUP_ID, expected_count=0),
+        check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=1),
+        check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
+        check_delivery_events(conn, ENT_GROUP_ID, expected_auto=2,
+                              window_start=5, window_end=11),
     ]
     return all(results)

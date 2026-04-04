@@ -192,7 +192,7 @@ def setup(conn) -> None:
 
 def assert_results(conn) -> bool:
     """Run assertions. Returns True if all pass."""
-    convergence_coordinator(ENT_GROUP_ID)
+    convergence_coordinator(ENT_GROUP_ID, rng_seed=42)
 
     # Actual date_str must still be present with source='actual'
     str_df = conn.read_df(
