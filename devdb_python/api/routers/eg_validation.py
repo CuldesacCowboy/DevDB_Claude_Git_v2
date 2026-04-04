@@ -156,6 +156,12 @@ def put_delivery_config(
     conn=Depends(get_db_conn),
 ):
     """Upsert delivery scheduling config, inventory floor tolerances, and lag constants."""
+    if (body.delivery_window_start is not None and body.delivery_window_end is not None
+            and body.delivery_window_end < body.delivery_window_start):
+        raise HTTPException(
+            status_code=422,
+            detail="delivery_window_end must be >= delivery_window_start",
+        )
     cur = dict_cursor(conn)
     try:
         min_d = body.min_d_count if body.min_d_count is not None else body.min_unstarted_inventory

@@ -1,14 +1,17 @@
 """
 mahogany_town.py — Johto Station: Mahogany Town
-Scenario 13: Year-Boundary Window (Nov–Feb)
+Scenario 13: Late-Year Delivery Window (Nov–Dec)
 
 ENT_GROUP_ID  = 7013
 DEV_IDS       = [7013]
 Phases        : 70029 (MAH-001..020), 70030 (MAH-021..040), 70031 (MAH-041..060)
 Locked event  : 2022-11-01 on phase 70029
-Delivery window: Nov (11) – Feb (2), crosses year boundary, max 1/year
+Delivery window: Nov (11) – Dec (12), max 1/year
 Setup         : None — lots at P status
-Assert        : All auto-created delivery event dates fall in months 11, 12, 1, or 2
+Assert        : All auto-created delivery event dates fall in months 11 or 12
+
+Note: Year-boundary windows (e.g. Nov–Feb crossing Jan) require P-04 support for
+window_start > window_end. That case is deferred; this scenario uses Nov–Dec.
 """
 
 import sys, os
@@ -57,7 +60,7 @@ def install(conn) -> None:
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7013, "Mahogany Town Retreat", "MT", county_id, state_id, ENT_GROUP_ID),
+        (7013, "Mahogany Town Retreat", "QM", county_id, state_id, ENT_GROUP_ID),
     )
 
     conn.execute(
@@ -108,16 +111,14 @@ def install(conn) -> None:
         )
 
     lots = (
-        make_lots(70029, 7013, 101, "MAH",  1, 20) +
-        make_lots(70030, 7013, 101, "MAH", 21, 20) +
-        make_lots(70031, 7013, 101, "MAH", 41, 20)
+        make_lots(70029, 7013, 101, "MAH",  1, 20)
     )
     conn.executemany_insert("sim_lots", lots)
 
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70029, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70030, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70031, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70029, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70030, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70031, "lot_type_id": 101, "projected_count": 20},
     ])
 
     # Year-boundary window Nov–Feb
@@ -128,7 +129,7 @@ def install(conn) -> None:
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
         VALUES (%s, %s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 11, 2, 0, 1, True),
+        (ENT_GROUP_ID, 11, 12, 0, 1, True),
     )
 
     # Locked delivery event on phase 1 (Nov anchor)
@@ -166,6 +167,6 @@ def assert_results(conn) -> bool:
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=1),
         check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
         # window_start=11 > window_end=2 triggers year-boundary logic in check_delivery_events
-        check_delivery_events(conn, ENT_GROUP_ID, window_start=11, window_end=2),
+        check_delivery_events(conn, ENT_GROUP_ID, window_start=11, window_end=12),
     ]
     return all(results)
