@@ -17,7 +17,7 @@
 | TDA scenario fixtures | Complete | tda_id=9001, lot_ids 9001-9030, 3 checkpoints (Scenario 2) |
 | schedhousedetail load | Complete | 266,554 rows loaded from 3-part CSV export |
 | Engine modules | Complete | S-0100 through S-0900 PASS. S-1000 through S-1200 PASS. P-01 through P-08 PASS. Convergence coordinator PASS. S-0050 NOT IMPLEMENTED. S-0810 and S-0820 implemented 2026-03-25. |
-| End-to-end run | Needs retest | Auto-delivery scheduling overhauled 2026-04-03: (1) D-119 hard-year guard replaced with _constrain_date using max_per_year; (2) events_per_year replaced with delivery_date_per_year — one delivery DATE per year per community; any number of phases land on that date. Re-run Waterton Station to verify delivery schedule in new Delivery Schedule Audit tab. |
+| End-to-end run | Complete | Verified 2026-04-04. D-119 guard working: first auto event Nov 27 (last locked Oct 26). One delivery date per year per ent-group confirmed. D-139 cross-dev bundling confirmed (Jun 29: Pointe ph.4 + Village ph.4 + SC ph.2). D/U/UC at delivery counts coherent. |
 | Decision log | Current | D-154 added. Next ID: D-155. |
 | React/FastAPI phase endpoints | Complete | Route ordering fixed — specific sub-routes now registered before catch-all /{phase_id}. DELETE /phases/{id}/lot-type and all phase endpoints visible in OpenAPI spec. |
 | Session tooling | Complete | /start and /end Claude Code skills (.claude/skills/). Start_DevDB_Session.bat opens session windows via devdb_open_session_windows.ps1. Stop_DevDB.bat kills backend (uvicorn + detached python.exe), frontend (Vite), and Chrome DevDB windows. |

@@ -62,9 +62,12 @@
   - New file: `tests/test_coordinator_reliability.py`
   - Tests: multi-dev convergence, determinism (rng_seed), concurrent threads + PK collision check
 
-- [ ] **17. Retest end-to-end run after D-119 delivery schedule overhaul** *(manual)*
-  - Run Waterton Station; verify Delivery Schedule Audit tab output
-  - Cannot be automated — requires UI review of delivery schedule
+- [x] **17. Retest end-to-end run after D-119 delivery schedule overhaul** ✓ 2026-04-04
+  - Waterton Station (ent_group 9002) run verified manually
+  - D-119: first auto event is Nov 27 (last locked Oct 26) ✓
+  - One delivery date per year per ent-group for all auto events ✓
+  - D-139 cross-dev bundling: Jun 29 delivers Pointe ph.4 + Village ph.4 + SC ph.2 ✓
+  - D/U/UC counts coherent: locked events D=Units UC=0; auto events show live demand pool ✓
 
 - [x] **18. Define and implement S-0050 or formally defer with a D-number** ✓ 2026-04-04
   - Formally deferred: D-155 added to decision-log.md
