@@ -18,8 +18,7 @@ class DeliveryConfigPutRequest(BaseModel):
     min_uc_count: int | None = None
     min_c_count:  int | None = None
     # Delivery scheduling
-    delivery_window_start:   int | None = None
-    delivery_window_end:     int | None = None
+    delivery_months:         list[int] | None = None
     max_deliveries_per_year: int | None = None
     auto_schedule_enabled:   bool | None = None
     # Build lag fallback constants
@@ -125,7 +124,7 @@ def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
             SELECT ent_group_id,
                    COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count,
                    min_p_count, min_e_count, min_u_count, min_uc_count, min_c_count,
-                   delivery_window_start, delivery_window_end,
+                   delivery_months,
                    max_deliveries_per_year, min_gap_months, auto_schedule_enabled,
                    default_cmp_lag_days, default_cls_lag_days
             FROM sim_entitlement_delivery_config
@@ -139,7 +138,7 @@ def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
                 "ent_group_id": ent_group_id,
                 "min_p_count": None, "min_e_count": None, "min_d_count": None,
                 "min_u_count": None, "min_uc_count": None, "min_c_count": None,
-                "delivery_window_start": None, "delivery_window_end": None,
+                "delivery_months": None,
                 "max_deliveries_per_year": None, "min_gap_months": None,
                 "auto_schedule_enabled": None,
                 "default_cmp_lag_days": None, "default_cls_lag_days": None,
@@ -156,12 +155,11 @@ def put_delivery_config(
     conn=Depends(get_db_conn),
 ):
     """Upsert delivery scheduling config, inventory floor tolerances, and lag constants."""
-    if (body.delivery_window_start is not None and body.delivery_window_end is not None
-            and body.delivery_window_end < body.delivery_window_start):
-        raise HTTPException(
-            status_code=422,
-            detail="delivery_window_end must be >= delivery_window_start",
-        )
+    if body.delivery_months is not None:
+        bad = [m for m in body.delivery_months if not (1 <= m <= 12)]
+        if bad:
+            raise HTTPException(status_code=422,
+                detail=f"delivery_months values must be 1–12; invalid: {bad}")
     cur = dict_cursor(conn)
     try:
         min_d = body.min_d_count if body.min_d_count is not None else body.min_unstarted_inventory
@@ -170,11 +168,11 @@ def put_delivery_config(
             INSERT INTO sim_entitlement_delivery_config
                 (ent_group_id, min_d_count, min_p_count, min_e_count,
                  min_u_count, min_uc_count, min_c_count,
-                 delivery_window_start, delivery_window_end,
+                 delivery_months,
                  max_deliveries_per_year, auto_schedule_enabled,
                  default_cmp_lag_days, default_cls_lag_days,
                  updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, current_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, current_timestamp)
             ON CONFLICT (ent_group_id) DO UPDATE
                 SET min_d_count              = COALESCE(EXCLUDED.min_d_count,              sim_entitlement_delivery_config.min_d_count),
                     min_p_count              = COALESCE(EXCLUDED.min_p_count,              sim_entitlement_delivery_config.min_p_count),
@@ -182,8 +180,7 @@ def put_delivery_config(
                     min_u_count              = COALESCE(EXCLUDED.min_u_count,              sim_entitlement_delivery_config.min_u_count),
                     min_uc_count             = COALESCE(EXCLUDED.min_uc_count,             sim_entitlement_delivery_config.min_uc_count),
                     min_c_count              = COALESCE(EXCLUDED.min_c_count,              sim_entitlement_delivery_config.min_c_count),
-                    delivery_window_start    = COALESCE(EXCLUDED.delivery_window_start,    sim_entitlement_delivery_config.delivery_window_start),
-                    delivery_window_end      = COALESCE(EXCLUDED.delivery_window_end,      sim_entitlement_delivery_config.delivery_window_end),
+                    delivery_months          = COALESCE(EXCLUDED.delivery_months,          sim_entitlement_delivery_config.delivery_months),
                     max_deliveries_per_year  = COALESCE(EXCLUDED.max_deliveries_per_year,  sim_entitlement_delivery_config.max_deliveries_per_year),
                     auto_schedule_enabled    = COALESCE(EXCLUDED.auto_schedule_enabled,    sim_entitlement_delivery_config.auto_schedule_enabled),
                     default_cmp_lag_days     = COALESCE(EXCLUDED.default_cmp_lag_days,     sim_entitlement_delivery_config.default_cmp_lag_days),
@@ -191,7 +188,7 @@ def put_delivery_config(
                     updated_at               = current_timestamp
             RETURNING ent_group_id, min_d_count, min_p_count, min_e_count,
                       min_u_count, min_uc_count, min_c_count,
-                      delivery_window_start, delivery_window_end,
+                      delivery_months,
                       max_deliveries_per_year, auto_schedule_enabled,
                       default_cmp_lag_days, default_cls_lag_days
             """,
@@ -203,8 +200,7 @@ def put_delivery_config(
                 body.min_u_count,
                 body.min_uc_count,
                 body.min_c_count,
-                body.delivery_window_start,
-                body.delivery_window_end,
+                body.delivery_months,
                 body.max_deliveries_per_year,
                 body.auto_schedule_enabled,
                 body.default_cmp_lag_days,

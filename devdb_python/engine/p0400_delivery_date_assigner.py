@@ -42,20 +42,18 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
     import pandas as pd
     window_df = conn.read_df(
         """
-        SELECT delivery_window_start AS window_start,
-               delivery_window_end   AS window_end
+        SELECT delivery_months
         FROM sim_entitlement_delivery_config
         WHERE ent_group_id = %s
         """,
         (ent_group_id,),
     )
-    if window_df.empty or window_df.iloc[0]["window_start"] is None:
+    if window_df.empty or window_df.iloc[0]["delivery_months"] is None:
         raise ValueError(
-            f"P-04: delivery_window_start/end not configured for ent_group {ent_group_id}. "
-            "Set them in sim_entitlement_delivery_config before running."
+            f"P-04: delivery_months not configured for ent_group {ent_group_id}. "
+            "Set delivery_months in sim_entitlement_delivery_config before running."
         )
-    window_start = int(window_df.iloc[0]["window_start"])
-    window_end   = int(window_df.iloc[0]["window_end"])
+    valid_months = frozenset(int(m) for m in window_df.iloc[0]["delivery_months"])
 
 
     min_df = conn.read_df(
@@ -77,18 +75,18 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
     if hasattr(min_date, 'date'):
         min_date = min_date.date()
 
-    if window_start <= min_date.month <= window_end:
+    if min_date.month in valid_months:
         projected = min_date.replace(day=1)
     else:
         projected = None
         check = min_date.replace(day=1)
         for _ in range(12):
             check = check - relativedelta(months=1)
-            if window_start <= check.month <= window_end:
+            if check.month in valid_months:
                 projected = check
                 break
         if projected is None:
-            projected = min_date.replace(month=window_start, day=1)
+            projected = min_date.replace(month=min(valid_months), day=1)
             logger.warning(f"P-04: Supply constraint warning -- event {delivery_event_id} "
                            f"pulled to first permissible window month {projected}.")
 
@@ -111,14 +109,14 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
     last_locked_raw = locked_df.iloc[0]["last_locked"] if not locked_df.empty else None
     if last_locked_raw is not None and not pd.isnull(last_locked_raw):
         last_locked = last_locked_raw.date() if hasattr(last_locked_raw, "date") else last_locked_raw
-        locked_year_floor = date(last_locked.year + 1, window_start, 1)
+        locked_year_floor = date(last_locked.year + 1, min(valid_months), 1)
     else:
         locked_year_floor = today_first
 
     hard_floor = max(today_first, locked_year_floor)
     # Advance hard_floor to the nearest eligible window month if needed
     for _ in range(12):
-        if window_start <= hard_floor.month <= window_end:
+        if hard_floor.month in valid_months:
             break
         hard_floor = hard_floor + relativedelta(months=1)
 

@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Date helpers
+# Date helpers — all use valid_months: frozenset[int] instead of start/end range
 # ---------------------------------------------------------------------------
 
 def _add_months(d: date, n: int) -> date:
@@ -34,26 +34,26 @@ def _add_months(d: date, n: int) -> date:
     return d.replace(year=year, month=month, day=1)
 
 
-def _lean_window_date(demand_date: date, window_start: int, window_end: int,
+def _lean_window_date(demand_date: date, valid_months: frozenset,
                       today_first: date) -> date:
     """
     Return the latest first-of-month date that:
-    - Falls within [window_start, window_end] (inclusive month numbers)
+    - Falls within valid_months
     - Is <= demand_date
     - Is >= today_first
 
     If no such date exists (demand already past all window months for its year,
-    or demand month precedes window), return the next available window month
+    or demand month not in valid_months), return the next available window month
     >= today_first.
     """
     if demand_date is None:
-        return _next_window_month_from(today_first, window_start, window_end)
+        return _next_window_month_from(today_first, valid_months)
 
     d = demand_date.replace(day=1)
 
     # Walk back from demand month looking for latest window month >= today_first
     for _ in range(25):  # up to ~2 years back
-        if window_start <= d.month <= window_end:
+        if d.month in valid_months:
             if d >= today_first:
                 return d
             else:
@@ -66,15 +66,14 @@ def _lean_window_date(demand_date: date, window_start: int, window_end: int,
 
     # Demand is past or window doesn't cover demand month — schedule at next
     # available window month from today
-    return _next_window_month_from(today_first, window_start, window_end)
+    return _next_window_month_from(today_first, valid_months)
 
 
-def _next_window_month_from(from_date: date, window_start: int,
-                             window_end: int) -> date:
-    """Return the earliest first-of-month >= from_date within the window."""
+def _next_window_month_from(from_date: date, valid_months: frozenset) -> date:
+    """Return the earliest first-of-month >= from_date within valid_months."""
     d = from_date.replace(day=1)
     for _ in range(25):
-        if window_start <= d.month <= window_end:
+        if d.month in valid_months:
             return d
         if d.month == 12:
             d = d.replace(year=d.year + 1, month=1)
@@ -84,29 +83,33 @@ def _next_window_month_from(from_date: date, window_start: int,
     return from_date.replace(day=1)
 
 
-def _next_window_month_after(after_date: date, window_start: int,
-                              window_end: int) -> date:
-    """Return the earliest first-of-month strictly after after_date in window."""
+def _next_window_month_after(after_date: date, valid_months: frozenset) -> date:
+    """Return the earliest first-of-month strictly after after_date in valid_months."""
     d = after_date.replace(day=1)
     if d.month == 12:
         d = d.replace(year=d.year + 1, month=1)
     else:
         d = d.replace(month=d.month + 1)
-    return _next_window_month_from(d, window_start, window_end)
+    return _next_window_month_from(d, valid_months)
 
 
-def _first_window_month_in_year(year: int, window_start: int) -> date:
-    return date(year, window_start, 1)
+def _first_window_month_in_year(year: int, valid_months: frozenset) -> date:
+    """Return the first valid delivery month in the given year."""
+    return date(year, min(valid_months), 1)
 
 
-def _snap_to_window(d: date, ws: int, we: int) -> date:
-    """Latest first-of-month within [ws, we] that is <= d. If d.month < ws, go to prior year we."""
+def _snap_to_window(d: date, valid_months: frozenset) -> date:
+    """Latest first-of-month in valid_months that is <= d. Walks back up to 24 months."""
     m = d.month
-    if m > we:
-        m = we
-    if m < ws:
-        return date(d.year - 1, we, 1)
-    return date(d.year, m, 1)
+    year = d.year
+    for _ in range(24):
+        if m in valid_months:
+            return date(year, m, 1)
+        m -= 1
+        if m == 0:
+            m = 12
+            year -= 1
+    return date(d.year, min(valid_months), 1)
 
 
 def _months_between(d1: date, d2: date) -> int:
@@ -141,7 +144,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     config_df = conn.read_df(
         """
         SELECT auto_schedule_enabled, max_deliveries_per_year, min_gap_months,
-               delivery_window_start, delivery_window_end,
+               delivery_months,
                COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count
         FROM sim_entitlement_delivery_config
         WHERE ent_group_id = %s
@@ -160,8 +163,8 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
 
     max_per_year = int(row["max_deliveries_per_year"] or 1)
     min_gap = int(row["min_gap_months"] or 0)
-    window_start_default = int(row["delivery_window_start"] or 5)
-    window_end_default   = int(row["delivery_window_end"]   or 11)
+    raw_months = row["delivery_months"]
+    valid_months_default = frozenset(int(m) for m in raw_months) if raw_months else frozenset([5,6,7,8,9,10,11])
     min_buffer = int(row["min_d_count"] or 0)
 
     # ------------------------------------------------------------------
@@ -318,11 +321,10 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         return []
 
     # ------------------------------------------------------------------
-    # Step 4: Get window parameters per phase (via phase -> PG mapping)
+    # Step 4: Get annual pace per phase (delivery window is ent-group level)
     # ------------------------------------------------------------------
     undelivered_phase_ids = [p["phase_id"] for p in undelivered]
 
-    # Delivery window is ent-group level (D-135); annual_starts_target is per-dev.
     pg_annual_df = conn.read_df(
         """
         SELECT DISTINCT sdp.phase_id, sdvp.annual_starts_target,
@@ -334,9 +336,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         (undelivered_phase_ids,),
     )
 
-    # All phases share the ent-group-level window (D-135)
-    window_map = {p["phase_id"]: (window_start_default, window_end_default)
-                  for p in undelivered}
+    # All phases share the ent-group-level valid_months (D-135)
     annual_target_map = {}  # phase_id -> effective monthly pace
     for _, r in pg_annual_df.iterrows():
         ph_id = int(r["phase_id"])
@@ -345,31 +345,17 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             ws_name = r["seasonal_weight_set"]
             annual_target_map[ph_id] = effective_annual_pace(ws_name, float(t)) / 12.0
 
-    # Attach window to each undelivered phase
+    # Attach valid_months to each undelivered phase (same for all — D-135)
     for p in undelivered:
-        ws, we = window_map.get(p["phase_id"], (5, 11))
-        p["window_start"] = ws
-        p["window_end"] = we
+        p["valid_months"] = valid_months_default
 
     # ------------------------------------------------------------------
     # Step 4b: Load projected D-balance from DB.
-    #
-    # Includes ONLY real lots and sim lots from LOCKED delivery phases.
-    # Auto-delivery sim lots are excluded here because:
-    #   (a) they frequently have date_str < date_dev (demand pool assigned
-    #       them pre-delivery slots) making them invisible to the D_end
-    #       condition, and
-    #   (b) _apply_delivery_to_balance() handles auto-delivery contributions
-    #       with an accurate drain-delay model — including them in both
-    #       places would double-count.
     # ------------------------------------------------------------------
     all_dev_ids_for_query = [int(d) for d in all_phases_df["dev_id"].unique()]
     d_balance: dict[int, dict[date, int]] = {d: {} for d in all_dev_ids_for_query}
 
     if all_dev_ids_for_query:
-        # Build parameterized lot-source filter: real lots always included;
-        # locked-phase sim lots included so their confirmed D trajectory is captured.
-        # Column names (lot_source, phase_id) are trusted schema constants — not user input.
         if locked_phase_ids:
             _lot_filter_sql = "AND (sl.lot_source = 'real' OR sl.phase_id = ANY(%s))"
             _lot_filter_params = [list(locked_phase_ids)]
@@ -408,18 +394,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             m = m.date() if hasattr(m, "date") else m
             d_balance[d_id][m] = int(dr["d_end"])
 
-    # Per-dev demand pool tracking.
-    #
-    # The demand allocator (S-0700/S-0800) assigns demand slots from a per-dev
-    # pool starting at demand_start = first month after the last locked delivery.
-    # Real lots and locked-phase sim lots consume the earliest slots; auto-delivery
-    # sim lots get whatever is left.  If the pool has only advanced to, say,
-    # August 2028 by the time a May 2030 delivery is scheduled, those lots sit
-    # in D from May 2030 until August 2028 demand slots arrive — a 20-month delay.
-    # _apply_delivery_to_balance must account for this "drain delay" so that P-0000
-    # does not find false D-floor violations earlier than they will actually occur.
-
-    # Per-dev last locked delivery date (scan floor — skip pre-delivery zeros).
+    # Per-dev last locked delivery date
     last_locked_per_dev: dict[int, date] = {}
     if locked_phase_ids:
         llpd_df = conn.read_df("""
@@ -438,10 +413,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 d_val = d_raw.date() if hasattr(d_raw, "date") else d_raw
                 last_locked_per_dev[int(llr["dev_id"])] = d_val
 
-    # Compute per-dev demand pool state from DB.
-    # demand_start = first month after each dev's last locked delivery.
-    # demand_consumed = count of lots (real + locked-phase sim) with date_str
-    # >= demand_start; represents how far the demand pool has advanced.
     global_demand_start_per_dev: dict[int, date] = {}
     for _dev in all_dev_ids_for_query:
         _ll = last_locked_per_dev.get(_dev)
@@ -471,11 +442,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                     f"demand_consumed={demand_consumed[_dev]}")
 
     def _compute_drain_delay(dev_id_key: int, delivery_m: date) -> int:
-        """
-        Months from delivery_m until the demand pool reaches this delivery's
-        first lot.  If the pool is already past delivery_m, delay = 0
-        (drain starts immediately).
-        """
         pace = dev_monthly_pace.get(dev_id_key, 1.0)
         if pace <= 0:
             return 0
@@ -488,19 +454,13 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     def _apply_delivery_to_balance(dev_id_key: int, delivery_month: date,
                                     n_lots: int, monthly_pace: float,
                                     drain_delay: int = 0) -> None:
-        """Add a delivery's D contribution to d_balance[dev_id_key].
-
-        drain_delay: months from delivery_month before lots start leaving D.
-        During the delay, all n_lots sit in D waiting for demand to arrive.
-        After the delay, lots drain at monthly_pace lots/month.
-        """
         if n_lots <= 0 or monthly_pace <= 0:
             return
         bal = d_balance.setdefault(dev_id_key, {})
         for k in range(500):
             m = _add_months(delivery_month, k)
             if k <= drain_delay:
-                contrib = n_lots  # demand hasn't arrived yet; all lots in D
+                contrib = n_lots
             else:
                 drain_elapsed = k - drain_delay
                 contrib = n_lots - min(n_lots, int(monthly_pace * drain_elapsed))
@@ -509,7 +469,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             bal[m] = bal.get(m, 0) + contrib
 
     def _find_violation_month(dev_id_key: int, scan_floor: date) -> date | None:
-        """First month after scan_floor where d_balance <= min_buffer (exhaustion)."""
         bal = d_balance.get(dev_id_key, {})
         for m in sorted(bal.keys()):
             if m <= scan_floor:
@@ -519,37 +478,29 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         return None
 
     def _dev_lv_from_balance(dev_id_key: int, scan_floor: date,
-                              ws_: int, we_: int) -> date | None:
-        """Latest viable window month before first D violation; None if no violation."""
+                              vm: frozenset) -> date | None:
         violation = _find_violation_month(dev_id_key, scan_floor)
         if violation is None:
             return None
         prev = _add_months(violation, -1)
-        lv = _snap_to_window(prev, ws_, we_)
+        lv = _snap_to_window(prev, vm)
         if lv < today_first:
-            lv = _next_window_month_from(today_first, ws_, we_)
+            lv = _next_window_month_from(today_first, vm)
         logger.info(f"P-00: Dev {dev_id_key}: D-balance violation {violation}, lv={lv}")
         return lv
 
     # ------------------------------------------------------------------
     # Step 5: Schedule delivery events
     # ------------------------------------------------------------------
-    # Sort: phases with demand date first (ascending), then null-demand last,
-    # secondary sort by dev_id for stability
     undelivered.sort(key=lambda p: (
         p["demand_date"] is None,
         p["demand_date"] or date.max,
         p["dev_id"],
     ))
 
-    # Track scheduled state.
-    # delivery_date_per_year: one delivery date per calendar year per community.
-    # Any number of phases can land on that date; the date itself is the constraint.
-    # Locked events establish the date for their year; auto events snap to it.
     delivery_date_per_year: dict[int, date] = {}
     last_date: date | None = None
 
-    # Account for locked events already scheduled this/prior years
     locked_dates_df = conn.read_df("""
         SELECT date_dev_actual
         FROM sim_delivery_events
@@ -561,52 +512,35 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         d = r["date_dev_actual"]
         if d is not None:
             d = d.date() if hasattr(d, "date") else d
-            # Locked event establishes the delivery date for its year
             delivery_date_per_year[d.year] = d
             if last_date is None or d > last_date:
                 last_date = d
             if last_locked_date is None or d > last_locked_date:
                 last_locked_date = d
 
-    def _constrain_date(ideal: date, ws: int, we: int) -> date:
-        """
-        Return the earliest valid delivery date >= ideal, respecting:
-        - One delivery date per year (snap to existing date if year is taken)
-        - min_gap months between consecutive delivery dates (new years only)
-
-        max_per_year is no longer a count — any number of phases can land on
-        the single allowed date for a given year.
-        """
+    def _constrain_date(ideal: date, vm: frozenset) -> date:
         d = ideal
-        for _ in range(500):  # safety limit
-            # If this year already has a delivery date (locked or auto),
-            # snap to it — no further constraints apply.
+        for _ in range(500):
             if d.year in delivery_date_per_year:
                 return delivery_date_per_year[d.year]
 
-            # New year: enforce min_gap from the last delivery date.
             if last_date is not None and min_gap > 0:
                 min_ok = _add_months(last_date, min_gap)
                 min_ok = min_ok.replace(day=1)
                 if d < min_ok:
-                    d = _next_window_month_from(min_ok, ws, we)
+                    d = _next_window_month_from(min_ok, vm)
                     continue
 
             break
         return d
 
-    # Build per-dev state for cross-dev scheduling
-    from collections import OrderedDict  # noqa: F401
-
-    # Group undelivered phases by dev, sorted by sequence_number
     dev_phases = defaultdict(list)
     for phase in undelivered:
         dev_phases[phase["dev_id"]].append(phase)
     for dev_id in dev_phases:
         dev_phases[dev_id].sort(key=lambda p: p["sequence_number"])
 
-    ws = window_start_default
-    we = window_end_default
+    valid_months = valid_months_default
 
     # monthly pace per dev: average effective monthly pace across phases for that dev
     dev_monthly_pace = {}
@@ -615,7 +549,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         if paces:
             dev_monthly_pace[dev_id] = sum(paces) / len(paces)
 
-    # Per-dev scan floor: start scanning after last locked delivery for this dev
     dev_scan_floor: dict[int, date] = {}
     for dev_id in dev_phases:
         dev_scan_floor[dev_id] = last_locked_per_dev.get(dev_id, today_first - timedelta(days=1))
@@ -623,34 +556,25 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     events_to_create = []
 
     for _ in range(200):
-        # Find devs with remaining phases
         active = {d: phases for d, phases in dev_phases.items() if phases}
         if not active:
             break
 
-        # Compute deadline per dev from live d_balance, then constrain via
-        # _constrain_date (snaps to year's existing date or enforces min_gap).
         deadlines = {}
         for dev_id in active:
-            lv_d = _dev_lv_from_balance(dev_id, dev_scan_floor[dev_id], ws, we)
+            lv_d = _dev_lv_from_balance(dev_id, dev_scan_floor[dev_id], valid_months)
             if lv_d is None:
-                # No D-floor violation found in scan window — fall back to
-                # demand_date signal; never schedule before today_first.
                 first_demand = dev_phases[dev_id][0]["demand_date"]
-                lv_d = (_snap_to_window(first_demand, ws, we) if first_demand
-                        else _next_window_month_from(today_first, ws, we))
+                lv_d = (_snap_to_window(first_demand, valid_months) if first_demand
+                        else _next_window_month_from(today_first, valid_months))
                 if lv_d < today_first:
-                    lv_d = _next_window_month_from(today_first, ws, we)
-            lv_d = _constrain_date(lv_d, ws, we)
+                    lv_d = _next_window_month_from(today_first, valid_months)
+            lv_d = _constrain_date(lv_d, valid_months)
             deadlines[dev_id] = lv_d
 
-        # Most urgent dev drives the event date
         urgent_dev = min(deadlines, key=lambda d: deadlines[d])
         event_date = deadlines[urgent_dev]
 
-        # Warn if the constrained delivery lands at or after the D-floor
-        # violation month — means the constraint cannot be satisfied given
-        # current max_per_year / min_gap settings.
         violation_check = _find_violation_month(urgent_dev, dev_scan_floor[urgent_dev])
         if violation_check is not None and event_date >= violation_check:
             logger.warning(
@@ -661,17 +585,13 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 f"D-balance floor will not be maintained."
             )
 
-        # All devs whose deadline <= event_date join this event
         joining = [d for d in active if deadlines[d] <= event_date]
 
         event_phase_ids = []
         for dev_id in joining:
             pace = dev_monthly_pace.get(dev_id, 1.0)
-            next_allowed = date(event_date.year + 1, ws, 1)
+            next_allowed = date(event_date.year + 1, min(valid_months), 1)
 
-            # Always take the first queued phase, then apply its D contribution
-            # incrementally so d_balance reflects this delivery going forward.
-            # drain_delay: months from delivery until demand pool reaches these lots.
             batch = [dev_phases[dev_id].pop(0)]
             first_lots = sum(_get_phase_lots(conn, batch[0]["phase_id"]))
             _delay = _compute_drain_delay(dev_id, event_date)
@@ -679,20 +599,17 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + first_lots
             logger.info(f"P-00: Dev {dev_id}: delivery {event_date}, "
                         f"lots={first_lots}, drain_delay={_delay}mo, "
-                        f"demand_consumed→{demand_consumed[dev_id]}")
+                        f"demand_consumed->{demand_consumed[dev_id]}")
 
-            # Batch more phases if first phase alone can't bridge to next year
-            # (D-139 batching rule).  Each extra phase's contribution is added
-            # to d_balance incrementally — no undo needed.
             while True:
                 next_v = _find_violation_month(dev_id, event_date)
                 if next_v is None:
-                    break  # no future violation — bridge is sufficient
-                next_lv = _snap_to_window(_add_months(next_v, -1), ws, we)
+                    break
+                next_lv = _snap_to_window(_add_months(next_v, -1), valid_months)
                 if next_lv >= next_allowed:
-                    break  # batch bridges to next allowed year
+                    break
                 if not dev_phases[dev_id]:
-                    break  # no more phases available
+                    break
                 extra = dev_phases[dev_id].pop(0)
                 batch.append(extra)
                 extra_lots = sum(_get_phase_lots(conn, extra["phase_id"]))
@@ -700,14 +617,12 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 _apply_delivery_to_balance(dev_id, event_date, extra_lots, pace, _delay_extra)
                 demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + extra_lots
 
-            # Advance scan floor so next scan starts after this delivery.
             dev_scan_floor[dev_id] = event_date
 
             for p in batch:
                 event_phase_ids.append(p["phase_id"])
 
         events_to_create.append({"date": event_date, "phases": event_phase_ids})
-        # Register this year's delivery date so subsequent auto phases snap to it
         if event_date.year not in delivery_date_per_year:
             delivery_date_per_year[event_date.year] = event_date
         last_date = event_date
@@ -721,7 +636,6 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     event_counter = 1
 
     for ev in events_to_create:
-        # Advance the sequence to get a collision-free event_id (migration 028).
         seq_df = conn.read_df(
             "SELECT nextval('devdb.sim_delivery_events_id_seq') AS next_id"
         )
@@ -729,32 +643,28 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
 
         event_name = f"Auto-scheduled delivery {event_counter}"
         projected_date = ev["date"].strftime("%Y-%m-%d")
-
-        # Use the window values from the first phase in the group
-        first_phase_id = ev["phases"][0]
-        ws, we = window_map.get(first_phase_id, (5, 11))
+        months_list = sorted(list(valid_months))
 
         conn.execute(
             """
             INSERT INTO sim_delivery_events
                 (delivery_event_id, ent_group_id, event_name,
-                 delivery_window_start, delivery_window_end,
+                 delivery_months,
                  date_dev_actual, date_dev_projected,
                  is_auto_created, is_placeholder,
                  created_at, updated_at)
             VALUES (
                 %s, %s, %s,
-                %s, %s,
+                %s,
                 NULL, %s,
                 TRUE, TRUE,
                 current_timestamp, current_timestamp
             )
             """,
-            (event_id, ent_group_id, event_name, ws, we, projected_date),
+            (event_id, ent_group_id, event_name, months_list, projected_date),
         )
 
         for ph_id in ev["phases"]:
-            # Advance the sequence for each phase link row (migration 028).
             link_seq_df = conn.read_df(
                 "SELECT nextval('devdb.sim_delivery_event_phases_id_seq') AS next_id"
             )

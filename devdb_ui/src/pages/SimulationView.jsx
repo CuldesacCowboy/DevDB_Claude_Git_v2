@@ -376,30 +376,73 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled
   )
 }
 
+const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const LS_STD_MONTHS_KEY = 'devdb_delivery_standard_months'
+const DEFAULT_STANDARD_MONTHS = [5,6,7,8,9,10,11]
+
+function MonthGrid({ selected, onChange, locked }) {
+  return (
+    <div style={{ display: 'flex', gap: 4 }}>
+      {MONTH_LABELS.map((label, i) => {
+        const m = i + 1
+        const on = selected.includes(m)
+        return (
+          <button key={m} disabled={locked} onClick={() => {
+            if (locked) return
+            onChange(on ? selected.filter(x => x !== m) : [...selected, m].sort((a,b) => a-b))
+          }} style={{
+            padding: '3px 6px', fontSize: 11, borderRadius: 4, cursor: locked ? 'default' : 'pointer',
+            border: on ? '1px solid #2563eb' : '1px solid #d1d5db',
+            background: on ? '#dbeafe' : locked ? '#f9fafb' : '#fff',
+            color: on ? '#1d4ed8' : '#6b7280',
+            fontWeight: on ? 600 : 400,
+            transition: 'all 0.1s',
+          }}>
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }) {
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState(null)
+  const [editingStandard, setEditingStandard] = useState(false)
+  const [standardMonths, setStandardMonths] = useState(() => {
+    try {
+      const v = localStorage.getItem(LS_STD_MONTHS_KEY)
+      return v ? JSON.parse(v) : DEFAULT_STANDARD_MONTHS
+    } catch { return DEFAULT_STANDARD_MONTHS }
+  })
+  const [standardDraft, setStandardDraft] = useState([])
 
   const isDirty  = Object.keys(edits).length > 0
   const isLocked = disabled || saving
 
-  const wsRaw = valFor('delivery_window_start')
-  const weRaw = valFor('delivery_window_end')
-  const wsNum = wsRaw !== '' ? parseInt(wsRaw, 10) : null
-  const weNum = weRaw !== '' ? parseInt(weRaw, 10) : null
-  const windowInvalid = wsNum !== null && weNum !== null && !isNaN(wsNum) && !isNaN(weNum) && weNum < wsNum
+  const currentMonths = edits.delivery_months !== undefined
+    ? edits.delivery_months
+    : (deliveryConfig?.delivery_months ?? [])
 
   function valFor(key) { return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '') }
   function setVal(key, v) { setEdits(p => ({ ...p, [key]: v })) }
+  function setMonths(months) { setEdits(p => ({ ...p, delivery_months: months })) }
+
+  function saveStandard() {
+    setStandardMonths(standardDraft)
+    try { localStorage.setItem(LS_STD_MONTHS_KEY, JSON.stringify(standardDraft)) } catch {}
+    setEditingStandard(false)
+  }
 
   async function save() {
     setSaving(true); setErr(null)
-    const body = {}
+    const body = { delivery_months: currentMonths.length > 0 ? currentMonths : null }
     for (const key of FLOOR_KEYS) {
       const v = valFor(key); body[key] = v === '' ? null : parseInt(v, 10)
     }
-    for (const key of ['delivery_window_start', 'delivery_window_end', 'max_deliveries_per_year']) {
+    for (const key of ['max_deliveries_per_year']) {
       const v = valFor(key); body[key] = v === '' ? null : parseInt(v, 10)
     }
     const asVal = valFor('auto_schedule_enabled')
@@ -418,48 +461,59 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
     finally { setSaving(false) }
   }
 
-  const numInput = (key, width = 56, placeholder = '—') => {
-    const isWindowErr = windowInvalid && key === 'delivery_window_end'
-    const borderColor = isWindowErr ? '#dc2626' : edits[key] !== undefined ? '#2563eb' : '#d1d5db'
-    return (
-      <input key={key} type="number" min="0" placeholder={placeholder}
-        value={valFor(key)} disabled={isLocked}
-        onChange={e => setVal(key, e.target.value)}
-        style={{ width, padding: '2px 5px', fontSize: 12, borderRadius: 4, textAlign: 'right',
-                 background: isLocked ? '#f3f4f6' : '#fff',
-                 border: `1px solid ${borderColor}` }} />
-    )
-  }
+  const numInput = (key, width = 56, placeholder = '—') => (
+    <input key={key} type="number" min="0" placeholder={placeholder}
+      value={valFor(key)} disabled={isLocked}
+      onChange={e => setVal(key, e.target.value)}
+      style={{ width, padding: '2px 5px', fontSize: 12, borderRadius: 4, textAlign: 'right',
+               background: isLocked ? '#f3f4f6' : '#fff',
+               border: `1px solid ${edits[key] !== undefined ? '#2563eb' : '#d1d5db'}` }} />
+  )
+
+  const ctrlBtn = (label, onClick, active) => (
+    <button onClick={onClick} disabled={isLocked} style={{
+      padding: '2px 8px', fontSize: 11, borderRadius: 4, cursor: isLocked ? 'default' : 'pointer',
+      border: active ? '1px solid #d97706' : '1px solid #d1d5db',
+      background: active ? '#fef3c7' : isLocked ? '#f9fafb' : '#fff',
+      color: active ? '#b45309' : '#6b7280',
+    }}>{label}</button>
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div>
-        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>Delivery scheduling</div>
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>Window start (month, 1–12)</span>
-            {numInput('delivery_window_start', 48, '5')}
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>Window end (month, 1–12)</span>
-            {numInput('delivery_window_end', 48, '11')}
-          </label>
-          {windowInvalid && (
-            <span style={{ fontSize: 11, color: '#dc2626' }}>End must be ≥ start</span>
-          )}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>Max deliveries/yr (≥1)</span>
-            {numInput('max_deliveries_per_year', 48, '1')}
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: isLocked ? 'default' : 'pointer' }}>
-            <input type="checkbox" disabled={isLocked}
-              checked={valFor('auto_schedule_enabled') === true || valFor('auto_schedule_enabled') === 'true'}
-              onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
-              style={{ width: 14, height: 14, accentColor: '#2563eb',
-                       outline: edits['auto_schedule_enabled'] !== undefined ? '2px solid #2563eb' : 'none' }} />
-            <span style={{ color: '#6b7280' }}>Auto-schedule enabled</span>
-          </label>
+        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>Delivery Window</div>
+        <MonthGrid selected={currentMonths} onChange={setMonths} locked={isLocked} />
+        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          {ctrlBtn('Select All', () => setMonths([1,2,3,4,5,6,7,8,9,10,11,12]))}
+          {ctrlBtn('Clear', () => setMonths([]))}
+          {ctrlBtn('Apply Standard Window', () => setMonths([...standardMonths]))}
+          {ctrlBtn('Edit Standard Window', () => { setStandardDraft([...standardMonths]); setEditingStandard(v => !v) }, editingStandard)}
         </div>
+        {editingStandard && (
+          <div style={{ marginTop: 8, padding: '8px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6 }}>
+            <div style={{ fontSize: 11, color: '#92400e', fontWeight: 600, marginBottom: 6 }}>Standard Window</div>
+            <MonthGrid selected={standardDraft} onChange={setStandardDraft} locked={false} />
+            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+              <button onClick={saveStandard} style={{ padding: '2px 10px', fontSize: 11, borderRadius: 4, border: 'none', background: '#d97706', color: '#fff', cursor: 'pointer' }}>Save Standard Window</button>
+              <button onClick={() => setEditingStandard(false)} style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', color: '#6b7280', cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+          <span style={{ color: '#6b7280' }}>Max deliveries/yr (≥1)</span>
+          {numInput('max_deliveries_per_year', 48, '1')}
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: isLocked ? 'default' : 'pointer' }}>
+          <input type="checkbox" disabled={isLocked}
+            checked={valFor('auto_schedule_enabled') === true || valFor('auto_schedule_enabled') === 'true'}
+            onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
+            style={{ width: 14, height: 14, accentColor: '#2563eb',
+                     outline: edits['auto_schedule_enabled'] !== undefined ? '2px solid #2563eb' : 'none' }} />
+          <span style={{ color: '#6b7280' }}>Auto-schedule enabled</span>
+        </label>
       </div>
       <div>
         <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
@@ -493,10 +547,10 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {isDirty && (
-          <button disabled={isLocked || windowInvalid} onClick={save}
+          <button disabled={isLocked} onClick={save}
             style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-                     background: (isLocked || windowInvalid) ? '#d1d5db' : '#2563eb', color: '#fff',
-                     cursor: (isLocked || windowInvalid) ? 'default' : 'pointer' }}>
+                     background: isLocked ? '#d1d5db' : '#2563eb', color: '#fff',
+                     cursor: isLocked ? 'default' : 'pointer' }}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         )}
