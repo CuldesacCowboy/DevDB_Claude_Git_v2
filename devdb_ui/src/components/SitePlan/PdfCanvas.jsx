@@ -19,6 +19,9 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 import {
   distToSeg, snapToVertices, snapToBoundaries, findFirstBoundaryIntersection, splitPolygon, findBestSplit,
 } from './splitPolygon'
+import UnitCountsOverlay from './UnitCountsOverlay'
+import BuildingGroupsLayer, { computeBgEllipse } from './BuildingGroupsLayer'
+import LotMarkersLayer from './LotMarkersLayer'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -73,21 +76,6 @@ function getEditTarget(sx, sy, svgPts) {
     if (dist < EDGE_HIT_PX) return { type: 'edge', idx: i, t, point: { x: cx, y: cy } }
   }
   return null
-}
-
-// "SC00000001" → "SC-1"
-function lotLabel(lotNumber) {
-  const m = lotNumber?.match(/^([A-Z]+)0*(\d+)$/)
-  return m ? `${m[1]}-${parseInt(m[2], 10)}` : (lotNumber || '?')
-}
-
-// Return a darkened version of a '#rrggbb' hex color (factor 0–1).
-function darkenHex(hex, factor = 0.45) {
-  if (!hex || !hex.startsWith('#') || hex.length < 7) return hex
-  const r = Math.round(parseInt(hex.slice(1, 3), 16) * (1 - factor))
-  const g = Math.round(parseInt(hex.slice(3, 5), 16) * (1 - factor))
-  const b = Math.round(parseInt(hex.slice(5, 7), 16) * (1 - factor))
-  return `rgb(${r},${g},${b})`
 }
 
 const LOT_HIT_PX = 10
@@ -754,28 +742,10 @@ export default function PdfCanvas({
     return dx * dx + dy * dy <= 1
   }
 
-  // Compute the SVG-space ellipse for a building group given its lot positions.
-  // Returns {cx, cy, rx, ry} in screen pixels, or null if no lots have positions.
-  function bgEllipse(bg) {
-    if (!bg.lots || !bg.lots.length) return null
-    const pts = bg.lots.map(l => normToScreen(l.x, l.y))
-    const minX = Math.min(...pts.map(p => p.x))
-    const maxX = Math.max(...pts.map(p => p.x))
-    const minY = Math.min(...pts.map(p => p.y))
-    const maxY = Math.max(...pts.map(p => p.y))
-    const PAD = 18
-    return {
-      cx: (minX + maxX) / 2,
-      cy: (minY + maxY) / 2,
-      rx: Math.max(14, (maxX - minX) / 2 + PAD),
-      ry: Math.max(14, (maxY - minY) / 2 + PAD),
-    }
-  }
-
   // Find the first building group whose ellipse contains (sx, sy).
   function findBgAtPoint(sx, sy) {
     for (const bg of buildingGroups) {
-      const ell = bgEllipse(bg)
+      const ell = computeBgEllipse(bg, normToScreen)
       if (!ell) continue
       if (hitTestEllipse(sx, sy, ell.cx, ell.cy, ell.rx, ell.ry)) return bg.building_group_id
     }
@@ -1210,436 +1180,52 @@ export default function PdfCanvas({
               </>
             )}
 
-            {/* ── Building group ovals ── */}
-            {showBuildingGroups && buildingGroups.map(bg => {
-              const ell = bgEllipse(bg)
-              if (!ell) return null
-              const isSelected  = selectedBgIds.has(bg.building_group_id)
-              const isHovered   = hoveredBgId === bg.building_group_id
-              const strokeColor = isSelected ? '#ef4444' : isHovered ? '#f97316' : '#0d9488'
-              const fillColor   = isSelected ? 'rgba(239,68,68,0.10)' : isHovered ? 'rgba(249,115,22,0.10)' : 'rgba(13,148,136,0.07)'
-              const strokeW     = isSelected || isHovered ? 2.5 : 1.8
-              return (
-                <g key={bg.building_group_id}
-                  style={{ cursor: inDeleteBuilding ? 'pointer' : 'default' }}
-                  onPointerEnter={inDeleteBuilding ? () => setHoveredBgId(bg.building_group_id) : undefined}
-                  onPointerLeave={inDeleteBuilding ? () => setHoveredBgId(null) : undefined}
-                  onClick={inDeleteBuilding ? () => onBuildingGroupSelect?.(bg.building_group_id) : undefined}
-                  onContextMenu={inDeleteBuilding ? (e) => {
-                    e.preventDefault()
-                    if (!selectedBgIds.has(bg.building_group_id)) onBuildingGroupSelect?.(bg.building_group_id)
-                    onBuildingGroupContextMenu?.(bg.building_group_id, ell.cx, ell.cy)
-                  } : undefined}
-                >
-                  {/* White halo for legibility over any PDF background */}
-                  <ellipse cx={ell.cx} cy={ell.cy} rx={ell.rx + 2} ry={ell.ry + 2}
-                    fill="none" stroke="rgba(255,255,255,0.6)" strokeWidth={strokeW + 3}
-                    style={{ pointerEvents: 'none' }} />
-                  <ellipse cx={ell.cx} cy={ell.cy} rx={ell.rx} ry={ell.ry}
-                    fill={fillColor}
-                    stroke={strokeColor}
-                    strokeWidth={strokeW}
-                    strokeDasharray="6 4"
-                    style={{ pointerEvents: inDeleteBuilding ? 'fill' : 'none' }}
-                  />
-                  {zoom > 0.5 && (
-                    <text
-                      x={ell.cx} y={ell.cy + ell.ry + 13}
-                      textAnchor="middle"
-                      fontSize={Math.max(8, 10 / zoom)}
-                      fill={strokeColor}
-                      stroke="rgba(255,255,255,0.9)" strokeWidth={2.5 / zoom}
-                      paintOrder="stroke"
-                      style={{ pointerEvents: 'none', userSelect: 'none' }}
-                    >
-                      {bg.building_name}
-                    </text>
-                  )}
-                </g>
-              )
-            })}
-
-            {/* ── Building group draw preview ── */}
-            {inDrawBuilding && bgDrawPoints.length > 0 && (() => {
-              const svgPts = bgDrawPoints.map(p => normToScreen(p.x, p.y))
-              const svgFirst = svgPts[0]
-              const svgLast  = svgPts[svgPts.length - 1]
-              const nearFirst = bgDrawPoints.length >= 3 && bgDrawCursorSvg
-                && Math.hypot(svgFirst.x - bgDrawCursorSvg.x, svgFirst.y - bgDrawCursorSvg.y) < SNAP_TRACE_PX
-              return (
-                <>
-                  {svgPts.length >= 2 && (
-                    <polyline points={svgPts.map(p => `${p.x},${p.y}`).join(' ')}
-                      fill="none" stroke="#0d9488" strokeWidth={2} strokeLinejoin="round" />
-                  )}
-                  {/* Closing line preview */}
-                  {bgDrawCursorSvg && svgLast && !nearFirst && (
-                    <line x1={svgLast.x} y1={svgLast.y} x2={bgDrawCursorSvg.x} y2={bgDrawCursorSvg.y}
-                      stroke="#0d9488" strokeWidth={1.5} strokeDasharray="5 4" />
-                  )}
-                  {nearFirst && (
-                    <line x1={svgLast.x} y1={svgLast.y} x2={svgFirst.x} y2={svgFirst.y}
-                      stroke="#0d9488" strokeWidth={1.5} strokeDasharray="5 4" />
-                  )}
-                  {/* Fill preview when about to close */}
-                  {nearFirst && (
-                    <polygon points={svgPts.map(p => `${p.x},${p.y}`).join(' ')}
-                      fill="rgba(13,148,136,0.12)" stroke="none" />
-                  )}
-                  {/* Vertex dots */}
-                  {svgPts.map((p, i) => (
-                    <circle key={i} cx={p.x} cy={p.y} r={i === 0 ? 6 : 4}
-                      fill={i === 0 && bgDrawPoints.length >= 3 ? (nearFirst ? 'rgba(13,148,136,0.3)' : 'none') : '#0d9488'}
-                      stroke="#0d9488" strokeWidth={2} />
-                  ))}
-                  {/* Snap ring on first point when close enough */}
-                  {bgDrawPoints.length >= 3 && (
-                    <circle cx={svgFirst.x} cy={svgFirst.y}
-                      r={nearFirst ? SNAP_TRACE_PX : 8}
-                      fill={nearFirst ? 'rgba(13,148,136,0.2)' : 'none'}
-                      stroke="#0d9488" strokeWidth={nearFirst ? 2 : 1.5} strokeDasharray={nearFirst ? 'none' : '3 2'} />
-                  )}
-                  {/* Cursor dot */}
-                  {bgDrawCursorSvg && (
-                    <circle cx={bgDrawCursorSvg.x} cy={bgDrawCursorSvg.y} r={3}
-                      fill="#0d9488" stroke="#fff" strokeWidth={1} />
-                  )}
-                </>
-              )
-            })()}
-
-            {/* Draw-building: cursor dot when no points yet */}
-            {inDrawBuilding && bgDrawPoints.length === 0 && bgDrawCursorSvg && (
-              <circle cx={bgDrawCursorSvg.x} cy={bgDrawCursorSvg.y} r={4}
-                fill="rgba(13,148,136,0.5)" stroke="#0d9488" strokeWidth={1.5}
-                style={{ pointerEvents: 'none' }} />
-            )}
+            {/* ── Building groups ── */}
+            <BuildingGroupsLayer
+              buildingGroups={buildingGroups}
+              showBuildingGroups={showBuildingGroups}
+              selectedBgIds={selectedBgIds}
+              hoveredBgId={hoveredBgId}
+              onHoverBg={setHoveredBgId}
+              inDeleteBuilding={inDeleteBuilding}
+              zoom={zoom}
+              normToScreen={normToScreen}
+              onBuildingGroupSelect={onBuildingGroupSelect}
+              onBuildingGroupContextMenu={onBuildingGroupContextMenu}
+              inDrawBuilding={inDrawBuilding}
+              bgDrawPoints={bgDrawPoints}
+              bgDrawCursorSvg={bgDrawCursorSvg}
+            />
 
             {/* ── Unit count overlays ── */}
-            {rightPanelTab === 'unit-counts' && cssDims && boundaries.map(b => {
-              if (!b.phase_id) return null
-              const phaseData = phasesData.find(p => p.phase_id === b.phase_id)
-              if (!phaseData) return null
-
-              const byLt = (phaseData.by_lot_type || []).filter(lt => (lt.actual || 0) > 0 || (lt.projected || 0) > 0)
-              if (!byLt.length && !unitCountsSubtotal) {
-                // In totals mode with no data skip silently
-              }
-
-              const pts = JSON.parse(b.polygon_json)
-              const svg = pts.map(p => normToScreen(p.x, p.y))
-
-              // Visual center: vertex average → snap to nearest positioned lot in this phase
-              const avgCx = svg.reduce((s,p) => s+p.x, 0) / svg.length
-              const avgCy = svg.reduce((s,p) => s+p.y, 0) / svg.length
-              let labelCx = avgCx, labelCy = avgCy
-              {
-                let best = Infinity
-                for (const [lidStr, pos] of Object.entries(lotPositions)) {
-                  if (lotMeta[Number(lidStr)]?.phase_id !== b.phase_id) continue
-                  const sp = normToScreen(pos.x, pos.y)
-                  const d = Math.hypot(sp.x - avgCx, sp.y - avgCy)
-                  if (d < best) { best = d; labelCx = sp.x; labelCy = sp.y }
-                }
-              }
-
-              const totalR = byLt.reduce((s,lt) => s+(lt.actual||0), 0)
-              const totalP = byLt.reduce((s,lt) => s+(lt.projected||0), 0)
-              const totalT = byLt.reduce((s,lt) => s+(lt.total||0), 0)
-
-              // Scaled font: grows gently when zoomed out, stays readable when zoomed in
-              const fs    = Math.max(9, Math.min(14, 11.5 / Math.sqrt(zoom)))
-              const lineH = fs * 1.6
-              const charW = fs * 0.58
-
-              // Phase border color for the card
-              const phaseColor   = (b.phase_id && phaseColorMap[b.phase_id]) || UNASSIGNED_COLOR
-              const borderColor  = darkenHex(phaseColor, 0.4)
-
-              if (!unitCountsSubtotal) {
-                // ── Totals mode: table card with single "Total" row ───
-                const pText    = String(totalP)
-                const pW       = pText.length * charW * 1.05
-                const pillPadX = charW * 0.4
-                const pillPadY = fs * 0.12
-                const typeColW = 5 * charW   // "Total"
-                const valColW  = Math.max(2 * charW, String(Math.max(totalR, totalP, totalT, 9)).length * charW + charW * 0.5)
-                const gapW     = charW * 1.0
-                const padX     = 7
-                const padY     = 5
-                const innerW   = typeColW + gapW + valColW + gapW + valColW + gapW + valColW
-                const boxW     = innerW + padX * 2
-                const boxH     = 2 * lineH + padY * 2
-                const boxX     = labelCx - boxW / 2
-                const boxY     = labelCy - boxH / 2
-                const col0x    = boxX + padX
-                const col1x    = col0x + typeColW + gapW + valColW
-                const col2x    = col1x + gapW + valColW
-                const col3x    = col2x + gapW + valColW
-                const rowY     = (i) => boxY + padY + (i + 0.78) * lineH
-                const headerY  = rowY(0)
-                const sepY1    = boxY + padY + lineH
-                const dataY    = rowY(1)
-                return (
-                  <g key={`uc_${b.boundary_id}`} style={{ pointerEvents: 'none' }}>
-                    {/* Phase name above card */}
-                    <text x={labelCx} y={boxY - 2} textAnchor="middle" dominantBaseline="auto"
-                      fontFamily="sans-serif" fontSize={fs * 0.82} fill={borderColor} fontWeight="700"
-                      style={{ userSelect: 'none' }}>
-                      {phaseData.phase_name}
-                    </text>
-                    {/* Card */}
-                    <rect x={boxX} y={boxY} width={boxW} height={boxH} rx={5}
-                      fill="rgba(255,255,255,0.94)" stroke={borderColor}
-                      strokeWidth={Math.max(0.8, 1.5/zoom)} />
-                    {/* Column headers */}
-                    <text x={col0x} y={headerY} dominantBaseline="auto"
-                      fontFamily="sans-serif" fontSize={fs * 0.82} fill="#94a3b8" fontWeight="700"
-                      style={{ userSelect: 'none' }}>
-                      Type
-                    </text>
-                    {['R','P','T'].map((hdr, hi) => (
-                      <text key={hdr} x={[col1x, col2x, col3x][hi]} y={headerY} textAnchor="end" dominantBaseline="auto"
-                        fontFamily="sans-serif" fontSize={fs * 0.82}
-                        fill={hi === 1 ? '#0f766e' : hi === 0 ? '#64748b' : '#374151'}
-                        fontWeight="700" style={{ userSelect: 'none' }}>
-                        {hdr}
-                      </text>
-                    ))}
-                    {/* Separator */}
-                    <line x1={boxX + 3} y1={sepY1} x2={boxX + boxW - 3} y2={sepY1}
-                      stroke={borderColor} strokeOpacity={0.4} strokeWidth={Math.max(0.5, 0.8/zoom)} />
-                    {/* Total data row */}
-                    <text x={col0x} y={dataY} dominantBaseline="auto"
-                      fontFamily="sans-serif" fontSize={fs * 0.82} fill="#94a3b8" fontWeight="700"
-                      style={{ userSelect: 'none' }}>
-                      Total
-                    </text>
-                    <text x={col1x} y={dataY} textAnchor="end" dominantBaseline="auto"
-                      fontFamily="monospace" fontSize={fs} fill="#64748b" fontWeight="600"
-                      style={{ userSelect: 'none' }}>
-                      {totalR}
-                    </text>
-                    {/* P — green pill */}
-                    <rect x={col2x - pW - pillPadX} y={dataY - fs * 0.85 - pillPadY}
-                      width={pW + pillPadX * 2} height={fs * 1.1} rx={3}
-                      fill="#f0fdfa" stroke="#0d9488" strokeWidth={Math.max(0.6, 1/zoom)} />
-                    <text x={col2x} y={dataY} textAnchor="end" dominantBaseline="auto"
-                      fontFamily="monospace" fontSize={fs} fill="#0f766e" fontWeight="700"
-                      style={{ userSelect: 'none' }}>
-                      {pText}
-                    </text>
-                    <text x={col3x} y={dataY} textAnchor="end" dominantBaseline="auto"
-                      fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="700"
-                      style={{ userSelect: 'none' }}>
-                      {totalT}
-                    </text>
-                  </g>
-                )
-              }
-
-              // ── By-type mode: table card ──────────────────────────
-              if (!byLt.length) return null
-
-              const multiLt   = byLt.length > 1
-              const headerRows = 1
-              const dataRows   = byLt.length
-              const totalRows  = multiLt ? 1 : 0
-              const rowCount   = headerRows + dataRows + totalRows
-
-              // Column widths
-              const typeColW = Math.max(
-                4 * charW,
-                ...byLt.map(lt => (lt.lot_type_short || '').length * charW)
-              )
-              const valColW  = Math.max(2 * charW, String(Math.max(totalR, totalP, totalT, 9)).length * charW + charW * 0.5)
-              const gapW     = charW * 1.0
-              const padX     = 7
-              const padY     = 5
-              const innerW   = typeColW + gapW + valColW + gapW + valColW + gapW + valColW
-              const boxW     = innerW + padX * 2
-              const boxH     = rowCount * lineH + padY * 2
-              const boxX     = labelCx - boxW / 2
-              const boxY     = labelCy - boxH / 2
-
-              // Column x anchors (left edge of each column)
-              const col0x = boxX + padX                                   // Type (left-align)
-              const col1x = col0x + typeColW + gapW + valColW             // R (right-align to col1x)
-              const col2x = col1x + gapW + valColW                        // P (right-align to col2x)
-              const col3x = col2x + gapW + valColW                        // T (right-align to col3x)
-
-              const rowY  = (i) => boxY + padY + (i + 0.78) * lineH      // baseline for row i
-              const headerY = rowY(0)
-              const sepY1   = boxY + padY + lineH                         // after header
-              const sepY2   = multiLt ? boxY + padY + (1 + dataRows) * lineH : null  // before total
-
-              return (
-                <g key={`uc_${b.boundary_id}`}>
-                  {/* Phase name above card */}
-                  <text x={labelCx} y={boxY - 2} textAnchor="middle" dominantBaseline="auto"
-                    fontFamily="sans-serif" fontSize={fs * 0.82} fill={borderColor} fontWeight="700"
-                    style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                    {phaseData.phase_name}
-                  </text>
-                  {/* Card background + border */}
-                  <rect x={boxX} y={boxY} width={boxW} height={boxH} rx={5}
-                    fill="rgba(255,255,255,0.94)" stroke={borderColor}
-                    strokeWidth={Math.max(0.8, 1.5/zoom)}
-                    style={{ pointerEvents: 'none' }} />
-
-                  {/* Header row */}
-                  <text x={col0x} y={headerY} dominantBaseline="auto"
-                    fontFamily="sans-serif" fontSize={fs * 0.82} fill="#94a3b8" fontWeight="700"
-                    textTransform="uppercase" style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                    Type
-                  </text>
-                  {['R','P','T'].map((hdr, hi) => {
-                    const colRightX = [col1x, col2x, col3x][hi]
-                    return (
-                      <text key={hdr} x={colRightX} y={headerY} textAnchor="end" dominantBaseline="auto"
-                        fontFamily="sans-serif" fontSize={fs * 0.82}
-                        fill={hi === 1 ? '#0f766e' : hi === 0 ? '#64748b' : '#374151'}
-                        fontWeight="700"
-                        style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                        {hdr}
-                      </text>
-                    )
-                  })}
-
-                  {/* Separator line after header */}
-                  <line x1={boxX + 3} y1={sepY1} x2={boxX + boxW - 3} y2={sepY1}
-                    stroke={borderColor} strokeOpacity={0.4} strokeWidth={Math.max(0.5, 0.8/zoom)}
-                    style={{ pointerEvents: 'none' }} />
-
-                  {/* Data rows */}
-                  {byLt.map((lt, i) => {
-                    const ry     = rowY(i + 1)
-                    const pText  = String(lt.projected || 0)
-                    const pW     = pText.length * charW * 1.05
-
-                    return (
-                      <g key={lt.lot_type_id}
-                        style={{ cursor: 'pointer', pointerEvents: 'all' }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onEditProjected?.(b.phase_id, lt.lot_type_id, lt.projected||0, labelCx, ry)
-                        }}
-                      >
-                        {/* Hit area */}
-                        <rect x={boxX} y={ry - lineH * 0.85} width={boxW} height={lineH}
-                          fill="transparent" />
-                        {/* Type label */}
-                        <text x={col0x} y={ry} dominantBaseline="auto"
-                          fontFamily="monospace" fontSize={fs} fill="#475569"
-                          style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                          {lt.lot_type_short || '—'}
-                        </text>
-                        {/* R value */}
-                        <text x={col1x} y={ry} textAnchor="end" dominantBaseline="auto"
-                          fontFamily="monospace" fontSize={fs} fill="#64748b"
-                          style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                          {lt.actual || 0}
-                        </text>
-                        {/* P value — green pill */}
-                        <rect x={col2x - pW - charW * 0.4} y={ry - fs * 0.85 - fs * 0.12}
-                          width={pW + charW * 0.8} height={fs * 1.1} rx={3}
-                          fill="#f0fdfa" stroke="#0d9488" strokeWidth={Math.max(0.6, 1/zoom)}
-                          style={{ pointerEvents: 'none' }} />
-                        <text x={col2x} y={ry} textAnchor="end" dominantBaseline="auto"
-                          fontFamily="monospace" fontSize={fs} fill="#0f766e" fontWeight="700"
-                          style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                          {pText}
-                        </text>
-                        {/* T value */}
-                        <text x={col3x} y={ry} textAnchor="end" dominantBaseline="auto"
-                          fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="600"
-                          style={{ userSelect: 'none', pointerEvents: 'none' }}>
-                          {lt.total || 0}
-                        </text>
-                      </g>
-                    )
-                  })}
-
-                  {/* Total row (only if multiple lot types) */}
-                  {multiLt && (() => {
-                    const ty = rowY(1 + dataRows)
-                    return (
-                      <g key="total" style={{ pointerEvents: 'none' }}>
-                        <line x1={boxX + 3} y1={sepY2} x2={boxX + boxW - 3} y2={sepY2}
-                          stroke={borderColor} strokeOpacity={0.4} strokeWidth={Math.max(0.5, 0.8/zoom)} />
-                        <text x={col0x} y={ty} dominantBaseline="auto"
-                          fontFamily="sans-serif" fontSize={fs * 0.82} fill="#94a3b8" fontWeight="700"
-                          style={{ userSelect: 'none' }}>
-                          Total
-                        </text>
-                        <text x={col1x} y={ty} textAnchor="end" dominantBaseline="auto"
-                          fontFamily="monospace" fontSize={fs} fill="#64748b" fontWeight="600"
-                          style={{ userSelect: 'none' }}>
-                          {totalR}
-                        </text>
-                        {/* P — green pill */}
-                        {(() => { const tpW = String(totalP).length * charW * 1.05; return (
-                          <rect x={col2x - tpW - charW * 0.4} y={ty - fs * 0.85 - fs * 0.12}
-                            width={tpW + charW * 0.8} height={fs * 1.1} rx={3}
-                            fill="#f0fdfa" stroke="#0d9488" strokeWidth={Math.max(0.6, 1/zoom)} />
-                        )})()}
-                        <text x={col2x} y={ty} textAnchor="end" dominantBaseline="auto"
-                          fontFamily="monospace" fontSize={fs} fill="#0f766e" fontWeight="700"
-                          style={{ userSelect: 'none' }}>
-                          {totalP}
-                        </text>
-                        <text x={col3x} y={ty} textAnchor="end" dominantBaseline="auto"
-                          fontFamily="monospace" fontSize={fs} fill="#1e293b" fontWeight="700"
-                          style={{ userSelect: 'none' }}>
-                          {totalT}
-                        </text>
-                      </g>
-                    )
-                  })()}
-                </g>
-              )
-            })}
-
-            {/* ── Lot markers ── */}
-            {cssDims && Object.entries(lotPositions).map(([lotIdStr, pos]) => {
-              const lotId = Number(lotIdStr)
-              const isBeingDragged = lotId === dragLotId
-              const displayPos = (isBeingDragged && dragLotPos) ? dragLotPos : pos
-              const sp = normToScreen(displayPos.x, displayPos.y)
-              const color = lotColorMap[lotId] || '#6366f1'
-              const label = lotLabel(lotMeta[lotId]?.lot_number)
-              return (
-                <g key={lotId} style={{ pointerEvents: 'none' }}>
-                  <circle cx={sp.x} cy={sp.y} r={isBeingDragged ? 8 : 6}
-                    fill={color} stroke="#fff" strokeWidth={1.5}
-                    opacity={isBeingDragged ? 0.75 : 1} />
-                  {zoom > 0.65 && (
-                    <text x={sp.x} y={sp.y - 9} textAnchor="middle"
-                      fontSize={Math.max(8, 10 / zoom)} fill="#1e293b"
-                      stroke="rgba(255,255,255,0.9)" strokeWidth={2.5 / zoom}
-                      paintOrder="stroke"
-                      style={{ pointerEvents: 'none', userSelect: 'none' }}>
-                      {label}
-                    </text>
-                  )}
-                </g>
-              )
-            })}
-
-            {/* ── Place mode cursor tooltip ── */}
-            {inPlace && placingLot && placeCursorSvg && (
-              <g style={{ pointerEvents: 'none' }}>
-                <circle cx={placeCursorSvg.x} cy={placeCursorSvg.y} r={5}
-                  fill="rgba(124,58,237,0.5)" stroke="#7c3aed" strokeWidth={1.5}
-                  strokeDasharray="3 2" />
-                <text x={placeCursorSvg.x + 11} y={placeCursorSvg.y - 4}
-                  fontSize={12} fill="#7c3aed"
-                  stroke="rgba(255,255,255,0.95)" strokeWidth={3} paintOrder="stroke"
-                  style={{ userSelect: 'none', fontWeight: 600 }}>
-                  {lotLabel(placingLot.lot_number)}
-                </text>
-              </g>
+            {rightPanelTab === 'unit-counts' && (
+              <UnitCountsOverlay
+                boundaries={boundaries}
+                phasesData={phasesData}
+                unitCountsSubtotal={unitCountsSubtotal}
+                lotPositions={lotPositions}
+                lotMeta={lotMeta}
+                phaseColorMap={phaseColorMap}
+                zoom={zoom}
+                normToScreen={normToScreen}
+                onEditProjected={onEditProjected}
+              />
             )}
+
+            {/* ── Lot markers + place cursor ── */}
+            <LotMarkersLayer
+              lotPositions={lotPositions}
+              dragLotId={dragLotId}
+              dragLotPos={dragLotPos}
+              lotColorMap={lotColorMap}
+              lotMeta={lotMeta}
+              zoom={zoom}
+              normToScreen={normToScreen}
+              inPlace={inPlace}
+              placingLot={placingLot}
+              placeCursorSvg={placeCursorSvg}
+            />
+
 
           </svg>
         )}
