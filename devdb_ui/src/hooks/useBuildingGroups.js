@@ -4,8 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { pointInPolygon } from '../components/SitePlan/splitPolygon'
-
-const API = '/api'
+import { API_BASE } from '../utils/api'
 
 export function useBuildingGroups({ plan, lotPositions, allLots, boundaries, phases, mode, setMode }) {
   const [buildingGroups, setBuildingGroups]             = useState([])
@@ -18,7 +17,7 @@ export function useBuildingGroups({ plan, lotPositions, allLots, boundaries, pha
 
   useEffect(() => {
     if (!plan || !showBuildingGroups) { setBuildingGroups([]); return }
-    fetch(`${API}/building-groups/plan/${plan.plan_id}`)
+    fetch(`${API_BASE}/building-groups/plan/${plan.plan_id}`)
       .then(r => r.ok ? r.json() : [])
       .then(setBuildingGroups)
       .catch(() => setBuildingGroups([]))
@@ -26,7 +25,7 @@ export function useBuildingGroups({ plan, lotPositions, allLots, boundaries, pha
 
   async function loadBuildingGroups() {
     if (!plan) return
-    const res = await fetch(`${API}/building-groups/plan/${plan.plan_id}`)
+    const res = await fetch(`${API_BASE}/building-groups/plan/${plan.plan_id}`)
     if (res.ok) setBuildingGroups(await res.json())
   }
 
@@ -101,7 +100,7 @@ export function useBuildingGroups({ plan, lotPositions, allLots, boundaries, pha
     const phaseInfo = phases.find(p => p.phase_id === firstLot?.phase_id)
     const devId     = phaseInfo?.dev_id ?? 0
     try {
-      const res = await fetch(`${API}/building-groups`, {
+      const res = await fetch(`${API_BASE}/building-groups`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lot_ids: lots.map(l => l.lot_id), dev_id: devId, plan_id: plan.plan_id }),
@@ -134,7 +133,7 @@ export function useBuildingGroups({ plan, lotPositions, allLots, boundaries, pha
     const ids = [...selectedBgIds]
     if (!ids.length) return
     try {
-      const res = await fetch(`${API}/building-groups/bulk-delete`, {
+      const res = await fetch(`${API_BASE}/building-groups/bulk-delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ building_group_ids: ids }),
@@ -149,7 +148,7 @@ export function useBuildingGroups({ plan, lotPositions, allLots, boundaries, pha
 
   async function handleDeleteSingleBuildingGroup(id) {
     try {
-      const res = await fetch(`${API}/building-groups/${id}`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/building-groups/${id}`, { method: 'DELETE' })
       if (res.ok) {
         setSelectedBgIds(prev => { const next = new Set(prev); next.delete(id); return next })
         setBgContextMenu(null)

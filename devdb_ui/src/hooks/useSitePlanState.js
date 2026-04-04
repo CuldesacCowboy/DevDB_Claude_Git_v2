@@ -4,8 +4,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { pointInPolygon } from '../components/SitePlan/splitPolygon'
-
-const API = '/api'
+import { API_BASE } from '../utils/api'
 
 export function useSitePlanState({ planId, boundaries, setMode }) {
   const [allLots, setAllLots]             = useState([])
@@ -32,7 +31,7 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
       return
     }
     setLoadError(null)
-    fetch(`${API}/lot-positions/plan/${planId}`)
+    fetch(`${API_BASE}/lot-positions/plan/${planId}`)
       .then(r => {
         if (!r.ok) throw new Error(`Server returned ${r.status}`)
         return r.json()
@@ -132,7 +131,7 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
       if (!(lotId in currentPositions)) removes.push(lotId)
     }
     try {
-      const res = await fetch(`${API}/lot-positions/plan/${planId}/save`, {
+      const res = await fetch(`${API_BASE}/lot-positions/plan/${planId}/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ updates, removes: [...new Set(removes)] }),

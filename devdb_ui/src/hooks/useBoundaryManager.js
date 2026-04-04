@@ -5,8 +5,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { normalizeSharedVertices, mergeAdjacentPolygons } from '../components/SitePlan/splitPolygon'
-
-const API = '/api'
+import { API_BASE } from '../utils/api'
 
 export function useBoundaryManager({ planId, setMode, setError }) {
   const [boundaries, setBoundaries]                 = useState([])
@@ -19,7 +18,7 @@ export function useBoundaryManager({ planId, setMode, setError }) {
   // Load boundaries when plan changes
   useEffect(() => {
     if (!planId) { setBoundaries([]); setSelectedBoundaryId(null); setUndoStack([]); return }
-    fetch(`${API}/phase-boundaries/plan/${planId}`)
+    fetch(`${API_BASE}/phase-boundaries/plan/${planId}`)
       .then(r => r.ok ? r.json() : [])
       .then(bs => setBoundaries(bs))
       .catch(() => setBoundaries([]))
@@ -47,15 +46,15 @@ export function useBoundaryManager({ planId, setMode, setError }) {
         const poly2 = JSON.parse(bestNeighbor.polygon_json)
         const merged = mergeAdjacentPolygons(poly1, poly2)
         if (merged) {
-          await fetch(`${API}/phase-boundaries/${bestNeighbor.boundary_id}`, {
+          await fetch(`${API_BASE}/phase-boundaries/${bestNeighbor.boundary_id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ polygon_json: JSON.stringify(merged) }),
           })
         }
       }
-      await fetch(`${API}/phase-boundaries/${boundaryId}`, { method: 'DELETE' })
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${planId}`)
+      await fetch(`${API_BASE}/phase-boundaries/${boundaryId}`, { method: 'DELETE' })
+      const fresh = await fetch(`${API_BASE}/phase-boundaries/plan/${planId}`)
       setBoundaries(fresh.ok ? await fresh.json() : current.filter(b => b.boundary_id !== boundaryId))
       setSelectedBoundaryId(prev => prev === boundaryId ? null : prev)
       setUndoStack([])
@@ -67,7 +66,7 @@ export function useBoundaryManager({ planId, setMode, setError }) {
     if (!planId || !current.length) return
     setError(null)
     try {
-      const res = await fetch(`${API}/phase-boundaries/bulk-delete`, {
+      const res = await fetch(`${API_BASE}/phase-boundaries/bulk-delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ boundary_ids: current.map(b => b.boundary_id) }),
@@ -108,7 +107,7 @@ export function useBoundaryManager({ planId, setMode, setError }) {
     const finalPolyB = normMap['_b'] || polyB
 
     try {
-      const res = await fetch(`${API}/phase-boundaries/split`, {
+      const res = await fetch(`${API_BASE}/phase-boundaries/split`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -120,7 +119,7 @@ export function useBoundaryManager({ planId, setMode, setError }) {
       })
       if (!res.ok) throw new Error('Split failed')
       const newPair = await res.json()
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${planId}`)
+      const fresh = await fetch(`${API_BASE}/phase-boundaries/plan/${planId}`)
       setBoundaries(fresh.ok ? await fresh.json() : [])
       setSelectedBoundaryId(null)
       if (original) {
@@ -154,9 +153,9 @@ export function useBoundaryManager({ planId, setMode, setError }) {
     try {
       if (entry.type === 'split') {
         for (const id of entry.addedIds) {
-          await fetch(`${API}/phase-boundaries/${id}`, { method: 'DELETE' })
+          await fetch(`${API_BASE}/phase-boundaries/${id}`, { method: 'DELETE' })
         }
-        await fetch(`${API}/phase-boundaries`, {
+        await fetch(`${API_BASE}/phase-boundaries`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -169,14 +168,14 @@ export function useBoundaryManager({ planId, setMode, setError }) {
         })
       } else if (entry.type === 'edit') {
         for (const { boundary_id, old_polygon_json } of entry.oldStates) {
-          await fetch(`${API}/phase-boundaries/${boundary_id}`, {
+          await fetch(`${API_BASE}/phase-boundaries/${boundary_id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ polygon_json: old_polygon_json }),
           })
         }
       }
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${planId}`)
+      const fresh = await fetch(`${API_BASE}/phase-boundaries/plan/${planId}`)
       setBoundaries(fresh.ok ? await fresh.json() : [])
       setSelectedBoundaryId(null)
     } catch (err) {
@@ -195,13 +194,13 @@ export function useBoundaryManager({ planId, setMode, setError }) {
     setError(null)
     try {
       await Promise.all(modified.map(m =>
-        fetch(`${API}/phase-boundaries/${m.boundary_id}`, {
+        fetch(`${API_BASE}/phase-boundaries/${m.boundary_id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ polygon_json: m.polygon_json }),
         })
       ))
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${planId}`)
+      const fresh = await fetch(`${API_BASE}/phase-boundaries/plan/${planId}`)
       setBoundaries(fresh.ok ? await fresh.json() : current)
     } catch (err) { setError('Cleanup failed: ' + err.message) }
   }
@@ -211,7 +210,7 @@ export function useBoundaryManager({ planId, setMode, setError }) {
   async function assignPhaseToBoundary(boundaryId, phaseId) {
     setError(null)
     try {
-      const res = await fetch(`${API}/phase-boundaries/${boundaryId}`, {
+      const res = await fetch(`${API_BASE}/phase-boundaries/${boundaryId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phase_id: phaseId }),
@@ -229,19 +228,19 @@ export function useBoundaryManager({ planId, setMode, setError }) {
   async function swapBoundaryAssignments(draggedBoundaryId, draggedPhaseId, targetBoundaryId, targetPhaseId) {
     setError(null)
     try {
-      await fetch(`${API}/phase-boundaries/${targetBoundaryId}`, {
+      await fetch(`${API_BASE}/phase-boundaries/${targetBoundaryId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phase_id: null }),
       })
-      await fetch(`${API}/phase-boundaries/${draggedBoundaryId}`, {
+      await fetch(`${API_BASE}/phase-boundaries/${draggedBoundaryId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phase_id: targetPhaseId }),
       })
-      await fetch(`${API}/phase-boundaries/${targetBoundaryId}`, {
+      await fetch(`${API_BASE}/phase-boundaries/${targetBoundaryId}`, {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phase_id: draggedPhaseId }),
       })
-      const fresh = await fetch(`${API}/phase-boundaries/plan/${planId}`)
+      const fresh = await fetch(`${API_BASE}/phase-boundaries/plan/${planId}`)
       if (fresh.ok) setBoundaries(await fresh.json())
     } catch (err) { setError('Swap failed: ' + err.message) }
   }
@@ -249,7 +248,7 @@ export function useBoundaryManager({ planId, setMode, setError }) {
   async function unassignBoundary(boundaryId) {
     setError(null)
     try {
-      const res = await fetch(`${API}/phase-boundaries/${boundaryId}`, {
+      const res = await fetch(`${API_BASE}/phase-boundaries/${boundaryId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phase_id: null }),

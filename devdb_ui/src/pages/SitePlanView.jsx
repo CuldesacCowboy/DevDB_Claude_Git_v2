@@ -9,6 +9,7 @@ import { useBoundaryManager } from '../hooks/useBoundaryManager'
 import { useSitePlanState } from '../hooks/useSitePlanState'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
 import { Button } from '../components/Button'
+import { API_BASE } from '../utils/api'
 
 class SitePlanErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null } }
@@ -26,8 +27,6 @@ class SitePlanErrorBoundary extends Component {
     return this.props.children
   }
 }
-
-const API = '/api'
 
 const INSTRUMENT_COLORS = [
   '#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#06b6d4',
@@ -112,14 +111,14 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   // ─── Data loading ───────────────────────────────────────────────────────────
 
   useEffect(() => {
-    fetch(`${API}/entitlement-groups`)
+    fetch(`${API_BASE}/entitlement-groups`)
       .then(r => r.json())
       .then(gs => setEntGroups(gs.sort((a, b) => a.ent_group_name.localeCompare(b.ent_group_name))))
       .catch(() => setError('Could not load entitlement groups'))
   }, [])
 
   useEffect(() => {
-    fetch(`${API}/phases/lot-types`)
+    fetch(`${API_BASE}/phases/lot-types`)
       .then(r => r.ok ? r.json() : [])
       .then(setAllLotTypes)
       .catch(() => setError('Could not load lot types'))
@@ -132,7 +131,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     }
     setLoading(true)
     setError(null)
-    fetch(`${API}/site-plans/ent-group/${selectedGroupId}`)
+    fetch(`${API_BASE}/site-plans/ent-group/${selectedGroupId}`)
       .then(r => { if (r.status === 404) return null; if (!r.ok) throw new Error(); return r.json() })
       .then(data => { setPlan(data); setLoading(false) })
       .catch(() => { setError('Could not load site plan'); setLoading(false) })
@@ -148,7 +147,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
 
   useEffect(() => {
     if (!selectedGroupId) { setPhases([]); return }
-    fetch(`${API}/entitlement-groups/${selectedGroupId}/lot-phase-view`)
+    fetch(`${API_BASE}/entitlement-groups/${selectedGroupId}/lot-phase-view`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) { setPhases([]); return }
@@ -212,7 +211,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     try {
       const form = new FormData()
       form.append('file', file)
-      const res = await fetch(`${API}/site-plans?ent_group_id=${selectedGroupId}`, { method: 'POST', body: form })
+      const res = await fetch(`${API_BASE}/site-plans?ent_group_id=${selectedGroupId}`, { method: 'POST', body: form })
       if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.detail || 'Upload failed') }
       setPlan(await res.json())
     } catch (err) { setError(err.message) }
@@ -222,7 +221,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   async function clearParcel() {
     if (!plan) return
     try {
-      const res = await fetch(`${API}/site-plans/${plan.plan_id}/parcel`, {
+      const res = await fetch(`${API_BASE}/site-plans/${plan.plan_id}/parcel`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parcel_json: null }),
@@ -240,7 +239,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     setPendingDeleteBoundary(false)
     try {
       await handleDeleteAllBoundaries()
-      const res = await fetch(`${API}/site-plans/${plan.plan_id}/parcel`, {
+      const res = await fetch(`${API_BASE}/site-plans/${plan.plan_id}/parcel`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parcel_json: null }),
@@ -279,7 +278,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   // ─── Unit counts ────────────────────────────────────────────────────────────
 
   async function handleProjectedCountChange(phaseId, lotTypeId, newValue) {
-    const res = await fetch(`${API}/phases/${phaseId}/lot-type/${lotTypeId}/projected`, {
+    const res = await fetch(`${API_BASE}/phases/${phaseId}/lot-type/${lotTypeId}/projected`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projected_count: newValue }),
@@ -310,7 +309,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   }
 
   async function handleAddLotType(phaseId, lotTypeId) {
-    const res = await fetch(`${API}/phases/${phaseId}/lot-type/${lotTypeId}`, { method: 'POST' })
+    const res = await fetch(`${API_BASE}/phases/${phaseId}/lot-type/${lotTypeId}`, { method: 'POST' })
     if (res.ok) {
       const data = await res.json()
       setPhases(prev => prev.map(ph => {
@@ -332,7 +331,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   }
 
   async function handleDeleteLotType(phaseId, lotTypeId) {
-    const res = await fetch(`${API}/phases/${phaseId}/lot-type/${lotTypeId}`, { method: 'DELETE' })
+    const res = await fetch(`${API_BASE}/phases/${phaseId}/lot-type/${lotTypeId}`, { method: 'DELETE' })
     if (res.ok || res.status === 204) {
       setPhases(prev => prev.map(ph => {
         if (ph.phase_id !== phaseId) return ph
@@ -345,7 +344,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   // ─── Derived state ──────────────────────────────────────────────────────────
 
   const initialParcel = plan?.parcel_json ? JSON.parse(plan.parcel_json) : null
-  const pdfUrl        = plan ? `${API}/site-plans/${plan.plan_id}/file` : null
+  const pdfUrl        = plan ? `${API_BASE}/site-plans/${plan.plan_id}/file` : null
   const hasPlan       = !!plan
   const hasParcel     = !!(plan?.parcel_json)
   const hasBoundaries = boundaries.length > 0

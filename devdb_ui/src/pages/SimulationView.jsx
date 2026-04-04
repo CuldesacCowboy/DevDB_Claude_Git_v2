@@ -4,8 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { STATUS_CFG, STATUS_COLOR, StatusBadge } from '../utils/statusConfig'
-
-const API = '/api'
+import { API_BASE } from '../utils/api'
 
 // ─── Column definitions ──────────────────────────────────────────────────────
 
@@ -324,7 +323,7 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled
   async function save() {
     setSaving(true); setErr(null); setLotsMsg(null)
     try {
-      const res = await fetch(`${API}/entitlement-groups/${entGroupId}/ledger-config`, {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/ledger-config`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date_paper: paperVal || null, date_ent: entVal || null }),
       })
@@ -403,7 +402,7 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
       const v = valFor(key); body[key] = v === '' ? null : parseInt(v, 10)
     }
     try {
-      const res = await fetch(`${API}/entitlement-groups/${entGroupId}/delivery-config`, {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/delivery-config`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
@@ -520,7 +519,7 @@ function StartsTargetsSection({ entGroupId, params, onSaved, disabled }) {
             const maxN = maxMonthVal === '' ? null : parseInt(maxMonthVal, 10)
             setEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], saving: true } }))
             try {
-              const res = await fetch(`${API}/developments/${p.dev_id}/sim-params`, {
+              const res = await fetch(`${API_BASE}/developments/${p.dev_id}/sim-params`, {
                 method: 'PUT', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ annual_starts_target: n, max_starts_per_month: maxN }),
               })
@@ -753,8 +752,8 @@ const loadLedger = useCallback((id) => {
     setLoading(true)
     setLoadError(null)
     Promise.all([
-      fetchOk(`${API}/ledger/${id}/by-dev`),
-      fetchOk(`${API}/ledger/${id}/utilization`),
+      fetchOk(`${API_BASE}/ledger/${id}/by-dev`),
+      fetchOk(`${API_BASE}/ledger/${id}/utilization`),
     ])
       .then(([devRows, utilRows]) => {
         setByDev(Array.isArray(devRows) ? devRows : [])
@@ -766,8 +765,8 @@ const loadLedger = useCallback((id) => {
 
   const loadConfig = useCallback((id) => {
     Promise.all([
-      fetchOk(`${API}/entitlement-groups/${id}/delivery-config`),
-      fetchOk(`${API}/entitlement-groups/${id}/ledger-config`),
+      fetchOk(`${API_BASE}/entitlement-groups/${id}/delivery-config`),
+      fetchOk(`${API_BASE}/entitlement-groups/${id}/ledger-config`),
     ])
       .then(([dc, lc]) => { setDeliveryConfig(dc); setLedgerConfig(lc) })
       .catch(() => {}) // advisory — settings panel shows empty on failure, not blocking
@@ -775,8 +774,8 @@ const loadLedger = useCallback((id) => {
 
   const checkSplits = useCallback((id) => {
     Promise.all([
-      fetchOk(`${API}/entitlement-groups/${id}/split-check`),
-      fetchOk(`${API}/entitlement-groups/${id}/param-check`),
+      fetchOk(`${API_BASE}/entitlement-groups/${id}/split-check`),
+      fetchOk(`${API_BASE}/entitlement-groups/${id}/param-check`),
     ])
       .then(([splits, params]) => {
         setMissingSplits(Array.isArray(splits) ? splits : [])
@@ -788,7 +787,7 @@ const loadLedger = useCallback((id) => {
 
   const loadLots = useCallback((id) => {
     setLotsLoading(true)
-    fetchOk(`${API}/ledger/${id}/lots`)
+    fetchOk(`${API_BASE}/ledger/${id}/lots`)
       .then(data => setLots(Array.isArray(data) ? data : []))
       .catch((err) => { setLots([]); setLoadError(`Could not load lot ledger — ${err.message}`) })
       .finally(() => setLotsLoading(false))
@@ -796,14 +795,14 @@ const loadLedger = useCallback((id) => {
 
   const loadDeliverySchedule = useCallback((id) => {
     setDeliveryScheduleLoading(true)
-    fetchOk(`${API}/ledger/${id}/delivery-schedule`)
+    fetchOk(`${API_BASE}/ledger/${id}/delivery-schedule`)
       .then(data => setDeliverySchedule(Array.isArray(data) ? data : []))
       .catch((err) => { setDeliverySchedule([]); setLoadError(`Could not load delivery schedule — ${err.message}`) })
       .finally(() => setDeliveryScheduleLoading(false))
   }, [])
 
   useEffect(() => {
-    fetch(`${API}/entitlement-groups`).then(r => r.json())
+    fetch(`${API_BASE}/entitlement-groups`).then(r => r.json())
       .then(data => { setEntGroups(data); if (data.length && !selectedGroupId) setEntGroupId(data[0].ent_group_id) })
       .catch(() => {})
   }, [])
@@ -822,7 +821,7 @@ const loadLedger = useCallback((id) => {
     if (!entGroupId) return
     setRunStatus('running')
     try {
-      const res = await fetch(`${API}/simulations/run`, {
+      const res = await fetch(`${API_BASE}/simulations/run`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ent_group_id: entGroupId }),
       })
