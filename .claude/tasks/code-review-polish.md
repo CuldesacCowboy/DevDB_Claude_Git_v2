@@ -10,7 +10,7 @@
 | 1 | Surface lot positions load failure | High | Complete |
 | 2 | Surface PdfCanvas save failures to user | High | Complete |
 | 3 | Instrument order / dev_id persistence decision | Medium | Complete |
-| 4 | Add top-level React Error Boundary | Medium | Not started |
+| 4 | Add top-level React Error Boundary | Medium | Complete |
 | 5 | Replace FALLBACK_LOT_TYPES with API data | Medium | Not started |
 | 6 | Extract `const API` to shared config | Low | Not started |
 | 7 | Fix traceback leak in simulations router | Low | Not started |
@@ -194,3 +194,4 @@ Largest task on the list. Low risk if done carefully (no logic changes). Recomme
 | 2026-04-04 | Task 1 — Lot positions load failure | Added loadError state to useSitePlanState; surfaced in LotBank panel; empty-state suppressed when error present |
 | 2026-04-04 | Task 2 — PdfCanvas save failures | Added onError prop to PdfCanvas; 3 .catch(console.error) replaced; failures now appear in SitePlanView toolbar |
 | 2026-04-04 | Task 3 — Instrument persistence | Reorder → localStorage per entGroupId; dev-id move → PATCH /instruments/{id}/dev + optimistic update |
+| 2026-04-04 | Task 4 — Error Boundary | ErrorBoundary.jsx class component; wraps Routes in App.jsx; shows error message + Try again button |
