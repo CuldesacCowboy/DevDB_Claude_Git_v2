@@ -7,7 +7,7 @@ DEV_IDS       = [7009]
 Phases        : 70018 (SAF-001..020), 70019 (SAF-021..040), 70020 (SAF-041..060)
 Locked event  : 2022-07-01 on phase 70018 (anchor for scheduling)
 Setup         : None — all lots remain at P status
-Assert        : Engine auto-creates 2 delivery events for phases 70019 and 70020
+Assert        : Engine auto-creates 1 delivery event (D-139 bundles phases 70019+70020)
                 All auto event dates fall within delivery window
 """
 
@@ -59,7 +59,7 @@ def install(conn) -> None:
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7009, "Saffron City Heights", "SF", county_id, state_id, ENT_GROUP_ID),
+        (7009, "Saffron City Heights", "QI", county_id, state_id, ENT_GROUP_ID),
     )
 
     conn.execute(
@@ -113,17 +113,15 @@ def install(conn) -> None:
 
     # Lots
     lots = (
-        make_lots(70018, 7009, 101, "SAF",  1, 20) +
-        make_lots(70019, 7009, 101, "SAF", 21, 20) +
-        make_lots(70020, 7009, 101, "SAF", 41, 20)
+        make_lots(70018, 7009, 101, "SAF",  1, 20)
     )
     conn.executemany_insert("sim_lots", lots)
 
     # Product splits
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70018, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70019, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70020, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70018, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70019, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70020, "lot_type_id": 101, "projected_count": 20},
     ])
 
     # Delivery config — auto-scheduling enabled
@@ -173,7 +171,7 @@ def assert_results(conn) -> bool:
         check_violations(conn, ENT_GROUP_ID, expected_count=0),
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=1),
         check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
-        check_delivery_events(conn, ENT_GROUP_ID, expected_auto=2,
+        check_delivery_events(conn, ENT_GROUP_ID, expected_auto=1,
                               window_start=5, window_end=11),
     ]
     return all(results)
