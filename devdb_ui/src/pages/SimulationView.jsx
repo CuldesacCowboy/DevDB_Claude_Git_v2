@@ -860,7 +860,7 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   const [lotsLoading, setLotsLoading] = useState(false)
   const [deliverySchedule, setDeliverySchedule]               = useState([])
   const [deliveryScheduleLoading, setDeliveryScheduleLoading] = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
   const [selectedDevIds, setSelectedDevIds] = useState(null)
   const [period, setPeriod]                 = useState('monthly')
   const [loadError, setLoadError]           = useState(null)
@@ -903,7 +903,6 @@ const loadLedger = useCallback((id) => {
       .then(([splits, params]) => {
         setMissingSplits(Array.isArray(splits) ? splits : [])
         setStaleParams(Array.isArray(params) ? params : [])
-        if (params?.length) setSettingsOpen(true)
       })
       .catch(() => { setMissingSplits([]); setStaleParams([]) }) // advisory — warnings only
   }, [])
@@ -1072,15 +1071,12 @@ const loadLedger = useCallback((id) => {
           </div>
         )}
 
-        <button onClick={() => setSettingsOpen(o => !o)}
-          style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 12px', borderRadius: 4,
-                   border: '1px solid #d1d5db', background: settingsOpen ? '#f1f5f9' : '#fff',
-                   color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-          {isRunning ? '⏳ ' : ''}Settings {settingsOpen ? '▲' : '▼'}
-          {(missingSplits.length > 0 || staleParams.length > 0) && (
-            <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
-                           background: '#f59e0b', marginLeft: 2 }} />
-          )}
+        <button onClick={() => setModalOpen(true)}
+          title="Simulation settings"
+          style={{ marginLeft: 'auto', fontSize: 15, lineHeight: 1, padding: '4px 10px', borderRadius: 4,
+                   border: '1px solid #d1d5db', background: '#fff',
+                   color: '#6b7280', cursor: 'pointer' }}>
+          ⚙
         </button>
       </div>
       {/* ── Data load error banner ── */}
@@ -1101,44 +1097,10 @@ const loadLedger = useCallback((id) => {
         </div>
       )}
 
-      {/* ── Settings panel ── */}
-      {settingsOpen && (
-        <div style={{ position: 'relative', marginBottom: 16 }}>
-          {/* Frosted lock overlay during run */}
-          {isRunning && (
-            <div style={{
-              position: 'absolute', inset: 0, borderRadius: 8, zIndex: 10,
-              background: 'rgba(248,250,252,0.82)', backdropFilter: 'blur(2px)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 500,
-                             background: '#fff', padding: '5px 14px', borderRadius: 20,
-                             border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
-                Run in progress — settings locked
-              </span>
-            </div>
-          )}
-          <div style={{ padding: '14px 16px', background: '#f8fafc',
-                        border: '1px solid #e2e8f0', borderRadius: 8,
-                        display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {ledgerConfig !== null && (
-              <LedgerConfigSection
-                entGroupId={entGroupId}
-                datePaper={ledgerConfig.date_paper}
-                dateEnt={ledgerConfig.date_ent}
-                onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
-                disabled={isRunning}
-              />
-            )}
-            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
-              <StartsTargetsSection entGroupId={entGroupId} params={staleParams} onSaved={() => checkSplits(entGroupId)} disabled={isRunning} />
-            </div>
-            {deliveryConfig !== null && (
-              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
-                <DeliveryConfigSection entGroupId={entGroupId} deliveryConfig={deliveryConfig} onSaved={() => loadConfig(entGroupId)} disabled={isRunning} />
-              </div>
-            )}
-          </div>
+      {/* ── Starts targets — always visible ── */}
+      {staleParams.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <StartsTargetsSection entGroupId={entGroupId} params={staleParams} onSaved={() => checkSplits(entGroupId)} disabled={isRunning} />
         </div>
       )}
 
@@ -1252,6 +1214,22 @@ const loadLedger = useCallback((id) => {
                   {ledgerRows.length} {period === 'monthly' ? 'months' : period === 'quarterly' ? 'quarters' : 'years'}
                   {selectedDevIds !== null && ` · ${selectedDevIds.length} dev${selectedDevIds.length !== 1 ? 's' : ''}`}
                 </span>
+                {ledgerConfig !== null && (
+                  ledgerConfig.date_paper
+                    ? <span style={{ fontSize: 11, color: '#9ca3af' }}>
+                        From {fmt(ledgerConfig.date_paper)}
+                        <button onClick={() => setModalOpen(true)}
+                          style={{ marginLeft: 5, fontSize: 11, color: '#2563eb', background: 'none',
+                                   border: 'none', cursor: 'pointer', padding: 0 }}>
+                          edit
+                        </button>
+                      </span>
+                    : <button onClick={() => setModalOpen(true)}
+                        style={{ fontSize: 11, color: '#dc2626', background: 'none',
+                                 border: 'none', cursor: 'pointer', padding: 0 }}>
+                        Set start date ↗
+                      </button>
+                )}
               </div>
 
               {ledgerSubView === 'table'
@@ -1275,6 +1253,50 @@ const loadLedger = useCallback((id) => {
           {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
           {!loading && <UtilizationPanel phases={filteredUtilization} />}
         </>
+      )}
+
+      {/* ── Settings modal ── */}
+      {modalOpen && (
+        <div onClick={() => setModalOpen(false)} style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.25)',
+          zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#fff', borderRadius: 8, padding: 24,
+            width: 640, maxHeight: '85vh', overflowY: 'auto',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <span style={{ fontWeight: 700, fontSize: 15, color: '#111827' }}>Simulation Settings</span>
+              <button onClick={() => setModalOpen(false)} style={{
+                fontSize: 18, lineHeight: 1, background: 'none', border: 'none',
+                cursor: 'pointer', color: '#9ca3af', padding: '0 4px',
+              }}>×</button>
+            </div>
+
+            {ledgerConfig !== null && (
+              <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid #e5e7eb' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>Ledger dates</div>
+                <LedgerConfigSection
+                  entGroupId={entGroupId}
+                  datePaper={ledgerConfig.date_paper}
+                  dateEnt={ledgerConfig.date_ent}
+                  onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
+                  disabled={isRunning}
+                />
+              </div>
+            )}
+
+            {deliveryConfig !== null && (
+              <DeliveryConfigSection
+                entGroupId={entGroupId}
+                deliveryConfig={deliveryConfig}
+                onSaved={() => loadConfig(entGroupId)}
+                disabled={isRunning}
+              />
+            )}
+          </div>
+        </div>
       )}
     </div>
   )
