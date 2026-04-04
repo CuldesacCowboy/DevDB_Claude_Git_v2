@@ -12,7 +12,7 @@ Rules:   Runs per entitlement group. Alternates supply pipeline (P-modules) and
 """
 
 import random
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
@@ -340,18 +340,13 @@ def _persist_violations(conn: DBConnection, violations_df, dev_id: int,
     if violations_df is None or (hasattr(violations_df, 'empty') and violations_df.empty):
         return
 
-    max_id_df = conn.read_df(
-        "SELECT COALESCE(MAX(violation_id), 0) AS max_id FROM sim_lot_date_violations"
-    )
-    max_vid = int(max_id_df.iloc[0]["max_id"])
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     rows = []
-    for i, (_, vrow) in enumerate(violations_df.iterrows()):
+    for _, vrow in violations_df.iterrows():
         ev = vrow["date_value_early"]
         lv = vrow["date_value_late"]
         rows.append({
-            "violation_id":     max_vid + i + 1,
             "sim_run_id":       sim_run_id,
             "lot_id":           int(vrow["lot_id"]),
             "violation_type":   vrow["violation_type"],

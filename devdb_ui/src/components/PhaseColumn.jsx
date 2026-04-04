@@ -4,6 +4,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import LotCard from './LotCard'
 import LotTypePill from './LotTypePill'
+import { API_BASE } from '../config'
 
 // Split "Waterton Station SF ph. 3" into prefix="Waterton Station SF" and suffix="ph. 3".
 // Falls back to { prefix: name, suffix: null } if no " ph." pattern is found.
@@ -82,7 +83,7 @@ export default function PhaseColumn({
   async function handleProjectedEdit(phaseId, lotTypeId, newValue) {
     try {
       const res = await fetch(
-        `/api/phases/${phaseId}/lot-type/${lotTypeId}/projected`,
+        `${API_BASE}/phases/${phaseId}/lot-type/${lotTypeId}/projected`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -107,7 +108,7 @@ export default function PhaseColumn({
           setLocalByLotType(prev => prev.filter(lt => lt.lot_type_id !== lotTypeId));
 
           fetch(
-            `/api/phases/${phaseId}/lot-type/${lotTypeId}`,
+            `${API_BASE}/phases/${phaseId}/lot-type/${lotTypeId}`,
             { method: 'DELETE' }
           ).then(() => {
             onRefetch?.();
@@ -143,7 +144,7 @@ export default function PhaseColumn({
     setAddLtSaving(true)
     try {
       const res = await fetch(
-        `/api/phases/${phase.phase_id}/lot-type/${selectedLtId}/projected`,
+        `${API_BASE}/phases/${phase.phase_id}/lot-type/${selectedLtId}/projected`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -164,7 +165,7 @@ export default function PhaseColumn({
     setEditingPhaseName(false)
     if (!name || name === phase.phase_name) return
     try {
-      await fetch(`/api/phases/${phase.phase_id}`, {
+      await fetch(`${API_BASE}/phases/${phase.phase_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phase_name: name }),
@@ -176,7 +177,7 @@ export default function PhaseColumn({
   async function handleConfirmDelete() {
     setDeleting(true)
     try {
-      const res = await fetch(`/api/phases/${phase.phase_id}`, { method: 'DELETE' })
+      const res = await fetch(`${API_BASE}/phases/${phase.phase_id}`, { method: 'DELETE' })
       if (res.ok) {
         onRefetch?.()
       }

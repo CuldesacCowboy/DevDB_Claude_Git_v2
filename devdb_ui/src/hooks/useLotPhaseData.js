@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { API_BASE } from '../config'
 import { buildDevColorMap } from '../components/InstrumentContainer'
 
 const LEFT_PANELS_WIDTH = 340
@@ -28,7 +29,7 @@ export function useLotPhaseData(entGroupId) {
     setUnassignedPhases([])
     setUnassigned([])
     try {
-      const r = await fetch(`/api/entitlement-groups/${entGroupId}/lot-phase-view`)
+      const r = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/lot-phase-view`)
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const data = await r.json()
       const instrs = data.instruments.map((instr) => ({

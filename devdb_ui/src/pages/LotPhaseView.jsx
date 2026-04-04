@@ -17,6 +17,7 @@ import LotCard, { BuildingGroupCard } from '../components/LotCard'
 import Toast from '../components/Toast'
 import CommunityDevelopmentsView from './CommunityDevelopmentsView'
 import TakedownAgreementsView from './TakedownAgreementsView'
+import { API_BASE } from '../config'
 const LEFT_PANELS_WIDTH = 340 // sidebar + unassigned panel
 
 export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
@@ -77,7 +78,7 @@ export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
   // Fetch communities list (once on mount)
   // -----------------------------------------------------------------------
   useEffect(() => {
-    fetch('/api/entitlement-groups')
+    fetch(`${API_BASE}/entitlement-groups`)
       .then((r) => r.json())
       .then((data) => setCommunities(data))
       .catch(() => {})
@@ -99,7 +100,7 @@ export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
   // -----------------------------------------------------------------------
   useEffect(() => {
     if (!entGroupId) return
-    fetch('/api/developments')
+    fetch(`${API_BASE}/developments`)
       .then(r => r.json())
       .then(data => setModalDevs(data.filter(d => d.community_id === entGroupId)))
       .catch(() => setModalDevs([]))
@@ -113,7 +114,7 @@ export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
     if (!name) return
     setAddCommunityError('')
     try {
-      const res = await fetch('/api/entitlement-groups', {
+      const res = await fetch(`${API_BASE}/entitlement-groups`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ent_group_name: name }),
@@ -154,7 +155,7 @@ export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
     setAddInstrCreating(true)
     setAddInstrError('')
     try {
-      const res = await fetch('/api/instruments', {
+      const res = await fetch(`${API_BASE}/instruments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instrument_name: name, instrument_type: newInstrType, dev_id: newInstrDevId }),
@@ -190,7 +191,7 @@ export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
     const name = renameValue.trim()
     if (!name) return
     try {
-      const res = await fetch(`/api/entitlement-groups/${id}`, {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ent_group_name: name }),

@@ -16,6 +16,7 @@ import {
 } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import Toast from '../components/Toast'
+import { API_BASE } from '../config'
 
 // ---------------------------------------------------------------------------
 // DevCard — draggable development card
@@ -281,8 +282,8 @@ export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }
   // -----------------------------------------------------------------------
   useEffect(() => {
     Promise.all([
-      fetch('/api/entitlement-groups').then((r) => r.json()),
-      fetch('/api/developments').then((r) => r.json()),
+      fetch(`${API_BASE}/entitlement-groups`).then((r) => r.json()),
+      fetch(`${API_BASE}/developments`).then((r) => r.json()),
     ])
       .then(([comms, devs]) => {
         setCommunities(comms)
@@ -464,7 +465,7 @@ export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }
     )
 
     try {
-      const res = await fetch(`/api/developments/${dev.dev_id}`, {
+      const res = await fetch(`${API_BASE}/developments/${dev.dev_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ community_id: newCommunityId }),
@@ -474,8 +475,8 @@ export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }
       if (res.ok) {
         // Reload both endpoints so pill totals and dev cards reflect the new state
         const [comms, devs] = await Promise.all([
-          fetch('/api/entitlement-groups').then((r) => r.json()),
-          fetch('/api/developments').then((r) => r.json()),
+          fetch(`${API_BASE}/entitlement-groups`).then((r) => r.json()),
+          fetch(`${API_BASE}/developments`).then((r) => r.json()),
         ])
         setCommunities(comms)
         setDevelopments(devs)
@@ -518,7 +519,7 @@ export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }
     setNewCommCreating(true)
     setNewCommError('')
     try {
-      const res1 = await fetch('/api/entitlement-groups', {
+      const res1 = await fetch(`${API_BASE}/entitlement-groups`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ent_group_name: name }),
@@ -530,7 +531,7 @@ export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }
         return
       }
 
-      const res2 = await fetch(`/api/developments/${pendingNewComm.dev.dev_id}`, {
+      const res2 = await fetch(`${API_BASE}/developments/${pendingNewComm.dev.dev_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ community_id: comm.ent_group_id }),
@@ -543,8 +544,8 @@ export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }
       }
 
       const [comms, devs] = await Promise.all([
-        fetch('/api/entitlement-groups').then((r) => r.json()),
-        fetch('/api/developments').then((r) => r.json()),
+        fetch(`${API_BASE}/entitlement-groups`).then((r) => r.json()),
+        fetch(`${API_BASE}/developments`).then((r) => r.json()),
       ])
       setCommunities(comms)
       setDevelopments(devs)

@@ -1,11 +1,11 @@
 """
 S-1100 persistence_writer — Atomically replace sim temp lots for this development.
 
-Reads:   sim_lots (MAX lot_id for offset assignment, D-086)
+Reads:   sim_lots (schema probe only — SELECT * WHERE 1=0)
 Writes:  sim_lots (DB, DELETE sim lots for dev + INSERT new temp lot rows)
 Input:   conn: DBConnection, temp_lots: list of dicts, dev_id: int, sim_run_id: int
 Rules:   Atomic delete+insert: deletes lot_source='sim' rows for dev_id, then inserts.
-         lot_id assigned via MAX(lot_id) + offset — no IDENTITY column (D-086).
+         lot_id is assigned by the sim_lots_id_seq sequence (migration 028).
          Never touches real lot rows. Previous temp lots preserved on failure.
          Not Own: modifying real lot rows, setting sim_run status.
 """
@@ -40,19 +40,14 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
 
         # Step 2: Insert new temp lots
         if temp_lots:
-            max_id_df = conn.read_df(
-                "SELECT COALESCE(MAX(lot_id), 0) AS max_id FROM sim_lots"
-            )
-            max_lot_id = int(max_id_df.iloc[0]["max_id"])
-
-            # Get column order from the table schema
+            # Get column order from the table schema (excluding lot_id — assigned by sequence)
             schema_df = conn.read_df(
                 "SELECT * FROM sim_lots WHERE 1=0"
             )
-            table_columns = list(schema_df.columns)
+            table_columns = [c for c in schema_df.columns if c != "lot_id"]
 
             rows_to_insert = []
-            for i, lot in enumerate(temp_lots):
+            for lot in temp_lots:
                 row = {}
                 for col in table_columns:
                     val = lot.get(col)
@@ -60,7 +55,6 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
                     if val is None and col.endswith("_is_locked"):
                         val = False
                     row[col] = val
-                row["lot_id"] = max_lot_id + i + 1
                 row["sim_run_id"] = sim_run_id
                 rows_to_insert.append(row)
 

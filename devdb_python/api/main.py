@@ -43,39 +43,49 @@ def _run_migrations() -> None:
         port=int(os.getenv("PG_PORT", 5432)),
         options="-c search_path=devdb",
     )
-    conn.autocommit = True
+    conn.autocommit = False
     try:
-        with conn.cursor() as cur:
-            # Step 1: always run 000 to ensure the log table exists
-            zero = _MIGRATIONS_DIR / "000_create_migrations_log.sql"
-            if zero.exists():
+        # Step 1: always run 000 to ensure the log table exists (DDL — auto-commits in PG)
+        zero = _MIGRATIONS_DIR / "000_create_migrations_log.sql"
+        if zero.exists():
+            conn.autocommit = True
+            with conn.cursor() as cur:
                 cur.execute(zero.read_text(encoding="utf-8"))
+            conn.autocommit = False
 
-            # Step 2: load already-applied versions
+        # Step 2: load already-applied versions
+        with conn.cursor() as cur:
             cur.execute("SELECT version FROM devdb.schema_migrations")
             applied = {row[0] for row in cur.fetchall()}
 
-            # Step 3: collect numbered .sql files (skip 000 — already run above)
-            sql_files = sorted(
-                f for f in _MIGRATIONS_DIR.iterdir()
-                if f.suffix == ".sql" and f.name != "000_create_migrations_log.sql"
-            )
+        # Step 3: collect numbered .sql files (skip 000 — already run above)
+        sql_files = sorted(
+            f for f in _MIGRATIONS_DIR.iterdir()
+            if f.suffix == ".sql" and f.name != "000_create_migrations_log.sql"
+        )
 
-            for f in sql_files:
-                version = _get_migration_version(f.name)
-                if version is None:
-                    continue
-                if version in applied:
-                    logger.info("Migration %s already applied — skipping", f.name)
-                    continue
+        for f in sql_files:
+            version = _get_migration_version(f.name)
+            if version is None:
+                continue
+            if version in applied:
+                logger.info("Migration %s already applied — skipping", f.name)
+                continue
 
-                logger.info("Applying migration %s ...", f.name)
-                cur.execute(f.read_text(encoding="utf-8"))
-                cur.execute(
-                    "INSERT INTO devdb.schema_migrations (version, filename) VALUES (%s, %s)",
-                    (version, f.name),
-                )
+            logger.info("Applying migration %s ...", f.name)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(f.read_text(encoding="utf-8"))
+                    cur.execute(
+                        "INSERT INTO devdb.schema_migrations (version, filename) VALUES (%s, %s)",
+                        (version, f.name),
+                    )
+                conn.commit()
                 logger.info("Migration %s applied.", f.name)
+            except Exception:
+                conn.rollback()
+                logger.exception("Migration %s FAILED — rolled back.", f.name)
+                raise
     finally:
         conn.close()
 

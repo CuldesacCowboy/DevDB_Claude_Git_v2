@@ -22,6 +22,7 @@ import {
 import UnitCountsOverlay from './UnitCountsOverlay'
 import BuildingGroupsLayer, { computeBgEllipse } from './BuildingGroupsLayer'
 import LotMarkersLayer from './LotMarkersLayer'
+import { API_BASE } from '../../config'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
@@ -354,7 +355,7 @@ export default function PdfCanvas({
     const pts = tracePoints
     setTracePoints([]); setCursorNorm(null); onModeChange('view')
     setSavedParcel(pts); onParcelSaved?.(pts)
-    await fetch(`/api/site-plans/${planId}/parcel`, {
+    await fetch(`${API_BASE}/site-plans/${planId}/parcel`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parcel_json: JSON.stringify(pts) }),
     }).catch(err => onError?.('Parcel save failed: ' + err.message))
@@ -589,13 +590,13 @@ export default function PdfCanvas({
   }
   async function saveParcel(pts) {
     setSavedParcel(pts); onParcelSaved?.(pts)
-    await fetch(`/api/site-plans/${planId}/parcel`, {
+    await fetch(`${API_BASE}/site-plans/${planId}/parcel`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parcel_json: JSON.stringify(pts) }),
     }).catch(err => onError?.('Parcel save failed: ' + err.message))
   }
   async function saveBoundaryPoints(boundaryId, pts) {
-    const res = await fetch(`/api/phase-boundaries/${boundaryId}`, {
+    const res = await fetch(`${API_BASE}/phase-boundaries/${boundaryId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ polygon_json: JSON.stringify(pts) }),
     }).catch(err => { onError?.('Boundary save failed: ' + err.message); return null })

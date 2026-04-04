@@ -5,6 +5,7 @@ import { CSS } from '@dnd-kit/utilities'
 import PhaseColumn from './PhaseColumn'
 import { computeCols } from '../utils/computeCols'
 import { PANEL_HEADER_BG, PANEL_BODY_BG, PANEL_BORDER, EDITOR_BORDER, EDITOR_BG, TEXT_MUTED } from '../utils/designTokens'
+import { API_BASE } from '../config'
 
 // Color tints cycle by dev_id across the ent_group.
 const DEV_TINTS = [
@@ -160,7 +161,7 @@ export default function InstrumentContainer({
     setEditingInstrName(false)
     if (!name || name === instrument?.instrument_name) return
     try {
-      await fetch(`/api/instruments/${instrument.instrument_id}`, {
+      await fetch(`${API_BASE}/instruments/${instrument.instrument_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -182,7 +183,7 @@ export default function InstrumentContainer({
     setAddPhaseSaving(true)
     setAddPhaseError('')
     try {
-      const res = await fetch('/api/phases', {
+      const res = await fetch(`${API_BASE}/phases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ instrument_id: instrument.instrument_id, phase_name: name }),

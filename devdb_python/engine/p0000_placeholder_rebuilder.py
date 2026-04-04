@@ -693,16 +693,16 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # ------------------------------------------------------------------
     # Step 6: Write new events
     # ------------------------------------------------------------------
-    # Get next available delivery_event_id
-    max_id_df = conn.read_df("SELECT MAX(delivery_event_id) AS max_id FROM sim_delivery_events")
-    next_id = int(max_id_df.iloc[0]["max_id"] or 0) + 1
-
     new_event_ids = []
     event_counter = 1
 
     for ev in events_to_create:
-        event_id = next_id
-        next_id += 1
+        # Advance the sequence to get a collision-free event_id (migration 028).
+        seq_df = conn.read_df(
+            "SELECT nextval('devdb.sim_delivery_events_id_seq') AS next_id"
+        )
+        event_id = int(seq_df.iloc[0]["next_id"])
+
         event_name = f"Auto-scheduled delivery {event_counter}"
         projected_date = ev["date"].strftime("%Y-%m-%d")
 
@@ -727,10 +727,11 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         """)
 
         for ph_id in ev["phases"]:
-            phase_link_df = conn.read_df(
-                "SELECT MAX(id) AS max_id FROM sim_delivery_event_phases"
+            # Advance the sequence for each phase link row (migration 028).
+            link_seq_df = conn.read_df(
+                "SELECT nextval('devdb.sim_delivery_event_phases_id_seq') AS next_id"
             )
-            next_link_id = int(phase_link_df.iloc[0]["max_id"] or 0) + 1
+            next_link_id = int(link_seq_df.iloc[0]["next_id"])
             conn.execute(f"""
                 INSERT INTO sim_delivery_event_phases
                     (id, delivery_event_id, phase_id)

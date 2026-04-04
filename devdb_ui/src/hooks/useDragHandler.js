@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
+import { API_BASE } from '../config'
 
 export function useDragHandler({
   entGroupId,
@@ -173,7 +174,7 @@ export function useDragHandler({
 
     try {
       if (droppedOnUnassigned) {
-        const res = await fetch(`/api/lots/${lot.lot_id}/phase?changed_by=user`, { method: 'DELETE' })
+        const res = await fetch(`${API_BASE}/lots/${lot.lot_id}/phase?changed_by=user`, { method: 'DELETE' })
         const data = await res.json()
 
         if (res.ok) {
@@ -202,7 +203,7 @@ export function useDragHandler({
 
         if (diffType) {
           // Case B — different lot type: change type first, then optionally move phase
-          const r1 = await fetch(`/api/lots/${lot.lot_id}/lot-type`, {
+          const r1 = await fetch(`${API_BASE}/lots/${lot.lot_id}/lot-type`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ lot_type_id: targetLotTypeId, changed_by: 'user' }),
@@ -235,7 +236,7 @@ export function useDragHandler({
 
           if (diffPhase) {
             // Also move to target phase
-            const r2 = await fetch(`/api/lots/${lot.lot_id}/phase`, {
+            const r2 = await fetch(`${API_BASE}/lots/${lot.lot_id}/phase`, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'user' }),
@@ -275,7 +276,7 @@ export function useDragHandler({
           }
         } else {
           // Case A or C — same type (or no specific type): just move phase
-          const res = await fetch(`/api/lots/${lot.lot_id}/phase`, {
+          const res = await fetch(`${API_BASE}/lots/${lot.lot_id}/phase`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'user' }),
@@ -343,7 +344,7 @@ export function useDragHandler({
 
     try {
       if (droppedOnUnassigned) {
-        const res = await fetch(`/api/lots/${primaryLot.lot_id}/phase?changed_by=user`, { method: 'DELETE' })
+        const res = await fetch(`${API_BASE}/lots/${primaryLot.lot_id}/phase?changed_by=user`, { method: 'DELETE' })
         const data = await res.json()
 
         if (res.ok) {
@@ -367,7 +368,7 @@ export function useDragHandler({
         }
       } else {
         const fromUnassigned = primaryLot.phase_id === null
-        const res = await fetch(`/api/lots/${primaryLot.lot_id}/phase`, {
+        const res = await fetch(`${API_BASE}/lots/${primaryLot.lot_id}/phase`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'user' }),
@@ -423,7 +424,7 @@ export function useDragHandler({
     setPendingPhaseId(phase.phase_id)
 
     try {
-      const res = await fetch(`/api/phases/${phase.phase_id}/instrument`, {
+      const res = await fetch(`${API_BASE}/phases/${phase.phase_id}/instrument`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target_instrument_id: targetInstrumentId, changed_by: 'user' }),
@@ -501,7 +502,7 @@ export function useDragHandler({
     const phaseIds = reordered.map((p) => p.phase_id)
 
     try {
-      const res = await fetch(`/api/instruments/${instrumentId}/phase-order`, {
+      const res = await fetch(`${API_BASE}/instruments/${instrumentId}/phase-order`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phase_ids: phaseIds, changed_by: 'user' }),
@@ -554,7 +555,7 @@ export function useDragHandler({
       prev.map((i) => (i.instrument_id === instrumentId ? { ...i, dev_id: targetDevId } : i))
     )
     try {
-      await fetch(`/api/instruments/${instrumentId}/dev`, {
+      await fetch(`${API_BASE}/instruments/${instrumentId}/dev`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dev_id: targetDevId }),
@@ -580,7 +581,7 @@ export function useDragHandler({
   // -----------------------------------------------------------------------
   async function handleAutoSort(instrumentId) {
     try {
-      const res = await fetch(`/api/instruments/${instrumentId}/phase-order/auto-sort`, {
+      const res = await fetch(`${API_BASE}/instruments/${instrumentId}/phase-order/auto-sort`, {
         method: 'POST',
       })
       const data = await res.json()

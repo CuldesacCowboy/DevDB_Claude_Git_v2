@@ -74,9 +74,39 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Tables: sim_lots (ADD COLUMNS), sim_takedown_lot_assignments (UPDATE/DROP COLUMNS)
 - Last commit: 2026-04-01
 
+### devdb_python/migrations/013_site_plans.sql
+- Owns: Creates sim_site_plans table for the site plan viewer module (plan_id PK, ent_group_id, pdf_filename, parcel_polygon_json, created_at)
+- Tables: sim_site_plans (CREATE TABLE)
+- Last commit: 2026-04-01
+
+### devdb_python/migrations/014_site_plans_scope_to_ent_group.sql
+- Owns: Drops and recreates sim_site_plans scoped to ent_group_id instead of dev_id; table had no production data at time of migration
+- Tables: sim_site_plans (DROP + CREATE TABLE)
+- Last commit: 2026-04-01
+
+### devdb_python/migrations/015_phase_boundaries.sql
+- Owns: Creates sim_phase_boundaries table for site plan phase subdivision; each row is a polygon region optionally linked to a sim_dev_phases record
+- Tables: sim_phase_boundaries (CREATE TABLE)
+- Last commit: 2026-04-01
+
 ### devdb_python/migrations/016_lot_site_positions.sql
 - Owns: Creates devdb.sim_lot_site_positions table (lot_id PK, plan_id, x, y DOUBLE PRECISION, updated_at); creates index on plan_id; wrapped in DO $$ IF NOT EXISTS guard
 - Tables: sim_lot_site_positions (CREATE TABLE + INDEX)
+- Last commit: 2026-04-02
+
+### devdb_python/migrations/017_dev_params_and_build_lag_curves.sql
+- Owns: Creates sim_dev_params (dev_id grain, annual_starts_target, max_starts_per_month, seasonal_weight_set) and sim_build_lag_curves (empirical percentile curves str_to_cmp/cmp_to_cls per lot_type_id); projection group layer retired — hierarchy is now ent-group → dev → instrument → phase → lot
+- Tables: sim_dev_params (CREATE + seed from sim_projection_params), sim_build_lag_curves (CREATE + seed from MARKsystems data)
+- Last commit: 2026-04-02
+
+### devdb_python/migrations/018_add_dev_id_to_sim_lots.sql
+- Owns: Replaces projection_group_id with dev_id on sim_lots; drops FK/index on projection_group_id; adds dev_id populated from sim_dev_phases via phase_id
+- Tables: sim_lots (DROP COLUMN projection_group_id, ADD COLUMN dev_id, UPDATE, ADD INDEX)
+- Last commit: 2026-04-02
+
+### devdb_python/migrations/019_fix_sim_dev_params_fk.sql
+- Owns: Drops incorrect FK constraint on sim_dev_params.dev_id (was pointing to developments.dev_id space but should be dim_development.development_id space)
+- Tables: sim_dev_params (DROP CONSTRAINT)
 - Last commit: 2026-04-02
 
 ### devdb_python/migrations/020_min_unstarted_inventory.sql
@@ -104,6 +134,11 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Tables: sim_lots (ALTER COLUMN phase_id DROP NOT NULL)
 - Last commit: 2026-03-26
 
+### devdb_python/migrations/022_rename_ledger_start_to_date_paper.sql
+- Owns: Renames ledger_start_date → date_paper on sim_entitlement_groups; idempotent DO block
+- Tables: sim_entitlement_groups (ALTER COLUMN RENAME)
+- Last commit: 2026-04-03
+
 ### devdb_python/migrations/023_phase_date_ent_plan_start.sql
 - Owns: Adds date_ent and date_plan_start (DATE NULL) to sim_dev_phases; populates from existing group-level values (date_ent_actual → phases, date_paper → phases)
 - Tables: sim_dev_phases (ADD COLUMNS + UPDATE)
@@ -129,7 +164,7 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Tables: sim_entitlement_groups, sim_legal_instruments, sim_dev_phases, sim_phase_product_splits, sim_takedown_agreements
 - Last commit: 2026-04-04
 
-### devdb_python/migrations/add_display_order.py (superseded)
-- Owns: Superseded by 011_add_display_order.sql. Original standalone migration that added display_order to sim_dev_phases.
-- Tables: sim_dev_phases
-- Last commit: 2026-03-29
+### devdb_python/migrations/028_engine_pk_sequences.sql
+- Owns: Adds auto-increment sequences to 4 engine-owned tables still using MAX(id)+1: sim_lots.lot_id, sim_lot_date_violations.violation_id, sim_delivery_events.delivery_event_id, sim_delivery_event_phases.id. Same idempotent pattern as 027.
+- Tables: sim_lots, sim_lot_date_violations, sim_delivery_events, sim_delivery_event_phases
+- Last commit: 2026-04-04
