@@ -66,7 +66,8 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   const [rightPanelTab, setRightPanelTab]             = useState('assignment')
   const [unitCountsSubtotal, setUnitCountsSubtotal]   = useState(false)
   const [editProjected, setEditProjected]             = useState(null)
-  const [pendingDeleteLotType, setPendingDeleteLotType] = useState(null)
+  const [pendingDeleteLotType, setPendingDeleteLotType]     = useState(null)
+  const [pendingDeleteBoundary, setPendingDeleteBoundary]   = useState(false)
 
   const fileInputRef = useRef(null)
 
@@ -235,7 +236,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
 
   async function handleDeleteCommunityBoundary() {
     if (!plan) return
-    if (!window.confirm('Delete the community boundary and all phases? This cannot be undone.')) return
+    setPendingDeleteBoundary(false)
     try {
       await handleDeleteAllBoundaries()
       const res = await fetch(`${API}/site-plans/${plan.plan_id}/parcel`, {
@@ -431,7 +432,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
               </Button>
             )}
             {hasParcel && (
-              <Button variant="danger" onClick={handleDeleteCommunityBoundary}>
+              <Button variant="danger" onClick={() => setPendingDeleteBoundary(true)}>
                 Delete Community Boundary
               </Button>
             )}
@@ -518,6 +519,26 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
         {error && <span style={{ fontSize: 12, color: '#dc2626' }}>{error}</span>}
         <input ref={fileInputRef} type='file' accept='.pdf' style={{ display: 'none' }} onChange={handleFileChange} />
       </div>
+
+      {/* Delete community boundary confirmation banner */}
+      {pendingDeleteBoundary && (
+        <div style={{
+          padding: '6px 16px',
+          background: '#fef2f2',
+          borderBottom: '1px solid #fecaca',
+          display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 12, color: '#dc2626', flex: 1 }}>
+            Delete the community boundary and all phases? This cannot be undone.
+          </span>
+          <Button variant="danger" onClick={handleDeleteCommunityBoundary} style={{ fontSize: 11 }}>
+            Delete
+          </Button>
+          <Button variant="default" onClick={() => setPendingDeleteBoundary(false)} style={{ fontSize: 11 }}>
+            Cancel
+          </Button>
+        </div>
+      )}
 
       {/* Lot positions unsaved bar — stays open on save failure */}
       {(isDirty || saveError) && (
