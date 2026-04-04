@@ -147,17 +147,14 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
         if cur.fetchone() is None:
             raise HTTPException(status_code=404, detail=f"Entitlement group {body.ent_group_id} not found.")
 
-        cur.execute("SELECT COALESCE(MAX(tda_id), 0) + 1 AS new_id FROM devdb.sim_takedown_agreements")
-        new_id = int(cur.fetchone()["new_id"])
-
         cur.execute(
             """
             INSERT INTO devdb.sim_takedown_agreements
-                (tda_id, tda_name, ent_group_id, anchor_date, status, checkpoint_lead_days, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, 'active', 16, now(), now())
+                (tda_name, ent_group_id, anchor_date, status, checkpoint_lead_days, created_at, updated_at)
+            VALUES (%s, %s, %s, 'active', 16, now(), now())
             RETURNING tda_id, tda_name, status, anchor_date
             """,
-            (new_id, body.tda_name.strip(), body.ent_group_id, body.anchor_date),
+            (body.tda_name.strip(), body.ent_group_id, body.anchor_date),
         )
         row = cur.fetchone()
         conn.commit()

@@ -92,10 +92,7 @@ async def create_phase(body: PhaseCreateRequest, conn=Depends(get_db_conn)):
 
         dev_id = int(instr["dev_id"])
 
-        # Compute next phase_id and sequence_number
-        cur.execute("SELECT COALESCE(MAX(phase_id), 0) + 1 AS new_id FROM sim_dev_phases")
-        new_phase_id = int(cur.fetchone()["new_id"])
-
+        # Compute next sequence_number
         cur.execute(
             "SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_seq FROM sim_dev_phases"
             " WHERE instrument_id = %s",
@@ -105,11 +102,12 @@ async def create_phase(body: PhaseCreateRequest, conn=Depends(get_db_conn)):
 
         cur.execute(
             """
-            INSERT INTO sim_dev_phases (phase_id, phase_name, sequence_number, dev_id, instrument_id)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO sim_dev_phases (phase_name, sequence_number, dev_id, instrument_id)
+            VALUES (%s, %s, %s, %s) RETURNING phase_id
             """,
-            (new_phase_id, name, next_seq, dev_id, body.instrument_id),
+            (name, next_seq, dev_id, body.instrument_id),
         )
+        new_phase_id = int(cur.fetchone()["phase_id"])
         conn.commit()
         return {
             "phase_id": new_phase_id,
@@ -292,13 +290,9 @@ async def update_lot_type_projected(
     if not row:
         # New product type on this phase — insert a new split row.
         cur.execute(
-            "SELECT COALESCE(MAX(split_id), 0) + 1 AS new_id FROM sim_phase_product_splits"
-        )
-        new_split_id = int(cur.fetchone()["new_id"])
-        cur.execute(
-            "INSERT INTO sim_phase_product_splits (split_id, phase_id, lot_type_id, projected_count)"
-            " VALUES (%s, %s, %s, %s)",
-            (new_split_id, phase_id, lot_type_id, body.projected_count),
+            "INSERT INTO sim_phase_product_splits (phase_id, lot_type_id, projected_count)"
+            " VALUES (%s, %s, %s)",
+            (phase_id, lot_type_id, body.projected_count),
         )
     else:
         cur.execute(
