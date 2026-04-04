@@ -7,7 +7,7 @@
 
 | # | Item | Status |
 |---|---|---|
-| 1 | Replace window.confirm() with inline confirmation | Not started |
+| 1 | Replace window.confirm() with inline confirmation | Complete |
 | 2 | Surface boundary operation errors to user | Not started |
 | 3 | Bulk-delete endpoint for boundaries | Not started |
 | 4 | Move fetchOk to module level / utils | Not started |
@@ -22,14 +22,14 @@
 **Scope:** `devdb_ui/src/pages/SitePlanView.jsx` — `handleDeleteCommunityBoundary`
 
 ### Sub-tasks
-- [ ] Add `pendingDeleteBoundary` boolean state to SitePlanView
-- [ ] When "Delete Community Boundary" is clicked, set state instead of calling `window.confirm()`
-- [ ] Render an inline confirmation banner (red, same style as delete-lot-type banner) when state is set
-- [ ] Confirm button triggers the actual delete; Cancel clears the state
-- [ ] Remove `window.confirm()` call entirely
+- [x] Add `pendingDeleteBoundary` boolean state to SitePlanView
+- [x] When "Delete Community Boundary" is clicked, set state instead of calling `window.confirm()`
+- [x] Render an inline confirmation banner (red, same style as delete-lot-type banner) when state is set
+- [x] Confirm button triggers the actual delete; Cancel clears the state
+- [x] Remove `window.confirm()` call entirely
 
 ### Notes
-_Add implementation notes here as work progresses._
+Completed 2026-04-04. Banner renders between toolbar and save/discard bar. Delete button calls `handleDeleteCommunityBoundary` directly (which resets the pending state before executing). Cancel calls `setPendingDeleteBoundary(false)`.
 
 ---
 
@@ -105,3 +105,4 @@ _Add implementation notes here as work progresses._
 
 | Date | Item | What was done |
 |---|---|---|
+| 2026-04-04 | Task 1 — window.confirm() | Added `pendingDeleteBoundary` state; inline red banner with Delete/Cancel; removed `window.confirm()` |
