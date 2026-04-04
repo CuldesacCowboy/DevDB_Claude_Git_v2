@@ -17,6 +17,9 @@ const FLOOR_STATUS = { min_p_count:'p_end', min_e_count:'e_end', min_d_count:'d_
                         min_u_count:'u_end', min_uc_count:'uc_end', min_c_count:'c_end' }
 const FLOOR_LABELS = { min_p_count:'P', min_e_count:'E', min_d_count:'D',
                         min_u_count:'U', min_uc_count:'UC', min_c_count:'C' }
+// Only the active-pipeline states are useful as alert thresholds
+const ACTIVE_FLOOR_KEYS   = ['min_d_count','min_u_count','min_uc_count','min_c_count']
+const ACTIVE_FLOOR_LABELS = { min_d_count:'Developed', min_u_count:'Unstarted', min_uc_count:'Under const.', min_c_count:'Completed' }
 const NUMERIC_COLS = [...EVENT_COLS, ...STATUS_COLS]
 
 
@@ -373,15 +376,15 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled
   useEffect(() => { setPaperVal(datePaper ?? '') }, [datePaper])
   useEffect(() => { setEntVal(dateEnt ?? '') },     [dateEnt])
 
-  const dirty = paperVal !== (datePaper ?? '') || entVal !== (dateEnt ?? '')
   const isLocked = disabled || saving
 
-  async function save() {
+  async function saveIfChanged(newPaper, newEnt) {
+    if (newPaper === (datePaper ?? '') && newEnt === (dateEnt ?? '')) return
     setSaving(true); setErr(null); setLotsMsg(null)
     try {
       const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/ledger-config`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date_paper: paperVal || null, date_ent: entVal || null }),
+        body: JSON.stringify({ date_paper: newPaper || null, date_ent: newEnt || null }),
       })
       if (!res.ok) throw new Error(await res.text())
       const data = await res.json()
@@ -391,6 +394,8 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled
     finally { setSaving(false) }
   }
 
+  const rowStyle = { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }
+  const labelStyle = { fontSize: 12, color: '#374151', minWidth: 160 }
   const inputStyle = (saved, cur) => ({
     width: 120, padding: '3px 7px', fontSize: 12, borderRadius: 4,
     border: `1px solid ${cur !== (saved ?? '') ? '#2563eb' : '#d1d5db'}`,
@@ -398,36 +403,27 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled
   })
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>
-          Plan Start Date <span style={{ color: '#dc2626' }}>*</span>
-        </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={rowStyle}>
+        <span style={labelStyle}>Ledger start date <span style={{ color: '#dc2626' }}>*</span></span>
         <input type="text" placeholder="YYYY-MM-DD" value={paperVal} disabled={isLocked}
           onChange={e => { setPaperVal(e.target.value); setErr(null); setLotsMsg(null) }}
+          onBlur={e => saveIfChanged(e.target.value, entVal)}
           style={inputStyle(datePaper, paperVal)} />
-        {!dirty && datePaper
-          ? <span style={{ fontSize: 11, color: '#9ca3af' }}>Ledger starts {fmt(datePaper)}</span>
-          : !datePaper && <span style={{ fontSize: 11, color: '#dc2626' }}>Required — ledger won't render without this</span>
-        }
+        {!paperVal && <span style={{ fontSize: 11, color: '#dc2626' }}>Required</span>}
+        {saving && <span style={{ fontSize: 11, color: '#9ca3af' }}>Saving…</span>}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>Entitlements Date</span>
+      <div style={rowStyle}>
+        <span style={labelStyle}>Bulk entitlement date</span>
         <input type="text" placeholder="YYYY-MM-DD" value={entVal} disabled={isLocked}
           onChange={e => { setEntVal(e.target.value); setErr(null); setLotsMsg(null) }}
+          onBlur={e => saveIfChanged(paperVal, e.target.value)}
           style={inputStyle(dateEnt, entVal)} />
-        {!dirty && dateEnt && <span style={{ fontSize: 11, color: '#9ca3af' }}>Entitled {fmt(dateEnt)}</span>}
+        {!entVal && <span style={{ fontSize: 11, color: '#9ca3af' }}>Marks all P lots as entitled on this date</span>}
+        {entVal && !saving && <span style={{ fontSize: 11, color: '#9ca3af' }}>{fmt(entVal)}</span>}
       </div>
-      {dirty && (
-        <button disabled={isLocked} onClick={save}
-          style={{ alignSelf: 'flex-start', padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-                   background: isLocked ? '#d1d5db' : '#2563eb', color: '#fff',
-                   cursor: isLocked ? 'default' : 'pointer' }}>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-      )}
       {lotsMsg && <span style={{ fontSize: 11, color: '#16a34a' }}>{lotsMsg}</span>}
-      {err && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
+      {err    && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
     </div>
   )
 }
@@ -535,79 +531,111 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
     }}>{label}</button>
   )
 
+  const textLink = (label, onClick) => (
+    <button onClick={onClick} disabled={isLocked} style={{
+      fontSize: 11, color: isLocked ? '#d1d5db' : '#2563eb',
+      background: 'none', border: 'none', cursor: isLocked ? 'default' : 'pointer', padding: 0,
+    }}>{label}</button>
+  )
+
+  const sectionHead = (title) => (
+    <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>{title}</div>
+  )
+
+  const defaultMonthLabel = standardMonths.length
+    ? standardMonths.map(m => MONTH_LABELS[m - 1]).join(', ')
+    : 'none'
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Delivery window */}
       <div>
-        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>Delivery Window</div>
+        {sectionHead('Delivery window')}
         <MonthGrid selected={currentMonths} onChange={setMonths} locked={isLocked} />
-        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          {ctrlBtn('Select All', () => setMonths([1,2,3,4,5,6,7,8,9,10,11,12]))}
-          {ctrlBtn('Clear', () => setMonths([]))}
-          {ctrlBtn('Apply Standard Window', () => setMonths([...standardMonths]))}
-          {ctrlBtn('Edit Standard Window', () => { setStandardDraft([...standardMonths]); setEditingStandard(v => !v) }, editingStandard)}
+        <div style={{ display: 'flex', gap: 12, marginTop: 6, alignItems: 'center' }}>
+          {textLink('All', () => setMonths([1,2,3,4,5,6,7,8,9,10,11,12]))}
+          {textLink('None', () => setMonths([]))}
+          {textLink(`Reset to default (${defaultMonthLabel})`, () => setMonths([...standardMonths]))}
+          <span style={{ color: '#e5e7eb' }}>·</span>
+          {textLink('change default', () => { setStandardDraft([...standardMonths]); setEditingStandard(v => !v) })}
         </div>
         {editingStandard && (
-          <div style={{ marginTop: 8, padding: '8px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6 }}>
-            <div style={{ fontSize: 11, color: '#92400e', fontWeight: 600, marginBottom: 6 }}>Standard Window</div>
+          <div style={{ marginTop: 8, padding: '10px 12px', background: '#f8fafc',
+                        border: '1px solid #e2e8f0', borderRadius: 6 }}>
+            <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>Default window (applied to new communities)</div>
             <MonthGrid selected={standardDraft} onChange={setStandardDraft} locked={false} />
-            <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-              <button onClick={saveStandard} style={{ padding: '2px 10px', fontSize: 11, borderRadius: 4, border: 'none', background: '#d97706', color: '#fff', cursor: 'pointer' }}>Save Standard Window</button>
-              <button onClick={() => setEditingStandard(false)} style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', color: '#6b7280', cursor: 'pointer' }}>Cancel</button>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <button onClick={saveStandard} style={{ padding: '2px 10px', fontSize: 11, borderRadius: 4,
+                border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer' }}>Save default</button>
+              <button onClick={() => setEditingStandard(false)} style={{ padding: '2px 8px', fontSize: 11,
+                borderRadius: 4, border: '1px solid #d1d5db', background: '#fff',
+                color: '#6b7280', cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-          <span style={{ color: '#6b7280' }}>Max deliveries/yr (≥1)</span>
-          {numInput('max_deliveries_per_year', 48, '1')}
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: isLocked ? 'default' : 'pointer' }}>
-          <input type="checkbox" disabled={isLocked}
-            checked={valFor('auto_schedule_enabled') === true || valFor('auto_schedule_enabled') === 'true'}
-            onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
-            style={{ width: 14, height: 14, accentColor: '#2563eb',
-                     outline: edits['auto_schedule_enabled'] !== undefined ? '2px solid #2563eb' : 'none' }} />
-          <span style={{ color: '#6b7280' }}>Auto-schedule enabled</span>
-        </label>
-      </div>
+
+      {/* Scheduling */}
       <div>
-        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
-          Build lag fallbacks
-          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>used when no empirical curve exists</span>
+        {sectionHead('Scheduling')}
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <span style={{ color: '#6b7280' }}>Deliveries per year</span>
+            {numInput('max_deliveries_per_year', 52, '1')}
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12,
+                          cursor: isLocked ? 'default' : 'pointer' }}>
+            <input type="checkbox" disabled={isLocked}
+              checked={valFor('auto_schedule_enabled') === true || valFor('auto_schedule_enabled') === 'true'}
+              onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
+              style={{ width: 14, height: 14, accentColor: '#2563eb' }} />
+            <span style={{ color: '#6b7280' }}>Schedule deliveries automatically</span>
+          </label>
         </div>
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>STR→CMP (days, typical 180–365)</span>
+      </div>
+
+      {/* Default build times */}
+      <div>
+        {sectionHead('Default build times')}
+        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
+          Used when no empirical curve exists for this development.
+        </div>
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <span style={{ color: '#6b7280' }}>Start to completion (days)</span>
             {numInput('default_cmp_lag_days', 56, '270')}
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>CMP→CLS (days, typical 14–90)</span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+            <span style={{ color: '#6b7280' }}>Completion to closing (days)</span>
             {numInput('default_cls_lag_days', 56, '45')}
           </label>
         </div>
       </div>
+
+      {/* Minimum inventory alerts */}
       <div>
-        <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
-          Inventory floor tolerances
-          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>highlighted orange in ledger when below floor</span>
+        {sectionHead('Minimum inventory alerts')}
+        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
+          Ledger rows highlight orange when a status count drops below its floor.
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          {FLOOR_KEYS.map(key => (
-            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-              <span style={{ color: '#6b7280', minWidth: 20 }}>{FLOOR_LABELS[key]}</span>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          {ACTIVE_FLOOR_KEYS.map(key => (
+            <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 12 }}>
+              <span style={{ color: '#9ca3af', fontSize: 11 }}>{ACTIVE_FLOOR_LABELS[key]}</span>
               {numInput(key, 56)}
             </label>
           ))}
         </div>
       </div>
+
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {isDirty && (
           <button disabled={isLocked} onClick={save}
-            style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
+            style={{ padding: '4px 14px', fontSize: 12, borderRadius: 4, border: 'none',
                      background: isLocked ? '#d1d5db' : '#2563eb', color: '#fff',
                      cursor: isLocked ? 'default' : 'pointer' }}>
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? 'Saving…' : 'Save changes'}
           </button>
         )}
         {err && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
@@ -620,12 +648,25 @@ function StartsTargetsSection({ entGroupId, params, onSaved, disabled }) {
   const [edits, setEdits] = useState({})
 
   if (!params.length) return (
-    <div style={{ fontSize: 12, color: '#9ca3af' }}>No starts targets to configure. Run a simulation first.</div>
+    <div style={{ fontSize: 12, color: '#9ca3af' }}>No developments found. Run a simulation first.</div>
   )
+
+  const DOT_COLOR = { ok: '#16a34a', stale: '#d97706', missing: '#dc2626' }
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>Starts targets</div>
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>Annual starts pace</span>
+        <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 8 }}>
+          Homes started per year and monthly cap, per development.
+        </span>
+      </div>
+      {/* Column headers */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, paddingLeft: 15 }}>
+        <span style={{ fontSize: 11, color: '#9ca3af', minWidth: 180 }}>Development</span>
+        <span style={{ fontSize: 11, color: '#9ca3af', width: 68, textAlign: 'right' }}>Per year</span>
+        <span style={{ fontSize: 11, color: '#9ca3af', width: 68, textAlign: 'right' }}>Max / mo</span>
+      </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         {params.map(p => {
           const edit = edits[p.dev_id] || {}
@@ -634,7 +675,6 @@ function StartsTargetsSection({ entGroupId, params, onSaved, disabled }) {
           const annualDirty   = edit.annual   !== undefined && edit.annual   !== String(p.annual_starts_target ?? '')
           const maxMonthDirty = edit.maxMonth !== undefined && edit.maxMonth !== String(p.max_starts_per_month ?? '')
           const dirty = annualDirty || maxMonthDirty
-          const DOT = { ok: '#16a34a', stale: '#d97706', missing: '#dc2626' }
 
           async function save() {
             const n = parseInt(annualVal, 10)
@@ -655,24 +695,23 @@ function StartsTargetsSection({ entGroupId, params, onSaved, disabled }) {
           }
 
           return (
-            <div key={p.dev_id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div key={p.dev_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
-                             background: DOT[p.status] ?? '#9ca3af', flexShrink: 0 }} />
+                             background: DOT_COLOR[p.status] ?? '#9ca3af', flexShrink: 0 }}
+                    title={p.status} />
               <span style={{ fontSize: 12, color: '#374151', minWidth: 180 }}>{p.dev_name}</span>
-              <input type="number" min="1" placeholder="starts/yr" value={annualVal}
+              <input type="number" min="1" placeholder="—" value={annualVal}
                 disabled={disabled || edit.saving}
                 onChange={e => setEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], annual: e.target.value } }))}
-                style={{ width: 68, padding: '2px 5px', fontSize: 12, borderRadius: 4,
+                style={{ width: 68, padding: '2px 5px', fontSize: 12, borderRadius: 4, textAlign: 'right',
                          background: (disabled || edit.saving) ? '#f3f4f6' : '#fff',
                          border: `1px solid ${annualDirty ? '#2563eb' : '#d1d5db'}` }} />
-              <span style={{ fontSize: 11, color: '#9ca3af' }}>/ yr</span>
-              <input type="number" min="1" placeholder="max/mo" value={maxMonthVal}
+              <input type="number" min="1" placeholder="—" value={maxMonthVal}
                 disabled={disabled || edit.saving}
                 onChange={e => setEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], maxMonth: e.target.value } }))}
-                style={{ width: 60, padding: '2px 5px', fontSize: 12, borderRadius: 4,
+                style={{ width: 68, padding: '2px 5px', fontSize: 12, borderRadius: 4, textAlign: 'right',
                          background: (disabled || edit.saving) ? '#f3f4f6' : '#fff',
                          border: `1px solid ${maxMonthDirty ? '#2563eb' : '#d1d5db'}` }} />
-              <span style={{ fontSize: 11, color: '#9ca3af' }}>max/mo</span>
               {dirty && (
                 <button disabled={disabled || edit.saving || !annualVal} onClick={save}
                   style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4, border: 'none',
