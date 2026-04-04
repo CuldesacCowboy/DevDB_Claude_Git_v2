@@ -67,9 +67,16 @@ export function useBoundaryManager({ planId, setMode, setError }) {
     if (!planId || !current.length) return
     setError(null)
     try {
-      await Promise.all(current.map(b =>
-        fetch(`${API}/phase-boundaries/${b.boundary_id}`, { method: 'DELETE' })
-      ))
+      const res = await fetch(`${API}/phase-boundaries/bulk-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ boundary_ids: current.map(b => b.boundary_id) }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setError(body.detail || `Delete all failed (${res.status})`)
+        return
+      }
       setBoundaries([])
       setSelectedBoundaryId(null)
       setUndoStack([])

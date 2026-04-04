@@ -1,5 +1,12 @@
 # routers/phase_boundaries.py
 # Phase boundary CRUD and split endpoints for the site plan module.
+#
+# GET  /phase-boundaries/plan/{plan_id}  → list boundaries for a plan
+# POST /phase-boundaries                 → create a boundary
+# POST /phase-boundaries/split           → split one boundary into two
+# POST /phase-boundaries/bulk-delete     → delete multiple boundaries in one DB call
+# PATCH  /phase-boundaries/{id}          → update polygon/label/phase
+# DELETE /phase-boundaries/{id}          → delete a single boundary
 
 from typing import Optional
 
@@ -43,6 +50,10 @@ class SplitRequest(BaseModel):
     polygon_b: str   # JSON string — [{x,y}] for child polygon B
 
 
+class BulkDeleteRequest(BaseModel):
+    boundary_ids: list[int]
+
+
 def _row(row) -> BoundaryResponse:
     return BoundaryResponse(
         boundary_id=row[0], plan_id=row[1], phase_id=row[2],
@@ -74,6 +85,22 @@ def create_boundary(body: BoundaryCreateRequest, conn=Depends(get_db_conn)):
         row = cur.fetchone()
         conn.commit()
     return _row(row)
+
+
+# NOTE: bulk-delete must be registered BEFORE /{boundary_id} so FastAPI
+# does not try to parse the literal string "bulk-delete" as an integer path param.
+@router.post("/bulk-delete")
+def bulk_delete_boundaries(body: BulkDeleteRequest, conn=Depends(get_db_conn)):
+    """Delete multiple phase boundaries in a single DB call."""
+    if not body.boundary_ids:
+        return {"deleted": 0}
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM sim_phase_boundaries WHERE boundary_id = ANY(%s)",
+            (body.boundary_ids,),
+        )
+        conn.commit()
+    return {"deleted": len(body.boundary_ids)}
 
 
 @router.patch("/{boundary_id}", response_model=BoundaryResponse)
