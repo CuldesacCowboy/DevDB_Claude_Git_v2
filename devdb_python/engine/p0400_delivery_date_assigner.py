@@ -38,22 +38,16 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
     current_projected = current_df.iloc[0]["date_dev_projected"] if not current_df.empty else None
     is_placeholder = bool(current_df.iloc[0]["is_placeholder"]) if not current_df.empty else False
 
-    # Window comes from sim_entitlement_delivery_config (ent-group level).
-    import pandas as pd
-    window_df = conn.read_df(
-        """
-        SELECT delivery_months
-        FROM sim_entitlement_delivery_config
-        WHERE ent_group_id = %s
-        """,
-        (ent_group_id,),
-    )
-    if window_df.empty or window_df.iloc[0]["delivery_months"] is None:
+    # Window from merged global + community config.
+    from engine.config_loader import load_delivery_config
+    cfg = load_delivery_config(conn, ent_group_id)
+    raw_months = cfg["delivery_months"]
+    if not raw_months:
         raise ValueError(
             f"P-04: delivery_months not configured for ent_group {ent_group_id}. "
-            "Set delivery_months in sim_entitlement_delivery_config before running."
+            "Set delivery_months in global settings or community delivery config before running."
         )
-    valid_months = frozenset(int(m) for m in window_df.iloc[0]["delivery_months"])
+    valid_months = frozenset(int(m) for m in raw_months)
 
 
     min_df = conn.read_df(

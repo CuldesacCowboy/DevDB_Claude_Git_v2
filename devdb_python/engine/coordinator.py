@@ -578,24 +578,13 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         builder_splits = _load_builder_splits(conn)
         build_lag_curves = _load_build_lag_curves(conn)
 
-        # Load build lag fallback constants from delivery config (migration 024).
+        # Load build lag fallback constants from merged global + community config.
         # Injected into build_lag_curves dict so _expand_timing and
         # _write_real_lot_projections can use them without signature changes.
-        _lag_row = conn.read_df(
-            """
-            SELECT default_cmp_lag_days, default_cls_lag_days
-            FROM sim_entitlement_delivery_config
-            WHERE ent_group_id = %s
-            """,
-            (ent_group_id,),
-        )
-        if not _lag_row.empty:
-            _cmp = _lag_row["default_cmp_lag_days"].iloc[0]
-            _cls = _lag_row["default_cls_lag_days"].iloc[0]
-            if not pd.isnull(_cmp):
-                build_lag_curves["_default_cmp"] = int(_cmp)
-            if not pd.isnull(_cls):
-                build_lag_curves["_default_cls"] = int(_cls)
+        from engine.config_loader import load_delivery_config
+        _cfg = load_delivery_config(conn, ent_group_id)
+        build_lag_curves["_default_cmp"] = _cfg["default_cmp_lag_days"]
+        build_lag_curves["_default_cls"] = _cfg["default_cls_lag_days"]
 
         # Seeded RNG: date-based by default (YYYYMMDD), giving reproducibility
         # within a day. Pass rng_seed explicitly for test-time control.

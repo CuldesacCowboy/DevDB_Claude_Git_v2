@@ -141,31 +141,18 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     # ------------------------------------------------------------------
     # Step 1: Check auto_schedule flag
     # ------------------------------------------------------------------
-    config_df = conn.read_df(
-        """
-        SELECT auto_schedule_enabled, max_deliveries_per_year, min_gap_months,
-               delivery_months,
-               COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count
-        FROM sim_entitlement_delivery_config
-        WHERE ent_group_id = %s
-        """,
-        (ent_group_id,),
-    )
+    from engine.config_loader import load_delivery_config
+    cfg = load_delivery_config(conn, ent_group_id)
 
-    if config_df.empty:
-        logger.info(f"P-00: No delivery config for ent_group_id={ent_group_id}. Skipping.")
-        return []
-
-    row = config_df.iloc[0]
-    if not bool(row["auto_schedule_enabled"]):
+    if not cfg["auto_schedule_enabled"]:
         logger.info(f"P-00: auto_schedule_enabled=False for ent_group_id={ent_group_id}. Skipping.")
         return []
 
-    max_per_year = int(row["max_deliveries_per_year"] or 1)
-    min_gap = int(row["min_gap_months"] or 0)
-    raw_months = row["delivery_months"]
+    max_per_year = cfg["max_deliveries_per_year"]
+    min_gap      = cfg["min_gap_months"]
+    raw_months   = cfg["delivery_months"]
     valid_months_default = frozenset(int(m) for m in raw_months) if raw_months else frozenset([5,6,7,8,9,10,11])
-    min_buffer = int(row["min_d_count"] or 0)
+    min_buffer   = cfg["min_d_count"]
 
     # ------------------------------------------------------------------
     # Step 2: Delete existing placeholder events

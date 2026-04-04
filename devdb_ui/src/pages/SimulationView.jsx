@@ -448,8 +448,6 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled
 }
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const LS_STD_MONTHS_KEY = 'devdb_delivery_standard_months'
-const DEFAULT_STANDARD_MONTHS = [5,6,7,8,9,10,11]
 
 function MonthGrid({ selected, onChange, locked }) {
   return (
@@ -477,52 +475,35 @@ function MonthGrid({ selected, onChange, locked }) {
   )
 }
 
-function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }) {
+function GlobalSettingsSection({ globalSettings, onSaved, disabled }) {
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
-  const [err, setErr]       = useState(null)
-  const [editingStandard, setEditingStandard] = useState(false)
-  const [standardMonths, setStandardMonths] = useState(() => {
-    try {
-      const v = localStorage.getItem(LS_STD_MONTHS_KEY)
-      return v ? JSON.parse(v) : DEFAULT_STANDARD_MONTHS
-    } catch { return DEFAULT_STANDARD_MONTHS }
-  })
-  const [standardDraft, setStandardDraft] = useState([])
+  const [err, setErr] = useState(null)
 
   const isDirty  = Object.keys(edits).length > 0
   const isLocked = disabled || saving
 
   const currentMonths = edits.delivery_months !== undefined
     ? edits.delivery_months
-    : (deliveryConfig?.delivery_months ?? [])
+    : (globalSettings?.delivery_months ?? [5,6,7,8,9,10,11])
 
-  function valFor(key) { return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '') }
+  function valFor(key) { return edits[key] !== undefined ? edits[key] : (globalSettings?.[key] ?? '') }
   function setVal(key, v) { setEdits(p => ({ ...p, [key]: v })) }
-  function setMonths(months) { setEdits(p => ({ ...p, delivery_months: months })) }
-
-  function saveStandard() {
-    setStandardMonths(standardDraft)
-    try { localStorage.setItem(LS_STD_MONTHS_KEY, JSON.stringify(standardDraft)) } catch {}
-    setEditingStandard(false)
-  }
 
   async function save() {
     setSaving(true); setErr(null)
     const body = { delivery_months: currentMonths.length > 0 ? currentMonths : null }
-    for (const key of FLOOR_KEYS) {
-      const v = valFor(key); body[key] = v === '' ? null : parseInt(v, 10)
-    }
-    for (const key of ['max_deliveries_per_year']) {
-      const v = valFor(key); body[key] = v === '' ? null : parseInt(v, 10)
-    }
-    const asVal = valFor('auto_schedule_enabled')
-    body['auto_schedule_enabled'] = asVal === '' ? null : asVal === true || asVal === 'true'
-    for (const key of ['default_cmp_lag_days', 'default_cls_lag_days']) {
+    const v_max = valFor('max_deliveries_per_year')
+    body.max_deliveries_per_year = v_max === '' ? null : parseInt(v_max, 10)
+    const v_cmp = valFor('default_cmp_lag_days')
+    body.default_cmp_lag_days = v_cmp === '' ? null : parseInt(v_cmp, 10)
+    const v_cls = valFor('default_cls_lag_days')
+    body.default_cls_lag_days = v_cls === '' ? null : parseInt(v_cls, 10)
+    for (const key of ACTIVE_FLOOR_KEYS) {
       const v = valFor(key); body[key] = v === '' ? null : parseInt(v, 10)
     }
     try {
-      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/delivery-config`, {
+      const res = await fetch(`${API_BASE}/global-settings`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
@@ -541,15 +522,6 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
                border: `1px solid ${edits[key] !== undefined ? '#2563eb' : '#d1d5db'}` }} />
   )
 
-  const ctrlBtn = (label, onClick, active) => (
-    <button onClick={onClick} disabled={isLocked} style={{
-      padding: '2px 8px', fontSize: 11, borderRadius: 4, cursor: isLocked ? 'default' : 'pointer',
-      border: active ? '1px solid #d97706' : '1px solid #d1d5db',
-      background: active ? '#fef3c7' : isLocked ? '#f9fafb' : '#fff',
-      color: active ? '#b45309' : '#6b7280',
-    }}>{label}</button>
-  )
-
   const textLink = (label, onClick) => (
     <button onClick={onClick} disabled={isLocked} style={{
       fontSize: 11, color: isLocked ? '#d1d5db' : '#2563eb',
@@ -561,78 +533,41 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
     <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>{title}</div>
   )
 
-  const defaultMonthLabel = standardMonths.length
-    ? standardMonths.map(m => MONTH_LABELS[m - 1]).join(', ')
-    : 'none'
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* Delivery window */}
+      {/* Default delivery window */}
       <div>
-        {sectionHead('Delivery window')}
-        <MonthGrid selected={currentMonths} onChange={setMonths} locked={isLocked} />
+        {sectionHead('Default delivery window')}
+        <MonthGrid selected={currentMonths}
+          onChange={months => setEdits(p => ({ ...p, delivery_months: months }))}
+          locked={isLocked} />
         <div style={{ display: 'flex', gap: 12, marginTop: 6, alignItems: 'center' }}>
-          {textLink('All', () => setMonths([1,2,3,4,5,6,7,8,9,10,11,12]))}
-          {textLink('None', () => setMonths([]))}
-          {textLink(`Reset to default (${defaultMonthLabel})`, () => setMonths([...standardMonths]))}
-          <span style={{ color: '#e5e7eb' }}>·</span>
-          {textLink('change default', () => { setStandardDraft([...standardMonths]); setEditingStandard(v => !v) })}
+          {textLink('All', () => setEdits(p => ({ ...p, delivery_months: [1,2,3,4,5,6,7,8,9,10,11,12] })))}
+          {textLink('None', () => setEdits(p => ({ ...p, delivery_months: [] })))}
         </div>
-        {editingStandard && (
-          <div style={{ marginTop: 8, padding: '10px 12px', background: '#f8fafc',
-                        border: '1px solid #e2e8f0', borderRadius: 6 }}>
-            <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>Default window (applied to new communities)</div>
-            <MonthGrid selected={standardDraft} onChange={setStandardDraft} locked={false} />
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <button onClick={saveStandard} style={{ padding: '2px 10px', fontSize: 11, borderRadius: 4,
-                border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer' }}>Save default</button>
-              <button onClick={() => setEditingStandard(false)} style={{ padding: '2px 8px', fontSize: 11,
-                borderRadius: 4, border: '1px solid #d1d5db', background: '#fff',
-                color: '#6b7280', cursor: 'pointer' }}>Cancel</button>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Scheduling */}
+      {/* Deliveries per year + build times */}
       <div>
-        {sectionHead('Scheduling')}
+        {sectionHead('Scheduling defaults')}
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
             <span style={{ color: '#6b7280' }}>Deliveries per year</span>
             {numInput('max_deliveries_per_year', 52, '1')}
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12,
-                          cursor: isLocked ? 'default' : 'pointer' }}>
-            <input type="checkbox" disabled={isLocked}
-              checked={valFor('auto_schedule_enabled') === true || valFor('auto_schedule_enabled') === 'true'}
-              onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
-              style={{ width: 14, height: 14, accentColor: '#2563eb' }} />
-            <span style={{ color: '#6b7280' }}>Schedule deliveries automatically</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Default build times */}
-      <div>
-        {sectionHead('Default build times')}
-        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
-          Used when no empirical curve exists for this development.
-        </div>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>Start to completion (days)</span>
+            <span style={{ color: '#6b7280' }}>Start → completion (days)</span>
             {numInput('default_cmp_lag_days', 56, '270')}
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>Completion to closing (days)</span>
+            <span style={{ color: '#6b7280' }}>Completion → closing (days)</span>
             {numInput('default_cls_lag_days', 56, '45')}
           </label>
         </div>
       </div>
 
-      {/* Minimum inventory alerts */}
+      {/* Inventory alert floors */}
       <div>
         {sectionHead('Minimum inventory alerts')}
         <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
@@ -654,7 +589,167 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }
             style={{ padding: '4px 14px', fontSize: 12, borderRadius: 4, border: 'none',
                      background: isLocked ? '#d1d5db' : '#2563eb', color: '#fff',
                      cursor: isLocked ? 'default' : 'pointer' }}>
-            {saving ? 'Saving…' : 'Save changes'}
+            {saving ? 'Saving…' : 'Save global defaults'}
+          </button>
+        )}
+        {err && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
+      </div>
+    </div>
+  )
+}
+
+function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettings, onSaved, disabled }) {
+  const [edits, setEdits] = useState({})
+  const [saving, setSaving] = useState(false)
+  const [err, setErr]       = useState(null)
+
+  const isDirty  = Object.keys(edits).length > 0
+  const isLocked = disabled || saving
+
+  // Community override vs global inherit for delivery_months
+  const communityMonths = deliveryConfig?.delivery_months  // null = inherit
+  const globalMonths    = globalSettings?.delivery_months ?? [5,6,7,8,9,10,11]
+  const hasMonthOverride = edits.delivery_months !== undefined
+    ? edits.delivery_months !== null
+    : communityMonths !== null && communityMonths !== undefined
+
+  const currentMonths = edits.delivery_months !== undefined
+    ? (edits.delivery_months ?? [])
+    : (communityMonths ?? globalMonths)
+
+  // Community override for max_deliveries_per_year
+  const communityMaxDel = deliveryConfig?.max_deliveries_per_year
+  const globalMaxDel    = globalSettings?.max_deliveries_per_year ?? 1
+  const hasMaxDelOverride = edits.max_deliveries_per_year !== undefined
+    ? edits.max_deliveries_per_year !== null
+    : communityMaxDel !== null && communityMaxDel !== undefined
+
+  function valFor(key) { return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '') }
+  function setVal(key, v) { setEdits(p => ({ ...p, [key]: v })) }
+
+  const globalMonthsLabel = globalMonths.length
+    ? globalMonths.map(m => MONTH_LABELS[m - 1]).join(', ')
+    : 'none'
+
+  async function save() {
+    setSaving(true); setErr(null)
+    const body = {}
+
+    // delivery_months: send null to clear override, or array if override active
+    if (edits.delivery_months !== undefined) {
+      body.delivery_months = edits.delivery_months
+    } else if (!hasMonthOverride) {
+      body.delivery_months = null
+    }
+
+    // max_deliveries_per_year: send null to clear override
+    if (edits.max_deliveries_per_year !== undefined) {
+      body.max_deliveries_per_year = edits.max_deliveries_per_year === null ? null
+        : parseInt(edits.max_deliveries_per_year, 10)
+    } else if (!hasMaxDelOverride) {
+      body.max_deliveries_per_year = null
+    }
+
+    const asVal = valFor('auto_schedule_enabled')
+    if (asVal !== '') body.auto_schedule_enabled = asVal === true || asVal === 'true'
+
+    try {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/delivery-config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setEdits({}); onSaved()
+    } catch (e) { setErr(String(e)) }
+    finally { setSaving(false) }
+  }
+
+  const textLink = (label, onClick, color = '#2563eb') => (
+    <button onClick={onClick} disabled={isLocked} style={{
+      fontSize: 11, color: isLocked ? '#d1d5db' : color,
+      background: 'none', border: 'none', cursor: isLocked ? 'default' : 'pointer', padding: 0,
+    }}>{label}</button>
+  )
+
+  const sectionHead = (title) => (
+    <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 8 }}>{title}</div>
+  )
+
+  const numInput = (key, width = 52, placeholder = '—') => (
+    <input key={key} type="number" min="0" placeholder={placeholder}
+      value={valFor(key)} disabled={isLocked}
+      onChange={e => setVal(key, e.target.value)}
+      style={{ width, padding: '2px 5px', fontSize: 12, borderRadius: 4, textAlign: 'right',
+               background: isLocked ? '#f3f4f6' : '#fff',
+               border: `1px solid ${edits[key] !== undefined ? '#2563eb' : '#d1d5db'}` }} />
+  )
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+      {/* Auto-schedule */}
+      <div>
+        {sectionHead('Delivery scheduling')}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12,
+                        cursor: isLocked ? 'default' : 'pointer' }}>
+          <input type="checkbox" disabled={isLocked}
+            checked={valFor('auto_schedule_enabled') === true || valFor('auto_schedule_enabled') === 'true'}
+            onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
+            style={{ width: 14, height: 14, accentColor: '#2563eb' }} />
+          <span style={{ color: '#6b7280' }}>Schedule deliveries automatically</span>
+        </label>
+      </div>
+
+      {/* Delivery window override */}
+      <div>
+        {sectionHead('Delivery window')}
+        {!hasMonthOverride ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>
+              Using global ({globalMonthsLabel})
+            </span>
+            {textLink('Set override', () => setEdits(p => ({ ...p, delivery_months: [...globalMonths] })))}
+          </div>
+        ) : (
+          <div>
+            <MonthGrid selected={currentMonths}
+              onChange={months => setEdits(p => ({ ...p, delivery_months: months }))}
+              locked={isLocked} />
+            <div style={{ display: 'flex', gap: 12, marginTop: 6, alignItems: 'center' }}>
+              {textLink('All', () => setEdits(p => ({ ...p, delivery_months: [1,2,3,4,5,6,7,8,9,10,11,12] })))}
+              {textLink('None', () => setEdits(p => ({ ...p, delivery_months: [] })))}
+              <span style={{ color: '#e5e7eb' }}>·</span>
+              {textLink('Revert to global', () => setEdits(p => ({ ...p, delivery_months: null })), '#dc2626')}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Deliveries per year override */}
+      <div>
+        {sectionHead('Deliveries per year')}
+        {!hasMaxDelOverride ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>
+              Using global ({globalMaxDel})
+            </span>
+            {textLink('Set override', () => setEdits(p => ({ ...p, max_deliveries_per_year: String(communityMaxDel ?? globalMaxDel) })))}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {numInput('max_deliveries_per_year', 52, '1')}
+            {textLink('Revert to global', () => setEdits(p => ({ ...p, max_deliveries_per_year: null })), '#dc2626')}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {isDirty && (
+          <button disabled={isLocked} onClick={save}
+            style={{ padding: '4px 14px', fontSize: 12, borderRadius: 4, border: 'none',
+                     background: isLocked ? '#d1d5db' : '#2563eb', color: '#fff',
+                     cursor: isLocked ? 'default' : 'pointer' }}>
+            {saving ? 'Saving…' : 'Save community settings'}
           </button>
         )}
         {err && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
@@ -910,8 +1005,9 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   const [loading, setLoading]       = useState(false)
   const [missingSplits, setMissingSplits] = useState([])
   const [staleParams, setStaleParams]     = useState([])
-  const [deliveryConfig, setDeliveryConfig] = useState(null)
-  const [ledgerConfig, setLedgerConfig]     = useState(null)
+  const [deliveryConfig, setDeliveryConfig]   = useState(null)
+  const [ledgerConfig, setLedgerConfig]       = useState(null)
+  const [globalSettings, setGlobalSettings]   = useState(null)
   const [view, setView]             = useState('ledger')
   const [ledgerSubView, setLedgerSubView] = useState('graph')   // 'table' | 'graph'
   const [lots, setLots]             = useState([])
@@ -950,7 +1046,13 @@ const loadLedger = useCallback((id) => {
       fetchOk(`${API_BASE}/entitlement-groups/${id}/ledger-config`),
     ])
       .then(([dc, lc]) => { setDeliveryConfig(dc); setLedgerConfig(lc) })
-      .catch(() => {}) // advisory — settings panel shows empty on failure, not blocking
+      .catch(() => {})
+  }, [])
+
+  const loadGlobalSettings = useCallback(() => {
+    fetchOk(`${API_BASE}/global-settings`)
+      .then(data => setGlobalSettings(data))
+      .catch(() => {})
   }, [])
 
   const checkSplits = useCallback((id) => {
@@ -993,6 +1095,7 @@ const loadLedger = useCallback((id) => {
     checkSplits(entGroupId)
     loadLedger(entGroupId)
     loadConfig(entGroupId)
+    loadGlobalSettings()
     setRunErrors([])
     setSelectedDevIds(null)
   }, [entGroupId, checkSplits, loadLedger, loadConfig])
@@ -1332,27 +1435,47 @@ const loadLedger = useCallback((id) => {
               }}>×</button>
             </div>
 
-            {ledgerConfig !== null && (
-              <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid #e5e7eb' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>Ledger dates</div>
-                <LedgerConfigSection
-                  entGroupId={entGroupId}
-                  datePaper={ledgerConfig.date_paper}
-                  dateEnt={ledgerConfig.date_ent}
-                  onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
-                  disabled={isRunning}
-                />
+            {/* Global defaults */}
+            <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid #e5e7eb' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em',
+                            textTransform: 'uppercase', color: '#9ca3af', marginBottom: 14 }}>
+                Global defaults
               </div>
-            )}
-
-            {deliveryConfig !== null && (
-              <DeliveryConfigSection
-                entGroupId={entGroupId}
-                deliveryConfig={deliveryConfig}
-                onSaved={() => loadConfig(entGroupId)}
+              <GlobalSettingsSection
+                globalSettings={globalSettings}
+                onSaved={loadGlobalSettings}
                 disabled={isRunning}
               />
-            )}
+            </div>
+
+            {/* This community */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em',
+                            textTransform: 'uppercase', color: '#9ca3af', marginBottom: 14 }}>
+                This community
+              </div>
+              {ledgerConfig !== null && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>Ledger dates</div>
+                  <LedgerConfigSection
+                    entGroupId={entGroupId}
+                    datePaper={ledgerConfig.date_paper}
+                    dateEnt={ledgerConfig.date_ent}
+                    onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
+                    disabled={isRunning}
+                  />
+                </div>
+              )}
+              {deliveryConfig !== null && (
+                <DeliveryConfigSection
+                  entGroupId={entGroupId}
+                  deliveryConfig={deliveryConfig}
+                  globalSettings={globalSettings}
+                  onSaved={() => loadConfig(entGroupId)}
+                  disabled={isRunning}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
