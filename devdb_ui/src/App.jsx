@@ -39,6 +39,16 @@ export default function App() {
     try { localStorage.setItem(LS_TEST_KEY, String(showTestCommunities)) } catch {}
   }, [showTestCommunities])
 
+  useEffect(() => {
+    function onKey(e) {
+      if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+        setShowTestCommunities(v => !v)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
     <BrowserRouter>
       <nav style={{
@@ -48,28 +58,17 @@ export default function App() {
       }}>
         <span style={{ fontWeight: 700, fontSize: 15, color: '#111827', marginRight: 16 }}>
           DevDB
+          {showTestCommunities && (
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#b45309',
+                           marginLeft: 7, letterSpacing: '0.05em' }}>
+              TEST
+            </span>
+          )}
         </span>
         <NavLink to="/" end style={navLinkStyle}>Lot · Phase</NavLink>
         <NavLink to="/site-plan" style={navLinkStyle}>Site Plan</NavLink>
         <NavLink to="/simulation" style={navLinkStyle}>Simulation</NavLink>
 
-        <div style={{ marginLeft: 'auto', paddingRight: 16 }}>
-          <button
-            onClick={() => setShowTestCommunities(v => !v)}
-            title={showTestCommunities ? 'Exit test mode' : 'Enter test mode (Pokemon communities)'}
-            style={{
-              fontSize: 11, fontWeight: 600, letterSpacing: '0.05em',
-              padding: '3px 10px', borderRadius: 4,
-              border: showTestCommunities ? '1px solid #d97706' : '1px solid #d1d5db',
-              background: showTestCommunities ? '#fef3c7' : 'transparent',
-              color: showTestCommunities ? '#b45309' : '#9ca3af',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-            }}
-          >
-            TEST
-          </button>
-        </div>
       </nav>
 
       <ErrorBoundary>

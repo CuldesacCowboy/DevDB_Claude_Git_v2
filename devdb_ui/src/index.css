@@ -3,6 +3,7 @@
 body {
   margin: 0;
   background: #f8fafc;
+  font-size: 14px;
 }
 
 @keyframes spin {

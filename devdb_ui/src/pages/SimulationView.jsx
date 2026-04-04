@@ -107,12 +107,12 @@ function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate, utili
 
 const thS = (align = 'right', extra = {}) => ({
   padding: '4px 8px', textAlign: align, fontWeight: 600,
-  borderBottom: '2px solid #e5e7eb', color: '#6b7280', fontSize: 11,
+  borderBottom: '2px solid #e5e7eb', color: '#6b7280', fontSize: 12,
   whiteSpace: 'nowrap', ...extra,
 })
 const tdS = (align = 'right', extra = {}) => ({
   padding: '3px 8px', textAlign: align, borderBottom: '1px solid #f3f4f6',
-  fontVariantNumeric: 'tabular-nums', fontSize: 12, ...extra,
+  fontVariantNumeric: 'tabular-nums', fontSize: 13, ...extra,
 })
 
 function cell(v) { return v > 0 ? v : <span style={{ color: '#e5e7eb' }}>—</span> }
@@ -799,7 +799,7 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   const [deliveryConfig, setDeliveryConfig] = useState(null)
   const [ledgerConfig, setLedgerConfig]     = useState(null)
   const [view, setView]             = useState('ledger')
-  const [ledgerSubView, setLedgerSubView] = useState('table')   // 'table' | 'graph'
+  const [ledgerSubView, setLedgerSubView] = useState('graph')   // 'table' | 'graph'
   const [lots, setLots]             = useState([])
   const [lotsLoading, setLotsLoading] = useState(false)
   const [deliverySchedule, setDeliverySchedule]               = useState([])
@@ -1181,7 +1181,7 @@ const loadLedger = useCallback((id) => {
                 {/* Ledger / Graph sub-toggle */}
                 <div style={{ display: 'flex', gap: 0, borderRadius: 4, overflow: 'hidden',
                               border: '1px solid #d1d5db', flexShrink: 0 }}>
-                  {[['table','Ledger'],['graph','Graph']].map(([v, label]) => (
+                  {[['graph','Chart'],['table','Table']].map(([v, label]) => (
                     <button key={v} onClick={() => setLedgerSubView(v)}
                       style={{ padding: '3px 12px', fontSize: 11, border: 'none', cursor: 'pointer',
                                background: ledgerSubView === v ? '#1e40af' : '#f9fafb',
