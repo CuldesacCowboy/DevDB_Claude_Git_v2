@@ -93,6 +93,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   const {
     allLots, lotPositions, isDirty, placeQueue, placeHistory,
     bankLots, currentPlacingLot, lotMeta,
+    saveError, savePending, clearSaveError,
     handleLotDrop, handleLotMove, handlePlaceLot, startPlaceFromLot, endPlaceMode,
     handleSaveLotPositions, handleDiscardLotPositions, handlePlaceUndo,
   } = sitePlan
@@ -119,7 +120,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
     fetch(`${API}/phases/lot-types`)
       .then(r => r.ok ? r.json() : [])
       .then(setAllLotTypes)
-      .catch(() => {})
+      .catch(() => setError('Could not load lot types'))
   }, [])
 
   useEffect(() => {
@@ -518,17 +519,30 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
         <input ref={fileInputRef} type='file' accept='.pdf' style={{ display: 'none' }} onChange={handleFileChange} />
       </div>
 
-      {/* Lot positions unsaved bar */}
-      {isDirty && (
+      {/* Lot positions unsaved bar — stays open on save failure */}
+      {(isDirty || saveError) && (
         <div style={{
-          padding: '6px 16px', background: '#fffbeb', borderBottom: '1px solid #fde68a',
+          padding: '6px 16px',
+          background: saveError ? '#fef2f2' : '#fffbeb',
+          borderBottom: `1px solid ${saveError ? '#fecaca' : '#fde68a'}`,
           display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0,
         }}>
-          <span style={{ fontSize: 12, color: '#92400e', flex: 1 }}>
-            Lot positions have unsaved changes
-          </span>
-          <Button variant="success" onClick={handleSaveLotPositions}>Save</Button>
-          <Button variant="default" onClick={handleDiscardLotPositions}>Discard</Button>
+          {saveError ? (
+            <span style={{ fontSize: 12, color: '#dc2626', flex: 1 }}>
+              Save failed: {saveError}
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: '#92400e', flex: 1 }}>
+              Lot positions have unsaved changes
+            </span>
+          )}
+          {saveError && (
+            <Button variant="default" onClick={clearSaveError} style={{ fontSize: 11 }}>Dismiss</Button>
+          )}
+          <Button variant="success" onClick={handleSaveLotPositions} disabled={savePending}>
+            {savePending ? 'Saving…' : 'Save'}
+          </Button>
+          <Button variant="default" onClick={handleDiscardLotPositions} disabled={savePending}>Discard</Button>
         </div>
       )}
 

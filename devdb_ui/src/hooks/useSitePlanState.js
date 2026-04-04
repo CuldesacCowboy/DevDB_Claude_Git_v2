@@ -14,6 +14,8 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
   const [isDirty, setIsDirty]             = useState(false)
   const [placeQueue, setPlaceQueue]       = useState([])
   const [placeHistory, setPlaceHistory]   = useState([])
+  const [savePending, setSavePending]     = useState(false)
+  const [saveError, setSaveError]         = useState(null)
 
   const lotPositionsRef = useRef(lotPositions)
   const boundariesRef   = useRef(boundaries)
@@ -110,6 +112,8 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
 
   async function handleSaveLotPositions() {
     if (!planId) return
+    setSavePending(true)
+    setSaveError(null)
     const currentPositions = lotPositionsRef.current
     const updates = [], removes = []
     for (const [lotIdStr, pos] of Object.entries(currentPositions)) {
@@ -139,13 +143,21 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
         setPlaceQueue([])
         setPlaceHistory([])
         setMode('view')
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setSaveError(body.detail || `Save failed (${res.status})`)
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      setSaveError(err.message || 'Network error — save failed')
+    } finally {
+      setSavePending(false)
+    }
   }
 
   function handleDiscardLotPositions() {
     setLotPositions(savedPositions)
     setIsDirty(false)
+    setSaveError(null)
     setPlaceQueue([])
     setPlaceHistory([])
     setMode('view')
@@ -181,6 +193,9 @@ export function useSitePlanState({ planId, boundaries, setMode }) {
     handlePlaceLot,
     startPlaceFromLot,
     endPlaceMode,
+    saveError,
+    savePending,
+    clearSaveError: () => setSaveError(null),
     handleSaveLotPositions,
     handleDiscardLotPositions,
     handlePlaceUndo,

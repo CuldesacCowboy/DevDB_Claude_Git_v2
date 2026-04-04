@@ -721,61 +721,70 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [selectedDevIds, setSelectedDevIds] = useState(null)
   const [period, setPeriod]                 = useState('monthly')
+  const [loadError, setLoadError]           = useState(null)
 
   const devList = useMemo(
     () => [...new Map(byDev.map(r => [r.dev_id, r.dev_name])).entries()].map(([id, name]) => ({ id, name })),
     [byDev],
   )
 
+  // Fetch helper that throws on non-2xx so Promise.all catch blocks see real errors.
+  async function fetchOk(url) {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`${res.status} from ${url}`)
+    return res.json()
+  }
+
   const loadLedger = useCallback((id) => {
     setLoading(true)
+    setLoadError(null)
     Promise.all([
-      fetch(`${API}/ledger/${id}/by-dev`).then(r => r.json()),
-      fetch(`${API}/ledger/${id}/utilization`).then(r => r.json()),
+      fetchOk(`${API}/ledger/${id}/by-dev`),
+      fetchOk(`${API}/ledger/${id}/utilization`),
     ])
       .then(([devRows, utilRows]) => {
         setByDev(Array.isArray(devRows) ? devRows : [])
         setUtilization(Array.isArray(utilRows) ? utilRows : [])
       })
-      .catch(() => { setByDev([]); setUtilization([]) })
+      .catch((err) => { setByDev([]); setUtilization([]); setLoadError(`Could not load ledger data — ${err.message}`) })
       .finally(() => setLoading(false))
   }, [])
 
   const loadConfig = useCallback((id) => {
     Promise.all([
-      fetch(`${API}/entitlement-groups/${id}/delivery-config`).then(r => r.json()),
-      fetch(`${API}/entitlement-groups/${id}/ledger-config`).then(r => r.json()),
+      fetchOk(`${API}/entitlement-groups/${id}/delivery-config`),
+      fetchOk(`${API}/entitlement-groups/${id}/ledger-config`),
     ])
       .then(([dc, lc]) => { setDeliveryConfig(dc); setLedgerConfig(lc) })
-      .catch(() => {})
+      .catch(() => {}) // advisory — settings panel shows empty on failure, not blocking
   }, [])
 
   const checkSplits = useCallback((id) => {
     Promise.all([
-      fetch(`${API}/entitlement-groups/${id}/split-check`).then(r => r.json()),
-      fetch(`${API}/entitlement-groups/${id}/param-check`).then(r => r.json()),
+      fetchOk(`${API}/entitlement-groups/${id}/split-check`),
+      fetchOk(`${API}/entitlement-groups/${id}/param-check`),
     ])
       .then(([splits, params]) => {
         setMissingSplits(Array.isArray(splits) ? splits : [])
         setStaleParams(Array.isArray(params) ? params : [])
         if (params?.length) setSettingsOpen(true)
       })
-      .catch(() => { setMissingSplits([]); setStaleParams([]) })
+      .catch(() => { setMissingSplits([]); setStaleParams([]) }) // advisory — warnings only
   }, [])
 
   const loadLots = useCallback((id) => {
     setLotsLoading(true)
-    fetch(`${API}/ledger/${id}/lots`).then(r => r.json())
+    fetchOk(`${API}/ledger/${id}/lots`)
       .then(data => setLots(Array.isArray(data) ? data : []))
-      .catch(() => setLots([]))
+      .catch((err) => { setLots([]); setLoadError(`Could not load lot ledger — ${err.message}`) })
       .finally(() => setLotsLoading(false))
   }, [])
 
   const loadDeliverySchedule = useCallback((id) => {
     setDeliveryScheduleLoading(true)
-    fetch(`${API}/ledger/${id}/delivery-schedule`).then(r => r.json())
+    fetchOk(`${API}/ledger/${id}/delivery-schedule`)
       .then(data => setDeliverySchedule(Array.isArray(data) ? data : []))
-      .catch(() => setDeliverySchedule([]))
+      .catch((err) => { setDeliverySchedule([]); setLoadError(`Could not load delivery schedule — ${err.message}`) })
       .finally(() => setDeliveryScheduleLoading(false))
   }, [])
 
@@ -787,6 +796,7 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
 
   useEffect(() => {
     if (!entGroupId) return
+    setLoadError(null)
     checkSplits(entGroupId)
     loadLedger(entGroupId)
     loadConfig(entGroupId)
@@ -806,6 +816,7 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
       const data = await res.json()
       setRunStatus({ ok: true, iterations: data.iterations, elapsed_ms: data.elapsed_ms })
       setRunErrors(data.errors || [])
+      setLoadError(null)
       loadLedger(entGroupId)
       if (view === 'lots')     loadLots(entGroupId)
       if (view === 'delivery') loadDeliverySchedule(entGroupId)
@@ -879,6 +890,24 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
           )}
         </button>
       </div>
+
+      {/* ── Data load error banner ── */}
+      {loadError && (
+        <div style={{
+          marginBottom: 12, padding: '8px 14px',
+          background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ fontSize: 12, color: '#dc2626', flex: 1 }}>{loadError}</span>
+          <button
+            onClick={() => setLoadError(null)}
+            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid #fca5a5',
+                     background: 'transparent', color: '#dc2626', cursor: 'pointer' }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* ── Settings panel ── */}
       {settingsOpen && (
