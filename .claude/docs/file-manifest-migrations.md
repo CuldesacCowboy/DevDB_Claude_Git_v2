@@ -168,3 +168,13 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Adds auto-increment sequences to 4 engine-owned tables still using MAX(id)+1: sim_lots.lot_id, sim_lot_date_violations.violation_id, sim_delivery_events.delivery_event_id, sim_delivery_event_phases.id. Same idempotent pattern as 027.
 - Tables: sim_lots, sim_lot_date_violations, sim_delivery_events, sim_delivery_event_phases
 - Last commit: 2026-04-04
+
+### devdb_python/migrations/029_is_test_flag.sql
+- Owns: Adds is_test boolean (DEFAULT FALSE) to sim_entitlement_groups; marks all existing test/Pokemon fixture groups (ent_group_id IN (7001..7014, 9001, 9002) pattern or is_test already set)
+- Tables: sim_entitlement_groups (ADD COLUMN IF NOT EXISTS)
+- Last commit: 2026-04-04
+
+### devdb_python/migrations/030_delivery_months.sql
+- Owns: Drops delivery_window_start and delivery_window_end from sim_entitlement_delivery_config and sim_delivery_events; adds delivery_months integer[] to sim_entitlement_delivery_config; migrates existing rows using generate_series (handles year-boundary wrap where start > end)
+- Tables: sim_entitlement_delivery_config (ADD COLUMN, DROP COLUMNS), sim_delivery_events (DROP COLUMNS)
+- Last commit: 2026-04-04

@@ -18,7 +18,11 @@
 | schedhousedetail load | Complete | 266,554 rows loaded from 3-part CSV export |
 | Engine modules | Complete | S-0100 through S-0900 PASS. S-1000 through S-1200 PASS. P-01 through P-08 PASS. Convergence coordinator PASS. S-0050 NOT IMPLEMENTED. S-0810 and S-0820 implemented 2026-03-25. |
 | End-to-end run | Complete | Verified 2026-04-04. D-119 guard working: first auto event Nov 27 (last locked Oct 26). One delivery date per year per ent-group confirmed. D-139 cross-dev bundling confirmed (Jun 29: Pointe ph.4 + Village ph.4 + SC ph.2). D/U/UC at delivery counts coherent. |
-| Decision log | Current | D-154 added. Next ID: D-155. |
+| Delivery months architecture | Complete | Migration 030: delivery_window_start/end replaced with delivery_months integer[] on sim_entitlement_delivery_config. P-0000 and P-0400 rewritten to use frozenset for valid_months. Supports arbitrary month sets (e.g. Nov-Dec only, or year-boundary windows). |
+| Pokemon test suite | Complete | 14 Pokemon communities (Scenarios 1–14), all 14/14 passing. Converted from window_start/end to delivery_months arrays (migration 030 compatible). |
+| Test mode UI toggle | Complete | TEST button in nav bar; exclusive filter — test mode shows only is_test communities, normal mode shows only non-test. Persisted to localStorage (devdb_show_test_communities). All three views (LotPhaseView, SitePlanView, SimulationView) respect the toggle. |
+| Delivery month picker UI | Complete | SimulationView DeliveryConfigSection: 1×12 month grid (MonthGrid component), Select All, Clear, Apply Standard Window, Edit Standard Window. Standard window configurable and persisted to localStorage (devdb_delivery_standard_months). |
+| Decision log | Current | D-155 added. Next ID: D-156. |
 | React/FastAPI phase endpoints | Complete | Route ordering fixed — specific sub-routes now registered before catch-all /{phase_id}. DELETE /phases/{id}/lot-type and all phase endpoints visible in OpenAPI spec. |
 | Session tooling | Complete | /start and /end Claude Code skills (.claude/skills/). Start_DevDB_Session.bat opens session windows via devdb_open_session_windows.ps1. Stop_DevDB.bat kills backend (uvicorn + detached python.exe), frontend (Vite), and Chrome DevDB windows. |
 | Postgres migration | Complete | All 35 tables migrated from Databricks to local PostgreSQL 16 (devdb.devdb). migrate_to_postgres.py. 23.5s total. 266,554 schedhousedetail rows. Engine now runs against local Postgres. Run time 0.5s (was 7+ min on Databricks serverless). |

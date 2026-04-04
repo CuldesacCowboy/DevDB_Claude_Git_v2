@@ -40,18 +40,18 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/eg_crud.py
-- Owns: Entitlement-group list, create, patch (GET/POST/PATCH on /entitlement-groups)
+- Owns: Entitlement-group list, create, patch (GET/POST/PATCH on /entitlement-groups); list includes is_test flag for test-mode community filtering
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_entitlement_groups, developments, dim_development, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits
-- Last commit: 2026-04-02
+- Last commit: 2026-04-04
 
 ### devdb_python/api/routers/eg_validation.py
-- Owns: split-check, param-check (now includes max_starts_per_month), delivery-config GET/PUT (now includes delivery_window_start/end, max_deliveries_per_year, auto_schedule_enabled, default_cmp_lag_days, default_cls_lag_days), ledger-config GET/PUT (now propagates date_ent to sim_dev_phases + sim_lots per-phase; propagates date_plan_start to sim_dev_phases; date_ent truncated to first-of-month)
+- Owns: split-check, param-check, delivery-config GET/PUT (delivery_months integer[] replaces delivery_window_start/end; validates each month 1–12; max_deliveries_per_year, auto_schedule_enabled, default_cmp_lag_days, default_cls_lag_days), ledger-config GET/PUT (propagates date_ent to sim_dev_phases + sim_lots; propagates date_plan_start to sim_dev_phases; date_ent truncated to first-of-month)
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_dev_phases, sim_legal_instruments, sim_ent_group_developments, sim_phase_product_splits, sim_dev_params, sim_entitlement_delivery_config, sim_entitlement_groups, sim_lots
-- Last commit: 2026-04-03
+- Last commit: 2026-04-04
 
 ### devdb_python/api/routers/eg_views.py
 - Owns: lot-phase-view route only (delegates to eg_lot_phase_service); entitlement events CRUD removed — table dropped in migration 025

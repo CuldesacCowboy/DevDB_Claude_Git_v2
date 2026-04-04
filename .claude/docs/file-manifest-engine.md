@@ -111,10 +111,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-02
 
 ### devdb_python/engine/p0000_placeholder_rebuilder.py
-- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config
+- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config; uses delivery_months integer[] (frozenset) for window logic — supports arbitrary month sets
 - Imported by: coordinator.py
 - Tables: sim_delivery_events, sim_delivery_event_phases, sim_dev_phases, sim_entitlement_delivery_config (SELECT/INSERT/UPDATE)
-- Last commit: 2026-04-03
+- Last commit: 2026-04-04
 
 ### devdb_python/engine/p0100_actual_date_applicator.py
 - Owns: P-0100 -- applies locked delivery event dates to sim_dev_phases.date_dev_projected per D-112/D-125
@@ -135,10 +135,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/p0400_delivery_date_assigner.py
-- Owns: P-0400 -- assigns delivery dates to placeholder events; never moves placeholder earlier than P-0000 wrote per D-141
+- Owns: P-0400 -- assigns delivery dates to placeholder events; never moves placeholder earlier than P-0000 wrote per D-141; uses delivery_months integer[] (frozenset) — replaced window_start/end range checks
 - Imported by: coordinator.py
 - Tables: sim_delivery_events (UPDATE), sim_dev_phases (SELECT)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-04
 
 ### devdb_python/engine/p0500_eligibility_updater.py
 - Owns: P-0500 -- updates phase delivery eligibility flags after date assignment; uses event_id column
@@ -248,3 +248,18 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Imports: kernel.planning_kernel, kernel.frozen_input, pytest
 - Tables: none (pure DataFrame fixtures)
 - Last commit: 2026-03-26
+
+### devdb_python/tests/pokemon/db.py
+- Owns: Shared Pokemon test helpers: make_lots(), reset_mutable_state(), check_violations(), check_sim_lots_exist(), check_delivery_events() (valid_months list), check_no_duplicate_lot_ids(), _pass()
+- Imports: engine modules, psycopg2
+- Tables: sim_lots, sim_lot_date_violations, sim_delivery_events (via reset/check queries)
+- Last commit: 2026-04-04
+
+### devdb_python/tests/pokemon/constants.py
+- Owns: Shared Pokemon test constants (ENT_GROUP_IDs, DEV_IDs range table)
+- Last commit: 2026-04-04
+
+### devdb_python/tests/pokemon/communities/ (14 scenario modules)
+- Owns: One module per Pokemon community (pallet_town through mahogany_town); each has install() (idempotent permanent objects), reset(), setup(), assert_results(); 14 scenarios testing various delivery scheduling behaviors
+- Tables: all sim_* tables (via install/reset helpers)
+- Last commit: 2026-04-04

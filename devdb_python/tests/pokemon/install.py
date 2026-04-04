@@ -102,23 +102,23 @@ def _reset_all(conn) -> None:
         """
         DELETE FROM sim_takedown_agreement_lots
         WHERE tda_id IN (
-            SELECT tda_id FROM sim_takedown_agreements WHERE dev_id = ANY(%s)
+            SELECT tda_id FROM sim_takedown_agreements WHERE ent_group_id = ANY(%s)
         )
         """,
-        (all_dev_ids,),
+        (ALL_ENT_GROUP_IDS,),
     )
     conn.execute(
         """
         DELETE FROM sim_takedown_checkpoints
         WHERE tda_id IN (
-            SELECT tda_id FROM sim_takedown_agreements WHERE dev_id = ANY(%s)
+            SELECT tda_id FROM sim_takedown_agreements WHERE ent_group_id = ANY(%s)
         )
         """,
-        (all_dev_ids,),
+        (ALL_ENT_GROUP_IDS,),
     )
     conn.execute(
-        "DELETE FROM sim_takedown_agreements WHERE dev_id = ANY(%s)",
-        (all_dev_ids,),
+        "DELETE FROM sim_takedown_agreements WHERE ent_group_id = ANY(%s)",
+        (ALL_ENT_GROUP_IDS,),
     )
 
     # Dev params / defaults

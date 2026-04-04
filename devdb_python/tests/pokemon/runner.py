@@ -26,9 +26,9 @@ from tests.pokemon.constants import REGISTRY
 def _run_scenario(conn, module) -> bool:
     name = module.__name__.split(".")[-1]
     _, description = REGISTRY.get(name, (None, name))
-    print(f"\n{'─' * 60}")
+    print(f"\n{'-' * 60}")
     print(f"  {name}  ({description})")
-    print(f"{'─' * 60}")
+    print(f"{'-' * 60}")
 
     try:
         print("  [reset]")
@@ -41,7 +41,7 @@ def _run_scenario(conn, module) -> bool:
         print(f"  [ERROR] {exc}")
         return False
 
-    print(f"  → {'PASS' if passed else 'FAIL'}")
+    print(f"  >> {'PASS' if passed else 'FAIL'}")
     return passed
 
 
@@ -86,9 +86,9 @@ def main() -> None:
         results[name] = _run_scenario(conn, module)
 
     # Summary
-    print(f"\n{'═' * 60}")
+    print(f"\n{'=' * 60}")
     print("  RESULTS")
-    print(f"{'═' * 60}")
+    print(f"{'=' * 60}")
     passed = failed = skipped = 0
     for name, result in results.items():
         if result is None:
