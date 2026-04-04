@@ -32,6 +32,7 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
             SELECT
                 eg.ent_group_id,
                 eg.ent_group_name,
+                COALESCE(eg.is_test, FALSE)                   AS is_test,
                 COALESCE(SUM(pt.real_count), 0)::int          AS real_count,
                 COALESCE(SUM(pt.projected_count), 0)::int     AS projected_count,
                 COALESCE(SUM(
@@ -63,6 +64,7 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
             {
                 "ent_group_id": r["ent_group_id"],
                 "ent_group_name": r["ent_group_name"],
+                "is_test": bool(r["is_test"]),
                 "real_count": int(r["real_count"]),
                 "projected_count": int(r["projected_count"]),
                 "total_count": int(r["total_count"]),

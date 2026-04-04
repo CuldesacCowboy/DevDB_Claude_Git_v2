@@ -6,6 +6,7 @@ import SimulationView from './pages/SimulationView'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const LS_KEY = 'devdb_active_community'
+const LS_TEST_KEY = 'devdb_show_test_communities'
 
 export default function App() {
   const [selectedGroupId, setSelectedGroupId] = useState(() => {
@@ -15,11 +16,19 @@ export default function App() {
     } catch { return null }
   })
 
+  const [showTestCommunities, setShowTestCommunities] = useState(() => {
+    try { return localStorage.getItem(LS_TEST_KEY) === 'true' } catch { return false }
+  })
+
   useEffect(() => {
     if (selectedGroupId) {
       try { localStorage.setItem(LS_KEY, String(selectedGroupId)) } catch {}
     }
   }, [selectedGroupId])
+
+  useEffect(() => {
+    try { localStorage.setItem(LS_TEST_KEY, String(showTestCommunities)) } catch {}
+  }, [showTestCommunities])
 
   return (
     <BrowserRouter>
@@ -65,9 +74,9 @@ export default function App() {
 
       <ErrorBoundary>
         <Routes>
-          <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
-          <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
-          <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} />} />
+          <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} setShowTestCommunities={setShowTestCommunities} />} />
+          <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
+          <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>

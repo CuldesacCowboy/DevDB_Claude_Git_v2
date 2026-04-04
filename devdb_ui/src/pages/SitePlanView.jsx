@@ -45,7 +45,7 @@ const MODE_META = {
   place:           { label: 'Place Lots',     color: '#7c3aed', instruction: 'Click on the map to place the next lot · Esc to stop placing' },
 }
 
-function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedGroupId: _setSelectedGroupIdProp }) {
+function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedGroupId: _setSelectedGroupIdProp, showTestCommunities }) {
   // ─── Page-level state ───────────────────────────────────────────────────────
   const [entGroups, setEntGroups]             = useState([])
   const selectedGroupId    = _selectedGroupIdProp    ?? ''
@@ -390,7 +390,7 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
           style={{ fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db', minWidth: 220 }}
         >
           <option value=''>Select project...</option>
-          {entGroups.map(g => (
+          {entGroups.filter(g => showTestCommunities || !g.is_test).map(g => (
             <option key={g.ent_group_id} value={g.ent_group_id}>{g.ent_group_name}</option>
           ))}
         </select>
@@ -864,8 +864,8 @@ function SitePlanViewInner({ selectedGroupId: _selectedGroupIdProp, setSelectedG
   )
 }
 
-export default function SitePlanView({ selectedGroupId, setSelectedGroupId }) {
-  return <SitePlanErrorBoundary><SitePlanViewInner selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} /></SitePlanErrorBoundary>
+export default function SitePlanView({ selectedGroupId, setSelectedGroupId, showTestCommunities }) {
+  return <SitePlanErrorBoundary><SitePlanViewInner selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} /></SitePlanErrorBoundary>
 }
 
 // ─── Phase Side Panel ─────────────────────────────────────────────────────────

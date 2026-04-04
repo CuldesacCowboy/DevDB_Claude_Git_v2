@@ -718,7 +718,7 @@ async function fetchOk(url) {
 
 // ─── Main view ───────────────────────────────────────────────────────────────
 
-export default function SimulationView({ selectedGroupId, setSelectedGroupId }) {
+export default function SimulationView({ selectedGroupId, setSelectedGroupId, showTestCommunities }) {
   const entGroupId = selectedGroupId
   const setEntGroupId = setSelectedGroupId
   const [entGroups, setEntGroups]   = useState([])
@@ -803,7 +803,7 @@ const loadLedger = useCallback((id) => {
 
   useEffect(() => {
     fetch(`${API_BASE}/entitlement-groups`).then(r => r.json())
-      .then(data => { setEntGroups(data); if (data.length && !selectedGroupId) setEntGroupId(data[0].ent_group_id) })
+      .then(data => { setEntGroups(data); if (data.length && !selectedGroupId) { const first = data.find(g => !g.is_test) ?? data[0]; setEntGroupId(first.ent_group_id) } })
       .catch(() => {})
   }, [])
 
@@ -884,7 +884,7 @@ const loadLedger = useCallback((id) => {
         <select value={entGroupId ?? ''}
           onChange={e => { setEntGroupId(Number(e.target.value)); setRunStatus(null) }}
           style={{ fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}>
-          {entGroups.map(g => (
+          {entGroups.filter(g => showTestCommunities || !g.is_test).map(g => (
             <option key={g.ent_group_id} value={g.ent_group_id}>
               {g.ent_group_name ?? `Group ${g.ent_group_id}`}
             </option>

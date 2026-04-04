@@ -20,7 +20,7 @@ import TakedownAgreementsView from './TakedownAgreementsView'
 import { API_BASE } from '../config'
 const LEFT_PANELS_WIDTH = 340 // sidebar + unassigned panel
 
-export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
+export default function LotPhaseView({ selectedGroupId, setSelectedGroupId, showTestCommunities, setShowTestCommunities }) {
   // -----------------------------------------------------------------------
   // Sidebar + community selection
   // -----------------------------------------------------------------------
@@ -352,13 +352,26 @@ export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
         {/* Inner content always 220px wide — overflow is clipped by parent */}
         <div style={{ width: 220, pointerEvents: sidebarOpen ? 'auto' : 'none' }} className="flex flex-col h-full">
           <div className="pt-10 px-3 pb-4 overflow-y-auto flex-1">
-            <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-2">
-              Communities
-            </p>
+            <div className="flex items-center justify-between mb-2 px-2">
+              <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                Communities
+              </p>
+              <button
+                onClick={() => setShowTestCommunities?.(v => !v)}
+                title={showTestCommunities ? 'Hide test communities' : 'Show test communities'}
+                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                  showTestCommunities
+                    ? 'bg-amber-100 border-amber-300 text-amber-700'
+                    : 'bg-transparent border-gray-200 text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                TEST
+              </button>
+            </div>
             {communities.length === 0 ? (
               <p className="text-[11px] text-gray-400 italic px-2">Loading…</p>
             ) : (
-              communities.map((c) => (
+              communities.filter(c => showTestCommunities || !c.is_test).map((c) => (
                 <div key={c.ent_group_id} className="mb-0.5">
                   {renamingId === c.ent_group_id ? (
                     <div className="px-1">
