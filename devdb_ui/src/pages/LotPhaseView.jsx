@@ -262,6 +262,7 @@ export default function LotPhaseView({ selectedGroupId, setSelectedGroupId }) {
     pendingLotId,
     pendingPhaseId,
   } = useDragHandler({
+    entGroupId,
     instruments,
     setInstruments,
     pgGroups,

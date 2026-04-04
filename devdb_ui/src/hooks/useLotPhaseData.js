@@ -46,7 +46,21 @@ export function useLotPhaseData(entGroupId) {
       setDevColorMap(buildDevColorMap(allDevIds))
       setPgOrder([...new Set(allDevIds)])
       setEntGroup({ ent_group_id: data.ent_group_id, ent_group_name: data.ent_group_name })
-      setInstruments(instrs)
+      // Apply saved instrument order from localStorage (survives refresh)
+      try {
+        const saved = localStorage.getItem(`devdb_instr_order_${entGroupId}`)
+        if (saved) {
+          const savedIds = JSON.parse(saved)
+          const idMap = Object.fromEntries(instrs.map(i => [i.instrument_id, i]))
+          const ordered = savedIds.filter(id => idMap[id]).map(id => idMap[id])
+          const added = instrs.filter(i => !savedIds.includes(i.instrument_id))
+          setInstruments([...ordered, ...added])
+        } else {
+          setInstruments(instrs)
+        }
+      } catch {
+        setInstruments(instrs)
+      }
       setUnassignedPhases(unassignedPhs)
       setUnassigned((data.unassigned ?? []).map((l) => ({ ...l, phase_id: null })))
     } catch (err) {

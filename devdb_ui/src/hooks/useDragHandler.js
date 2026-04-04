@@ -3,6 +3,7 @@ import { PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 
 export function useDragHandler({
+  entGroupId,
   instruments,
   setInstruments,
   pgGroups,
@@ -532,19 +533,33 @@ export function useDragHandler({
       if (oldIdx === -1 || newIdx === -1 || oldIdx === newIdx) return prev
       const reorderedDev = arrayMove(devInstrs, oldIdx, newIdx)
       let devCounter = 0
-      return prev.map((i) => (i.dev_id === devId ? reorderedDev[devCounter++] : i))
+      const next = prev.map((i) => (i.dev_id === devId ? reorderedDev[devCounter++] : i))
+      if (entGroupId) {
+        try {
+          localStorage.setItem(
+            `devdb_instr_order_${entGroupId}`,
+            JSON.stringify(next.map(i => i.instrument_id))
+          )
+        } catch { /* localStorage unavailable */ }
+      }
+      return next
     })
-    // TODO: persist instrument order to backend
   }
 
   // -----------------------------------------------------------------------
   // Instrument move to different PG — frontend-only stub
   // -----------------------------------------------------------------------
-  function handleInstrumentMoveToPg(instrumentId, targetDevId) {
+  async function handleInstrumentMoveToPg(instrumentId, targetDevId) {
     setInstruments((prev) =>
       prev.map((i) => (i.instrument_id === instrumentId ? { ...i, dev_id: targetDevId } : i))
     )
-    // TODO: persist instrument dev_id change to backend
+    try {
+      await fetch(`/api/instruments/${instrumentId}/dev`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dev_id: targetDevId }),
+      })
+    } catch { /* ignore network errors — UI already updated optimistically */ }
   }
 
   // -----------------------------------------------------------------------

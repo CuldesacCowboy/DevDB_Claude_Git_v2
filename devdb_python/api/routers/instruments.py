@@ -30,6 +30,10 @@ class PhaseOrderRequest(BaseModel):
     changed_by: str = "user"
 
 
+class InstrumentDevRequest(BaseModel):
+    dev_id: int
+
+
 @router.post("", response_model=dict, status_code=201)
 def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
 
@@ -111,6 +115,33 @@ def rename_instrument(
             raise HTTPException(status_code=404, detail=f"Instrument {instrument_id} not found")
         conn.commit()
         return {"instrument_id": instrument_id, "instrument_name": name}
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+@router.patch("/{instrument_id}/dev", response_model=dict)
+def update_instrument_dev(
+    instrument_id: int,
+    body: InstrumentDevRequest,
+    conn=Depends(get_db_conn),
+):
+    """Reassign a legal instrument to a different developer (changes dev_id)."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "UPDATE sim_legal_instruments SET dev_id = %s WHERE instrument_id = %s",
+            (body.dev_id, instrument_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=f"Instrument {instrument_id} not found")
+        conn.commit()
+        return {"instrument_id": instrument_id, "dev_id": body.dev_id}
     except HTTPException:
         raise
     except Exception:
