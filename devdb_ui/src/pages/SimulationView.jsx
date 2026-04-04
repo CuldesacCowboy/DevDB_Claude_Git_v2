@@ -308,7 +308,7 @@ function UtilizationPanel({ phases }) {
 
 // ─── Settings panel subcomponents ────────────────────────────────────────────
 
-function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved }) {
+function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled }) {
   const [paperVal, setPaperVal] = useState(datePaper ?? '')
   const [entVal,   setEntVal]   = useState(dateEnt   ?? '')
   const [saving,   setSaving]   = useState(false)
@@ -319,6 +319,7 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved }) {
   useEffect(() => { setEntVal(dateEnt ?? '') },     [dateEnt])
 
   const dirty = paperVal !== (datePaper ?? '') || entVal !== (dateEnt ?? '')
+  const isLocked = disabled || saving
 
   async function save() {
     setSaving(true); setErr(null); setLotsMsg(null)
@@ -338,29 +339,35 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved }) {
   const inputStyle = (saved, cur) => ({
     width: 120, padding: '3px 7px', fontSize: 12, borderRadius: 4,
     border: `1px solid ${cur !== (saved ?? '') ? '#2563eb' : '#d1d5db'}`,
+    background: isLocked ? '#f3f4f6' : '#fff',
   })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>Plan Start Date</span>
-        <input type="text" placeholder="YYYY-MM-DD" value={paperVal}
+        <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>
+          Plan Start Date <span style={{ color: '#dc2626' }}>*</span>
+        </span>
+        <input type="text" placeholder="YYYY-MM-DD" value={paperVal} disabled={isLocked}
           onChange={e => { setPaperVal(e.target.value); setErr(null); setLotsMsg(null) }}
           style={inputStyle(datePaper, paperVal)} />
-        {!dirty && datePaper && <span style={{ fontSize: 11, color: '#9ca3af' }}>Ledger starts {fmt(datePaper)}</span>}
+        {!dirty && datePaper
+          ? <span style={{ fontSize: 11, color: '#9ca3af' }}>Ledger starts {fmt(datePaper)}</span>
+          : !datePaper && <span style={{ fontSize: 11, color: '#dc2626' }}>Required — ledger won't render without this</span>
+        }
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 12, color: '#374151', minWidth: 140 }}>Entitlements Date</span>
-        <input type="text" placeholder="YYYY-MM-DD" value={entVal}
+        <input type="text" placeholder="YYYY-MM-DD" value={entVal} disabled={isLocked}
           onChange={e => { setEntVal(e.target.value); setErr(null); setLotsMsg(null) }}
           style={inputStyle(dateEnt, entVal)} />
         {!dirty && dateEnt && <span style={{ fontSize: 11, color: '#9ca3af' }}>Entitled {fmt(dateEnt)}</span>}
       </div>
       {dirty && (
-        <button disabled={saving} onClick={save}
+        <button disabled={isLocked} onClick={save}
           style={{ alignSelf: 'flex-start', padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-                   background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
-                   cursor: saving ? 'default' : 'pointer' }}>
+                   background: isLocked ? '#d1d5db' : '#2563eb', color: '#fff',
+                   cursor: isLocked ? 'default' : 'pointer' }}>
           {saving ? 'Saving…' : 'Save'}
         </button>
       )}
@@ -370,12 +377,13 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved }) {
   )
 }
 
-function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
+function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved, disabled }) {
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState(null)
 
-  const isDirty = Object.keys(edits).length > 0
+  const isDirty  = Object.keys(edits).length > 0
+  const isLocked = disabled || saving
 
   function valFor(key) { return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '') }
   function setVal(key, v) { setEdits(p => ({ ...p, [key]: v })) }
@@ -407,9 +415,10 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
 
   const numInput = (key, width = 56, placeholder = '—') => (
     <input key={key} type="number" min="0" placeholder={placeholder}
-      value={valFor(key)}
+      value={valFor(key)} disabled={isLocked}
       onChange={e => setVal(key, e.target.value)}
       style={{ width, padding: '2px 5px', fontSize: 12, borderRadius: 4, textAlign: 'right',
+               background: isLocked ? '#f3f4f6' : '#fff',
                border: `1px solid ${edits[key] !== undefined ? '#2563eb' : '#d1d5db'}` }} />
   )
 
@@ -419,19 +428,19 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
         <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>Delivery scheduling</div>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>Window start (mo)</span>
+            <span style={{ color: '#6b7280' }}>Window start (month, 1–12)</span>
             {numInput('delivery_window_start', 48, '5')}
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>Window end (mo)</span>
+            <span style={{ color: '#6b7280' }}>Window end (month, 1–12)</span>
             {numInput('delivery_window_end', 48, '11')}
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>Max deliveries/yr</span>
+            <span style={{ color: '#6b7280' }}>Max deliveries/yr (≥1)</span>
             {numInput('max_deliveries_per_year', 48, '1')}
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
-            <input type="checkbox"
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: isLocked ? 'default' : 'pointer' }}>
+            <input type="checkbox" disabled={isLocked}
               checked={valFor('auto_schedule_enabled') === true || valFor('auto_schedule_enabled') === 'true'}
               onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
               style={{ width: 14, height: 14, accentColor: '#2563eb',
@@ -447,11 +456,11 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
         </div>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>STR→CMP (days)</span>
+            <span style={{ color: '#6b7280' }}>STR→CMP (days, typical 180–365)</span>
             {numInput('default_cmp_lag_days', 56, '270')}
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
-            <span style={{ color: '#6b7280' }}>CMP→CLS (days)</span>
+            <span style={{ color: '#6b7280' }}>CMP→CLS (days, typical 14–90)</span>
             {numInput('default_cls_lag_days', 56, '45')}
           </label>
         </div>
@@ -459,7 +468,7 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
       <div>
         <div style={{ fontSize: 12, color: '#374151', marginBottom: 6, fontWeight: 500 }}>
           Inventory floor tolerances
-          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>highlighted orange when below floor</span>
+          <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>highlighted orange in ledger when below floor</span>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           {FLOOR_KEYS.map(key => (
@@ -472,10 +481,10 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {isDirty && (
-          <button disabled={saving} onClick={save}
+          <button disabled={isLocked} onClick={save}
             style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: 'none',
-                     background: saving ? '#d1d5db' : '#2563eb', color: '#fff',
-                     cursor: saving ? 'default' : 'pointer' }}>
+                     background: isLocked ? '#d1d5db' : '#2563eb', color: '#fff',
+                     cursor: isLocked ? 'default' : 'pointer' }}>
             {saving ? 'Saving…' : 'Save'}
           </button>
         )}
@@ -485,7 +494,7 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, onSaved }) {
   )
 }
 
-function StartsTargetsSection({ entGroupId, params, onSaved }) {
+function StartsTargetsSection({ entGroupId, params, onSaved, disabled }) {
   const [edits, setEdits] = useState({})
 
   if (!params.length) return (
@@ -529,20 +538,24 @@ function StartsTargetsSection({ entGroupId, params, onSaved }) {
                              background: DOT[p.status] ?? '#9ca3af', flexShrink: 0 }} />
               <span style={{ fontSize: 12, color: '#374151', minWidth: 180 }}>{p.dev_name}</span>
               <input type="number" min="1" placeholder="starts/yr" value={annualVal}
+                disabled={disabled || edit.saving}
                 onChange={e => setEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], annual: e.target.value } }))}
                 style={{ width: 68, padding: '2px 5px', fontSize: 12, borderRadius: 4,
+                         background: (disabled || edit.saving) ? '#f3f4f6' : '#fff',
                          border: `1px solid ${annualDirty ? '#2563eb' : '#d1d5db'}` }} />
               <span style={{ fontSize: 11, color: '#9ca3af' }}>/ yr</span>
               <input type="number" min="1" placeholder="max/mo" value={maxMonthVal}
+                disabled={disabled || edit.saving}
                 onChange={e => setEdits(prev => ({ ...prev, [p.dev_id]: { ...prev[p.dev_id], maxMonth: e.target.value } }))}
                 style={{ width: 60, padding: '2px 5px', fontSize: 12, borderRadius: 4,
+                         background: (disabled || edit.saving) ? '#f3f4f6' : '#fff',
                          border: `1px solid ${maxMonthDirty ? '#2563eb' : '#d1d5db'}` }} />
               <span style={{ fontSize: 11, color: '#9ca3af' }}>max/mo</span>
               {dirty && (
-                <button disabled={edit.saving || !annualVal} onClick={save}
+                <button disabled={disabled || edit.saving || !annualVal} onClick={save}
                   style={{ padding: '2px 8px', fontSize: 11, borderRadius: 4, border: 'none',
-                           background: edit.saving ? '#d1d5db' : '#2563eb', color: '#fff',
-                           cursor: edit.saving ? 'default' : 'pointer' }}>
+                           background: (disabled || edit.saving) ? '#d1d5db' : '#2563eb', color: '#fff',
+                           cursor: (disabled || edit.saving) ? 'default' : 'pointer' }}>
                   {edit.saving ? '…' : 'Save'}
                 </button>
               )}
@@ -722,6 +735,7 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
   const [selectedDevIds, setSelectedDevIds] = useState(null)
   const [period, setPeriod]                 = useState('monthly')
   const [loadError, setLoadError]           = useState(null)
+  const [lastRunAt, setLastRunAt]           = useState(null)
 
   const devList = useMemo(
     () => [...new Map(byDev.map(r => [r.dev_id, r.dev_name])).entries()].map(([id, name]) => ({ id, name })),
@@ -816,12 +830,13 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
       const data = await res.json()
       setRunStatus({ ok: true, iterations: data.iterations, elapsed_ms: data.elapsed_ms })
       setRunErrors(data.errors || [])
+      setLastRunAt(new Date())
       setLoadError(null)
       loadLedger(entGroupId)
       if (view === 'lots')     loadLots(entGroupId)
       if (view === 'delivery') loadDeliverySchedule(entGroupId)
       checkSplits(entGroupId)
-    } catch (e) { setRunStatus({ ok: false, error: e.message }) }
+    } catch (e) { setRunStatus({ ok: false, error: e.message }); setLastRunAt(new Date()) }
   }
 
   const ledgerRows = useMemo(() => buildLedgerRows(
@@ -834,6 +849,19 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
   }, [utilization, selectedDevIds])
 
   const hasData = byDev.length > 0
+
+  const isRunning = runStatus === 'running'
+
+  // Pre-run validation warnings shown near Run button (non-blocking advisory).
+  const runWarnings = useMemo(() => {
+    const w = []
+    if (ledgerConfig !== null && !ledgerConfig.date_paper)
+      w.push('Plan start date is not set — ledger will not render (Settings → Plan Start Date)')
+    const missingDevs = staleParams.filter(p => p.status === 'missing')
+    if (missingDevs.length > 0)
+      w.push(`${missingDevs.length} development${missingDevs.length !== 1 ? 's' : ''} have no starts target configured`)
+    return w
+  }, [ledgerConfig, staleParams])
 
   function toggleDev(devId) {
     if (selectedDevIds === null) {
@@ -864,32 +892,77 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
           ))}
         </select>
 
-        <button onClick={handleRun} disabled={!entGroupId || runStatus === 'running'}
-          style={{ padding: '5px 16px', borderRadius: 4, fontSize: 13, fontWeight: 600,
-                   background: runStatus === 'running' ? '#93c5fd' : '#2563eb',
-                   color: '#fff', border: 'none', cursor: runStatus === 'running' ? 'default' : 'pointer' }}>
-          {runStatus === 'running' ? 'Running…' : 'Run Simulation'}
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <button onClick={handleRun} disabled={!entGroupId || isRunning}
+            style={{ padding: '5px 16px', borderRadius: 4, fontSize: 13, fontWeight: 600,
+                     background: isRunning ? '#93c5fd' : '#2563eb',
+                     color: '#fff', border: 'none', cursor: isRunning ? 'default' : 'pointer',
+                     display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isRunning && (
+              <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%',
+                             border: '2px solid rgba(255,255,255,0.5)', borderTopColor: '#fff',
+                             animation: 'spin 0.8s linear infinite' }} />
+            )}
+            {isRunning ? 'Running…' : 'Run Simulation'}
+          </button>
+          {runWarnings.length > 0 && !isRunning && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {runWarnings.map((w, i) => (
+                <span key={i} style={{ fontSize: 11, color: '#b45309', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  ⚠ {w}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
 
-        {runStatus && runStatus !== 'running' && (
-          <span style={{ fontSize: 12, color: runStatus.ok ? '#16a34a' : '#dc2626' }}>
-            {runStatus.ok
-              ? `Done — ${runStatus.iterations} iteration(s), ${runStatus.elapsed_ms}ms`
-              : `Error: ${runStatus.error}`}
-          </span>
+        {/* Run result card */}
+        {runStatus && !isRunning && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '5px 12px', borderRadius: 6, fontSize: 12,
+            background: runStatus.ok ? '#f0fdf4' : '#fef2f2',
+            border: `1px solid ${runStatus.ok ? '#bbf7d0' : '#fecaca'}`,
+          }}>
+            <span style={{ fontWeight: 600, color: runStatus.ok ? '#15803d' : '#dc2626' }}>
+              {runStatus.ok ? '✓ Run complete' : '✕ Run failed'}
+            </span>
+            {runStatus.ok && (
+              <span style={{ color: '#6b7280' }}>
+                {runStatus.iterations} iteration{runStatus.iterations !== 1 ? 's' : ''} · {runStatus.elapsed_ms}ms
+              </span>
+            )}
+            {!runStatus.ok && (
+              <span style={{ color: '#dc2626', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {runStatus.error}
+              </span>
+            )}
+            {lastRunAt && (
+              <span style={{ color: '#9ca3af', fontSize: 11 }}>
+                {lastRunAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+            <button onClick={() => setRunStatus(null)}
+              style={{ marginLeft: 4, background: 'none', border: 'none', cursor: 'pointer',
+                       color: '#9ca3af', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>
+              ×
+            </button>
+          </div>
         )}
 
         <button onClick={() => setSettingsOpen(o => !o)}
           style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 12px', borderRadius: 4,
                    border: '1px solid #d1d5db', background: settingsOpen ? '#f1f5f9' : '#fff',
                    color: '#374151', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-          Settings {settingsOpen ? '▲' : '▼'}
+          {isRunning ? '⏳ ' : ''}Settings {settingsOpen ? '▲' : '▼'}
           {(missingSplits.length > 0 || staleParams.length > 0) && (
             <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
                            background: '#f59e0b', marginLeft: 2 }} />
           )}
         </button>
       </div>
+      {/* Spinner keyframe (injected once) */}
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
 
       {/* ── Data load error banner ── */}
       {loadError && (
@@ -911,25 +984,42 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId }) 
 
       {/* ── Settings panel ── */}
       {settingsOpen && (
-        <div style={{ marginBottom: 16, padding: '14px 16px', background: '#f8fafc',
-                      border: '1px solid #e2e8f0', borderRadius: 8,
-                      display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {ledgerConfig !== null && (
-            <LedgerConfigSection
-              entGroupId={entGroupId}
-              datePaper={ledgerConfig.date_paper}
-              dateEnt={ledgerConfig.date_ent}
-              onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
-            />
-          )}
-          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
-            <StartsTargetsSection entGroupId={entGroupId} params={staleParams} onSaved={() => checkSplits(entGroupId)} />
-          </div>
-          {deliveryConfig !== null && (
-            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
-              <DeliveryConfigSection entGroupId={entGroupId} deliveryConfig={deliveryConfig} onSaved={() => loadConfig(entGroupId)} />
+        <div style={{ position: 'relative', marginBottom: 16 }}>
+          {/* Frosted lock overlay during run */}
+          {isRunning && (
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: 8, zIndex: 10,
+              background: 'rgba(248,250,252,0.82)', backdropFilter: 'blur(2px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 500,
+                             background: '#fff', padding: '5px 14px', borderRadius: 20,
+                             border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.07)' }}>
+                Run in progress — settings locked
+              </span>
             </div>
           )}
+          <div style={{ padding: '14px 16px', background: '#f8fafc',
+                        border: '1px solid #e2e8f0', borderRadius: 8,
+                        display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {ledgerConfig !== null && (
+              <LedgerConfigSection
+                entGroupId={entGroupId}
+                datePaper={ledgerConfig.date_paper}
+                dateEnt={ledgerConfig.date_ent}
+                onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
+                disabled={isRunning}
+              />
+            )}
+            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
+              <StartsTargetsSection entGroupId={entGroupId} params={staleParams} onSaved={() => checkSplits(entGroupId)} disabled={isRunning} />
+            </div>
+            {deliveryConfig !== null && (
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14 }}>
+                <DeliveryConfigSection entGroupId={entGroupId} deliveryConfig={deliveryConfig} onSaved={() => loadConfig(entGroupId)} disabled={isRunning} />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
