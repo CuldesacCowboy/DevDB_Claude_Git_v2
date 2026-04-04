@@ -59,7 +59,7 @@ def install(conn) -> None:
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7006, "Lavender Town SF", "LV", county_id, state_id, ENT_GROUP_ID),
+        (7006, "Lavender Town SF", "QF", county_id, state_id, ENT_GROUP_ID),
     )
 
     # Link dev to ent group
@@ -122,19 +122,19 @@ def install(conn) -> None:
 
     # Product splits
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70013, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70014, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70013, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70014, "lot_type_id": 101, "projected_count": 20},
     ])
 
     # Delivery config
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
-            (ent_group_id, delivery_window_start, delivery_window_end,
+            (ent_group_id, delivery_months,
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 5, 11, 0, 1, True),
+        (ENT_GROUP_ID, [5,6,7,8,9,10,11], 0, 1, True),
     )
 
     # Locked delivery event

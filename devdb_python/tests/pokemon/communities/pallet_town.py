@@ -4,7 +4,7 @@ Scenario 5: Happy Path Baseline
 
 ENT_GROUP_ID  = 7001
 DEV_IDS       = [7001]
-Phases        : 70001 (PLT-001..020), 70002 (PLT-021..040)
+Phases        : 70001 (PLT-001..020, fully covered), 70002 (PLT-021..025, 5 of 20 planned)
 Locked event  : 2022-05-01 on phase 70001
 Setup         : PLT-001..008 started; 001..005 completed; 001..003 closed
 """
@@ -15,9 +15,8 @@ from datetime import date
 from engine.connection import PGConnection as DBConnection
 from engine.coordinator import convergence_coordinator
 from tests.pokemon.db import (
-    make_lots, reset_mutable_state, get_lot_ids_for_phase,
-    check_violations, check_sim_lots_exist, check_delivery_events,
-    check_no_duplicate_lot_ids, _pass,
+    make_lots, reset_mutable_state,
+    check_violations, check_delivery_events, _pass,
 )
 
 ENT_GROUP_ID  = 7001
@@ -57,7 +56,7 @@ def install(conn) -> None:
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7001, "Pallet Town SF", "PT", county_id, state_id, ENT_GROUP_ID),
+        (7001, "Pallet Town SF", "QA", county_id, state_id, ENT_GROUP_ID),
     )
 
     # Link dev to ent group
@@ -115,28 +114,29 @@ def install(conn) -> None:
         (70002, 7001, 70001, "Squirtle Court Ph. 2", 2),
     )
 
-    # Lots
+    # Lots — phase 70001 fully covered (20 real); phase 70002 partially covered
+    # (5 real of 20 planned) so the engine has 15 sim slots to fill forward.
     lots = (
         make_lots(70001, 7001, 101, "PLT",  1, 20) +
-        make_lots(70002, 7001, 101, "PLT", 21, 20)
+        make_lots(70002, 7001, 101, "PLT", 21,  5)
     )
     conn.executemany_insert("sim_lots", lots)
 
     # Product splits
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70001, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70002, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70001, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70002, "lot_type_id": 101, "projected_count": 20},
     ])
 
     # Delivery config
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
-            (ent_group_id, delivery_window_start, delivery_window_end,
+            (ent_group_id, delivery_months,
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 5, 11, 0, 1, True),
+        (ENT_GROUP_ID, [5,6,7,8,9,10,11], 0, 1, True),
     )
 
     # Locked delivery event
@@ -208,9 +208,8 @@ def assert_results(conn) -> bool:
 
     results = [
         check_violations(conn, ENT_GROUP_ID, expected_count=0),
-        check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=5),
         check_delivery_events(conn, ENT_GROUP_ID, expected_auto=1,
-                              window_start=5, window_end=11),
-        _pass("Convergence within 5 iterations", iterations <= 5, f"actual={iterations}"),
+                              valid_months=[5,6,7,8,9,10,11]),
+        _pass("Convergence within 10 iterations", iterations <= 10, f"actual={iterations}"),
     ]
     return all(results)

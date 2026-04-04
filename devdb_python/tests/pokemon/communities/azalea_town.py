@@ -33,9 +33,9 @@ DEV_IDS        = [7014, 7015, 7016]
 
 # (dev_id, dev_name, marks_code, instrument_id, ph1, ph2, lot_prefix, phase_name_base)
 _DEV_CONFIG = [
-    (7014, "Azalea Town SF",    "AZ", 70032, 70032, 70033, "AZA", "Slowpoke Well Ph."),
-    (7015, "Azalea Town MF",    "AY", 70034, 70034, 70035, "AZB", "Ilex Forest Ph."),
-    (7016, "Azalea Town Condo", "AC", 70036, 70036, 70037, "AZC", "Kurt's Workshop Ph."),
+    (7014, "Azalea Town SF",    "QN", 70032, 70032, 70033, "AZA", "Slowpoke Well Ph."),
+    (7015, "Azalea Town MF",    "QO", 70034, 70034, 70035, "AZB", "Ilex Forest Ph."),
+    (7016, "Azalea Town Condo", "QP", 70036, 70036, 70037, "AZC", "Kurt's Workshop Ph."),
 ]
 
 
@@ -126,15 +126,12 @@ def install(conn) -> None:
         )
 
         # Lots
-        lots = (
-            make_lots(ph1, dev_id, 101, prefix,  1, 20) +
-            make_lots(ph2, dev_id, 101, prefix, 21, 20)
-        )
+        lots = make_lots(ph1, dev_id, 101, prefix, 1, 20)
         conn.executemany_insert("sim_lots", lots)
 
         conn.executemany_insert("sim_phase_product_splits", [
-            {"phase_id": ph1, "lot_type_id": 101, "lot_count": 20},
-            {"phase_id": ph2, "lot_type_id": 101, "lot_count": 20},
+            {"phase_id": ph1, "lot_type_id": 101, "projected_count": 20},
+            {"phase_id": ph2, "lot_type_id": 101, "projected_count": 20},
         ])
 
         # Locked delivery event for phase 1 of each dev
@@ -158,11 +155,11 @@ def install(conn) -> None:
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
-            (ent_group_id, delivery_window_start, delivery_window_end,
+            (ent_group_id, delivery_months,
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 5, 11, 0, 1, True),
+        (ENT_GROUP_ID, [5,6,7,8,9,10,11], 0, 1, True),
     )
 
 
@@ -208,7 +205,7 @@ def assert_results(conn) -> bool:
         check_violations(conn, ENT_GROUP_ID, expected_count=0),
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=3),
         check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
-        check_delivery_events(conn, ENT_GROUP_ID, window_start=5, window_end=11),
+        check_delivery_events(conn, ENT_GROUP_ID, valid_months=[5,6,7,8,9,10,11]),
         _pass("D-139: multi-dev bundling on auto event", bundled,
               f"max_devs_per_event={int(df['dev_count'].max()) if not df.empty else 0}"),
     ]

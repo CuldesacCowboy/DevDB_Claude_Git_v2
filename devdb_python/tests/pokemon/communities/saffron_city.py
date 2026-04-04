@@ -128,11 +128,11 @@ def install(conn) -> None:
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
-            (ent_group_id, delivery_window_start, delivery_window_end,
+            (ent_group_id, delivery_months,
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 5, 11, 0, 2, True),
+        (ENT_GROUP_ID, [5,6,7,8,9,10,11], 0, 2, True),
     )
 
     # Locked delivery event for phase 1 (anchor)
@@ -172,6 +172,6 @@ def assert_results(conn) -> bool:
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=1),
         check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
         check_delivery_events(conn, ENT_GROUP_ID, expected_auto=1,
-                              window_start=5, window_end=11),
+                              valid_months=[5,6,7,8,9,10,11]),
     ]
     return all(results)

@@ -57,7 +57,7 @@ def install(conn) -> None:
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7012, "Ecruteak City Estates", "EC", county_id, state_id, ENT_GROUP_ID),
+        (7012, "Ecruteak City Estates", "QL", county_id, state_id, ENT_GROUP_ID),
     )
 
     conn.execute(
@@ -108,27 +108,25 @@ def install(conn) -> None:
         )
 
     lots = (
-        make_lots(70026, 7012, 101, "ECR",  1, 20) +
-        make_lots(70027, 7012, 101, "ECR", 21, 20) +
-        make_lots(70028, 7012, 101, "ECR", 41, 20)
+        make_lots(70026, 7012, 101, "ECR",  1, 20)
     )
     conn.executemany_insert("sim_lots", lots)
 
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70026, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70027, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70028, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70026, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70027, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70028, "lot_type_id": 101, "projected_count": 20},
     ])
 
     # 18-month minimum gap between deliveries
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
-            (ent_group_id, delivery_window_start, delivery_window_end,
+            (ent_group_id, delivery_months,
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 5, 11, 18, 2, True),
+        (ENT_GROUP_ID, [5,6,7,8,9,10,11], 18, 2, True),
     )
 
     # Locked delivery event on phase 1

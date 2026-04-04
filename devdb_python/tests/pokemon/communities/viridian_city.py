@@ -57,7 +57,7 @@ def install(conn) -> None:
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7002, "Viridian City Mixed Use", "VC", county_id, state_id, ENT_GROUP_ID),
+        (7002, "Viridian City Mixed Use", "QB", county_id, state_id, ENT_GROUP_ID),
     )
 
     # Link dev to ent group
@@ -116,29 +116,27 @@ def install(conn) -> None:
     # Lots
     lots = (
         make_lots(70003, 7002, 101, "VCN",  1, 15) +
-        make_lots(70004, 7002, 111, "VCN", 16, 10) +
-        make_lots(70005, 7002, 101, "VCN", 26, 15) +
-        make_lots(70006, 7002, 111, "VCN", 41, 10)
+        make_lots(70004, 7002, 111, "VCN", 16, 10)
     )
     conn.executemany_insert("sim_lots", lots)
 
     # Product splits
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70003, "lot_type_id": 101, "lot_count": 15},
-        {"phase_id": 70004, "lot_type_id": 111, "lot_count": 10},
-        {"phase_id": 70005, "lot_type_id": 101, "lot_count": 15},
-        {"phase_id": 70006, "lot_type_id": 111, "lot_count": 10},
+        {"phase_id": 70003, "lot_type_id": 101, "projected_count": 15},
+        {"phase_id": 70004, "lot_type_id": 111, "projected_count": 10},
+        {"phase_id": 70005, "lot_type_id": 101, "projected_count": 15},
+        {"phase_id": 70006, "lot_type_id": 111, "projected_count": 10},
     ])
 
     # Delivery config
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
-            (ent_group_id, delivery_window_start, delivery_window_end,
+            (ent_group_id, delivery_months,
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 5, 11, 0, 1, True),
+        (ENT_GROUP_ID, [5,6,7,8,9,10,11], 0, 1, True),
     )
 
     # Locked delivery event — covers both SF and Condo phase 1
@@ -191,6 +189,6 @@ def assert_results(conn) -> bool:
         check_violations(conn, ENT_GROUP_ID, expected_count=0),
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=5),
         check_delivery_events(conn, ENT_GROUP_ID, expected_auto=1,
-                              window_start=5, window_end=11),
+                              valid_months=[5,6,7,8,9,10,11]),
     ]
     return all(results)

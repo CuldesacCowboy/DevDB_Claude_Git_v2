@@ -57,7 +57,7 @@ def install(conn) -> None:
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7011, "Goldenrod City Commons", "GC", county_id, state_id, ENT_GROUP_ID),
+        (7011, "Goldenrod City Commons", "QK", county_id, state_id, ENT_GROUP_ID),
     )
 
     conn.execute(
@@ -108,27 +108,25 @@ def install(conn) -> None:
         )
 
     lots = (
-        make_lots(70023, 7011, 101, "GLD",  1, 20) +
-        make_lots(70024, 7011, 101, "GLD", 21, 20) +
-        make_lots(70025, 7011, 101, "GLD", 41, 20)
+        make_lots(70023, 7011, 101, "GLD",  1, 20)
     )
     conn.executemany_insert("sim_lots", lots)
 
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70023, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70024, "lot_type_id": 101, "lot_count": 20},
-        {"phase_id": 70025, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70023, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70024, "lot_type_id": 101, "projected_count": 20},
+        {"phase_id": 70025, "lot_type_id": 101, "projected_count": 20},
     ])
 
     # Narrow delivery window: Sep–Oct only, max 1 per year
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
-            (ent_group_id, delivery_window_start, delivery_window_end,
+            (ent_group_id, delivery_months,
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 9, 10, 0, 1, True),
+        (ENT_GROUP_ID, [9,10], 0, 1, True),
     )
 
     # Locked delivery event on phase 1 (Sep anchor)
@@ -165,6 +163,6 @@ def assert_results(conn) -> bool:
         check_violations(conn, ENT_GROUP_ID, expected_count=0),
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=1),
         check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
-        check_delivery_events(conn, ENT_GROUP_ID, window_start=9, window_end=10),
+        check_delivery_events(conn, ENT_GROUP_ID, valid_months=[9,10]),
     ]
     return all(results)

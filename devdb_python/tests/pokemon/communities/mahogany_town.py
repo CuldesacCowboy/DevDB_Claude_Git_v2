@@ -125,11 +125,11 @@ def install(conn) -> None:
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
-            (ent_group_id, delivery_window_start, delivery_window_end,
+            (ent_group_id, delivery_months,
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 11, 12, 0, 1, True),
+        (ENT_GROUP_ID, [11,12], 0, 1, True),
     )
 
     # Locked delivery event on phase 1 (Nov anchor)
@@ -166,7 +166,6 @@ def assert_results(conn) -> bool:
         check_violations(conn, ENT_GROUP_ID, expected_count=0),
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=1),
         check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
-        # window_start=11 > window_end=2 triggers year-boundary logic in check_delivery_events
-        check_delivery_events(conn, ENT_GROUP_ID, window_start=11, window_end=12),
+        check_delivery_events(conn, ENT_GROUP_ID, valid_months=[11,12]),
     ]
     return all(results)

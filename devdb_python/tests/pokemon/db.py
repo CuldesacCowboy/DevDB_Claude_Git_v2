@@ -101,7 +101,9 @@ def reset_mutable_state(conn, ent_group_id: int) -> None:
         (dev_ids,),
     )
 
-    # 5. Reset phase projected/demand dates
+    # 5. Reset phase projected/demand dates, then re-derive date_dev_projected
+    #    from locked delivery events so iteration 1 of the starts pipeline has
+    #    a valid phase delivery date (mirrors what P-01 does in production).
     phase_df = conn.read_df(
         "SELECT phase_id FROM sim_dev_phases WHERE dev_id = ANY(%s)",
         (dev_ids,),
@@ -113,6 +115,37 @@ def reset_mutable_state(conn, ent_group_id: int) -> None:
             UPDATE sim_dev_phases
             SET date_dev_projected = NULL, date_dev_demand_derived = NULL
             WHERE phase_id = ANY(%s)
+            """,
+            (phase_ids,),
+        )
+        # Re-apply locked event actual dates to phases and lots (mirrors P-01).
+        # Without this, the starts pipeline runs on iteration 1 with date_dev=NULL
+        # on lots, sees no allocatable demand, and converges prematurely.
+        conn.execute(
+            """
+            UPDATE sim_dev_phases p
+            SET date_dev_projected = de.date_dev_actual
+            FROM sim_delivery_event_phases dep
+            JOIN sim_delivery_events de ON de.delivery_event_id = dep.delivery_event_id
+            WHERE dep.phase_id = p.phase_id
+              AND de.date_dev_actual IS NOT NULL
+              AND de.is_auto_created = FALSE
+              AND p.phase_id = ANY(%s)
+            """,
+            (phase_ids,),
+        )
+        conn.execute(
+            """
+            UPDATE sim_lots sl
+            SET date_dev = de.date_dev_actual
+            FROM sim_delivery_event_phases dep
+            JOIN sim_delivery_events de ON de.delivery_event_id = dep.delivery_event_id
+            WHERE dep.phase_id = sl.phase_id
+              AND de.date_dev_actual IS NOT NULL
+              AND de.is_auto_created = FALSE
+              AND sl.lot_source = 'real'
+              AND sl.phase_id = ANY(%s)
+              AND (sl.date_dev IS NULL OR sl.date_dev > de.date_dev_actual)
             """,
             (phase_ids,),
         )
@@ -203,8 +236,7 @@ def check_sim_lots_exist(conn, ent_group_id: int, min_count: int = 1) -> bool:
 
 def check_delivery_events(conn, ent_group_id: int,
                           expected_auto: int | None = None,
-                          window_start: int | None = None,
-                          window_end: int | None = None) -> bool:
+                          valid_months: list[int] | None = None) -> bool:
     df = conn.read_df(
         """
         SELECT date_dev_projected, date_dev_actual, is_auto_created
@@ -221,7 +253,7 @@ def check_delivery_events(conn, ent_group_id: int,
         results.append(_pass(f"Auto events = {expected_auto}", auto_count == expected_auto,
                              f"actual={auto_count}"))
 
-    if window_start is not None and window_end is not None and not df.empty:
+    if valid_months is not None and not df.empty:
         auto_df = df[df["is_auto_created"] == True]
         if not auto_df.empty:
             months = []
@@ -231,12 +263,11 @@ def check_delivery_events(conn, ent_group_id: int,
                     m = d.month if hasattr(d, "month") else d.date().month
                     months.append(m)
 
-            if window_start <= window_end:
-                in_window = all(window_start <= m <= window_end for m in months)
-            else:  # year-boundary window (e.g. Nov-Feb)
-                in_window = all(m >= window_start or m <= window_end for m in months)
+            vm_set = set(valid_months)
+            in_window = all(m in vm_set for m in months)
+            label = ','.join(str(m) for m in sorted(valid_months))
             results.append(_pass(
-                f"All auto dates in window {window_start}-{window_end}",
+                f"All auto dates in window [{label}]",
                 in_window,
                 f"months={months}",
             ))

@@ -69,7 +69,7 @@ def install(conn) -> None:
             county_id, state_id, community_id)
         VALUES (%s, %s, %s, FALSE, %s, %s, %s)
         """,
-        (7008, "Fuchsia City Homes", "FC", county_id, state_id, ENT_GROUP_ID),
+        (7008, "Fuchsia City Homes", "QH", county_id, state_id, ENT_GROUP_ID),
     )
 
     conn.execute(
@@ -127,9 +127,10 @@ def install(conn) -> None:
         (70017, 7008, 70017, "Safari Zone Court", 1),
     )
 
-    # Lots — 4 lots per building group (20 lots total)
+    # Lots — 12 real lots (groups 7008-7010, FUC-001..012); groups 7011-7012
+    # are open sim slots so the engine has 8 slots of forward demand.
     lots = []
-    for i in range(1, 21):
+    for i in range(1, 13):
         bg_id = 7008 + (i - 1) // 4
         lots.append({
             "phase_id":          70017,
@@ -145,18 +146,18 @@ def install(conn) -> None:
 
     # Product splits
     conn.executemany_insert("sim_phase_product_splits", [
-        {"phase_id": 70017, "lot_type_id": 101, "lot_count": 20},
+        {"phase_id": 70017, "lot_type_id": 101, "projected_count": 20},
     ])
 
     # Delivery config
     conn.execute(
         """
         INSERT INTO sim_entitlement_delivery_config
-            (ent_group_id, delivery_window_start, delivery_window_end,
+            (ent_group_id, delivery_months,
              min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, %s, now())
+        VALUES (%s, %s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, 5, 11, 0, 1, True),
+        (ENT_GROUP_ID, [5,6,7,8,9,10,11], 0, 1, True),
     )
 
     # Locked delivery event
@@ -237,6 +238,6 @@ def assert_results(conn) -> bool:
         check_violations(conn, ENT_GROUP_ID, expected_count=0),
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=1),
         check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
-        _pass("Building group assignments preserved", n == 20, f"actual={n}"),
+        _pass("Building group assignments preserved", n == 12, f"actual={n}"),
     ]
     return all(results)
