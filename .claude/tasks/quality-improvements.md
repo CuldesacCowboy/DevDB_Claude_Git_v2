@@ -58,11 +58,14 @@
 
 ## OPEN / TRACKING
 
-- [ ] **16. Add tests: concurrent simulation runs + multi-dev convergence**
-  - File: `devdb_python/tests/test_coordinator.py`
+- [x] **16. Add tests: concurrent simulation runs + multi-dev convergence** ✓ 2026-04-04
+  - New file: `tests/test_coordinator_reliability.py`
+  - Tests: multi-dev convergence, determinism (rng_seed), concurrent threads + PK collision check
 
-- [ ] **17. Retest end-to-end run after D-119 delivery schedule overhaul**
+- [ ] **17. Retest end-to-end run after D-119 delivery schedule overhaul** *(manual)*
   - Run Waterton Station; verify Delivery Schedule Audit tab output
+  - Cannot be automated — requires UI review of delivery schedule
 
-- [ ] **18. Define and implement S-0050 or formally defer with a D-number**
-  - Currently "NOT IMPLEMENTED" with no tracking entry
+- [x] **18. Define and implement S-0050 or formally defer with a D-number** ✓ 2026-04-04
+  - Formally deferred: D-155 added to decision-log.md
+  - Rationale: coordinator pre-loads shared config; per-dev param queries are fast local PG; 0.5s total run time makes S-0050 not worth the refactor churn
