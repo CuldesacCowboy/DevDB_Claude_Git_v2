@@ -174,6 +174,22 @@ class PGConnection:
         self._conn.commit()
         return len(rows)
 
+    def execute_values(self, query: str, rows: list, page_size: int = 500) -> None:
+        """
+        Execute a query using psycopg2 execute_values (for batch INSERT/UPDATE
+        with a VALUES %s placeholder).  Each item in rows is a tuple of params.
+
+        Example:
+            conn.execute_values(
+                "UPDATE sim_lots AS sl SET x = v.x FROM (VALUES %s) AS v(lot_id, x) "
+                "WHERE sl.lot_id = v.lot_id",
+                [(lot_id, value), ...],
+            )
+        """
+        with self._conn.cursor() as cur:
+            psycopg2.extras.execute_values(cur, query, rows, page_size=page_size)
+        self._conn.commit()
+
     def close(self) -> None:
         self._conn.close()
 

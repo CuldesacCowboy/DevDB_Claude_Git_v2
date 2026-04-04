@@ -83,15 +83,28 @@ def _write_back_dates(conn: DBConnection, df: pd.DataFrame) -> None:
                 d = d.date()
             pairs.append((int(r["lot_id"]), str(d)))
 
-        values_sql = ", ".join(f"({lid}, '{d}'::DATE)" for lid, d in pairs)
-        set_clause = f"{date_col} = v.d" if source_col is None else f"{date_col} = v.d, {source_col} = 'actual'"
-        conn.execute(f"""
-            UPDATE sim_lots AS t
-            SET {set_clause}
-            FROM (VALUES {values_sql}) AS v(lot_id, d)
-            WHERE t.lot_id = v.lot_id
-              AND t.lot_source = 'real'
-        """)
+        if source_col is None:
+            conn.execute_values(
+                f"""
+                UPDATE sim_lots AS t
+                SET {date_col} = v.d::DATE
+                FROM (VALUES %s) AS v(lot_id, d)
+                WHERE t.lot_id = v.lot_id::bigint
+                  AND t.lot_source = 'real'
+                """,
+                pairs,
+            )
+        else:
+            conn.execute_values(
+                f"""
+                UPDATE sim_lots AS t
+                SET {date_col} = v.d::DATE, {source_col} = 'actual'
+                FROM (VALUES %s) AS v(lot_id, d)
+                WHERE t.lot_id = v.lot_id::bigint
+                  AND t.lot_source = 'real'
+                """,
+                pairs,
+            )
         written_lot_ids.update(lid for lid, _ in pairs)
 
     if written_lot_ids:

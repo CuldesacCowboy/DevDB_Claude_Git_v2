@@ -261,21 +261,17 @@ def _write_real_lot_projections(
         return 0
 
     # 6. Bulk UPDATE via execute_values.
-    import psycopg2.extras as _extras
-    with conn._conn.cursor() as cur:
-        _extras.execute_values(
-            cur,
-            """
-            UPDATE sim_lots AS sl
-            SET date_str_projected = v.str_p::date,
-                date_cmp_projected = v.cmp_p::date,
-                date_cls_projected = v.cls_p::date
-            FROM (VALUES %s) AS v(lot_id, str_p, cmp_p, cls_p)
-            WHERE sl.lot_id = v.lot_id::bigint
-            """,
-            updates,
-        )
-    conn._conn.commit()
+    conn.execute_values(
+        """
+        UPDATE sim_lots AS sl
+        SET date_str_projected = v.str_p::date,
+            date_cmp_projected = v.cmp_p::date,
+            date_cls_projected = v.cls_p::date
+        FROM (VALUES %s) AS v(lot_id, str_p, cmp_p, cls_p)
+        WHERE sl.lot_id = v.lot_id::bigint
+        """,
+        updates,
+    )
 
     print(f"  Projected dates written to {len(updates)} real P lot(s) for dev {dev_id}.")
     return len(updates)
