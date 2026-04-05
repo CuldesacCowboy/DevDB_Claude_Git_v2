@@ -64,11 +64,15 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
     }
   }, [triggerActivate]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Focus input after React commits it to DOM (more reliable than RAF in startEdit)
+  useEffect(() => {
+    if (editing) { inputRef.current?.focus(); inputRef.current?.select() }
+  }, [editing])
+
   function startEdit() {
     if (saving) return
     setDraft(value != null ? String(value) : '')
     setEditing(true)
-    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.select() })
   }
 
   async function commit() {
@@ -89,6 +93,7 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
 
   function onKeyDown(e) {
     if (e.key === 'Escape') { e.stopPropagation(); setEditing(false); onDone?.() }
+    if (e.key === 'Enter')  { e.stopPropagation(); commit() }
   }
 
   const display = type === 'date' ? fmtDate(value) : (value != null ? String(value) : '')
@@ -389,6 +394,7 @@ function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal 
 
   return (
     <div ref={containerRef} tabIndex={0} onKeyDownCapture={handleKeyDown}
+         onBlur={e => { if (!containerRef.current?.contains(e.relatedTarget)) setActiveCell(null) }}
          style={{ outline: 'none' }}>
       <TableShell>
         <thead>
@@ -508,11 +514,15 @@ function StartsCell({ value, unstarted, onSave, triggerActivate = 0, onDone }) {
     : supplyYrs >= 1 ? '#d97706'
     : '#dc2626'
 
+  // Focus input after React commits it to DOM
+  useEffect(() => {
+    if (editing) { inputRef.current?.focus(); inputRef.current?.select() }
+  }, [editing])
+
   function startEdit() {
     if (saving) return
     setDraft(value != null ? String(value) : '')
     setEditing(true)
-    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.select() })
   }
 
   async function commit() {
@@ -529,6 +539,7 @@ function StartsCell({ value, unstarted, onSave, triggerActivate = 0, onDone }) {
 
   function onKeyDown(e) {
     if (e.key === 'Escape') { e.stopPropagation(); setEditing(false); onDone?.() }
+    if (e.key === 'Enter')  { e.stopPropagation(); commit() }
   }
 
   const label = supplyLabel()
@@ -626,6 +637,7 @@ function DevTab({ rows, showTest, onPatchDev }) {
 
   return (
     <div ref={containerRef} tabIndex={0} onKeyDownCapture={handleKeyDown}
+         onBlur={e => { if (!containerRef.current?.contains(e.relatedTarget)) setActiveCell(null) }}
          style={{ outline: 'none' }}>
       <TableShell>
         <thead>
