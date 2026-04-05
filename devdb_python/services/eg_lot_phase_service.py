@@ -135,7 +135,7 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
                     AND date_cls IS NULL
                 ) AS has_actual_dates
             FROM sim_lots
-            WHERE phase_id = ANY(%s) AND lot_source = 'real'
+            WHERE phase_id = ANY(%s) AND lot_source IN ('real', 'pre')
             ORDER BY lot_number ASC NULLS LAST
             """,
             (phase_ids,),
@@ -169,7 +169,7 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
                     AND date_cls IS NULL
                 ) AS has_actual_dates
             FROM sim_lots
-            WHERE lot_source = 'real'
+            WHERE lot_source IN ('real', 'pre')
               AND phase_id IS NULL
               AND dev_id = ANY(%s)
             ORDER BY lot_number ASC NULLS LAST

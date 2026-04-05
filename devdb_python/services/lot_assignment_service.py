@@ -161,7 +161,7 @@ def _execute(conn, lot_id: int, target_phase_id: int, changed_by: str) -> Reassi
             conn.rollback()
             return _fail("lot_not_found", f"Lot {lot_id} not found.")
 
-        if lot["lot_source"] != "real":
+        if lot["lot_source"] not in ("real", "pre"):
             conn.rollback()
             return _fail(
                 "lot_source_not_real",
@@ -413,7 +413,7 @@ def _execute_lot_type_change(
                 error={"code": "lot_not_found", "message": f"Lot {lot_id} not found."},
             )
 
-        if lot["lot_source"] != "real":
+        if lot["lot_source"] not in ("real", "pre"):
             conn.rollback()
             return LotTypeChangeResult(
                 success=False,
@@ -567,7 +567,7 @@ def _execute_unassign(conn, lot_id: int, changed_by: str) -> ReassignmentResult:
             conn.rollback()
             return _fail("lot_not_found", f"Lot {lot_id} not found.")
 
-        if lot["lot_source"] != "real":
+        if lot["lot_source"] not in ("real", "pre"):
             conn.rollback()
             return _fail(
                 "lot_source_not_real",

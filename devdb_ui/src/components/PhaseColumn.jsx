@@ -4,6 +4,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import LotCard from './LotCard'
 import LotTypePill from './LotTypePill'
+import BulkLotInsertModal from './BulkLotInsertModal'
 import { API_BASE } from '../config'
 
 // Split "Waterton Station SF ph. 3" into prefix="Waterton Station SF" and suffix="ph. 3".
@@ -73,6 +74,9 @@ export default function PhaseColumn({
   // Feature: inline phase name edit
   const [editingPhaseName, setEditingPhaseName] = useState(false)
   const [phaseNameInput, setPhaseNameInput] = useState('')
+
+  // Feature: bulk lot insert
+  const [showBulkInsert, setShowBulkInsert] = useState(false)
 
   // Feature: add product type
   const [showAddLotType, setShowAddLotType] = useState(false)
@@ -188,6 +192,7 @@ export default function PhaseColumn({
   }
 
   return (
+    <>
     <div
       ref={setOuterRef}
       className={`
@@ -325,6 +330,17 @@ export default function PhaseColumn({
           {!isOverlay && (
             <button
               onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setShowBulkInsert(true)}
+              className="flex-shrink-0 w-[18px] h-[18px] flex items-center justify-center rounded border border-gray-200 text-gray-400 hover:text-green-700 hover:border-green-400 text-[10px] leading-none"
+              aria-label="Add lots"
+              title="Add lots"
+            >
+              +
+            </button>
+          )}
+          {!isOverlay && (
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => setShowDeleteConfirm(true)}
               className="flex-shrink-0 w-[18px] h-[18px] flex items-center justify-center rounded border border-gray-200 text-gray-400 hover:text-red-500 hover:border-red-300 text-[10px] leading-none"
               aria-label="Delete phase"
@@ -450,5 +466,15 @@ export default function PhaseColumn({
       </>
       )}
     </div>
+
+    {showBulkInsert && (
+      <BulkLotInsertModal
+        phase={phase}
+        knownLotTypes={knownLotTypes}
+        onClose={() => setShowBulkInsert(false)}
+        onInserted={() => onRefetch?.()}
+      />
+    )}
+    </>
   )
 }

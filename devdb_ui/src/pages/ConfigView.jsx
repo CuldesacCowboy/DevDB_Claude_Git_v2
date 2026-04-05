@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { API_BASE } from '../utils/api'
+import BulkLotInsertModal from '../components/BulkLotInsertModal'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -634,10 +635,11 @@ function InstrumentTab({ phaseRows, showTest }) {
 
 // ─── Phase tab ────────────────────────────────────────────────────────────────
 
-function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSaveBuilderSplit, onToggleLock }) {
-  const [filterComm, setFilterComm] = useState(null)
-  const [filterDev,  setFilterDev]  = useState(null)
-  const [showSplits, setShowSplits] = useState(true)
+function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSaveBuilderSplit, onToggleLock, onLotsAdded }) {
+  const [filterComm,    setFilterComm]    = useState(null)
+  const [filterDev,     setFilterDev]     = useState(null)
+  const [showSplits,    setShowSplits]    = useState(true)
+  const [bulkInsertPhase, setBulkInsertPhase] = useState(null) // row object or null
 
   const allRows  = phaseData?.rows ?? []
   const testRows = allRows.filter(r => showTest ? r.is_test : !r.is_test)
@@ -802,7 +804,19 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                 <td style={tdS(LEFT.dev)}>{dimText(isFirstDev, row.dev_name)}</td>
                 <td style={tdS(LEFT.inst)}>{dimText(isFirstInst, row.instrument_name ?? '—')}</td>
                 <td style={tdS(LEFT.phase, PHASE_SHADOW)}>
-                  <span style={{ fontSize: 12, color: '#374151' }}>{row.phase_name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 12, color: '#374151', flex: 1 }}>{row.phase_name}</span>
+                    <button
+                      onClick={() => setBulkInsertPhase(row)}
+                      title="Add lots"
+                      style={{
+                        flexShrink: 0, width: 16, height: 16, borderRadius: 3,
+                        border: '1px solid #d1d5db', background: 'white',
+                        color: '#6b7280', fontSize: 11, lineHeight: 1, cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >+</button>
+                  </div>
                 </td>
                 <td style={tdG({ textAlign: 'right' })}>{numCell(projTotal)}</td>
                 <td style={tdB({ textAlign: 'right' })}>{numCell(realTotal)}</td>
@@ -852,6 +866,18 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
         </tbody>
       </TableShell>
     </div>
+
+    {bulkInsertPhase && (
+      <BulkLotInsertModal
+        phase={{ phase_id: bulkInsertPhase.phase_id, phase_name: bulkInsertPhase.phase_name }}
+        knownLotTypes={(phaseData?.lot_types ?? []).map(lt => ({
+          lot_type_id: lt.lot_type_id,
+          lot_type_short: lt.lot_type_short,
+        }))}
+        onClose={() => setBulkInsertPhase(null)}
+        onInserted={() => { setBulkInsertPhase(null); onLotsAdded?.() }}
+      />
+    )}
   )
 }
 
@@ -1002,6 +1028,7 @@ export default function ConfigView({ showTestCommunities }) {
           phaseData={phaseData} showTest={showTestCommunities}
           onPatchPhase={patchPhase} onSaveProductSplit={saveProductSplit}
           onSaveBuilderSplit={saveBuilderSplit} onToggleLock={toggleLock}
+          onLotsAdded={load}
         />
       )}
     </div>
