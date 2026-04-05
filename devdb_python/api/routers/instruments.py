@@ -34,6 +34,25 @@ class InstrumentDevRequest(BaseModel):
     dev_id: int
 
 
+@router.get("", response_model=list[dict])
+def list_instruments(conn=Depends(get_db_conn)):
+    """Return all instruments. modern_dev_id = developments.dev_id for frontend joins."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute("""
+            SELECT sli.instrument_id, sli.instrument_name, sli.instrument_type,
+                   sli.dev_id AS legacy_dev_id,
+                   d.dev_id   AS modern_dev_id
+            FROM sim_legal_instruments sli
+            JOIN dim_development dd ON dd.development_id = sli.dev_id
+            JOIN developments d    ON d.marks_code = dd.dev_code2
+            ORDER BY sli.instrument_name
+        """)
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+
 @router.post("", response_model=dict, status_code=201)
 def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
 

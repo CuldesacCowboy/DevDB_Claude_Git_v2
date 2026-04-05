@@ -4,6 +4,7 @@ import LotPhaseView from './pages/LotPhaseView'
 import SitePlanView from './pages/SitePlanView'
 import SimulationView from './pages/SimulationView'
 import ConfigView from './pages/ConfigView'
+import SetupView from './pages/SetupView'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const LS_KEY = 'devdb_active_community'
@@ -72,6 +73,7 @@ export default function App() {
         <NavLink to="/site-plan" style={navLinkStyle}>Site Plan</NavLink>
         <NavLink to="/simulation" style={navLinkStyle}>Simulation</NavLink>
         <NavLink to="/configure" style={navLinkStyle}>Configure</NavLink>
+        <NavLink to="/setup" style={navLinkStyle}>Setup</NavLink>
 
         <button
           onClick={() => setGlobalSettingsOpen(true)}
@@ -92,6 +94,7 @@ export default function App() {
           <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} globalSettingsOpen={globalSettingsOpen} onCloseGlobalSettings={() => setGlobalSettingsOpen(false)} />} />
           <Route path="/configure" element={<ConfigView showTestCommunities={showTestCommunities} />} />
+          <Route path="/setup" element={<SetupView showTestCommunities={showTestCommunities} />} />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>
