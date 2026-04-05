@@ -1,7 +1,5 @@
 # routers/admin.py
 # Phase configuration spreadsheet endpoints.
-# Provides a single GET that returns all hierarchy + splits + params for the config grid,
-# plus targeted PATCH/PUT endpoints for each editable cell type.
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -13,12 +11,10 @@ from api.db import dict_cursor
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-# ─── GET ─────────────────────────────────────────────────────────────────────
-
 @router.get("/phase-config")
 def get_phase_config(conn=Depends(get_db_conn)):
     """
-    Return all phases with hierarchy, lot counts, splits, and dev params
+    Return all phases with hierarchy, lot counts (per lot-type), splits, and dev params
     for the phase configuration spreadsheet.
     """
     cur = dict_cursor(conn)
@@ -49,41 +45,41 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 seg.is_test,
                 segd.dev_id,
                 d.dev_name,
+                sli.instrument_id,
+                sli.instrument_name,
                 sdp.phase_id,
                 sdp.phase_name,
                 sdp.sequence_number,
                 sdp.lot_count_projected,
                 sdp.date_dev_projected,
-                sdp.date_dev_actual,
-                sp.annual_starts_target,
-                sp.max_starts_per_month,
-                CASE
-                    WHEN sp.dev_id IS NULL THEN 'missing'
-                    WHEN sp.updated_at < NOW() - INTERVAL '180 days' THEN 'stale'
-                    ELSE 'ok'
-                END AS params_status,
-                COALESCE(lc.real_count,  0) AS real_count,
-                COALESCE(lc.sim_count,   0) AS sim_count,
-                COALESCE(lc.total_count, 0) AS lot_total
+                sdp.date_dev_actual
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
             JOIN sim_legal_instruments sli       ON sli.dev_id = segd.dev_id
             JOIN sim_dev_phases sdp              ON sdp.instrument_id = sli.instrument_id
             JOIN dim_development dd              ON dd.development_id = segd.dev_id
             JOIN developments d                  ON d.marks_code = dd.dev_code2
-            LEFT JOIN sim_dev_params sp          ON sp.dev_id = segd.dev_id
-            LEFT JOIN (
-                SELECT phase_id,
-                    COUNT(*) FILTER (WHERE lot_source = 'real') AS real_count,
-                    COUNT(*) FILTER (WHERE lot_source = 'sim')  AS sim_count,
-                    COUNT(*)                                     AS total_count
-                FROM sim_lots
-                GROUP BY phase_id
-            ) lc ON lc.phase_id = sdp.phase_id
-            ORDER BY seg.ent_group_name, d.dev_name, sdp.sequence_number
+            ORDER BY seg.ent_group_name, d.dev_name, sli.instrument_name, sdp.sequence_number
         """)
         phases = cur.fetchall()
         phase_ids = [r['phase_id'] for r in phases]
+
+        # Lot counts by (phase_id, lot_type_id) — real and sim separately
+        lot_count_map = {}   # phase_id -> {lot_type_id: {real: N, sim: N}}
+        if phase_ids:
+            cur.execute("""
+                SELECT phase_id, lot_type_id,
+                    COUNT(*) FILTER (WHERE lot_source = 'real') AS real_count,
+                    COUNT(*) FILTER (WHERE lot_source = 'sim')  AS sim_count
+                FROM sim_lots
+                WHERE phase_id = ANY(%s)
+                GROUP BY phase_id, lot_type_id
+            """, (phase_ids,))
+            for r in cur.fetchall():
+                lot_count_map.setdefault(r['phase_id'], {})[r['lot_type_id']] = {
+                    'real': r['real_count'],
+                    'sim':  r['sim_count'],
+                }
 
         # Product splits: phase_id -> {lot_type_id: projected_count}
         prod_map = {}
@@ -112,26 +108,24 @@ def get_phase_config(conn=Depends(get_db_conn)):
         rows = []
         for p in phases:
             pid = p['phase_id']
+            lc  = lot_count_map.get(pid, {})
             rows.append({
-                'ent_group_id':         p['ent_group_id'],
-                'ent_group_name':       p['ent_group_name'],
-                'is_test':              p['is_test'],
-                'dev_id':               p['dev_id'],
-                'dev_name':             p['dev_name'],
-                'phase_id':             pid,
-                'phase_name':           p['phase_name'],
-                'sequence_number':      p['sequence_number'],
-                'lot_count_projected':  p['lot_count_projected'],
-                'date_dev_projected':   p['date_dev_projected'].isoformat()  if p['date_dev_projected']  else None,
-                'date_dev_actual':      p['date_dev_actual'].isoformat()     if p['date_dev_actual']     else None,
-                'annual_starts_target': p['annual_starts_target'],
-                'max_starts_per_month': p['max_starts_per_month'],
-                'params_status':        p['params_status'],
-                'real_count':           p['real_count'],
-                'sim_count':            p['sim_count'],
-                'lot_total':            p['lot_total'],
-                'product_splits':       prod_map.get(pid, {}),
-                'builder_splits':       bldr_map.get(pid, {}),
+                'ent_group_id':        p['ent_group_id'],
+                'ent_group_name':      p['ent_group_name'],
+                'is_test':             p['is_test'],
+                'dev_id':              p['dev_id'],
+                'dev_name':            p['dev_name'],
+                'instrument_id':       p['instrument_id'],
+                'instrument_name':     p['instrument_name'],
+                'phase_id':            pid,
+                'phase_name':          p['phase_name'],
+                'sequence_number':     p['sequence_number'],
+                'lot_count_projected': p['lot_count_projected'],
+                'date_dev_projected':  p['date_dev_projected'].isoformat() if p['date_dev_projected'] else None,
+                'date_dev_actual':     p['date_dev_actual'].isoformat()    if p['date_dev_actual']    else None,
+                'lot_type_counts':     lc,          # {lot_type_id: {real, sim}}
+                'product_splits':      prod_map.get(pid, {}),
+                'builder_splits':      bldr_map.get(pid, {}),
             })
 
         return {'lot_types': lot_types, 'builders': builders, 'rows': rows}
@@ -153,7 +147,7 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
     Passing null for a date field explicitly clears it (date_dev_actual null = unlock)."""
     provided = body.model_fields_set
     if not provided:
-        return {"phase_id": phase_id}
+        return {'phase_id': phase_id}
 
     clauses, params = [], []
     if 'lot_count_projected' in provided:
@@ -177,13 +171,13 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
         )
         row = cur.fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Phase not found")
+            raise HTTPException(status_code=404, detail='Phase not found')
         conn.commit()
         return {
-            'phase_id':             row['phase_id'],
-            'lot_count_projected':  row['lot_count_projected'],
-            'date_dev_projected':   row['date_dev_projected'].isoformat()  if row['date_dev_projected']  else None,
-            'date_dev_actual':      row['date_dev_actual'].isoformat()     if row['date_dev_actual']     else None,
+            'phase_id':            row['phase_id'],
+            'lot_count_projected': row['lot_count_projected'],
+            'date_dev_projected':  row['date_dev_projected'].isoformat() if row['date_dev_projected'] else None,
+            'date_dev_actual':     row['date_dev_actual'].isoformat()    if row['date_dev_actual']    else None,
         }
     finally:
         cur.close()
@@ -228,12 +222,12 @@ def upsert_builder_split(
     phase_id: int, builder_id: int, body: BuilderSplitRequest, conn=Depends(get_db_conn)
 ):
     if body.share is not None and not (0 <= body.share <= 100):
-        raise HTTPException(status_code=422, detail="share must be 0–100")
+        raise HTTPException(status_code=422, detail='share must be 0–100')
     cur = dict_cursor(conn)
     try:
         if body.share is None:
             cur.execute(
-                "DELETE FROM sim_phase_builder_splits WHERE phase_id = %s AND builder_id = %s",
+                'DELETE FROM sim_phase_builder_splits WHERE phase_id = %s AND builder_id = %s',
                 (phase_id, builder_id),
             )
         else:
@@ -247,34 +241,5 @@ def upsert_builder_split(
             )
         conn.commit()
         return {'phase_id': phase_id, 'builder_id': builder_id, 'share': body.share}
-    finally:
-        cur.close()
-
-
-# ─── Dev params ───────────────────────────────────────────────────────────────
-
-class DevParamsRequest(BaseModel):
-    annual_starts_target: Optional[int]
-    max_starts_per_month: Optional[int]
-
-
-@router.put("/dev-params/{dev_id}")
-def upsert_dev_params(dev_id: int, body: DevParamsRequest, conn=Depends(get_db_conn)):
-    cur = dict_cursor(conn)
-    try:
-        cur.execute(
-            """
-            INSERT INTO sim_dev_params (dev_id, annual_starts_target, max_starts_per_month, updated_at)
-            VALUES (%s, %s, %s, NOW())
-            ON CONFLICT (dev_id) DO UPDATE
-                SET annual_starts_target = COALESCE(EXCLUDED.annual_starts_target, sim_dev_params.annual_starts_target),
-                    max_starts_per_month = EXCLUDED.max_starts_per_month,
-                    updated_at           = NOW()
-            RETURNING dev_id, annual_starts_target, max_starts_per_month
-            """,
-            (dev_id, body.annual_starts_target, body.max_starts_per_month),
-        )
-        conn.commit()
-        return dict(cur.fetchone())
     finally:
         cur.close()

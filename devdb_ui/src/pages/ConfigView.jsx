@@ -3,34 +3,34 @@ import { API_BASE } from '../utils/api'
 
 // ─── Sticky column geometry ───────────────────────────────────────────────────
 
-const CW = { comm: 168, dev: 148, phase: 124 }
-const LEFT = { comm: 0, dev: CW.comm, phase: CW.comm + CW.dev }
-const PHASE_RIGHT_SHADOW = { boxShadow: '4px 0 8px -2px rgba(0,0,0,0.10)' }
+const CW = { comm: 160, dev: 140, inst: 144, phase: 116 }
+const LEFT = {
+  comm:  0,
+  dev:   CW.comm,
+  inst:  CW.comm + CW.dev,
+  phase: CW.comm + CW.dev + CW.inst,
+}
+const PHASE_SHADOW = { boxShadow: '4px 0 8px -2px rgba(0,0,0,0.10)' }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Date helpers ─────────────────────────────────────────────────────────────
 
 function fmtDate(iso) {
   if (!iso) return ''
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+  const [y, m, d] = iso.split('-')
+  return `${parseInt(m)}/${parseInt(d)}/${y}`
 }
 
 // ─── EditableCell ─────────────────────────────────────────────────────────────
 
-function EditableCell({
-  value, type = 'number', onSave,
-  display = null,   // optional format fn: raw -> display string
-  placeholder = '—', width = 56, align = 'right',
-  highlight = null, // 'lock' | 'warn' | null
-  readOnly = false,
-}) {
-  const [editing, setEditing]   = useState(false)
-  const [draft,   setDraft]     = useState('')
-  const [saving,  setSaving]    = useState(false)
-  const [error,   setError]     = useState(null)
+function EditableCell({ value, type = 'number', onSave, placeholder = '—', width = 52, align = 'right' }) {
+  const [editing, setEditing] = useState(false)
+  const [draft,   setDraft]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState(null)
   const inputRef = useRef()
 
   function startEdit() {
-    if (readOnly || saving) return
+    if (saving) return
     setDraft(value != null ? String(value) : '')
     setEditing(true)
     requestAnimationFrame(() => inputRef.current?.focus())
@@ -44,14 +44,14 @@ function EditableCell({
       parsed = null
     } else if (type === 'number') {
       parsed = Number(raw)
-      if (isNaN(parsed)) { setError('Invalid'); return }
+      if (isNaN(parsed)) { setError('!'); return }
     } else {
-      parsed = raw   // date string YYYY-MM-DD
+      parsed = raw
     }
     if (parsed === value || (parsed == null && value == null)) return
     setSaving(true); setError(null)
     try { await onSave(parsed) }
-    catch (e) { setError(String(e).replace('Error: ', '')) }
+    catch (e) { setError(String(e).slice(0, 40)) }
     finally { setSaving(false) }
   }
 
@@ -60,22 +60,11 @@ function EditableCell({
     if (e.key === 'Escape') { setEditing(false) }
   }
 
-  const displayed = display ? display(value) : (value != null ? String(value) : '')
-  const bg = highlight === 'lock' ? '#f0fdf4'
-           : highlight === 'warn' ? '#fef9c3'
-           : saving ? '#fef3c7'
-           : error  ? '#fef2f2'
-           : 'transparent'
-  const border = error   ? '1px solid #dc2626'
-               : saving  ? '1px solid #d97706'
-               : editing ? '1px solid #2563eb'
-               : '1px solid transparent'
+  const display = type === 'date' ? fmtDate(value) : (value != null ? String(value) : '')
 
   return (
-    <div onClick={startEdit} title={error ?? undefined} style={{
-      width, minHeight: 22, textAlign: align,
-      cursor: readOnly ? 'default' : 'text',
-    }}>
+    <div onClick={startEdit} title={error ?? undefined}
+         style={{ width, minHeight: 20, textAlign: align, cursor: 'text' }}>
       {editing ? (
         <input
           ref={inputRef}
@@ -85,24 +74,53 @@ function EditableCell({
           onChange={e => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={onKeyDown}
-          style={{
-            width: '100%', padding: '1px 4px', fontSize: 12, textAlign: align,
-            border: '1px solid #2563eb', borderRadius: 3, background: '#fff', outline: 'none',
-          }}
+          style={{ width: '100%', padding: '1px 4px', fontSize: 12, textAlign: align,
+                   border: '1px solid #2563eb', borderRadius: 3,
+                   background: '#fff', outline: 'none' }}
         />
       ) : (
         <span style={{
           display: 'block', padding: '1px 4px', fontSize: 12, borderRadius: 3,
-          background: bg, border,
-          color: displayed ? '#111827' : '#d1d5db',
+          background: error ? '#fef2f2' : saving ? '#fef3c7' : 'transparent',
+          border: error ? '1px solid #fca5a5' : '1px solid transparent',
+          color: display ? (error ? '#dc2626' : '#111827') : '#d1d5db',
         }}>
-          {displayed || placeholder}
-          {highlight === 'lock' && displayed && (
-            <span style={{ marginLeft: 4, fontSize: 10, color: '#16a34a' }}>⚿</span>
-          )}
+          {error ? `⚠ ${error}` : (display || placeholder)}
         </span>
       )}
     </div>
+  )
+}
+
+// ─── LockButton ───────────────────────────────────────────────────────────────
+
+function LockButton({ locked, disabled, onToggle }) {
+  const [busy, setBusy] = useState(false)
+
+  async function handle() {
+    if (disabled || busy) return
+    setBusy(true)
+    try { await onToggle(!locked) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <button
+      onClick={handle}
+      disabled={disabled || busy}
+      title={disabled ? 'Set a dev date first' : locked ? 'Locked — click to unlock' : 'Unlocked — click to lock'}
+      style={{
+        padding: '2px 8px', fontSize: 11, borderRadius: 4, cursor: disabled ? 'not-allowed' : 'pointer',
+        border: locked ? '1px solid #16a34a' : '1px solid #d1d5db',
+        background: locked ? '#f0fdf4' : busy ? '#f9fafb' : '#fff',
+        color: locked ? '#16a34a' : '#9ca3af',
+        fontWeight: locked ? 600 : 400,
+        transition: 'all 0.15s',
+        minWidth: 64,
+      }}
+    >
+      {busy ? '…' : locked ? '⚿ Locked' : 'Unlocked'}
+    </button>
   )
 }
 
@@ -110,84 +128,81 @@ function EditableCell({
 
 function BuilderSumBadge({ splits, builders }) {
   const sum = builders.reduce((acc, b) => acc + (splits[b.builder_id] ?? 0), 0)
-  const rounded = Math.round(sum * 10) / 10
-  if (rounded === 0) return <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>
-  const ok    = rounded === 100
-  const over  = rounded > 100
+  const r   = Math.round(sum * 10) / 10
+  if (r === 0) return <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>
+  const ok    = r === 100
+  const over  = r > 100
   const color = ok ? '#16a34a' : over ? '#dc2626' : '#d97706'
   return (
-    <span style={{ fontSize: 11, fontWeight: 600, color, padding: '1px 5px',
+    <span style={{ fontSize: 11, fontWeight: 600, color,
+                   padding: '1px 6px', borderRadius: 10,
                    background: ok ? '#f0fdf4' : over ? '#fef2f2' : '#fef9c3',
-                   borderRadius: 10, border: `1px solid ${color}33` }}>
-      {rounded}%
+                   border: `1px solid ${color}44` }}>
+      {r}%
     </span>
   )
 }
 
 // ─── FilterBar ────────────────────────────────────────────────────────────────
 
-function FilterBar({ communities, devsByComm, filterComm, filterDev, onChange }) {
-  function setComm(v) { onChange({ comm: v, dev: null }) }
-  function setDev(v)  { onChange({ comm: filterComm, dev: v }) }
-  function clear()    { onChange({ comm: null, dev: null }) }
+function FilterBar({ communities, devsByComm, filterComm, filterDev, onChange, rowCount, totalCount }) {
+  const devOptions = filterComm ? (devsByComm[filterComm] ?? [])
+                                : Object.values(devsByComm).flat()
+  const active = (filterComm ? 1 : 0) + (filterDev ? 1 : 0)
 
-  const devOptions = filterComm
-    ? (devsByComm[filterComm] ?? [])
-    : Object.values(devsByComm).flat()
+  const selStyle = (on) => ({
+    fontSize: 12, padding: '3px 24px 3px 8px', borderRadius: 4,
+    border: on ? '1px solid #2563eb' : '1px solid #d1d5db',
+    background: on ? '#eff6ff' : '#fff',
+    color: on ? '#1d4ed8' : '#374151',
+    appearance: 'none', cursor: 'pointer',
+  })
 
-  const activeCount = (filterComm ? 1 : 0) + (filterDev ? 1 : 0)
+  function Wrap({ val, onClear, children }) {
+    return (
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        {children}
+        {val && (
+          <button onClick={onClear} style={{
+            position: 'absolute', right: 6, fontSize: 13, lineHeight: 1,
+            background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0,
+          }}>×</button>
+        )}
+      </div>
+    )
+  }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
       <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 500 }}>Filter</span>
 
-      {/* Community */}
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        <select value={filterComm ?? ''} onChange={e => setComm(e.target.value || null)}
-          style={{ fontSize: 12, padding: '3px 24px 3px 8px', borderRadius: 4,
-                   border: filterComm ? '1px solid #2563eb' : '1px solid #d1d5db',
-                   background: filterComm ? '#eff6ff' : '#fff', color: filterComm ? '#1d4ed8' : '#374151',
-                   appearance: 'none', cursor: 'pointer' }}>
+      <Wrap val={filterComm} onClear={() => onChange({ comm: null, dev: null })}>
+        <select value={filterComm ?? ''} style={selStyle(!!filterComm)}
+          onChange={e => onChange({ comm: e.target.value || null, dev: null })}>
           <option value="">All communities</option>
           {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        {filterComm && (
-          <button onClick={() => setComm(null)} style={{
-            position: 'absolute', right: 6, fontSize: 13, lineHeight: 1,
-            background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0,
-          }}>×</button>
-        )}
-      </div>
+      </Wrap>
 
-      {/* Development */}
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        <select value={filterDev ?? ''} onChange={e => setDev(e.target.value || null)}
-          style={{ fontSize: 12, padding: '3px 24px 3px 8px', borderRadius: 4,
-                   border: filterDev ? '1px solid #2563eb' : '1px solid #d1d5db',
-                   background: filterDev ? '#eff6ff' : '#fff', color: filterDev ? '#1d4ed8' : '#374151',
-                   appearance: 'none', cursor: 'pointer' }}>
+      <Wrap val={filterDev} onClear={() => onChange({ comm: filterComm, dev: null })}>
+        <select value={filterDev ?? ''} style={selStyle(!!filterDev)}
+          onChange={e => onChange({ comm: filterComm, dev: e.target.value || null })}>
           <option value="">All developments</option>
           {devOptions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        {filterDev && (
-          <button onClick={() => setDev(null)} style={{
-            position: 'absolute', right: 6, fontSize: 13, lineHeight: 1,
-            background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0,
-          }}>×</button>
-        )}
-      </div>
+      </Wrap>
 
-      {activeCount > 0 && (
-        <button onClick={clear} style={{
+      {active > 0 && (
+        <button onClick={() => onChange({ comm: null, dev: null })} style={{
           fontSize: 11, color: '#6b7280', background: '#f3f4f6',
-          border: '1px solid #e5e7eb', borderRadius: 4, padding: '3px 8px', cursor: 'pointer',
-        }}>
-          Clear all {activeCount > 1 ? `(${activeCount})` : ''}
-        </button>
+          border: '1px solid #e5e7eb', borderRadius: 4,
+          padding: '3px 8px', cursor: 'pointer',
+        }}>Clear all</button>
       )}
 
       <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9ca3af' }}>
-        Click any cell to edit · changes save automatically
+        {rowCount}{rowCount !== totalCount ? ` / ${totalCount}` : ''} phase{rowCount !== 1 ? 's' : ''}
+        {' · '}click any cell to edit
       </span>
     </div>
   )
@@ -196,82 +211,80 @@ function FilterBar({ communities, devsByComm, filterComm, filterDev, onChange })
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export default function ConfigView({ showTestCommunities }) {
-  const [data,      setData]      = useState(null)
-  const [loading,   setLoading]   = useState(true)
-  const [loadError, setLoadError] = useState(null)
-  const [filterComm, setFilterComm] = useState(null)   // ent_group_id string
-  const [filterDev,  setFilterDev]  = useState(null)   // dev_id string
+  const [data,       setData]       = useState(null)
+  const [loading,    setLoading]    = useState(true)
+  const [loadError,  setLoadError]  = useState(null)
+  const [filterComm, setFilterComm] = useState(null)
+  const [filterDev,  setFilterDev]  = useState(null)
+  const [showSplits, setShowSplits] = useState(true)
 
   const load = useCallback(() => {
     setLoading(true)
     fetch(`${API_BASE}/admin/phase-config`)
       .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
-      .then(d => { setData(d); setLoadError(null) })
-      .catch(e => setLoadError(String(e)))
-      .finally(() => setLoading(false))
+      .then(d  => { setData(d); setLoadError(null) })
+      .catch(e  => setLoadError(String(e)))
+      .finally(()  => setLoading(false))
   }, [])
 
   useEffect(() => { load() }, [load])
 
-  // ── Derived filter options ────────────────────────────────────────────────
+  // ── Derived data ───────────────────────────────────────────────────────────
 
   const allRows = data?.rows ?? []
-  const testFilteredRows = allRows.filter(r => showTestCommunities ? r.is_test : !r.is_test)
+  const testRows = allRows.filter(r => showTestCommunities ? r.is_test : !r.is_test)
 
   const communities = [...new Map(
-    testFilteredRows.map(r => [r.ent_group_id, { id: String(r.ent_group_id), name: r.ent_group_name }])
+    testRows.map(r => [r.ent_group_id, { id: String(r.ent_group_id), name: r.ent_group_name }])
   ).values()]
 
-  const devsByComm = testFilteredRows.reduce((acc, r) => {
-    const key = String(r.ent_group_id)
-    if (!acc[key]) acc[key] = []
-    if (!acc[key].find(d => d.id === String(r.dev_id))) {
-      acc[key].push({ id: String(r.dev_id), name: r.dev_name })
-    }
+  const devsByComm = testRows.reduce((acc, r) => {
+    const k = String(r.ent_group_id)
+    if (!acc[k]) acc[k] = []
+    if (!acc[k].find(d => d.id === String(r.dev_id)))
+      acc[k].push({ id: String(r.dev_id), name: r.dev_name })
     return acc
   }, {})
 
-  const rows = testFilteredRows.filter(r => {
+  const rows = testRows.filter(r => {
     if (filterComm && String(r.ent_group_id) !== filterComm) return false
     if (filterDev  && String(r.dev_id)       !== filterDev)  return false
     return true
   })
 
-  // ── Pre-compute community alternating band index ──────────────────────────
-
   const commBandIdx = {}
-  let bandIdx = 0
+  let bandN = 0
   rows.forEach((r, i) => {
     if (i === 0 || r.ent_group_id !== rows[i - 1].ent_group_id) {
-      commBandIdx[r.ent_group_id] ??= bandIdx++
+      commBandIdx[r.ent_group_id] ??= bandN++
     }
   })
 
-  // ── Local state updaters ──────────────────────────────────────────────────
+  // ── Local state updaters ───────────────────────────────────────────────────
 
-  function updateRow(phaseId, patch) {
-    setData(prev => ({
-      ...prev,
-      rows: prev.rows.map(r => r.phase_id === phaseId ? { ...r, ...patch } : r),
-    }))
-  }
-  function updateDevRows(devId, patch) {
-    setData(prev => ({
-      ...prev,
-      rows: prev.rows.map(r => r.dev_id === devId ? { ...r, ...patch } : r),
-    }))
+  function patchRow(phaseId, patch) {
+    setData(prev => ({ ...prev, rows: prev.rows.map(r => r.phase_id === phaseId ? { ...r, ...patch } : r) }))
   }
 
-  // ── Save helpers ──────────────────────────────────────────────────────────
+  // ── Save helpers ───────────────────────────────────────────────────────────
 
-  async function savePhase(phaseId, field, value) {
+  async function savePhaseField(phaseId, field, value) {
     const res = await fetch(`${API_BASE}/admin/phase/${phaseId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: value }),
     })
     if (!res.ok) throw new Error(await res.text())
-    const updated = await res.json()
-    updateRow(phaseId, updated)
+    patchRow(phaseId, await res.json())
+  }
+
+  async function toggleLock(row, shouldLock) {
+    const date_dev_actual = shouldLock ? row.date_dev_projected : null
+    const res = await fetch(`${API_BASE}/admin/phase/${row.phase_id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date_dev_actual }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    patchRow(row.phase_id, await res.json())
   }
 
   async function saveProductSplit(phaseId, lotTypeId, count) {
@@ -280,9 +293,8 @@ export default function ConfigView({ showTestCommunities }) {
       body: JSON.stringify({ projected_count: count ?? 0 }),
     })
     if (!res.ok) throw new Error(await res.text())
-    updateRow(phaseId, {
-      product_splits: { ...rows.find(r => r.phase_id === phaseId)?.product_splits, [lotTypeId]: count ?? 0 },
-    })
+    const row = allRows.find(r => r.phase_id === phaseId)
+    patchRow(phaseId, { product_splits: { ...(row?.product_splits ?? {}), [lotTypeId]: count ?? 0 } })
   }
 
   async function saveBuilderSplit(phaseId, builderId, share) {
@@ -293,31 +305,11 @@ export default function ConfigView({ showTestCommunities }) {
     if (!res.ok) throw new Error(await res.text())
     const row = allRows.find(r => r.phase_id === phaseId)
     const newSplits = { ...(row?.builder_splits ?? {}) }
-    if (share == null) delete newSplits[builderId]
-    else newSplits[builderId] = share
-    updateRow(phaseId, { builder_splits: newSplits })
+    if (share == null) delete newSplits[builderId]; else newSplits[builderId] = share
+    patchRow(phaseId, { builder_splits: newSplits })
   }
 
-  async function saveDevParams(devId, field, value) {
-    const existingRow = allRows.find(r => r.dev_id === devId)
-    const body = {
-      annual_starts_target: field === 'annual_starts_target' ? value : (existingRow?.annual_starts_target ?? null),
-      max_starts_per_month: field === 'max_starts_per_month' ? value : (existingRow?.max_starts_per_month ?? null),
-    }
-    const res = await fetch(`${API_BASE}/admin/dev-params/${devId}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) throw new Error(await res.text())
-    const updated = await res.json()
-    updateDevRows(devId, {
-      annual_starts_target: updated.annual_starts_target,
-      max_starts_per_month: updated.max_starts_per_month,
-      params_status: 'ok',
-    })
-  }
-
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   if (loading)   return <div style={{ padding: 24, color: '#6b7280', fontSize: 13 }}>Loading…</div>
   if (loadError) return <div style={{ padding: 24, color: '#dc2626', fontSize: 13 }}>{loadError}</div>
@@ -325,274 +317,223 @@ export default function ConfigView({ showTestCommunities }) {
   const lotTypes = data?.lot_types ?? []
   const builders = data?.builders  ?? []
 
-  const DOT  = { ok: '#16a34a', stale: '#d97706', missing: '#dc2626' }
   const BAND = ['#ffffff', '#f8faff']
 
-  // Header style
+  // Shared style builders
   const thBase = {
-    padding: '5px 6px', fontSize: 11, fontWeight: 600, color: '#6b7280',
-    background: '#f3f4f6', whiteSpace: 'nowrap', borderBottom: '2px solid #e5e7eb',
-    position: 'sticky', top: 0,
+    padding: '5px 7px', fontSize: 11, fontWeight: 600, color: '#6b7280',
+    background: '#f3f4f6', whiteSpace: 'nowrap',
+    borderBottom: '2px solid #e5e7eb', position: 'sticky', top: 0,
   }
-  const thSticky = (left, extra = {}) => ({ ...thBase, left, zIndex: 5, ...extra })
-  const thScroll = (extra = {})       => ({ ...thBase, zIndex: 2, textAlign: 'right', ...extra })
-  const thGroup  = (extra = {})       => ({ ...thBase, zIndex: 2, textAlign: 'right',
-                                            borderLeft: '2px solid #e5e7eb', ...extra })
+  const thS  = (left, w, extra = {}) => ({ ...thBase, left, zIndex: 5, width: w, minWidth: w, ...extra })
+  const thR  = (extra = {}) => ({ ...thBase, zIndex: 2, textAlign: 'right', ...extra })
+  const thGR = (extra = {}) => ({ ...thR(extra), borderLeft: '2px solid #e0e0e0' })
 
   return (
-    <div style={{ padding: '16px 20px', fontFamily: 'system-ui, sans-serif', fontSize: 13 }}>
+    <div style={{ padding: '14px 20px', fontFamily: 'system-ui, sans-serif', fontSize: 13 }}>
 
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>Phase Configuration</span>
-        <button onClick={load} style={{ fontSize: 11, color: '#6b7280', background: 'none',
-                                        border: '1px solid #e5e7eb', borderRadius: 4,
-                                        padding: '2px 8px', cursor: 'pointer' }}>
-          Refresh
+        <button onClick={load} style={{
+          fontSize: 11, color: '#6b7280', background: 'none',
+          border: '1px solid #e5e7eb', borderRadius: 4, padding: '2px 8px', cursor: 'pointer',
+        }}>Refresh</button>
+        <button onClick={() => setShowSplits(v => !v)} style={{
+          fontSize: 11, padding: '2px 10px', borderRadius: 4, cursor: 'pointer',
+          border: showSplits ? '1px solid #2563eb' : '1px solid #d1d5db',
+          background: showSplits ? '#eff6ff' : '#fff',
+          color: showSplits ? '#1d4ed8' : '#6b7280',
+        }}>
+          {showSplits ? 'Hide' : 'Show'} product splits
         </button>
       </div>
 
       <FilterBar
-        communities={communities}
-        devsByComm={devsByComm}
-        filterComm={filterComm}
-        filterDev={filterDev}
+        communities={communities} devsByComm={devsByComm}
+        filterComm={filterComm} filterDev={filterDev}
         onChange={({ comm, dev }) => { setFilterComm(comm); setFilterDev(dev) }}
+        rowCount={rows.length} totalCount={testRows.length}
       />
 
       <div style={{ overflowX: 'auto', overflowY: 'auto',
-                    maxHeight: 'calc(100vh - 148px)',
+                    maxHeight: 'calc(100vh - 152px)',
                     border: '1px solid #e5e7eb', borderRadius: 6 }}>
         <table style={{ borderCollapse: 'collapse', minWidth: 'max-content', width: '100%' }}>
           <thead>
             <tr>
               {/* Sticky hierarchy */}
-              <th style={thSticky(LEFT.comm,  { width: CW.comm,  minWidth: CW.comm  })}>Community</th>
-              <th style={thSticky(LEFT.dev,   { width: CW.dev,   minWidth: CW.dev   })}>Development</th>
-              <th style={thSticky(LEFT.phase, { width: CW.phase, minWidth: CW.phase, ...PHASE_RIGHT_SHADOW })}>Phase</th>
-              {/* Dev-level */}
-              <th style={thGroup({ width: 62 })}>Starts/yr</th>
-              <th style={thScroll({ width: 58 })}>Max/mo</th>
-              {/* Phase units */}
-              <th style={thGroup({ width: 56 })} title="Projected lot count (editable)">Proj</th>
-              <th style={thScroll({ width: 44 })} title="Real lots currently in system">Real</th>
-              <th style={thScroll({ width: 44 })} title="Sim lots from last run">Sim</th>
-              {/* Phase dates */}
-              <th style={thGroup({ width: 92 })} title="Projected development date">Dev Date</th>
-              <th style={thScroll({ width: 94 })} title="Actual delivery date — when set, locks the phase">Actual</th>
-              {/* Product splits */}
-              {lotTypes.length > 0 && (
-                <th style={thGroup({ width: 'auto', textAlign: 'center', color: '#374151' })}
-                    colSpan={lotTypes.length}>
-                  Product Mix (projected count)
+              <th style={thS(LEFT.comm,  CW.comm)}>Community</th>
+              <th style={thS(LEFT.dev,   CW.dev)}>Development</th>
+              <th style={thS(LEFT.inst,  CW.inst)}>Instrument</th>
+              <th style={thS(LEFT.phase, CW.phase, PHASE_SHADOW)}>Phase</th>
+
+              {/* Totals group */}
+              <th style={thGR({ width: 52 })} title="Sum of projected counts across all lot types">Proj</th>
+              <th style={thR({  width: 44 })} title="Real lots in system">Real</th>
+              <th style={thR({  width: 44 })} title="Sim lots from last run">Sim</th>
+
+              {/* Dates + lock */}
+              <th style={thGR({ width: 90 })}>Dev Date</th>
+              <th style={thR({  width: 84 })}>Lock</th>
+
+              {/* Product splits (togglable) */}
+              {showSplits && lotTypes.map((lt, i) => (
+                <th key={lt.lot_type_id} style={{
+                  ...thR({ width: 68 }),
+                  ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}),
+                }} title={lt.lot_type_name}>
+                  {lt.lot_type_short}
                 </th>
-              )}
+              ))}
+
               {/* Builder splits */}
+              {builders.length > 0 && builders.map((b, i) => (
+                <th key={b.builder_id} style={{
+                  ...thR({ width: 66 }),
+                  ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}),
+                }}>
+                  {b.builder_name}
+                </th>
+              ))}
               {builders.length > 0 && (
-                <>
-                  <th style={thGroup({ width: 'auto', textAlign: 'center', color: '#374151' })}
-                      colSpan={builders.length}>
-                    Builder Splits (%)
-                  </th>
-                  <th style={thScroll({ width: 48 })} title="Sum of builder shares">Sum</th>
-                </>
+                <th style={thR({ width: 52 })} title="Sum of builder shares">%</th>
               )}
             </tr>
-            {/* Sub-header row for dynamic columns */}
-            {(lotTypes.length > 0 || builders.length > 0) && (
-              <tr>
-                <th style={{ ...thSticky(LEFT.comm),  background: '#f9fafb' }} />
-                <th style={{ ...thSticky(LEFT.dev),   background: '#f9fafb' }} />
-                <th style={{ ...thSticky(LEFT.phase, { ...PHASE_RIGHT_SHADOW }), background: '#f9fafb' }} />
-                {/* dev cols placeholder */}
-                <th style={{ ...thGroup(), background: '#f9fafb' }} />
-                <th style={{ ...thScroll(), background: '#f9fafb' }} />
-                {/* units placeholder */}
-                <th style={{ ...thGroup(), background: '#f9fafb' }} />
-                <th style={{ ...thScroll(), background: '#f9fafb' }} />
-                <th style={{ ...thScroll(), background: '#f9fafb' }} />
-                {/* date placeholders */}
-                <th style={{ ...thGroup(), background: '#f9fafb' }} />
-                <th style={{ ...thScroll(), background: '#f9fafb' }} />
-                {/* lot type sub-headers */}
-                {lotTypes.map((lt, i) => (
-                  <th key={lt.lot_type_id} style={{
-                    ...thScroll(), background: '#f9fafb', fontSize: 10, color: '#374151',
-                    ...(i === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
-                  }}>
-                    {lt.lot_type_short}
-                  </th>
-                ))}
-                {/* builder sub-headers */}
-                {builders.map((b, i) => (
-                  <th key={b.builder_id} style={{
-                    ...thScroll(), background: '#f9fafb', fontSize: 10, color: '#374151',
-                    ...(i === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
-                  }}>
-                    {b.builder_name}
-                  </th>
-                ))}
-                {builders.length > 0 && <th style={{ ...thScroll(), background: '#f9fafb' }} />}
-              </tr>
-            )}
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr><td colSpan={99} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
-                No phases found.
+                No phases match the current filter.
               </td></tr>
             )}
             {rows.map((row, i) => {
-              const prev          = rows[i - 1]
-              const isFirstComm   = i === 0 || row.ent_group_id !== prev.ent_group_id
-              const isFirstDev    = i === 0 || row.dev_id       !== prev.dev_id
-              const bg            = BAND[(commBandIdx[row.ent_group_id] ?? 0) % 2]
-              const topBorder     = isFirstDev  ? '2px solid #e5e7eb'
-                                  : '1px solid #f0f0f0'
+              const prev        = rows[i - 1]
+              const isFirstComm = i === 0 || row.ent_group_id  !== prev.ent_group_id
+              const isFirstDev  = i === 0 || row.dev_id        !== prev.dev_id
+              const isFirstInst = i === 0 || row.instrument_id !== prev.instrument_id
+              const bg          = BAND[(commBandIdx[row.ent_group_id] ?? 0) % 2]
+              const topBorder   = isFirstDev ? '2px solid #e5e7eb' : isFirstInst ? '1px solid #e9e9e9' : '1px solid #f3f4f6'
 
-              const td = (extra = {}) => ({
-                padding: '3px 6px', background: bg, borderTop: topBorder, verticalAlign: 'middle',
-                ...extra,
+              // Computed totals from product splits + lot_type_counts
+              const ltc = row.lot_type_counts ?? {}  // {lot_type_id: {real, sim}}
+              const ps  = row.product_splits  ?? {}  // {lot_type_id: projected_count}
+              const projTotal = Object.values(ps).reduce((s, v) => s + (v ?? 0), 0)
+              const realTotal = Object.values(ltc).reduce((s, v) => s + (v.real ?? 0), 0)
+              const simTotal  = Object.values(ltc).reduce((s, v) => s + (v.sim  ?? 0), 0)
+
+              const isLocked  = !!row.date_dev_actual
+              const canLock   = !!row.date_dev_projected
+
+              const tdB = (extra = {}) => ({
+                padding: '4px 6px', background: bg, borderTop: topBorder,
+                verticalAlign: 'middle', ...extra,
               })
-              const tdSticky = (left, extra = {}) => ({
-                ...td(extra), position: 'sticky', left, zIndex: 1,
+              const tdS = (left, extra = {}) => ({
+                ...tdB(extra), position: 'sticky', left, zIndex: 1,
               })
-              const tdGroup = (extra = {}) => ({
-                ...td(extra), borderLeft: '2px solid #e9e9e9',
-              })
+              const tdG = (extra = {}) => ({ ...tdB(extra), borderLeft: '2px solid #ebebeb' })
+
+              const dimText = (show, text) => (
+                <span style={{ fontSize: 12, color: show ? '#374151' : '#d1d5db',
+                               fontWeight: show ? 500 : 400, display: 'block', paddingLeft: show ? 0 : 11 }}>
+                  {show ? text : '·'}
+                </span>
+              )
+              const numCell = (val) => (
+                <span style={{ fontSize: 12, display: 'block', padding: '1px 4px', textAlign: 'right',
+                               color: val > 0 ? '#374151' : '#d1d5db' }}>
+                  {val > 0 ? val : '—'}
+                </span>
+              )
 
               return (
                 <tr key={row.phase_id}>
                   {/* Community */}
-                  <td style={tdSticky(LEFT.comm)}>
-                    <span style={{ fontSize: 12, color: isFirstComm ? '#374151' : '#d1d5db',
-                                   fontWeight: isFirstComm ? 500 : 400 }}>
-                      {isFirstComm ? row.ent_group_name : '·'}
-                    </span>
+                  <td style={tdS(LEFT.comm)}>
+                    {dimText(isFirstComm, row.ent_group_name)}
                   </td>
-
                   {/* Development */}
-                  <td style={tdSticky(LEFT.dev)}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      {isFirstDev && (
-                        <span title={row.params_status} style={{
-                          width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                          background: DOT[row.params_status] ?? '#9ca3af', display: 'inline-block',
-                        }} />
-                      )}
-                      <span style={{ fontSize: 12, color: isFirstDev ? '#374151' : '#d1d5db',
-                                     fontWeight: isFirstDev ? 500 : 400,
-                                     paddingLeft: isFirstDev ? 0 : 11 }}>
-                        {isFirstDev ? row.dev_name : '·'}
-                      </span>
-                    </div>
+                  <td style={tdS(LEFT.dev)}>
+                    {dimText(isFirstDev, row.dev_name)}
                   </td>
-
+                  {/* Instrument */}
+                  <td style={tdS(LEFT.inst)}>
+                    {dimText(isFirstInst, row.instrument_name ?? '—')}
+                  </td>
                   {/* Phase */}
-                  <td style={tdSticky(LEFT.phase, PHASE_RIGHT_SHADOW)}>
+                  <td style={tdS(LEFT.phase, PHASE_SHADOW)}>
                     <span style={{ fontSize: 12, color: '#374151' }}>{row.phase_name}</span>
                   </td>
 
-                  {/* Starts/yr — dev-level */}
-                  <td style={tdGroup({ textAlign: 'right' })}>
-                    {isFirstDev ? (
-                      <EditableCell
-                        value={row.annual_starts_target} width={54}
-                        onSave={v => saveDevParams(row.dev_id, 'annual_starts_target', v)}
-                        placeholder="—"
-                      />
-                    ) : (
-                      <span style={{ display: 'block', fontSize: 12, color: '#d1d5db',
-                                     textAlign: 'right', padding: '1px 4px' }}>·</span>
-                    )}
+                  {/* Proj total (calculated) */}
+                  <td style={tdG({ textAlign: 'right' })}>
+                    {numCell(projTotal)}
+                  </td>
+                  {/* Real total */}
+                  <td style={tdB({ textAlign: 'right' })}>
+                    {numCell(realTotal)}
+                  </td>
+                  {/* Sim total */}
+                  <td style={tdB({ textAlign: 'right' })}>
+                    {numCell(simTotal)}
                   </td>
 
-                  {/* Max/mo — dev-level */}
-                  <td style={td({ textAlign: 'right' })}>
-                    {isFirstDev ? (
-                      <EditableCell
-                        value={row.max_starts_per_month} width={50}
-                        onSave={v => saveDevParams(row.dev_id, 'max_starts_per_month', v)}
-                        placeholder="—"
-                      />
-                    ) : (
-                      <span style={{ display: 'block', fontSize: 12, color: '#d1d5db',
-                                     textAlign: 'right', padding: '1px 4px' }}>·</span>
-                    )}
-                  </td>
-
-                  {/* Projected lot count */}
-                  <td style={tdGroup({ textAlign: 'right' })}>
+                  {/* Dev date */}
+                  <td style={tdG({ textAlign: 'right' })}>
                     <EditableCell
-                      value={row.lot_count_projected} width={48}
-                      onSave={v => savePhase(row.phase_id, 'lot_count_projected', v)}
+                      value={row.date_dev_projected} type="date" width={84}
+                      onSave={v => savePhaseField(row.phase_id, 'date_dev_projected', v)}
                       placeholder="—"
                     />
                   </td>
 
-                  {/* Real count (read-only) */}
-                  <td style={td({ textAlign: 'right' })}>
-                    <span style={{ fontSize: 12, color: row.real_count > 0 ? '#374151' : '#d1d5db',
-                                   display: 'block', padding: '1px 4px' }}>
-                      {row.real_count || '—'}
-                    </span>
-                  </td>
-
-                  {/* Sim count (read-only) */}
-                  <td style={td({ textAlign: 'right' })}>
-                    <span style={{ fontSize: 12, color: row.sim_count > 0 ? '#6b7280' : '#d1d5db',
-                                   display: 'block', padding: '1px 4px' }}>
-                      {row.sim_count || '—'}
-                    </span>
-                  </td>
-
-                  {/* Dev date (projected) */}
-                  <td style={tdGroup({ textAlign: 'right' })}>
-                    <EditableCell
-                      value={row.date_dev_projected} type="date" width={86}
-                      display={fmtDate}
-                      onSave={v => savePhase(row.phase_id, 'date_dev_projected', v)}
-                      placeholder="—"
+                  {/* Lock toggle */}
+                  <td style={tdB({ textAlign: 'center' })}>
+                    <LockButton
+                      locked={isLocked}
+                      disabled={!canLock}
+                      onToggle={shouldLock => toggleLock(row, shouldLock)}
                     />
                   </td>
 
-                  {/* Actual delivery date (lock) */}
-                  <td style={td({ textAlign: 'right' })}>
-                    <EditableCell
-                      value={row.date_dev_actual} type="date" width={88}
-                      display={fmtDate}
-                      highlight={row.date_dev_actual ? 'lock' : null}
-                      onSave={v => savePhase(row.phase_id, 'date_dev_actual', v)}
-                      placeholder="not locked"
-                    />
-                  </td>
+                  {/* Product splits (togglable) */}
+                  {showSplits && lotTypes.map((lt, idx) => {
+                    const projVal = ps[lt.lot_type_id] ?? null
+                    const ltCounts = ltc[lt.lot_type_id] ?? { real: 0, sim: 0 }
+                    return (
+                      <td key={lt.lot_type_id} style={{
+                        ...tdB({ textAlign: 'right', padding: '3px 6px' }),
+                        ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
+                      }}>
+                        <EditableCell
+                          value={projVal} width={56} placeholder="0"
+                          onSave={v => saveProductSplit(row.phase_id, lt.lot_type_id, v)}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6,
+                                      marginTop: 2, paddingRight: 4 }}>
+                          <span style={{ fontSize: 10, color: ltCounts.real > 0 ? '#6b7280' : '#e5e7eb' }}
+                                title="Real lots">R:{ltCounts.real}</span>
+                          <span style={{ fontSize: 10, color: ltCounts.sim  > 0 ? '#9ca3af' : '#e5e7eb' }}
+                                title="Sim lots">S:{ltCounts.sim}</span>
+                        </div>
+                      </td>
+                    )
+                  })}
 
-                  {/* Product split columns */}
-                  {lotTypes.map((lt, idx) => (
-                    <td key={lt.lot_type_id}
-                        style={td({ textAlign: 'right', ...(idx === 0 ? { borderLeft: '2px solid #e9e9e9' } : {}) })}>
-                      <EditableCell
-                        value={row.product_splits[lt.lot_type_id] ?? null} width={46}
-                        onSave={v => saveProductSplit(row.phase_id, lt.lot_type_id, v)}
-                        placeholder="0"
-                      />
-                    </td>
-                  ))}
-
-                  {/* Builder split columns */}
+                  {/* Builder splits */}
                   {builders.map((b, idx) => (
-                    <td key={b.builder_id}
-                        style={td({ textAlign: 'right', ...(idx === 0 ? { borderLeft: '2px solid #e9e9e9' } : {}) })}>
+                    <td key={b.builder_id} style={{
+                      ...tdB({ textAlign: 'right' }),
+                      ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
+                    }}>
                       <EditableCell
-                        value={row.builder_splits[b.builder_id] ?? null} width={54}
+                        value={row.builder_splits[b.builder_id] ?? null} width={58} placeholder="0"
                         onSave={v => saveBuilderSplit(row.phase_id, b.builder_id, v)}
-                        placeholder="0"
                       />
                     </td>
                   ))}
-
-                  {/* Builder sum badge */}
                   {builders.length > 0 && (
-                    <td style={td({ textAlign: 'center', padding: '3px 8px' })}>
+                    <td style={tdB({ textAlign: 'center', padding: '4px 8px' })}>
                       <BuilderSumBadge splits={row.builder_splits} builders={builders} />
                     </td>
                   )}
@@ -602,14 +543,6 @@ export default function ConfigView({ showTestCommunities }) {
           </tbody>
         </table>
       </div>
-
-      {rows.length > 0 && (
-        <div style={{ marginTop: 8, fontSize: 11, color: '#9ca3af' }}>
-          {rows.length} phase{rows.length !== 1 ? 's' : ''}
-          {(filterComm || filterDev) && ` (filtered from ${testFilteredRows.length})`}
-          {' · '}⚿ = delivery date locked
-        </div>
-      )}
     </div>
   )
 }
