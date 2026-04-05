@@ -42,6 +42,7 @@ from .p0500_eligibility_updater import eligibility_updater
 from .p0600_phase_date_propagator import phase_date_propagator
 from .p0700_lot_date_propagator import lot_date_propagator
 from .p0800_sync_flag_writer import sync_flag_writer
+from .p_pre_locked_event_rebuilder import locked_event_rebuilder
 
 
 # ── Build lag curve helpers ───────────────────────────────────────────────────
@@ -287,110 +288,6 @@ def curves_for(curves: dict, lag_type: str, lot_type_id) -> dict | None:
 
 # ── Coordinator helpers ───────────────────────────────────────────────────────
 
-def _rebuild_locked_delivery_events(conn: DBConnection, ent_group_id: int) -> int:
-    """
-    Delete all locked delivery events (date_dev_actual IS NOT NULL) for this community
-    and rebuild them from sim_dev_phases.date_dev_actual.
-
-    One delivery event per unique locked date.  All phases sharing that date are linked
-    via sim_delivery_event_phases.  Events are marked is_auto_created=False (user-driven).
-
-    Returns the number of new delivery events created.
-    """
-    # 1. Find existing locked event IDs for this community.
-    event_df = conn.read_df(
-        """
-        SELECT delivery_event_id
-        FROM sim_delivery_events
-        WHERE ent_group_id = %s
-          AND date_dev_actual IS NOT NULL
-        """,
-        (ent_group_id,),
-    )
-    locked_event_ids = [int(r) for r in event_df["delivery_event_id"]]
-
-    if locked_event_ids:
-        ids_tuple = tuple(locked_event_ids)
-        # Delete predecessors referencing these events (both directions).
-        conn.execute(
-            """
-            DELETE FROM sim_delivery_event_predecessors
-            WHERE event_id = ANY(%s::bigint[])
-               OR predecessor_event_id = ANY(%s::bigint[])
-            """,
-            (ids_tuple, ids_tuple),
-        )
-        # Delete event–phase links.
-        conn.execute(
-            "DELETE FROM sim_delivery_event_phases WHERE delivery_event_id = ANY(%s::bigint[])",
-            (ids_tuple,),
-        )
-        # Delete the events themselves.
-        conn.execute(
-            "DELETE FROM sim_delivery_events WHERE delivery_event_id = ANY(%s::bigint[])",
-            (ids_tuple,),
-        )
-        logger.info(f"  Rebuild locked events: deleted {len(locked_event_ids)} existing "
-                    f"locked delivery event(s) for ent_group_id={ent_group_id}.")
-
-    # 2. Query all phases in this community that have date_dev_actual set.
-    phases_df = conn.read_df(
-        """
-        SELECT sdp.phase_id, sdp.date_dev_actual
-        FROM sim_dev_phases sdp
-        JOIN sim_ent_group_developments segd ON segd.dev_id = sdp.dev_id
-        WHERE segd.ent_group_id = %s
-          AND sdp.date_dev_actual IS NOT NULL
-        ORDER BY sdp.date_dev_actual, sdp.phase_id
-        """,
-        (ent_group_id,),
-    )
-
-    if phases_df.empty:
-        logger.info(f"  Rebuild locked events: no locked phases found for "
-                    f"ent_group_id={ent_group_id}. Nothing to create.")
-        return 0
-
-    # 3. Group phases by date_dev_actual → one event per unique date.
-    from collections import defaultdict
-    date_to_phases: dict = defaultdict(list)
-    for _, row in phases_df.iterrows():
-        d = row["date_dev_actual"]
-        if hasattr(d, "date"):
-            d = d.date()
-        date_to_phases[d].append(int(row["phase_id"]))
-
-    # 4. Insert one delivery event per unique date.
-    created = 0
-    for locked_date, phase_ids in sorted(date_to_phases.items()):
-        conn.execute(
-            """
-            INSERT INTO sim_delivery_events
-                (ent_group_id, event_name, date_dev_actual, date_dev_projected,
-                 is_auto_created, is_placeholder)
-            VALUES (%s, %s, %s, %s, false, false)
-            """,
-            (ent_group_id,
-             f"Locked delivery {locked_date.strftime('%Y-%m-%d')}",
-             locked_date,
-             locked_date),
-        )
-        # Retrieve the new event id (uses the sequence default).
-        new_id_df = conn.read_df("SELECT lastval() AS new_id")
-        new_event_id = int(new_id_df.iloc[0]["new_id"])
-
-        # Link phases to this event.
-        phase_rows = [{"delivery_event_id": new_event_id, "phase_id": pid}
-                      for pid in phase_ids]
-        conn.executemany_insert("sim_delivery_event_phases", phase_rows)
-
-        logger.info(f"  Rebuild locked events: created event {new_event_id} for "
-                    f"{locked_date} with {len(phase_ids)} phase(s): {phase_ids}.")
-        created += 1
-
-    return created
-
-
 def _load_builder_splits(conn: DBConnection) -> dict:
     """
     Load sim_phase_builder_splits as {phase_id: [{builder_id, share}, ...]}.
@@ -562,6 +459,9 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
     Run all 8 supply pipeline modules in order for the entitlement group.
     Returns (post_run_phases dict, affected_dev_ids list).
     """
+    # P-pre: rebuild locked delivery events from sim_dev_phases.date_dev_actual
+    locked_event_rebuilder(conn, ent_group_id)
+
     # Snapshot pre-run delivery dates -- scoped to phases in this ent_group
     pre_df = conn.read_df(
         """
@@ -694,13 +594,6 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         # within a day. Pass rng_seed explicitly for test-time control.
         _seed = rng_seed if rng_seed is not None else sim_run_id * 1000 + ent_group_id
         rng = random.Random(_seed)
-
-        # Rebuild locked delivery events from sim_dev_phases.date_dev_actual before
-        # the first iteration.  This ensures the supply pipeline always receives a
-        # clean, authoritative set of locked events derived from phase-level locks —
-        # regardless of what was stored in sim_delivery_events previously.
-        n_rebuilt = _rebuild_locked_delivery_events(conn, ent_group_id)
-        logger.info(f"  Locked delivery events rebuilt: {n_rebuilt} event(s) created.")
 
         missing_params_devs: set[int] = set()
 
