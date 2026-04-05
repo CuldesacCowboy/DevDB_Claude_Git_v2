@@ -37,14 +37,32 @@ function bandIdx(rows, getKey) {
   return map
 }
 
+// ─── Active cell highlight ────────────────────────────────────────────────────
+
+function cellHighlight(isActive, editable) {
+  if (!isActive) return {}
+  return editable
+    ? { boxShadow: 'inset 0 0 0 2px #2563eb', background: '#eff6ff' }
+    : { boxShadow: 'inset 0 0 0 2px #cbd5e1', background: '#f1f5f9' }
+}
+
 // ─── EditableCell ─────────────────────────────────────────────────────────────
 
-function EditableCell({ value, type = 'number', onSave, placeholder = '—', width = 52, align = 'right' }) {
+function EditableCell({ value, type = 'number', onSave, placeholder = '—', width = 52, align = 'right', triggerActivate = 0, onDone }) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState(null)
-  const inputRef = useRef()
+  const inputRef   = useRef()
+  const prevSigRef = useRef(0)
+
+  // Keyboard-nav activation: start editing when triggerActivate counter increments
+  useEffect(() => {
+    if (triggerActivate !== prevSigRef.current) {
+      prevSigRef.current = triggerActivate
+      if (triggerActivate > 0 && !editing) startEdit()
+    }
+  }, [triggerActivate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function startEdit() {
     if (saving) return
@@ -62,16 +80,16 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
       parsed = Number(raw)
       if (isNaN(parsed)) { setError('!'); return }
     } else { parsed = raw }
-    if (parsed === value || (parsed == null && value == null)) return
+    if (parsed === value || (parsed == null && value == null)) { onDone?.(); return }
     setSaving(true); setError(null)
     try { await onSave(parsed) }
     catch (e) { setError(String(e).slice(0, 40)) }
-    finally { setSaving(false) }
+    finally { setSaving(false); onDone?.() }
   }
 
   function onKeyDown(e) {
-    if (e.key === 'Enter')  { e.preventDefault(); commit() }
-    if (e.key === 'Escape') { setEditing(false) }
+    if (e.key === 'Enter')  { e.preventDefault(); e.stopPropagation(); commit() }
+    if (e.key === 'Escape') { e.stopPropagation(); setEditing(false); onDone?.() }
   }
 
   const display = type === 'date' ? fmtDate(value) : (value != null ? String(value) : '')
@@ -311,8 +329,53 @@ function TableShell({ children, maxHeight = 'calc(100vh - 170px)' }) {
 
 // ─── Community tab ────────────────────────────────────────────────────────────
 
+// Community tab column metadata: index → { editable, kind }
+const COMM_COLS = [
+  { editable: false },                   // 0 community name
+  { editable: true, kind: 'edit' },      // 1 date_paper
+  { editable: true, kind: 'edit' },      // 2 date_ent
+  { editable: true, kind: 'checkbox' },  // 3 auto_schedule
+  { editable: true, kind: 'month' },     // 4 delivery_months
+  { editable: true, kind: 'edit' },      // 5 del/year
+]
+
 function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal }) {
   const filtered = rows.filter(r => showTest ? r.is_test : !r.is_test)
+  const [activeCell,      setActiveCell]      = useState(null) // { r, c }
+  const [activateSignal,  setActivateSignal]  = useState(0)
+  const containerRef = useRef()
+
+  const maxRow = filtered.length - 1
+
+  function handleKeyDown(e) {
+    const NAV = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight']
+    if (NAV.includes(e.key)) {
+      e.preventDefault()
+      setActiveCell(prev => {
+        const r = prev?.r ?? 0
+        const c = prev?.c ?? 1
+        if (e.key === 'ArrowUp')    return { r: Math.max(0, r - 1), c }
+        if (e.key === 'ArrowDown')  return { r: Math.min(maxRow, r + 1), c }
+        if (e.key === 'ArrowLeft')  return { r, c: Math.max(0, c - 1) }
+        if (e.key === 'ArrowRight') return { r, c: Math.min(COMM_COLS.length - 1, c + 1) }
+      })
+      return
+    }
+    if (e.key === 'Enter' && activeCell) {
+      e.preventDefault()
+      const col = COMM_COLS[activeCell.c]
+      if (!col.editable) return
+      if (col.kind === 'edit') { setActivateSignal(s => s + 1) }
+      if (col.kind === 'checkbox') {
+        const row = filtered[activeCell.r]
+        if (row) onPatchComm(row.ent_group_id, 'delivery', { auto_schedule_enabled: !(row.auto_schedule_enabled ?? false) })
+      }
+    }
+  }
+
+  function onDone() { containerRef.current?.focus() }
+
+  const ac = (r, c) => activeCell?.r === r && activeCell?.c === c
 
   const thB = {
     padding: '5px 8px', fontSize: 11, fontWeight: 600, color: '#6b7280',
@@ -324,92 +387,110 @@ function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal 
   const thG = { ...thR, borderLeft: '2px solid #e0e0e0' }
 
   return (
-    <TableShell>
-      <thead>
-        <tr>
-          <th style={{ ...thB, width: 200, position: 'sticky', top: 0, left: 0, zIndex: 5,
-                       boxShadow: '4px 0 8px -2px rgba(0,0,0,0.08)' }}>
-            Community
-          </th>
-          <th style={{ ...thG, width: 100 }}>Ledger Start</th>
-          <th style={{ ...thR, width: 110 }}>Bulk Ent. Date</th>
-          <th style={{ ...thG, width: 90, textAlign: 'center' }}>Auto Schedule</th>
-          <th style={{ ...thG, width: 240 }}>Delivery Months</th>
-          <th style={{ ...thR, width: 72 }}>Del / Year</th>
-        </tr>
-      </thead>
-      <tbody>
-        {filtered.length === 0 && (
-          <tr><td colSpan={6} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
-            No communities.
-          </td></tr>
-        )}
-        {filtered.map((row, i) => {
-          const bg = BAND[i % 2]
-          const td  = (extra = {}) => ({ padding: '6px 8px', background: bg,
-                                         borderTop: '1px solid #f0f0f0', verticalAlign: 'middle', ...extra })
-          const tdG = (extra = {}) => ({ ...td(extra), borderLeft: '2px solid #ebebeb' })
+    <div ref={containerRef} tabIndex={0} onKeyDown={handleKeyDown}
+         style={{ outline: 'none' }}>
+      <TableShell>
+        <thead>
+          <tr>
+            <th style={{ ...thB, width: 200, position: 'sticky', top: 0, left: 0, zIndex: 5,
+                         boxShadow: '4px 0 8px -2px rgba(0,0,0,0.08)' }}>
+              Community
+            </th>
+            <th style={{ ...thG, width: 100 }}>Ledger Start</th>
+            <th style={{ ...thR, width: 110 }}>Bulk Ent. Date</th>
+            <th style={{ ...thG, width: 90, textAlign: 'center' }}>Auto Schedule</th>
+            <th style={{ ...thG, width: 240 }}>Delivery Months</th>
+            <th style={{ ...thR, width: 72 }}>Del / Year</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.length === 0 && (
+            <tr><td colSpan={6} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+              No communities.
+            </td></tr>
+          )}
+          {filtered.map((row, i) => {
+            const bg = BAND[i % 2]
+            const td  = (c, extra = {}) => ({
+              padding: '6px 8px', borderTop: '1px solid #f0f0f0', verticalAlign: 'middle',
+              ...cellHighlight(ac(i, c), COMM_COLS[c].editable),
+              background: ac(i, c) ? (COMM_COLS[c].editable ? '#eff6ff' : '#f1f5f9') : bg,
+              ...extra,
+            })
+            const tdG = (c, extra = {}) => ({ ...td(c, extra), borderLeft: '2px solid #ebebeb' })
 
-          return (
-            <tr key={row.ent_group_id}>
-              <td style={{ ...td(), position: 'sticky', left: 0, zIndex: 1,
-                           boxShadow: '4px 0 8px -2px rgba(0,0,0,0.06)' }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
-                  {row.ent_group_name}
-                </span>
-              </td>
+            return (
+              <tr key={row.ent_group_id} onClick={() => setActiveCell({ r: i, c: activeCell?.c ?? 1 })}>
+                <td style={{ ...td(0), position: 'sticky', left: 0, zIndex: 1,
+                             boxShadow: '4px 0 8px -2px rgba(0,0,0,0.06)' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
+                    {row.ent_group_name}
+                  </span>
+                </td>
 
-              {/* Ledger start = date_paper */}
-              <td style={tdG({ textAlign: 'right' })}>
-                <EditableCell value={row.date_paper} type="date" width={90}
-                  onSave={v => onPatchComm(row.ent_group_id, 'ledger', { date_paper: v, date_ent: row.date_ent })} />
-              </td>
+                {/* Ledger start = date_paper */}
+                <td style={tdG(1, { textAlign: 'right' })}>
+                  <EditableCell value={row.date_paper} type="date" width={90}
+                    triggerActivate={ac(i, 1) ? activateSignal : 0} onDone={onDone}
+                    onSave={v => onPatchComm(row.ent_group_id, 'ledger', { date_paper: v, date_ent: row.date_ent })} />
+                </td>
 
-              {/* Bulk ent date = date_ent */}
-              <td style={td({ textAlign: 'right' })}>
-                <EditableCell value={row.date_ent} type="date" width={100}
-                  onSave={v => onPatchComm(row.ent_group_id, 'ledger', { date_paper: row.date_paper, date_ent: v })} />
-              </td>
+                {/* Bulk ent date = date_ent */}
+                <td style={td(2, { textAlign: 'right' })}>
+                  <EditableCell value={row.date_ent} type="date" width={100}
+                    triggerActivate={ac(i, 2) ? activateSignal : 0} onDone={onDone}
+                    onSave={v => onPatchComm(row.ent_group_id, 'ledger', { date_paper: row.date_paper, date_ent: v })} />
+                </td>
 
-              {/* Auto schedule */}
-              <td style={tdG({ textAlign: 'center' })}>
-                <input type="checkbox"
-                  checked={row.auto_schedule_enabled ?? false}
-                  onChange={e => onPatchComm(row.ent_group_id, 'delivery', { auto_schedule_enabled: e.target.checked })}
-                  style={{ cursor: 'pointer', width: 14, height: 14 }}
-                />
-              </td>
+                {/* Auto schedule */}
+                <td style={tdG(3, { textAlign: 'center' })}>
+                  <input type="checkbox"
+                    checked={row.auto_schedule_enabled ?? false}
+                    onChange={e => onPatchComm(row.ent_group_id, 'delivery', { auto_schedule_enabled: e.target.checked })}
+                    style={{ cursor: 'pointer', width: 14, height: 14 }}
+                  />
+                </td>
 
-              {/* Delivery months */}
-              <td style={tdG({ padding: '5px 8px' })}>
-                <MonthCell months={row.delivery_months}
-                  globalMonths={globalMonths}
-                  onSave={v => onPatchComm(row.ent_group_id, 'delivery', { delivery_months: v })}
-                  onSaveGlobal={onSaveGlobal} />
-              </td>
+                {/* Delivery months */}
+                <td style={tdG(4, { padding: '5px 8px' })}>
+                  <MonthCell months={row.delivery_months}
+                    globalMonths={globalMonths}
+                    onSave={v => onPatchComm(row.ent_group_id, 'delivery', { delivery_months: v })}
+                    onSaveGlobal={onSaveGlobal} />
+                </td>
 
-              {/* Deliveries per year */}
-              <td style={td({ textAlign: 'right' })}>
-                <EditableCell value={row.max_deliveries_per_year} width={60}
-                  onSave={v => onPatchComm(row.ent_group_id, 'delivery', { max_deliveries_per_year: v })} />
-              </td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </TableShell>
+                {/* Deliveries per year */}
+                <td style={td(5, { textAlign: 'right' })}>
+                  <EditableCell value={row.max_deliveries_per_year} width={60}
+                    triggerActivate={ac(i, 5) ? activateSignal : 0} onDone={onDone}
+                    onSave={v => onPatchComm(row.ent_group_id, 'delivery', { max_deliveries_per_year: v })} />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </TableShell>
+    </div>
   )
 }
 
 // ─── StartsCell ───────────────────────────────────────────────────────────────
 // Editable annual starts target with a reactive supply label below.
 
-function StartsCell({ value, unstarted, onSave }) {
+function StartsCell({ value, unstarted, onSave, triggerActivate = 0, onDone }) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
   const [saving,  setSaving]  = useState(false)
   const [error,   setError]   = useState(null)
-  const inputRef = useRef()
+  const inputRef   = useRef()
+  const prevSigRef = useRef(0)
+
+  useEffect(() => {
+    if (triggerActivate !== prevSigRef.current) {
+      prevSigRef.current = triggerActivate
+      if (triggerActivate > 0 && !editing) startEdit()
+    }
+  }, [triggerActivate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const liveTarget = editing ? (parseFloat(draft) || 0) : (value ?? 0)
   const supplyYrs  = liveTarget > 0 && unstarted != null ? unstarted / liveTarget : null
@@ -437,17 +518,17 @@ function StartsCell({ value, unstarted, onSave }) {
     setEditing(false)
     const raw = draft.trim()
     const parsed = raw === '' ? null : Number(raw)
-    if (!raw || isNaN(parsed)) { if (raw && isNaN(parsed)) setError('!'); return }
-    if (parsed === value) return
+    if (!raw || isNaN(parsed)) { if (raw && isNaN(parsed)) setError('!'); onDone?.(); return }
+    if (parsed === value) { onDone?.(); return }
     setSaving(true); setError(null)
     try { await onSave(parsed) }
     catch (e) { setError(String(e).slice(0, 40)) }
-    finally { setSaving(false) }
+    finally { setSaving(false); onDone?.() }
   }
 
   function onKeyDown(e) {
-    if (e.key === 'Enter')  { e.preventDefault(); commit() }
-    if (e.key === 'Escape') { setEditing(false) }
+    if (e.key === 'Enter')  { e.preventDefault(); e.stopPropagation(); commit() }
+    if (e.key === 'Escape') { e.stopPropagation(); setEditing(false); onDone?.() }
   }
 
   const label = supplyLabel()
@@ -485,9 +566,52 @@ function StartsCell({ value, unstarted, onSave }) {
 
 const CUR_YEAR = new Date().getFullYear()
 
+// Dev tab column metadata (0-8)
+const DEV_COLS = [
+  { editable: false }, // 0 community
+  { editable: false }, // 1 development
+  { editable: false }, // 2 proj
+  { editable: false }, // 3 unstarted
+  { editable: false }, // 4 ytd
+  { editable: false }, // 5 last yr
+  { editable: false }, // 6 2yr ago
+  { editable: true, kind: 'starts' }, // 7 annual starts
+  { editable: true, kind: 'edit'   }, // 8 max/month
+]
+
 function DevTab({ rows, showTest, onPatchDev }) {
   const filtered = rows.filter(r => showTest ? r.is_test : !r.is_test)
   const bi = bandIdx(filtered, r => r.ent_group_id)
+  const [activeCell,     setActiveCell]     = useState(null)
+  const [activateSignal, setActivateSignal] = useState(0)
+  const containerRef = useRef()
+
+  const maxRow = filtered.length - 1
+
+  function handleKeyDown(e) {
+    const NAV = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight']
+    if (NAV.includes(e.key)) {
+      e.preventDefault()
+      setActiveCell(prev => {
+        const r = prev?.r ?? 0
+        const c = prev?.c ?? 7
+        if (e.key === 'ArrowUp')    return { r: Math.max(0, r - 1), c }
+        if (e.key === 'ArrowDown')  return { r: Math.min(maxRow, r + 1), c }
+        if (e.key === 'ArrowLeft')  return { r, c: Math.max(0, c - 1) }
+        if (e.key === 'ArrowRight') return { r, c: Math.min(DEV_COLS.length - 1, c + 1) }
+      })
+      return
+    }
+    if (e.key === 'Enter' && activeCell) {
+      e.preventDefault()
+      const col = DEV_COLS[activeCell.c]
+      if (col.editable) setActivateSignal(s => s + 1)
+    }
+  }
+
+  function onDone() { containerRef.current?.focus() }
+
+  const ac = (r, c) => activeCell?.r === r && activeCell?.c === c
 
   const thB = {
     padding: '5px 8px', fontSize: 11, fontWeight: 600, color: '#6b7280',
@@ -498,103 +622,112 @@ function DevTab({ rows, showTest, onPatchDev }) {
   const thGR = { ...thR, borderLeft: '2px solid #e0e0e0' }
 
   return (
-    <TableShell>
-      <thead>
-        <tr>
-          <th style={{ ...thB, width: 180, position: 'sticky', left: 0, zIndex: 5,
-                       boxShadow: '4px 0 8px -2px rgba(0,0,0,0.08)' }}>Community</th>
-          <th style={{ ...thB, width: 160 }}>Development</th>
-          {/* Read-only context */}
-          <th style={{ ...thGR, width: 60 }} title="Sum of product split projected counts across all phases">Proj</th>
-          <th style={{ ...thR,  width: 68 }} title="Real lots with no start date (still in pipeline)">Unstarted</th>
-          <th style={{ ...thR,  width: 60 }} title={`Actual starts YTD (${CUR_YEAR})`}>{CUR_YEAR}</th>
-          <th style={{ ...thR,  width: 60 }} title={`Actual starts in ${CUR_YEAR - 1}`}>{CUR_YEAR - 1}</th>
-          <th style={{ ...thR,  width: 60 }} title={`Actual starts in ${CUR_YEAR - 2}`}>{CUR_YEAR - 2}</th>
-          {/* Editable */}
-          <th style={{ ...thGR, width: 110 }}>Annual Starts</th>
-          <th style={{ ...thR,  width: 90  }}>Max / Month</th>
-        </tr>
-      </thead>
-      <tbody>
-        {filtered.length === 0 && (
-          <tr><td colSpan={9} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
-            No developments.
-          </td></tr>
-        )}
-        {filtered.map((row, i) => {
-          const prev = filtered[i - 1]
-          const isFirstComm = i === 0 || row.ent_group_id !== prev.ent_group_id
-          const bg = BAND[(bi[row.ent_group_id] ?? 0) % 2]
-          const topBorder = isFirstComm ? '2px solid #e5e7eb' : '1px solid #f0f0f0'
+    <div ref={containerRef} tabIndex={0} onKeyDown={handleKeyDown}
+         style={{ outline: 'none' }}>
+      <TableShell>
+        <thead>
+          <tr>
+            <th style={{ ...thB, width: 180, position: 'sticky', left: 0, zIndex: 5,
+                         boxShadow: '4px 0 8px -2px rgba(0,0,0,0.08)' }}>Community</th>
+            <th style={{ ...thB, width: 160 }}>Development</th>
+            {/* Read-only context */}
+            <th style={{ ...thGR, width: 60 }} title="Sum of product split projected counts across all phases">Proj</th>
+            <th style={{ ...thR,  width: 68 }} title="Real lots with no start date (still in pipeline)">Unstarted</th>
+            <th style={{ ...thR,  width: 60 }} title={`Actual starts YTD (${CUR_YEAR})`}>{CUR_YEAR}</th>
+            <th style={{ ...thR,  width: 60 }} title={`Actual starts in ${CUR_YEAR - 1}`}>{CUR_YEAR - 1}</th>
+            <th style={{ ...thR,  width: 60 }} title={`Actual starts in ${CUR_YEAR - 2}`}>{CUR_YEAR - 2}</th>
+            {/* Editable */}
+            <th style={{ ...thGR, width: 110 }}>Annual Starts</th>
+            <th style={{ ...thR,  width: 90  }}>Max / Month</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.length === 0 && (
+            <tr><td colSpan={9} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+              No developments.
+            </td></tr>
+          )}
+          {filtered.map((row, i) => {
+            const prev = filtered[i - 1]
+            const isFirstComm = i === 0 || row.ent_group_id !== prev.ent_group_id
+            const bg = BAND[(bi[row.ent_group_id] ?? 0) % 2]
+            const topBorder = isFirstComm ? '2px solid #e5e7eb' : '1px solid #f0f0f0'
 
-          const td  = (extra = {}) => ({ padding: '5px 8px', background: bg, borderTop: topBorder,
-                                         verticalAlign: 'top', ...extra })
-          const tdG = (extra = {}) => ({ ...td(extra), borderLeft: '2px solid #ebebeb' })
+            const td  = (c, extra = {}) => ({
+              padding: '5px 8px', borderTop: topBorder, verticalAlign: 'top',
+              ...cellHighlight(ac(i, c), DEV_COLS[c].editable),
+              background: ac(i, c) ? (DEV_COLS[c].editable ? '#eff6ff' : '#f1f5f9') : bg,
+              ...extra,
+            })
+            const tdG = (c, extra = {}) => ({ ...td(c, extra), borderLeft: '2px solid #ebebeb' })
 
-          const noParams = row.annual_starts_target == null
+            const noParams = row.annual_starts_target == null
 
-          const num = (v, dim) => (
-            <span style={{ fontSize: 12, display: 'block', textAlign: 'right', padding: '1px 4px',
-                           color: v > 0 ? '#374151' : '#d1d5db' }}>
-              {v > 0 ? v : (dim ? '—' : '0')}
-            </span>
-          )
+            const num = (v, dim) => (
+              <span style={{ fontSize: 12, display: 'block', textAlign: 'right', padding: '1px 4px',
+                             color: v > 0 ? '#374151' : '#d1d5db' }}>
+                {v > 0 ? v : (dim ? '—' : '0')}
+              </span>
+            )
 
-          // Two-year pace average (only using years with any data)
-          const paceYears = [row.starts_last_year, row.starts_2yr_ago].filter(v => v > 0)
-          const pace2yr   = paceYears.length > 0
-            ? Math.round(paceYears.reduce((s, v) => s + v, 0) / paceYears.length)
-            : null
+            const paceYears = [row.starts_last_year, row.starts_2yr_ago].filter(v => v > 0)
+            const pace2yr   = paceYears.length > 0
+              ? Math.round(paceYears.reduce((s, v) => s + v, 0) / paceYears.length)
+              : null
 
-          return (
-            <tr key={`${row.ent_group_id}-${row.dev_id}`}>
-              <td style={{ ...td(), position: 'sticky', left: 0, zIndex: 1,
-                           boxShadow: '4px 0 8px -2px rgba(0,0,0,0.06)' }}>
-                <span style={{ fontSize: 12, color: isFirstComm ? '#374151' : '#d1d5db',
-                               fontWeight: isFirstComm ? 500 : 400 }}>
-                  {isFirstComm ? row.ent_group_name : '·'}
-                </span>
-              </td>
-              <td style={td()}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: '#111827' }}>{row.dev_name}</span>
-                  {noParams && (
-                    <span style={{ fontSize: 10, color: '#d97706', background: '#fef9c3',
-                                   border: '1px solid #fcd34d', borderRadius: 3, padding: '0 4px' }}>
-                      no params
-                    </span>
-                  )}
-                </div>
-                {pace2yr != null && (
-                  <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
-                    {pace2yr}/yr avg ({CUR_YEAR - 2}–{CUR_YEAR - 1})
+            return (
+              <tr key={`${row.ent_group_id}-${row.dev_id}`}
+                  onClick={() => setActiveCell({ r: i, c: activeCell?.c ?? 7 })}>
+                <td style={{ ...td(0), position: 'sticky', left: 0, zIndex: 1,
+                             boxShadow: '4px 0 8px -2px rgba(0,0,0,0.06)' }}>
+                  <span style={{ fontSize: 12, color: isFirstComm ? '#374151' : '#d1d5db',
+                                 fontWeight: isFirstComm ? 500 : 400 }}>
+                    {isFirstComm ? row.ent_group_name : '·'}
+                  </span>
+                </td>
+                <td style={td(1)}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: '#111827' }}>{row.dev_name}</span>
+                    {noParams && (
+                      <span style={{ fontSize: 10, color: '#d97706', background: '#fef9c3',
+                                     border: '1px solid #fcd34d', borderRadius: 3, padding: '0 4px' }}>
+                        no params
+                      </span>
+                    )}
                   </div>
-                )}
-              </td>
-              {/* Read-only context columns */}
-              <td style={tdG({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.total_projected, true)}</td>
-              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.unstarted_real, true)}</td>
-              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.starts_ytd)}</td>
-              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.starts_last_year)}</td>
-              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.starts_2yr_ago)}</td>
-              {/* Editable */}
-              <td style={tdG({ textAlign: 'right' })}>
-                <StartsCell
-                  value={row.annual_starts_target}
-                  unstarted={row.unstarted_real}
-                  onSave={v => onPatchDev(row.dev_id, { annual_starts_target: v })}
-                />
-              </td>
-              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>
-                <EditableCell value={row.max_starts_per_month} width={78}
-                  onSave={v => onPatchDev(row.dev_id, { max_starts_per_month: v })}
-                  placeholder="—" />
-              </td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </TableShell>
+                  {pace2yr != null && (
+                    <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+                      {pace2yr}/yr avg ({CUR_YEAR - 2}–{CUR_YEAR - 1})
+                    </div>
+                  )}
+                </td>
+                {/* Read-only context columns */}
+                <td style={tdG(2, { textAlign: 'right', verticalAlign: 'middle' })}>{num(row.total_projected, true)}</td>
+                <td style={td(3,  { textAlign: 'right', verticalAlign: 'middle' })}>{num(row.unstarted_real, true)}</td>
+                <td style={td(4,  { textAlign: 'right', verticalAlign: 'middle' })}>{num(row.starts_ytd)}</td>
+                <td style={td(5,  { textAlign: 'right', verticalAlign: 'middle' })}>{num(row.starts_last_year)}</td>
+                <td style={td(6,  { textAlign: 'right', verticalAlign: 'middle' })}>{num(row.starts_2yr_ago)}</td>
+                {/* Editable */}
+                <td style={tdG(7, { textAlign: 'right' })}>
+                  <StartsCell
+                    value={row.annual_starts_target}
+                    unstarted={row.unstarted_real}
+                    triggerActivate={ac(i, 7) ? activateSignal : 0} onDone={onDone}
+                    onSave={v => onPatchDev(row.dev_id, { annual_starts_target: v })}
+                  />
+                </td>
+                <td style={td(8, { textAlign: 'right', verticalAlign: 'middle' })}>
+                  <EditableCell value={row.max_starts_per_month} width={78}
+                    triggerActivate={ac(i, 8) ? activateSignal : 0} onDone={onDone}
+                    onSave={v => onPatchDev(row.dev_id, { max_starts_per_month: v })}
+                    placeholder="—" />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </TableShell>
+    </div>
   )
 }
 
