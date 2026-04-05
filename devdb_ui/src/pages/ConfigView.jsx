@@ -145,10 +145,16 @@ function BuilderSumBadge({ splits, builders }) {
 
 // ─── MonthCell ────────────────────────────────────────────────────────────────
 
-function MonthCell({ months, onSave }) {
-  const [saving, setSaving] = useState(false)
-  const active = new Set(months ?? [])
+function MonthCell({ months, globalMonths, onSave, onSaveGlobal }) {
+  const [saving,        setSaving]        = useState(false)
+  const [editingGlobal, setEditingGlobal] = useState(false)
+  const [globalDraft,   setGlobalDraft]   = useState([])
+
   const isGlobal = months == null
+  const active   = new Set(isGlobal ? (globalMonths ?? []) : months)
+  const isAll    = !isGlobal && months.length === 12
+  const isNone   = !isGlobal && months.length === 0
+  const isCustom = !isGlobal && !isAll && !isNone
 
   async function save(next) {
     setSaving(true)
@@ -158,10 +164,37 @@ function MonthCell({ months, onSave }) {
 
   async function toggle(m) {
     if (saving) return
-    const next = active.has(m)
-      ? [...active].filter(x => x !== m).sort((a, b) => a - b)
-      : [...active, m].sort((a, b) => a - b)
-    await save(next.length > 0 ? next : null)
+    const base = isGlobal ? new Set(globalMonths ?? []) : active
+    const next = base.has(m)
+      ? [...base].filter(x => x !== m).sort((a, b) => a - b)
+      : [...base, m].sort((a, b) => a - b)
+    await save(next)
+  }
+
+  function startEditGlobal() {
+    setGlobalDraft(globalMonths ? [...globalMonths].sort((a, b) => a - b) : [1,2,3,4,5,6,7,8,9,10,11,12])
+    setEditingGlobal(true)
+  }
+
+  async function commitGlobal() {
+    setSaving(true)
+    try { await onSaveGlobal(globalDraft) }
+    finally { setSaving(false); setEditingGlobal(false) }
+  }
+
+  function toggleGlobalDraft(m) {
+    const s = new Set(globalDraft)
+    if (s.has(m)) s.delete(m); else s.add(m)
+    setGlobalDraft([...s].sort((a, b) => a - b))
+  }
+
+  function subtextStyle(isActive) {
+    return {
+      fontSize: 10, background: 'none', border: 'none', padding: 0,
+      color: isActive ? '#2563eb' : '#9ca3af',
+      fontWeight: isActive ? 700 : 400,
+      cursor: isActive ? 'default' : 'pointer',
+    }
   }
 
   return (
@@ -174,9 +207,9 @@ function MonthCell({ months, onSave }) {
               title={abbr}
               style={{
                 padding: '2px 4px', fontSize: 10, borderRadius: 3, cursor: saving ? 'default' : 'pointer',
-                border: on ? '1px solid #2563eb' : '1px solid #d1d5db',
-                background: on ? '#eff6ff' : '#fff',
-                color: on ? '#1d4ed8' : '#9ca3af',
+                border: on ? (isGlobal ? '1px solid #7c3aed' : '1px solid #2563eb') : '1px solid #d1d5db',
+                background: on ? (isGlobal ? '#f5f3ff' : '#eff6ff') : '#fff',
+                color: on ? (isGlobal ? '#7c3aed' : '#1d4ed8') : '#9ca3af',
                 fontWeight: on ? 600 : 400, minWidth: 26,
               }}>
               {abbr}
@@ -186,17 +219,58 @@ function MonthCell({ months, onSave }) {
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 3, alignItems: 'center' }}>
         <button onClick={() => save([1,2,3,4,5,6,7,8,9,10,11,12])} disabled={saving}
-          style={{ fontSize: 10, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          All
-        </button>
+          style={subtextStyle(isAll)}>All</button>
+        <button onClick={() => save([])} disabled={saving}
+          style={subtextStyle(isNone)}>None</button>
+        <span style={{ fontSize: 10, color: isCustom ? '#2563eb' : '#e5e7eb', fontWeight: isCustom ? 700 : 400 }}>
+          Custom
+        </span>
         <button onClick={() => save(null)} disabled={saving}
-          style={{ fontSize: 10, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          None
+          style={subtextStyle(isGlobal)}>Global</button>
+        <button onClick={startEditGlobal} disabled={saving}
+          style={{ fontSize: 10, background: 'none', border: 'none', padding: 0,
+                   color: '#9ca3af', cursor: 'pointer' }}>
+          Edit Global
         </button>
-        {isGlobal && (
-          <span style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>using global</span>
-        )}
       </div>
+      {editingGlobal && (
+        <div style={{ marginTop: 6, padding: 8, background: '#faf5ff',
+                      border: '1px solid #e9d5ff', borderRadius: 6 }}>
+          <div style={{ fontSize: 10, color: '#7c3aed', fontWeight: 600, marginBottom: 4 }}>
+            Global delivery months
+          </div>
+          <div style={{ display: 'flex', gap: 2 }}>
+            {MONTH_ABBR.map((abbr, i) => {
+              const m = i + 1, on = globalDraft.includes(m)
+              return (
+                <button key={m} onClick={() => toggleGlobalDraft(m)} title={abbr}
+                  style={{
+                    padding: '2px 4px', fontSize: 10, borderRadius: 3, cursor: 'pointer',
+                    border: on ? '1px solid #7c3aed' : '1px solid #d1d5db',
+                    background: on ? '#f5f3ff' : '#fff',
+                    color: on ? '#7c3aed' : '#9ca3af',
+                    fontWeight: on ? 600 : 400, minWidth: 26,
+                  }}>
+                  {abbr}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 5, alignItems: 'center' }}>
+            <button onClick={commitGlobal} disabled={saving}
+              style={{ fontSize: 10, padding: '2px 8px', borderRadius: 3,
+                       cursor: saving ? 'default' : 'pointer',
+                       background: '#7c3aed', color: '#fff', border: 'none', fontWeight: 600 }}>
+              {saving ? '…' : 'Save'}
+            </button>
+            <button onClick={() => setEditingGlobal(false)} disabled={saving}
+              style={{ fontSize: 10, color: '#9ca3af', background: 'none', border: 'none',
+                       cursor: 'pointer', padding: 0 }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -237,7 +311,7 @@ function TableShell({ children, maxHeight = 'calc(100vh - 170px)' }) {
 
 // ─── Community tab ────────────────────────────────────────────────────────────
 
-function CommunityTab({ rows, showTest, onPatchComm }) {
+function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal }) {
   const filtered = rows.filter(r => showTest ? r.is_test : !r.is_test)
 
   const thB = {
@@ -309,7 +383,9 @@ function CommunityTab({ rows, showTest, onPatchComm }) {
               {/* Delivery months */}
               <td style={tdG({ padding: '5px 8px' })}>
                 <MonthCell months={row.delivery_months}
-                  onSave={v => onPatchComm(row.ent_group_id, 'delivery', { delivery_months: v })} />
+                  globalMonths={globalMonths}
+                  onSave={v => onPatchComm(row.ent_group_id, 'delivery', { delivery_months: v })}
+                  onSaveGlobal={onSaveGlobal} />
               </td>
 
               {/* Deliveries per year */}
@@ -886,12 +962,13 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export default function ConfigView({ showTestCommunities }) {
-  const [tab,       setTab]       = useState('community')
-  const [phaseData, setPhaseData] = useState(null)
-  const [commData,  setCommData]  = useState(null)
-  const [devData,   setDevData]   = useState(null)
-  const [loading,   setLoading]   = useState(true)
-  const [loadError, setLoadError] = useState(null)
+  const [tab,          setTab]         = useState('community')
+  const [phaseData,    setPhaseData]   = useState(null)
+  const [commData,     setCommData]    = useState(null)
+  const [devData,      setDevData]     = useState(null)
+  const [globalMonths, setGlobalMonths] = useState(null)
+  const [loading,      setLoading]     = useState(true)
+  const [loadError,    setLoadError]   = useState(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -899,8 +976,13 @@ export default function ConfigView({ showTestCommunities }) {
       fetch(`${API_BASE}/admin/phase-config`).then(r => { if (!r.ok) throw new Error(r.status); return r.json() }),
       fetch(`${API_BASE}/admin/community-config`).then(r => { if (!r.ok) throw new Error(r.status); return r.json() }),
       fetch(`${API_BASE}/admin/dev-config`).then(r => { if (!r.ok) throw new Error(r.status); return r.json() }),
+      fetch(`${API_BASE}/global-settings`).then(r => { if (!r.ok) throw new Error(r.status); return r.json() }),
     ])
-      .then(([pd, cd, dd]) => { setPhaseData(pd); setCommData(cd); setDevData(dd); setLoadError(null) })
+      .then(([pd, cd, dd, gs]) => {
+        setPhaseData(pd); setCommData(cd); setDevData(dd)
+        setGlobalMonths(gs?.delivery_months ? [...gs.delivery_months] : null)
+        setLoadError(null)
+      })
       .catch(e => setLoadError(String(e)))
       .finally(() => setLoading(false))
   }, [])
@@ -930,10 +1012,22 @@ export default function ConfigView({ showTestCommunities }) {
       setCommData(prev => prev.map(r => r.ent_group_id === entGroupId
         ? { ...r,
             auto_schedule_enabled:   updated.auto_schedule_enabled,
-            delivery_months:         updated.delivery_months ? [...updated.delivery_months] : null,
+            delivery_months:         updated.delivery_months != null ? [...updated.delivery_months] : null,
             max_deliveries_per_year: updated.max_deliveries_per_year }
         : r))
     }
+  }
+
+  // ── Global delivery months save ────────────────────────────────────────────
+
+  async function saveGlobal(months) {
+    const res = await fetch(`${API_BASE}/global-settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delivery_months: months }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const updated = await res.json()
+    setGlobalMonths(updated?.delivery_months ? [...updated.delivery_months] : null)
   }
 
   // ── Dev params save ────────────────────────────────────────────────────────
@@ -1017,7 +1111,8 @@ export default function ConfigView({ showTestCommunities }) {
       <TabBar active={tab} onChange={setTab} />
 
       {tab === 'community'  && commData  && (
-        <CommunityTab rows={commData} showTest={showTestCommunities} onPatchComm={patchComm} />
+        <CommunityTab rows={commData} showTest={showTestCommunities} onPatchComm={patchComm}
+          globalMonths={globalMonths} onSaveGlobal={saveGlobal} />
       )}
       {tab === 'dev'        && devData   && (
         <DevTab rows={devData} showTest={showTestCommunities} onPatchDev={patchDev} />

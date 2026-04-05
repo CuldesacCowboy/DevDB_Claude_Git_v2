@@ -273,7 +273,7 @@ def get_community_config(conn=Depends(get_db_conn)):
                 'date_paper':              r['date_paper'].isoformat()      if r['date_paper']      else None,
                 'date_ent':                r['date_ent_actual'].isoformat() if r['date_ent_actual'] else None,
                 'auto_schedule_enabled':   r['auto_schedule_enabled'],
-                'delivery_months':         list(r['delivery_months']) if r['delivery_months'] else None,
+                'delivery_months':         list(r['delivery_months']) if r['delivery_months'] is not None else None,
                 'max_deliveries_per_year': r['max_deliveries_per_year'],
             })
         return rows
