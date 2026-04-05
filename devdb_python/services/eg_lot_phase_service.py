@@ -50,17 +50,16 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
         if ent_group is None:
             raise HTTPException(status_code=404, detail=f"Entitlement group {ent_group_id} not found.")
 
-        # Get legacy dev_ids and dev_name via developments.community_id.
-        # Bridge: developments.marks_code = dim_development.dev_code2
-        # dim_development.development_id is the legacy dev_id used in sim_legal_instruments
-        # and sim_dev_phases.
+        # Get dev_ids via sim_ent_group_developments — the authoritative source of truth
+        # for which devs belong to an entitlement group. Using developments.community_id
+        # was unreliable: community_id may not match ent_group_id for newer communities.
         cur.execute(
             """
-            SELECT dd.development_id AS dev_id, d.dev_name
-            FROM developments d
-            JOIN dim_development dd ON dd.dev_code2 = d.marks_code
-            WHERE d.community_id = %s
-              AND d.marks_code IS NOT NULL
+            SELECT segd.dev_id, d.dev_name
+            FROM sim_ent_group_developments segd
+            JOIN dim_development dd ON dd.development_id = segd.dev_id
+            JOIN developments d ON d.marks_code = dd.dev_code2
+            WHERE segd.ent_group_id = %s
             """,
             (ent_group_id,),
         )
