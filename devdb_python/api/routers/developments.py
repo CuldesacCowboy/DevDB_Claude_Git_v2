@@ -305,7 +305,7 @@ def patch_development(dev_id: int, body: DevelopmentPatchRequest, conn=Depends(g
 # ---------------------------------------------------------------------------
 
 class SimParamsPutRequest(BaseModel):
-    annual_starts_target: int
+    annual_starts_target: int | None = None
     max_starts_per_month: int | None = None
     seasonal_weight_set: str | None = None
 
@@ -321,15 +321,24 @@ def upsert_sim_params(dev_id: int, body: SimParamsPutRequest, conn=Depends(get_d
         )
         if cur.fetchone() is None:
             raise HTTPException(status_code=404, detail=f"Development {dev_id} not found.")
-        if body.annual_starts_target < 1:
+        if body.annual_starts_target is not None and body.annual_starts_target < 1:
             raise HTTPException(status_code=422, detail="annual_starts_target must be >= 1")
+
+        # All fields are optional — use COALESCE so each field can be saved independently.
+        # For INSERT (new row), annual_starts_target is required; return error if missing.
+        cur.execute(
+            "SELECT annual_starts_target FROM sim_dev_params WHERE dev_id = %s", (dev_id,)
+        )
+        existing = cur.fetchone()
+        if existing is None and body.annual_starts_target is None:
+            raise HTTPException(status_code=422, detail="annual_starts_target is required when creating params for the first time")
 
         cur.execute(
             """
             INSERT INTO sim_dev_params (dev_id, annual_starts_target, max_starts_per_month, seasonal_weight_set, updated_at)
             VALUES (%s, %s, %s, COALESCE(%s, 'balanced_2yr'), NOW())
             ON CONFLICT (dev_id) DO UPDATE
-                SET annual_starts_target = EXCLUDED.annual_starts_target,
+                SET annual_starts_target = COALESCE(EXCLUDED.annual_starts_target, sim_dev_params.annual_starts_target),
                     max_starts_per_month  = COALESCE(EXCLUDED.max_starts_per_month, sim_dev_params.max_starts_per_month),
                     seasonal_weight_set   = COALESCE(EXCLUDED.seasonal_weight_set,  sim_dev_params.seasonal_weight_set),
                     updated_at            = NOW()
