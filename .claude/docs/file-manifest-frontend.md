@@ -32,6 +32,13 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Tables: none (API calls via /api/entitlement-groups, /api/developments, /api/instruments, /api/phases)
 - Last commit: 2026-04-04
 
+### devdb_ui/src/pages/ConfigView.jsx
+- Owns: 4-tab configuration view (Community / Development / Instrument / Phase); Community tab — editable ledger dates (date_paper, date_ent), auto_schedule_enabled checkbox, MonthCell (12-button inline delivery month picker, All/None, "using global" when null), del/year; Development tab — historical pace context (starts YTD/last yr/2yr ago, unstarted lots, total projected, 2yr avg pace), StartsCell (editable annual_starts_target + reactive supply label: ≈ X.x yrs green/≈ N mo amber/exhausted red), editable max_starts_per_month; Instrument tab — read-only summary; Phase tab — phase config spreadsheet; data loaded via parallel Promise.all on mount from /admin/community-config, /admin/dev-config, /admin/phase-config
+- Imports: react (useState, useEffect)
+- Imported by: App.jsx (via /configure route)
+- Tables: none (API calls via /admin/community-config, /admin/dev-config, /admin/phase-config, PATCH /admin/phase/{id}, PUT /admin/product-split, PUT /admin/builder-split, PUT /entitlement-groups/{id}/delivery-config, PUT /entitlement-groups/{id}/ledger-config, PUT /developments/{id}/sim-params)
+- Last commit: 2026-04-05
+
 ### devdb_ui/src/pages/CommunityDevelopmentsView.jsx
 - Owns: Community-development assignment view; unassigned dev panel; community pills; alphabet slider; drag-to-create-community
 - Imports: dnd-kit, react, Toast

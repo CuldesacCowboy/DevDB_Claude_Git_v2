@@ -14,11 +14,18 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/coordinator.py
-- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params (independent of sim-lot capacity); returns (iterations, missing_params_devs)
-- Imports: engine modules s0100-s1200, p0000-p0800, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
+- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params (independent of sim-lot capacity); returns (iterations, missing_params_devs); run_supply_pipeline calls p_pre_locked_event_rebuilder as first step before snapshot and P-0000
+- Imports: engine modules s0100-s1200, p0000-p0800, p_pre_locked_event_rebuilder, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
 - Imported by: routers/simulations.py, tests/test_coordinator.py
 - Tables: reads/writes via all pipeline modules; sim_lots (projected date columns), sim_dev_params
-- Last commit: 2026-04-02
+- Last commit: 2026-04-05
+
+### devdb_python/engine/p_pre_locked_event_rebuilder.py
+- Owns: Pre-supply-pipeline module — deletes all delivery events whose date_dev_actual IS NOT NULL and rebuilds them from sim_dev_phases.date_dev_actual; groups phases by date and INSERTs one event per date; returns count of new events created; locked_event_rebuilder(conn, ent_group_id) signature
+- Imports: psycopg2
+- Imported by: coordinator.py (called as first step of run_supply_pipeline)
+- Tables: sim_delivery_events, sim_delivery_event_phases, sim_delivery_event_predecessors, sim_dev_phases, sim_ent_group_developments, sim_legal_instruments
+- Last commit: 2026-04-05
 
 ### devdb_python/engine/s0100_lot_loader.py
 - Owns: S-0100 -- loads real lots for ent_group from sim_lots into a DataFrame

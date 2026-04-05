@@ -123,6 +123,13 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Tables: sim_lot_site_positions, sim_lots, sim_site_plans, sim_dev_phases, dim_development, developments, sim_legal_instruments
 - Last commit: 2026-04-02
 
+### devdb_python/api/routers/admin.py
+- Owns: GET /admin/phase-config (full phase hierarchy with lot counts, product splits, builder splits for the phase config spreadsheet); PATCH /admin/phase/{phase_id} (lot_count_projected, date_dev_projected, date_dev_actual); PUT /admin/product-split/{phase_id}/{lot_type_id}; PUT /admin/builder-split/{phase_id}/{builder_id}; GET /admin/community-config (ledger dates + delivery scheduling config per ent_group); GET /admin/dev-config (dev sim params + historical pace: starts_ytd/last_year/2yr_ago, unstarted_real, total_projected)
+- Imports: api.deps, api.db, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_entitlement_groups, sim_ent_group_developments, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, sim_phase_builder_splits, ref_lot_types, dim_builders, sim_entitlement_delivery_config, sim_dev_params, dim_development, developments
+- Last commit: 2026-04-05
+
 ### devdb_python/api/routers/simulations.py
 - Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms, errors[]; looks up dev names for missing_params_devs via dim_development bridge; on exception prints full traceback to server terminal and returns only str(exc) to client (no traceback leak)
 - Imports: engine.coordinator, fastapi, pydantic, time, traceback, psycopg2.extras
@@ -152,11 +159,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/services/eg_lot_phase_service.py
-- Owns: query_lot_phase_view(ent_group_id, conn) — full lot-phase-view query logic extracted from eg_views.py; _sort_phases_for_display() helper
+- Owns: query_lot_phase_view(ent_group_id, conn) — full lot-phase-view query logic extracted from eg_views.py; _sort_phases_for_display() helper; dev_id lookup uses sim_ent_group_developments (authoritative) not developments.community_id
 - Imports: api.db, api.models.lot_models, api.sql_fragments, fastapi, re
 - Imported by: routers/eg_views.py
-- Tables: sim_entitlement_groups, developments, dim_development, sim_legal_instruments, sim_dev_phases, sim_lots, ref_lot_types, sim_phase_product_splits
-- Last commit: 2026-04-02
+- Tables: sim_entitlement_groups, sim_ent_group_developments, dim_development, developments, sim_legal_instruments, sim_dev_phases, sim_lots, ref_lot_types, sim_phase_product_splits
+- Last commit: 2026-04-05
 
 ### devdb_python/services/ledger_service.py
 - Owns: Ledger query logic extracted from routers/ledger.py; query_ledger_by_dev(conn, ent_group_id) — bounded date range, synthetic start-date rows; _ledger_row() dict serializer. Entitlement event overlay removed (sim_entitlement_events dropped in migration 025).
