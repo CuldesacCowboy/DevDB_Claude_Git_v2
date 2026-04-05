@@ -194,10 +194,11 @@ def _write_real_lot_projections(
         SELECT lot_id, lot_type_id
         FROM sim_lots
         WHERE lot_source = 'real'
-          AND dev_id       = %s
-          AND date_str     IS NULL
-          AND date_td      IS NULL
-          AND date_td_hold IS NULL
+          AND dev_id          = %s
+          AND date_str        IS NULL
+          AND date_td         IS NULL
+          AND date_td_hold    IS NULL
+          AND excluded IS NOT TRUE
         ORDER BY lot_id
         """,
         (dev_id,),
@@ -321,6 +322,7 @@ def _load_phase_delivery_dates(conn: DBConnection, dev_id: int) -> dict:
               SELECT DISTINCT phase_id FROM sim_lots
               WHERE dev_id = %s
                 AND lot_source = 'real'
+                AND excluded IS NOT TRUE
           )
         """,
         (dev_id, dev_id),

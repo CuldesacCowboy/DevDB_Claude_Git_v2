@@ -128,7 +128,7 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
             f"""
             SELECT
                 lot_id, lot_number, lot_type_id, lot_source, phase_id,
-                building_group_id,
+                building_group_id, excluded,
                 {_STATUS_SQL} AS status,
                 (
                     (date_str IS NOT NULL OR date_cmp IS NOT NULL)
@@ -162,7 +162,7 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
             f"""
             SELECT
                 lot_id, lot_number, lot_type_id, lot_source,
-                building_group_id,
+                building_group_id, excluded,
                 {_STATUS_SQL} AS status,
                 (
                     (date_str IS NOT NULL OR date_cmp IS NOT NULL)
@@ -178,9 +178,11 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
         )
         unassigned_raw = list(cur.fetchall())
 
-        # Count actual real lots per (phase_id, lot_type_id)
+        # Count actual real lots per (phase_id, lot_type_id) — excluded lots don't count
         actuals: dict[tuple, int] = {}
         for lot in lots_raw:
+            if lot["excluded"]:
+                continue
             key = (lot["phase_id"], lot["lot_type_id"])
             actuals[key] = actuals.get(key, 0) + 1
 
@@ -196,6 +198,7 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
                     "status": lot["status"],
                     "has_actual_dates": bool(lot["has_actual_dates"]),
                     "building_group_id": lot["building_group_id"],
+                    "excluded": bool(lot["excluded"]),
                 }
             )
 
@@ -264,6 +267,7 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
                 "status": r["status"],
                 "has_actual_dates": bool(r["has_actual_dates"]),
                 "building_group_id": r["building_group_id"],
+                "excluded": bool(r["excluded"]),
             }
             for r in unassigned_raw
         ]

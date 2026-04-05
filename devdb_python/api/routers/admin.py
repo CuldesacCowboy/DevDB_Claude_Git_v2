@@ -69,8 +69,8 @@ def get_phase_config(conn=Depends(get_db_conn)):
         if phase_ids:
             cur.execute("""
                 SELECT phase_id, lot_type_id,
-                    COUNT(*) FILTER (WHERE lot_source = 'real') AS real_count,
-                    COUNT(*) FILTER (WHERE lot_source = 'sim')  AS sim_count
+                    COUNT(*) FILTER (WHERE lot_source = 'real' AND excluded IS NOT TRUE) AS real_count,
+                    COUNT(*) FILTER (WHERE lot_source = 'sim'  AND excluded IS NOT TRUE) AS sim_count
                 FROM sim_lots
                 WHERE phase_id = ANY(%s)
                 GROUP BY phase_id, lot_type_id
@@ -323,6 +323,7 @@ def get_dev_config(conn=Depends(get_db_conn)):
                     COUNT(*) FILTER (WHERE date_str IS NULL AND date_cls IS NULL)                             AS unstarted_real
                 FROM sim_lots
                 WHERE lot_source IN ('real', 'pre')
+                  AND excluded IS NOT TRUE
                 GROUP BY dev_id
             ) ls ON ls.dev_id = segd.dev_id
 

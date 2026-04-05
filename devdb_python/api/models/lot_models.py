@@ -96,6 +96,7 @@ class LotDetail(BaseModel):
     status: str
     has_actual_dates: bool
     building_group_id: int | None = None
+    excluded: bool = False
 
 
 class PhaseDetail(BaseModel):

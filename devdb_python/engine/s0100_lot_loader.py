@@ -24,6 +24,7 @@ def lot_loader(conn: DBConnection, dev_id: int) -> pd.DataFrame:
         FROM sim_lots
         WHERE lot_source = 'real'
           AND dev_id = %s
+          AND excluded IS NOT TRUE
         """,
         (dev_id,),
     )

@@ -51,6 +51,7 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
                 JOIN sim_dev_phases sdp ON sdp.instrument_id = li.instrument_id
                 LEFT JOIN sim_lots sl
                        ON sl.phase_id = sdp.phase_id AND sl.lot_source = 'real'
+                      AND sl.excluded IS NOT TRUE
                 LEFT JOIN sim_phase_product_splits spps ON spps.phase_id = sdp.phase_id
                 WHERE d.community_id IS NOT NULL
                   AND d.marks_code IS NOT NULL

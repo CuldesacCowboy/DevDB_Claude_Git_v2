@@ -1,6 +1,8 @@
+import { useState, useCallback } from 'react'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 import { STATUS_CFG } from '../utils/statusConfig'
+import { API_BASE } from '../config'
 
 function pillStyle(status) {
   const cfg = STATUS_CFG[status]
@@ -103,71 +105,139 @@ export function BuildingGroupCard({ lots, isPending, isOverlay = false, listView
 // listView=true  → tall card (white bg, lot# bold, status muted below) — used in Unassigned Lots panel
 // listView=false → compact pill (status as bg color, code left / number right) — used in phase grid
 //   pillWidth: pill width in px (default 50); override for orphan-row phases
-export default function LotCard({ lot, isPending, isOverlay = false, listView = false, pillWidth = 50, pillHeight = 24 }) {
+// Right-click on any lot card → context menu with Exclude / Re-include toggle.
+export default function LotCard({ lot, isPending, isOverlay = false, listView = false, pillWidth = 50, pillHeight = 24, onExcludeToggle }) {
+  const [excluded, setExcluded] = useState(lot.excluded ?? false)
+  const [menu, setMenu] = useState(null)   // {x, y} or null
+
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `lot-${lot.lot_id}`,
     data: { type: 'lot', lot },
-    disabled: isPending,
+    disabled: isPending || excluded,
   })
+
+  const handleContextMenu = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setMenu({ x: e.clientX, y: e.clientY })
+  }, [])
+
+  const handleToggleExclude = useCallback(async () => {
+    setMenu(null)
+    const next = !excluded
+    try {
+      const res = await fetch(`${API_BASE}/lots/${lot.lot_id}/excluded`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ excluded: next }),
+      })
+      if (res.ok) {
+        setExcluded(next)
+        onExcludeToggle?.(lot.lot_id, next)
+      }
+    } catch {}
+  }, [excluded, lot.lot_id, onExcludeToggle])
 
   const baseStyle = {
     transform: CSS.Translate.toString(transform),
-    opacity: isDragging && !isOverlay ? 0.35 : 1,
-    cursor: isPending ? 'not-allowed' : isDragging ? 'grabbing' : 'grab',
+    opacity: isDragging && !isOverlay ? 0.35 : excluded ? 0.4 : 1,
+    cursor: isPending || excluded ? 'default' : isDragging ? 'grabbing' : 'grab',
   }
 
   const { code, num } = parseLotNumber(lot.lot_number, lot.lot_id)
 
+  const contextMenu = menu && (
+    <div
+      style={{
+        position: 'fixed', top: menu.y, left: menu.x, zIndex: 9999,
+        background: '#fff', border: '1px solid #e5e7eb', borderRadius: 6,
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)', padding: '4px 0', minWidth: 160,
+      }}
+      onMouseLeave={() => setMenu(null)}
+    >
+      <div style={{ padding: '2px 8px 4px', fontSize: 11, color: '#9ca3af', fontFamily: 'monospace' }}>
+        {lot.lot_number}
+      </div>
+      <button
+        onClick={handleToggleExclude}
+        style={{
+          display: 'block', width: '100%', textAlign: 'left',
+          padding: '6px 12px', fontSize: 12, background: 'none', border: 'none',
+          cursor: 'pointer', color: excluded ? '#059669' : '#dc2626',
+        }}
+        onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
+        onMouseLeave={e => e.currentTarget.style.background = 'none'}
+      >
+        {excluded ? '✓ Re-include lot' : '✕ Exclude lot'}
+      </button>
+    </div>
+  )
+
   if (listView) {
     return (
-      <div
-        ref={setNodeRef}
-        style={baseStyle}
-        {...listeners}
-        {...attributes}
-        className={`
-          rounded border bg-white px-2 py-1.5 shadow-sm select-none touch-none
-          ${isDragging && !isOverlay ? 'border-blue-400' : 'border-gray-200'}
-          ${isPending ? 'opacity-60' : ''}
-        `}
-      >
-        <p className="font-bold text-xs text-gray-800 font-mono">{code}{num ? ` ${num}` : ''}</p>
-        <p className="text-[10px] mt-0.5" style={{ color: STATUS_CFG[lot.status]?.color ?? '#9ca3af', fontWeight: 600 }}>
-          {STATUS_CFG[lot.status]?.shape} {lot.status}{lot.has_actual_dates ? ' ⚠' : ''}
-        </p>
-      </div>
+      <>
+        <div
+          ref={setNodeRef}
+          style={baseStyle}
+          {...listeners}
+          {...attributes}
+          onContextMenu={handleContextMenu}
+          className={`
+            rounded border bg-white px-2 py-1.5 shadow-sm select-none touch-none
+            ${isDragging && !isOverlay ? 'border-blue-400' : excluded ? 'border-dashed border-gray-300' : 'border-gray-200'}
+            ${isPending ? 'opacity-60' : ''}
+          `}
+        >
+          <p className="font-bold text-xs font-mono"
+            style={{ color: excluded ? '#9ca3af' : '#1f2937', textDecoration: excluded ? 'line-through' : 'none' }}>
+            {code}{num ? ` ${num}` : ''}
+          </p>
+          <p className="text-[10px] mt-0.5" style={{ color: excluded ? '#d1d5db' : (STATUS_CFG[lot.status]?.color ?? '#9ca3af'), fontWeight: 600 }}>
+            {excluded ? 'excluded' : `${STATUS_CFG[lot.status]?.shape ?? ''} ${lot.status}${lot.has_actual_dates ? ' ⚠' : ''}`}
+          </p>
+        </div>
+        {contextMenu}
+      </>
     )
   }
 
-  const ps = pillStyle(lot.status)
+  const ps = excluded
+    ? { background: '#f9fafb', border: '1px dashed #d1d5db', color: '#9ca3af' }
+    : pillStyle(lot.status)
 
   return (
-    <div
-      ref={setNodeRef}
-      style={{
-        ...baseStyle,
-        ...ps,
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        width: pillWidth,
-        height: pillHeight,
-        overflow: 'hidden',
-        padding: '1px 4px',
-        fontSize: 11,
-        borderRadius: 4,
-        flexShrink: 0,
-        opacity: isPending ? 0.6 : 1,
-      }}
-      {...listeners}
-      {...attributes}
-      className={`
-        select-none touch-none font-medium
-        ${isDragging && !isOverlay ? 'ring-1 ring-blue-400' : ''}
-      `}
-    >
-      <span className="leading-none truncate" style={{ maxWidth: 28 }}>{code}</span>
-      <span className="leading-none" style={{ flexShrink: 0 }}>{num}</span>
-    </div>
+    <>
+      <div
+        ref={setNodeRef}
+        style={{
+          ...baseStyle,
+          ...ps,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          width: pillWidth,
+          height: pillHeight,
+          overflow: 'hidden',
+          padding: '1px 4px',
+          fontSize: 11,
+          borderRadius: 4,
+          flexShrink: 0,
+        }}
+        {...listeners}
+        {...attributes}
+        onContextMenu={handleContextMenu}
+        className={`
+          select-none touch-none font-medium
+          ${isDragging && !isOverlay ? 'ring-1 ring-blue-400' : ''}
+        `}
+      >
+        <span className="leading-none truncate"
+          style={{ maxWidth: 28, textDecoration: excluded ? 'line-through' : 'none' }}>
+          {code}
+        </span>
+        <span className="leading-none" style={{ flexShrink: 0 }}>{num}</span>
+      </div>
+      {contextMenu}
+    </>
   )
 }

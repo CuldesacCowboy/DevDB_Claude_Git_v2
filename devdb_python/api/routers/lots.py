@@ -2,6 +2,8 @@
 # Lot management endpoints.
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from api.db import dict_cursor
 
 from api.deps import get_db_conn
 from api.models.lot_models import (
@@ -75,3 +77,32 @@ async def unassign_lot_phase(
         from_phase_counts=result.phase_counts,
         building_group_lot_ids=result.building_group_lot_ids,
     )
+
+
+class LotExcludeRequest(BaseModel):
+    excluded: bool
+
+
+@router.patch("/{lot_id}/excluded", response_model=dict)
+async def set_lot_excluded(lot_id: int, body: LotExcludeRequest, conn=Depends(get_db_conn)):
+    """Toggle the excluded flag on a lot. Excluded lots stay in the table but are
+    invisible to the simulation, phase counts, and unstarted inventory."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "UPDATE sim_lots SET excluded = %s, updated_at = NOW() "
+            "WHERE lot_id = %s RETURNING lot_id, lot_number, lot_source, excluded",
+            (body.excluded, lot_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found")
+        conn.commit()
+        return dict(row)
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
