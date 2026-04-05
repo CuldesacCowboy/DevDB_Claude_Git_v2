@@ -57,6 +57,65 @@ def _iso(d):
     return d.isoformat() if d else None
 
 
+# ─── GET /marks/dev-phases ───────────────────────────────────────────────────
+
+@router.get("/dev-phases")
+def get_dev_phases(dev_code: str, conn=Depends(get_db_conn)):
+    """
+    Return instruments and phases for the dev that owns a given MARKS dev_code.
+    Used to populate assignment dropdowns in the import panel.
+    """
+    cur = dict_cursor(conn)
+    try:
+        # Resolve dev_id via marks_code → dim_development bridge
+        cur.execute("""
+            SELECT d.dev_id
+            FROM devdb.developments d
+            WHERE d.marks_code = %s
+            LIMIT 1
+        """, (dev_code,))
+        dev_row = cur.fetchone()
+        if not dev_row:
+            return {"instruments": [], "phases": []}
+        dev_id_modern = dev_row["dev_id"]
+
+        # dim_development.development_id (legacy) needed for instrument FK
+        cur.execute("""
+            SELECT dd.development_id
+            FROM devdb.dim_development dd
+            JOIN devdb.developments d ON d.marks_code = dd.dev_code2
+            WHERE d.dev_id = %s
+            LIMIT 1
+        """, (dev_id_modern,))
+        dd_row = cur.fetchone()
+        if not dd_row:
+            return {"instruments": [], "phases": []}
+        legacy_dev_id = dd_row["development_id"]
+
+        cur.execute("""
+            SELECT instrument_id, instrument_name, instrument_type
+            FROM devdb.sim_legal_instruments
+            WHERE dev_id = %s
+            ORDER BY instrument_name
+        """, (legacy_dev_id,))
+        instruments = [dict(r) for r in cur.fetchall()]
+
+        instrument_ids = [i["instrument_id"] for i in instruments]
+        phases = []
+        if instrument_ids:
+            cur.execute("""
+                SELECT phase_id, phase_name, instrument_id, sequence_number
+                FROM devdb.sim_dev_phases
+                WHERE instrument_id = ANY(%s)
+                ORDER BY instrument_id, sequence_number, phase_name
+            """, (instrument_ids,))
+            phases = [dict(r) for r in cur.fetchall()]
+
+        return {"instruments": instruments, "phases": phases}
+    finally:
+        cur.close()
+
+
 # ─── GET /marks/summary ───────────────────────────────────────────────────────
 
 @router.get("/summary")

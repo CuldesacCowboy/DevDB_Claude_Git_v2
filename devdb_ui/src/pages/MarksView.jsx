@@ -176,19 +176,33 @@ function ImportPanel({ devCode, onDone }) {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(new Set())
   const [lotTypeId, setLotTypeId] = useState('')
+  const [instrumentId, setInstrumentId] = useState('')
+  const [phaseId, setPhaseId] = useState('')
+  const [devPhases, setDevPhases] = useState({ instruments: [], phases: [] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const lotTypes = useLotTypes()
 
   useEffect(() => {
-    fetch(`${API_BASE}/marks/unimported?dev_code=${encodeURIComponent(devCode)}`)
-      .then(r => r.json())
-      .then(data => {
-        setLots(data)
-        setSelected(new Set(data.map(d => d.housenumber)))
-      })
-      .finally(() => setLoading(false))
+    Promise.all([
+      fetch(`${API_BASE}/marks/unimported?dev_code=${encodeURIComponent(devCode)}`).then(r => r.json()),
+      fetch(`${API_BASE}/marks/dev-phases?dev_code=${encodeURIComponent(devCode)}`).then(r => r.json()),
+    ]).then(([lotsData, phasesData]) => {
+      setLots(lotsData)
+      setSelected(new Set(lotsData.map(d => d.housenumber)))
+      setDevPhases(phasesData)
+    }).finally(() => setLoading(false))
   }, [devCode])
+
+  // Reset phase when instrument changes
+  function handleInstrumentChange(val) {
+    setInstrumentId(val)
+    setPhaseId('')
+  }
+
+  const filteredPhases = instrumentId
+    ? devPhases.phases.filter(p => String(p.instrument_id) === instrumentId)
+    : []
 
   async function handleImport() {
     if (!lotTypeId) return
@@ -196,13 +210,15 @@ function ImportPanel({ devCode, onDone }) {
     setError(null)
     try {
       const selectedLots = (lots || []).filter(l => selected.has(l.housenumber))
+      const body = {
+        lots: selectedLots.map(l => ({ dev_code: devCode, housenumber: l.housenumber })),
+        lot_type_id: parseInt(lotTypeId, 10),
+      }
+      if (phaseId) body.phase_id = parseInt(phaseId, 10)
       const res = await fetch(`${API_BASE}/marks/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lots: selectedLots.map(l => ({ dev_code: devCode, housenumber: l.housenumber })),
-          lot_type_id: parseInt(lotTypeId, 10),
-        }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error((await res.json()).detail ?? 'Import failed')
       const data = await res.json()
@@ -217,10 +233,15 @@ function ImportPanel({ devCode, onDone }) {
   if (loading) return <div style={{ padding: '8px 12px', fontSize: 12, color: '#9ca3af' }}>Loading…</div>
   if (!lots?.length) return <div style={{ padding: '8px 12px', fontSize: 12, color: '#9ca3af' }}>No unimported lots.</div>
 
+  const assignmentLabel = phaseId
+    ? `→ ${devPhases.phases.find(p => String(p.phase_id) === phaseId)?.phase_name ?? 'phase'}`
+    : instrumentId ? '→ unassigned within instrument' : '→ unassigned'
+
   return (
     <div style={{ padding: '8px 12px' }}>
-      {/* lot type picker + select all */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+      {/* controls row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+        {/* lot type */}
         <label style={{ fontSize: 12, color: '#374151' }}>Lot type:</label>
         <select
           value={lotTypeId}
@@ -232,7 +253,41 @@ function ImportPanel({ devCode, onDone }) {
             <option key={lt.lot_type_id} value={lt.lot_type_id}>{lt.lot_type_short}</option>
           ))}
         </select>
-        <label style={{ fontSize: 12, color: '#6b7280', marginLeft: 8 }}>
+
+        {/* instrument */}
+        <label style={{ fontSize: 12, color: '#374151', marginLeft: 8 }}>Instrument:</label>
+        <select
+          value={instrumentId}
+          onChange={e => handleInstrumentChange(e.target.value)}
+          style={{ fontSize: 12, padding: '2px 6px', borderRadius: 3, border: '1px solid #d1d5db' }}
+        >
+          <option value="">— unassigned —</option>
+          {devPhases.instruments.map(i => (
+            <option key={i.instrument_id} value={i.instrument_id}>{i.instrument_name}</option>
+          ))}
+        </select>
+
+        {/* phase — only shown when instrument selected */}
+        {instrumentId && (
+          <>
+            <label style={{ fontSize: 12, color: '#374151' }}>Phase:</label>
+            <select
+              value={phaseId}
+              onChange={e => setPhaseId(e.target.value)}
+              style={{ fontSize: 12, padding: '2px 6px', borderRadius: 3, border: '1px solid #d1d5db' }}
+            >
+              <option value="">— unassigned —</option>
+              {filteredPhases.map(p => (
+                <option key={p.phase_id} value={p.phase_id}>{p.phase_name}</option>
+              ))}
+            </select>
+          </>
+        )}
+      </div>
+
+      {/* select all + assignment summary */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <label style={{ fontSize: 12, color: '#6b7280' }}>
           <input
             type="checkbox"
             checked={selected.size === lots.length}
@@ -241,8 +296,8 @@ function ImportPanel({ devCode, onDone }) {
           />
           Select all ({lots.length})
         </label>
-        <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 'auto' }}>
-          Phase can be assigned later via Lot · Phase view
+        <span style={{ fontSize: 11, color: phaseId ? '#059669' : '#9ca3af', marginLeft: 'auto' }}>
+          {assignmentLabel}
         </span>
       </div>
 
