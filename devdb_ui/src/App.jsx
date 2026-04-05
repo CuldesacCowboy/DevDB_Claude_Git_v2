@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import LotPhaseView from './pages/LotPhaseView'
 import SitePlanView from './pages/SitePlanView'
 import SimulationView from './pages/SimulationView'
+import ConfigView from './pages/ConfigView'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const LS_KEY = 'devdb_active_community'
@@ -70,6 +71,7 @@ export default function App() {
         <NavLink to="/" end style={navLinkStyle}>Lot · Phase</NavLink>
         <NavLink to="/site-plan" style={navLinkStyle}>Site Plan</NavLink>
         <NavLink to="/simulation" style={navLinkStyle}>Simulation</NavLink>
+        <NavLink to="/configure" style={navLinkStyle}>Configure</NavLink>
 
         <button
           onClick={() => setGlobalSettingsOpen(true)}
@@ -89,6 +91,7 @@ export default function App() {
           <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} globalSettingsOpen={globalSettingsOpen} onCloseGlobalSettings={() => setGlobalSettingsOpen(false)} />} />
+          <Route path="/configure" element={<ConfigView showTestCommunities={showTestCommunities} />} />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>
