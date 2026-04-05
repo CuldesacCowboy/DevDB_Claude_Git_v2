@@ -285,19 +285,55 @@ def get_community_config(conn=Depends(get_db_conn)):
 
 @router.get("/dev-config")
 def get_dev_config(conn=Depends(get_db_conn)):
-    """All developments with their sim params (annual starts target, max starts/month)."""
+    """
+    All developments with sim params plus informational context:
+    - total_projected: sum of product_splits projected_count across all phases
+    - unstarted_real:  real lots with no date_str and no date_cls (still in pipeline)
+    - starts_last_year, starts_2yr_ago, starts_ytd: historical actual starts by year
+    """
     cur = dict_cursor(conn)
     try:
         cur.execute("""
             SELECT
                 seg.ent_group_id, seg.ent_group_name, seg.is_test,
                 segd.dev_id, d.dev_name,
-                sdp.annual_starts_target, sdp.max_starts_per_month
+                sdp.annual_starts_target, sdp.max_starts_per_month,
+
+                -- Historical starts from real lots
+                COALESCE(ls.starts_ytd,      0) AS starts_ytd,
+                COALESCE(ls.starts_last_year, 0) AS starts_last_year,
+                COALESCE(ls.starts_2yr_ago,   0) AS starts_2yr_ago,
+                COALESCE(ls.unstarted_real,   0) AS unstarted_real,
+
+                -- Total projected lots (sum of product_splits across all phases)
+                COALESCE(proj.total_projected, 0) AS total_projected
+
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
             JOIN dim_development dd ON dd.development_id = segd.dev_id
             JOIN developments d ON d.marks_code = dd.dev_code2
             LEFT JOIN sim_dev_params sdp ON sdp.dev_id = segd.dev_id
+
+            LEFT JOIN (
+                SELECT
+                    dev_id,
+                    COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date_str) = EXTRACT(YEAR FROM CURRENT_DATE))     AS starts_ytd,
+                    COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date_str) = EXTRACT(YEAR FROM CURRENT_DATE) - 1) AS starts_last_year,
+                    COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date_str) = EXTRACT(YEAR FROM CURRENT_DATE) - 2) AS starts_2yr_ago,
+                    COUNT(*) FILTER (WHERE date_str IS NULL AND date_cls IS NULL)                             AS unstarted_real
+                FROM sim_lots
+                WHERE lot_source = 'real'
+                GROUP BY dev_id
+            ) ls ON ls.dev_id = segd.dev_id
+
+            LEFT JOIN (
+                SELECT sli.dev_id, SUM(spps.projected_count) AS total_projected
+                FROM sim_phase_product_splits spps
+                JOIN sim_dev_phases sdph ON sdph.phase_id = spps.phase_id
+                JOIN sim_legal_instruments sli ON sli.instrument_id = sdph.instrument_id
+                GROUP BY sli.dev_id
+            ) proj ON proj.dev_id = segd.dev_id
+
             ORDER BY seg.ent_group_name, d.dev_name
         """)
         rows = []
@@ -310,6 +346,11 @@ def get_dev_config(conn=Depends(get_db_conn)):
                 'dev_name':             r['dev_name'],
                 'annual_starts_target': float(r['annual_starts_target']) if r['annual_starts_target'] is not None else None,
                 'max_starts_per_month': float(r['max_starts_per_month']) if r['max_starts_per_month'] is not None else None,
+                'starts_ytd':           int(r['starts_ytd']),
+                'starts_last_year':     int(r['starts_last_year']),
+                'starts_2yr_ago':       int(r['starts_2yr_ago']),
+                'unstarted_real':       int(r['unstarted_real']),
+                'total_projected':      int(r['total_projected']),
             })
         return rows
     finally:

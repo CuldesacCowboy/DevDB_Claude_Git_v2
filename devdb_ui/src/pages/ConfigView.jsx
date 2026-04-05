@@ -324,7 +324,89 @@ function CommunityTab({ rows, showTest, onPatchComm }) {
   )
 }
 
+// ─── StartsCell ───────────────────────────────────────────────────────────────
+// Editable annual starts target with a reactive supply label below.
+
+function StartsCell({ value, unstarted, onSave }) {
+  const [editing, setEditing] = useState(false)
+  const [draft,   setDraft]   = useState('')
+  const [saving,  setSaving]  = useState(false)
+  const [error,   setError]   = useState(null)
+  const inputRef = useRef()
+
+  const liveTarget = editing ? (parseFloat(draft) || 0) : (value ?? 0)
+  const supplyYrs  = liveTarget > 0 && unstarted != null ? unstarted / liveTarget : null
+
+  function supplyLabel() {
+    if (supplyYrs == null || liveTarget === 0) return null
+    if (unstarted === 0) return 'exhausted'
+    if (supplyYrs >= 2)  return `≈ ${supplyYrs.toFixed(1)} yrs`
+    return `≈ ${Math.round(supplyYrs * 12)} mo`
+  }
+
+  const supplyColor = supplyYrs == null ? null
+    : supplyYrs >= 3 ? '#16a34a'
+    : supplyYrs >= 1 ? '#d97706'
+    : '#dc2626'
+
+  function startEdit() {
+    if (saving) return
+    setDraft(value != null ? String(value) : '')
+    setEditing(true)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+
+  async function commit() {
+    setEditing(false)
+    const raw = draft.trim()
+    const parsed = raw === '' ? null : Number(raw)
+    if (!raw || isNaN(parsed)) { if (raw && isNaN(parsed)) setError('!'); return }
+    if (parsed === value) return
+    setSaving(true); setError(null)
+    try { await onSave(parsed) }
+    catch (e) { setError(String(e).slice(0, 40)) }
+    finally { setSaving(false) }
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Enter')  { e.preventDefault(); commit() }
+    if (e.key === 'Escape') { setEditing(false) }
+  }
+
+  const label = supplyLabel()
+
+  return (
+    <div style={{ textAlign: 'right' }}>
+      <div onClick={startEdit} title={error ?? undefined} style={{ cursor: 'text' }}>
+        {editing ? (
+          <input ref={inputRef} type="number" min={0}
+            value={draft} onChange={e => setDraft(e.target.value)}
+            onBlur={commit} onKeyDown={onKeyDown}
+            style={{ width: 72, padding: '1px 4px', fontSize: 12, textAlign: 'right',
+                     border: '1px solid #2563eb', borderRadius: 3, background: '#fff', outline: 'none' }} />
+        ) : (
+          <span style={{
+            display: 'inline-block', padding: '1px 4px', fontSize: 12, borderRadius: 3,
+            background: error ? '#fef2f2' : saving ? '#fef3c7' : 'transparent',
+            border: error ? '1px solid #fca5a5' : '1px solid transparent',
+            color: value != null ? (error ? '#dc2626' : '#111827') : '#d1d5db',
+          }}>
+            {error ? `⚠ ${error}` : (value != null ? String(value) : '—')}
+          </span>
+        )}
+      </div>
+      {label && (
+        <div style={{ fontSize: 10, color: supplyColor, marginTop: 2, paddingRight: 4 }}>
+          {label} supply
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Development tab ──────────────────────────────────────────────────────────
+
+const CUR_YEAR = new Date().getFullYear()
 
 function DevTab({ rows, showTest, onPatchDev }) {
   const filtered = rows.filter(r => showTest ? r.is_test : !r.is_test)
@@ -345,13 +427,20 @@ function DevTab({ rows, showTest, onPatchDev }) {
           <th style={{ ...thB, width: 180, position: 'sticky', left: 0, zIndex: 5,
                        boxShadow: '4px 0 8px -2px rgba(0,0,0,0.08)' }}>Community</th>
           <th style={{ ...thB, width: 160 }}>Development</th>
+          {/* Read-only context */}
+          <th style={{ ...thGR, width: 60 }} title="Sum of product split projected counts across all phases">Proj</th>
+          <th style={{ ...thR,  width: 68 }} title="Real lots with no start date (still in pipeline)">Unstarted</th>
+          <th style={{ ...thR,  width: 60 }} title={`Actual starts YTD (${CUR_YEAR})`}>{CUR_YEAR}</th>
+          <th style={{ ...thR,  width: 60 }} title={`Actual starts in ${CUR_YEAR - 1}`}>{CUR_YEAR - 1}</th>
+          <th style={{ ...thR,  width: 60 }} title={`Actual starts in ${CUR_YEAR - 2}`}>{CUR_YEAR - 2}</th>
+          {/* Editable */}
           <th style={{ ...thGR, width: 110 }}>Annual Starts</th>
           <th style={{ ...thR,  width: 90  }}>Max / Month</th>
         </tr>
       </thead>
       <tbody>
         {filtered.length === 0 && (
-          <tr><td colSpan={4} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+          <tr><td colSpan={9} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
             No developments.
           </td></tr>
         )}
@@ -362,10 +451,23 @@ function DevTab({ rows, showTest, onPatchDev }) {
           const topBorder = isFirstComm ? '2px solid #e5e7eb' : '1px solid #f0f0f0'
 
           const td  = (extra = {}) => ({ padding: '5px 8px', background: bg, borderTop: topBorder,
-                                         verticalAlign: 'middle', ...extra })
+                                         verticalAlign: 'top', ...extra })
           const tdG = (extra = {}) => ({ ...td(extra), borderLeft: '2px solid #ebebeb' })
 
           const noParams = row.annual_starts_target == null
+
+          const num = (v, dim) => (
+            <span style={{ fontSize: 12, display: 'block', textAlign: 'right', padding: '1px 4px',
+                           color: v > 0 ? '#374151' : '#d1d5db' }}>
+              {v > 0 ? v : (dim ? '—' : '0')}
+            </span>
+          )
+
+          // Two-year pace average (only using years with any data)
+          const paceYears = [row.starts_last_year, row.starts_2yr_ago].filter(v => v > 0)
+          const pace2yr   = paceYears.length > 0
+            ? Math.round(paceYears.reduce((s, v) => s + v, 0) / paceYears.length)
+            : null
 
           return (
             <tr key={`${row.ent_group_id}-${row.dev_id}`}>
@@ -386,13 +488,27 @@ function DevTab({ rows, showTest, onPatchDev }) {
                     </span>
                   )}
                 </div>
+                {pace2yr != null && (
+                  <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2 }}>
+                    {pace2yr}/yr avg ({CUR_YEAR - 2}–{CUR_YEAR - 1})
+                  </div>
+                )}
               </td>
+              {/* Read-only context columns */}
+              <td style={tdG({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.total_projected, true)}</td>
+              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.unstarted_real, true)}</td>
+              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.starts_ytd)}</td>
+              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.starts_last_year)}</td>
+              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(row.starts_2yr_ago)}</td>
+              {/* Editable */}
               <td style={tdG({ textAlign: 'right' })}>
-                <EditableCell value={row.annual_starts_target} width={90}
+                <StartsCell
+                  value={row.annual_starts_target}
+                  unstarted={row.unstarted_real}
                   onSave={v => onPatchDev(row.dev_id, { annual_starts_target: v })}
-                  placeholder="—" />
+                />
               </td>
-              <td style={td({ textAlign: 'right' })}>
+              <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>
                 <EditableCell value={row.max_starts_per_month} width={78}
                   onSave={v => onPatchDev(row.dev_id, { max_starts_per_month: v })}
                   placeholder="—" />
