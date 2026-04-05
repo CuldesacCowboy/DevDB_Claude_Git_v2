@@ -57,13 +57,43 @@ function DevCard({ dev, isPending, isOverlay = false }) {
 }
 
 // ---------------------------------------------------------------------------
-// UnassignedDevsPanel — droppable full-height left panel
+// UnassignedDevsPanel — droppable full-height left panel + inline new-dev form
 // ---------------------------------------------------------------------------
-function UnassignedDevsPanel({ devs, pendingDevId }) {
+function UnassignedDevsPanel({ devs, pendingDevId, onCreateDev }) {
   const { isOver, setNodeRef } = useDroppable({
     id: 'unassigned-devs',
     data: { type: 'unassigned-devs' },
   })
+
+  const [adding,    setAdding]    = useState(false)
+  const [devName,   setDevName]   = useState('')
+  const [marksCode, setMarksCode] = useState('')
+  const [error,     setError]     = useState('')
+  const [creating,  setCreating]  = useState(false)
+
+  async function handleCreate() {
+    const name = devName.trim()
+    if (!name) return
+    setCreating(true)
+    setError('')
+    try {
+      await onCreateDev(name, marksCode.trim() || null)
+      setAdding(false)
+      setDevName('')
+      setMarksCode('')
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  function handleCancel() {
+    setAdding(false)
+    setDevName('')
+    setMarksCode('')
+    setError('')
+  }
 
   return (
     <div
@@ -93,6 +123,54 @@ function UnassignedDevsPanel({ devs, pendingDevId }) {
           <p className={`text-[11px] italic text-center mt-2 ${isOver ? 'text-blue-600' : 'text-gray-400'}`}>
             {isOver ? 'Drop to unassign' : 'All assigned'}
           </p>
+        )}
+      </div>
+
+      {/* New development form */}
+      <div className="flex-shrink-0 border-t border-gray-200 p-2">
+        {adding ? (
+          <div className="flex flex-col gap-1">
+            <input
+              autoFocus
+              type="text"
+              value={devName}
+              onChange={e => setDevName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') handleCancel() }}
+              placeholder="Development name"
+              className="w-full text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+            />
+            <input
+              type="text"
+              value={marksCode}
+              onChange={e => setMarksCode(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') handleCancel() }}
+              placeholder="MARKS code (optional)"
+              className="w-full text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:border-blue-400"
+            />
+            {error && <p className="text-[11px] text-red-600 px-1">{error}</p>}
+            <div className="flex gap-1">
+              <button
+                onClick={handleCreate}
+                disabled={!devName.trim() || creating}
+                className="flex-1 text-xs bg-blue-500 text-white rounded px-2 py-1 hover:bg-blue-600 disabled:opacity-40"
+              >
+                {creating ? 'Creating…' : 'Create'}
+              </button>
+              <button
+                onClick={handleCancel}
+                className="text-xs text-gray-500 rounded px-2 py-1 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setAdding(true)}
+            className="w-full text-left text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded px-2 py-1"
+          >
+            + New development
+          </button>
         )}
       </div>
     </div>
@@ -558,6 +636,21 @@ export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }
     } finally {
       setNewCommCreating(false)
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Create development
+  // -----------------------------------------------------------------------
+  async function handleCreateDevelopment(devName, marksCode) {
+    const res = await fetch(`${API_BASE}/developments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dev_name: devName, marks_code: marksCode }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data?.detail ?? 'Create failed')
+    setDevelopments(prev => [...prev, data])
+    addToast('success', `Development "${devName}" created`)
   }
 
   // -----------------------------------------------------------------------
