@@ -33,10 +33,10 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/ConfigView.jsx
-- Owns: 4-tab configuration view (Community / Development / Instrument / Phase); Community tab — editable ledger dates (date_paper, date_ent), auto_schedule_enabled checkbox, MonthCell (12-button inline delivery month picker, All/None, "using global" when null), del/year; Development tab — historical pace context (starts YTD/last yr/2yr ago, unstarted lots, total projected, 2yr avg pace), StartsCell (editable annual_starts_target + reactive supply label: ≈ X.x yrs green/≈ N mo amber/exhausted red), editable max_starts_per_month; Instrument tab — read-only summary; Phase tab — phase config spreadsheet; data loaded via parallel Promise.all on mount from /admin/community-config, /admin/dev-config, /admin/phase-config
-- Imports: react (useState, useEffect)
+- Owns: 4-tab configuration view (Community / Development / Instrument / Phase); Community tab — editable ledger dates (date_paper, date_ent), auto_schedule_enabled checkbox, MonthCell (12-button inline delivery month picker, All/None, "using global" when null), del/year; Development tab — historical pace context (starts YTD/last yr/2yr ago, unstarted lots, total projected, 2yr avg pace), StartsCell (editable annual_starts_target + reactive supply label: ≈ X.x yrs green/≈ N mo amber/exhausted red), editable max_starts_per_month; Instrument tab — read-only summary; Phase tab — phase config spreadsheet with '+' button per row opening BulkLotInsertModal; data loaded via parallel Promise.all on mount from /admin/community-config, /admin/dev-config, /admin/phase-config
+- Imports: react (useState, useEffect, useRef, useCallback), BulkLotInsertModal
 - Imported by: App.jsx (via /configure route)
-- Tables: none (API calls via /admin/community-config, /admin/dev-config, /admin/phase-config, PATCH /admin/phase/{id}, PUT /admin/product-split, PUT /admin/builder-split, PUT /entitlement-groups/{id}/delivery-config, PUT /entitlement-groups/{id}/ledger-config, PUT /developments/{id}/sim-params)
+- Tables: none (API calls via /admin/community-config, /admin/dev-config, /admin/phase-config, PATCH /admin/phase/{id}, PUT /admin/product-split, PUT /admin/builder-split, PUT /entitlement-groups/{id}/delivery-config, PUT /entitlement-groups/{id}/ledger-config, PUT /developments/{id}/sim-params, POST /bulk-lots/suggestions, POST /bulk-lots/insert)
 - Last commit: 2026-04-05
 
 ### devdb_ui/src/pages/CommunityDevelopmentsView.jsx
@@ -102,6 +102,13 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Tables: none
 - Last commit: 2026-04-02
 
+### devdb_ui/src/components/BulkLotInsertModal.jsx
+- Owns: 2-step modal for bulk pre-MARKS lot creation; step 1 — count inputs per lot type; step 2 — range editor (prefix + start seq rebuilds flat list) + individually editable flat list with PRE badge per lot; calls POST /bulk-lots/suggestions then POST /bulk-lots/insert
+- Imports: react (useState, useRef), config.js
+- Imported by: PhaseColumn.jsx, ConfigView.jsx
+- Tables: none (API calls via /bulk-lots/suggestions, /bulk-lots/insert)
+- Last commit: 2026-04-05
+
 ### devdb_ui/src/components/InstrumentContainer.jsx
 - Owns: Draggable/droppable legal instrument card with phase columns, aggregate lot-type totals, inline rename; warm neutral card chrome (#F0EEE8 header, #F7F6F3 body) matching TDA aesthetic; green dashed inline name edit (#3B6D11/#EAF3DE)
 - Imports: dnd-kit, react, PhaseColumn, computeCols
@@ -110,11 +117,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/components/PhaseColumn.jsx
-- Owns: Phase card with per-lot-type split rows, inline name edit, add product type form, delete confirm, auto-delete lot type on 0/0/0
-- Imports: dnd-kit, react, LotCard, LotTypePill
+- Owns: Phase card with per-lot-type split rows, inline name edit, add product type form, delete confirm, auto-delete lot type on 0/0/0; '+' button in header opens BulkLotInsertModal
+- Imports: dnd-kit, react, LotCard, LotTypePill, BulkLotInsertModal
 - Imported by: InstrumentContainer.jsx
 - Tables: none (API calls via /api/phases)
-- Last commit: 2026-03-29
+- Last commit: 2026-04-05
 
 ### devdb_ui/src/components/LotTypePill.jsx
 - Owns: Lot-type product split card with editable projected count and droppable lot grid
