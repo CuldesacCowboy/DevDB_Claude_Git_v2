@@ -691,7 +691,7 @@ export default function CommunityDevelopmentsView({ entGroupId, onOpenLotPhase }
           style={{ width: 168, flexShrink: 0 }}
           className="h-full flex flex-col border-r border-gray-200"
         >
-          <UnassignedDevsPanel devs={unassignedDevs} pendingDevId={pendingDevId} />
+          <UnassignedDevsPanel devs={unassignedDevs} pendingDevId={pendingDevId} onCreateDev={handleCreateDevelopment} />
         </div>
 
         {/* Community pill area */}
