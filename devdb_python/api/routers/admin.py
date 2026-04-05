@@ -243,3 +243,74 @@ def upsert_builder_split(
         return {'phase_id': phase_id, 'builder_id': builder_id, 'share': body.share}
     finally:
         cur.close()
+
+
+# ─── Community config tab ─────────────────────────────────────────────────────
+
+@router.get("/community-config")
+def get_community_config(conn=Depends(get_db_conn)):
+    """All communities with ledger dates and delivery scheduling config."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute("""
+            SELECT
+                seg.ent_group_id, seg.ent_group_name, seg.is_test,
+                seg.date_paper, seg.date_ent_actual,
+                edc.auto_schedule_enabled,
+                edc.delivery_months,
+                edc.max_deliveries_per_year
+            FROM sim_entitlement_groups seg
+            LEFT JOIN sim_entitlement_delivery_config edc
+                   ON edc.ent_group_id = seg.ent_group_id
+            ORDER BY seg.ent_group_name
+        """)
+        rows = []
+        for r in cur.fetchall():
+            rows.append({
+                'ent_group_id':            r['ent_group_id'],
+                'ent_group_name':          r['ent_group_name'],
+                'is_test':                 r['is_test'],
+                'date_paper':              r['date_paper'].isoformat()      if r['date_paper']      else None,
+                'date_ent':                r['date_ent_actual'].isoformat() if r['date_ent_actual'] else None,
+                'auto_schedule_enabled':   r['auto_schedule_enabled'],
+                'delivery_months':         list(r['delivery_months']) if r['delivery_months'] else None,
+                'max_deliveries_per_year': r['max_deliveries_per_year'],
+            })
+        return rows
+    finally:
+        cur.close()
+
+
+# ─── Development config tab ───────────────────────────────────────────────────
+
+@router.get("/dev-config")
+def get_dev_config(conn=Depends(get_db_conn)):
+    """All developments with their sim params (annual starts target, max starts/month)."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute("""
+            SELECT
+                seg.ent_group_id, seg.ent_group_name, seg.is_test,
+                segd.dev_id, d.dev_name,
+                sdp.annual_starts_target, sdp.max_starts_per_month
+            FROM sim_entitlement_groups seg
+            JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
+            JOIN dim_development dd ON dd.development_id = segd.dev_id
+            JOIN developments d ON d.marks_code = dd.dev_code2
+            LEFT JOIN sim_dev_params sdp ON sdp.dev_id = segd.dev_id
+            ORDER BY seg.ent_group_name, d.dev_name
+        """)
+        rows = []
+        for r in cur.fetchall():
+            rows.append({
+                'ent_group_id':         r['ent_group_id'],
+                'ent_group_name':       r['ent_group_name'],
+                'is_test':              r['is_test'],
+                'dev_id':               r['dev_id'],
+                'dev_name':             r['dev_name'],
+                'annual_starts_target': float(r['annual_starts_target']) if r['annual_starts_target'] is not None else None,
+                'max_starts_per_month': float(r['max_starts_per_month']) if r['max_starts_per_month'] is not None else None,
+            })
+        return rows
+    finally:
+        cur.close()

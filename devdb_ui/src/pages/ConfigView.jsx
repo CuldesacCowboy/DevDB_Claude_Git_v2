@@ -1,8 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { API_BASE } from '../utils/api'
 
-// ─── Sticky column geometry ───────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
+const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const TABS = [
+  { id: 'community',  label: 'Community' },
+  { id: 'dev',        label: 'Development' },
+  { id: 'instrument', label: 'Instrument' },
+  { id: 'phase',      label: 'Phase' },
+]
+
+// Sticky column geometry (phase tab only)
 const CW = { comm: 160, dev: 140, inst: 144, phase: 116 }
 const LEFT = {
   comm:  0,
@@ -10,25 +19,10 @@ const LEFT = {
   inst:  CW.comm + CW.dev,
   phase: CW.comm + CW.dev + CW.inst,
 }
+const PHASE_SHADOW = { boxShadow: '4px 0 8px -2px rgba(0,0,0,0.10)' }
+const BAND = ['#ffffff', '#f8faff']
 
-const GRAIN_ORDER = ['community', 'dev', 'instrument', 'phase']
-const GRAIN_COLS  = { community: 0, dev: 1, instrument: 2, phase: 3 }
-
-// Returns which sticky columns are visible for a given grain
-function stickyVisible(grain) {
-  const n = GRAIN_COLS[grain]
-  return { comm: true, dev: n >= 1, inst: n >= 2, phase: n >= 3 }
-}
-
-// Shadow on the rightmost visible sticky col
-function shadowFor(grain) {
-  const keys = ['comm', 'dev', 'inst', 'phase']
-  const visible = stickyVisible(grain)
-  const last = [...keys].reverse().find(k => visible[k])
-  return last
-}
-
-// ─── Date helpers ─────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtDate(iso) {
   if (!iso) return ''
@@ -36,53 +30,10 @@ function fmtDate(iso) {
   return `${parseInt(m)}/${parseInt(d)}/${y}`
 }
 
-// ─── Aggregation helpers ──────────────────────────────────────────────────────
-
-function phaseMetrics(phases) {
-  let projTotal = 0, realTotal = 0, simTotal = 0
-  for (const r of phases) {
-    projTotal += Object.values(r.product_splits  ?? {}).reduce((s, v) => s + (v  ?? 0), 0)
-    realTotal += Object.values(r.lot_type_counts ?? {}).reduce((s, v) => s + (v.real ?? 0), 0)
-    simTotal  += Object.values(r.lot_type_counts ?? {}).reduce((s, v) => s + (v.sim  ?? 0), 0)
-  }
-  return { projTotal, realTotal, simTotal }
-}
-
-function groupRows(rows, grain) {
-  if (grain === 'phase') return rows
-
-  const groups = []
-  const seen   = new Map()
-
-  for (const r of rows) {
-    const key = grain === 'community'  ? `${r.ent_group_id}`
-              : grain === 'dev'        ? `${r.ent_group_id}|${r.dev_id}`
-              :                          `${r.ent_group_id}|${r.dev_id}|${r.instrument_id}`
-
-    if (!seen.has(key)) {
-      const g = {
-        _key: key,
-        ent_group_id: r.ent_group_id, ent_group_name: r.ent_group_name, is_test: r.is_test,
-        dev_id: r.dev_id, dev_name: r.dev_name,
-        instrument_id: r.instrument_id, instrument_name: r.instrument_name,
-        phases: [], devIds: new Set(), instIds: new Set(),
-      }
-      seen.set(key, g)
-      groups.push(g)
-    }
-    const g = seen.get(key)
-    g.phases.push(r)
-    g.devIds.add(r.dev_id)
-    g.instIds.add(r.instrument_id)
-  }
-
-  return groups.map(g => ({
-    ...g,
-    devCount:   g.devIds.size,
-    instCount:  g.instIds.size,
-    phaseCount: g.phases.length,
-    ...phaseMetrics(g.phases),
-  }))
+function bandIdx(rows, getKey) {
+  const map = {}; let n = 0
+  rows.forEach(r => { const k = getKey(r); if (map[k] === undefined) map[k] = n++ })
+  return map
 }
 
 // ─── EditableCell ─────────────────────────────────────────────────────────────
@@ -105,14 +56,11 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
     setEditing(false)
     const raw = draft.trim()
     let parsed
-    if (raw === '') {
-      parsed = null
-    } else if (type === 'number') {
+    if (raw === '') { parsed = null }
+    else if (type === 'number') {
       parsed = Number(raw)
       if (isNaN(parsed)) { setError('!'); return }
-    } else {
-      parsed = raw
-    }
+    } else { parsed = raw }
     if (parsed === value || (parsed == null && value == null)) return
     setSaving(true); setError(null)
     try { await onSave(parsed) }
@@ -131,18 +79,12 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
     <div onClick={startEdit} title={error ?? undefined}
          style={{ width, minHeight: 20, textAlign: align, cursor: 'text' }}>
       {editing ? (
-        <input
-          ref={inputRef}
-          type={type === 'date' ? 'date' : 'number'}
+        <input ref={inputRef} type={type === 'date' ? 'date' : 'number'}
           min={type === 'number' ? 0 : undefined}
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={onKeyDown}
+          value={draft} onChange={e => setDraft(e.target.value)}
+          onBlur={commit} onKeyDown={onKeyDown}
           style={{ width: '100%', padding: '1px 4px', fontSize: 12, textAlign: align,
-                   border: '1px solid #2563eb', borderRadius: 3,
-                   background: '#fff', outline: 'none' }}
-        />
+                   border: '1px solid #2563eb', borderRadius: 3, background: '#fff', outline: 'none' }} />
       ) : (
         <span style={{
           display: 'block', padding: '1px 4px', fontSize: 12, borderRadius: 3,
@@ -161,29 +103,22 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
 
 function LockButton({ locked, disabled, onToggle }) {
   const [busy, setBusy] = useState(false)
-
   async function handle() {
     if (disabled || busy) return
     setBusy(true)
     try { await onToggle(!locked) }
     finally { setBusy(false) }
   }
-
   return (
-    <button
-      onClick={handle}
-      disabled={disabled || busy}
+    <button onClick={handle} disabled={disabled || busy}
       title={disabled ? 'Set a dev date first' : locked ? 'Locked — click to unlock' : 'Unlocked — click to lock'}
       style={{
         padding: '2px 8px', fontSize: 11, borderRadius: 4, cursor: disabled ? 'not-allowed' : 'pointer',
         border: locked ? '1px solid #16a34a' : '1px solid #d1d5db',
         background: locked ? '#f0fdf4' : busy ? '#f9fafb' : '#fff',
-        color: locked ? '#16a34a' : '#9ca3af',
-        fontWeight: locked ? 600 : 400,
-        transition: 'all 0.15s',
-        minWidth: 64,
-      }}
-    >
+        color: locked ? '#16a34a' : '#9ca3af', fontWeight: locked ? 600 : 400,
+        transition: 'all 0.15s', minWidth: 64,
+      }}>
       {busy ? '…' : locked ? '⚿ Locked' : 'Unlocked'}
     </button>
   )
@@ -195,8 +130,7 @@ function BuilderSumBadge({ splits, builders }) {
   const sum = builders.reduce((acc, b) => acc + (splits[b.builder_id] ?? 0), 0)
   const r   = Math.round(sum * 10) / 10
   if (r === 0) return <span style={{ color: '#d1d5db', fontSize: 11 }}>—</span>
-  const ok    = r === 100
-  const over  = r > 100
+  const ok = r === 100, over = r > 100
   const color = ok ? '#16a34a' : over ? '#dc2626' : '#d97706'
   return (
     <span style={{ fontSize: 11, fontWeight: 600, color,
@@ -208,144 +142,393 @@ function BuilderSumBadge({ splits, builders }) {
   )
 }
 
-// ─── FilterBar ────────────────────────────────────────────────────────────────
+// ─── MonthCell ────────────────────────────────────────────────────────────────
 
-function FilterBar({ communities, devsByComm, filterComm, filterDev, onChange, rowCount, totalLabel }) {
-  const devOptions = filterComm ? (devsByComm[filterComm] ?? [])
-                                : Object.values(devsByComm).flat()
-  const active = (filterComm ? 1 : 0) + (filterDev ? 1 : 0)
+function MonthCell({ months, onSave }) {
+  const [saving, setSaving] = useState(false)
+  const active = new Set(months ?? [])
+  const isGlobal = months == null
 
-  const selStyle = (on) => ({
-    fontSize: 12, padding: '3px 24px 3px 8px', borderRadius: 4,
-    border: on ? '1px solid #2563eb' : '1px solid #d1d5db',
-    background: on ? '#eff6ff' : '#fff',
-    color: on ? '#1d4ed8' : '#374151',
-    appearance: 'none', cursor: 'pointer',
-  })
+  async function save(next) {
+    setSaving(true)
+    try { await onSave(next) }
+    finally { setSaving(false) }
+  }
 
-  function Wrap({ val, onClear, children }) {
-    return (
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-        {children}
-        {val && (
-          <button onClick={onClear} style={{
-            position: 'absolute', right: 6, fontSize: 13, lineHeight: 1,
-            background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0,
-          }}>×</button>
-        )}
-      </div>
-    )
+  async function toggle(m) {
+    if (saving) return
+    const next = active.has(m)
+      ? [...active].filter(x => x !== m).sort((a, b) => a - b)
+      : [...active, m].sort((a, b) => a - b)
+    await save(next.length > 0 ? next : null)
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 500 }}>Filter</span>
-
-      <Wrap val={filterComm} onClear={() => onChange({ comm: null, dev: null })}>
-        <select value={filterComm ?? ''} style={selStyle(!!filterComm)}
-          onChange={e => onChange({ comm: e.target.value || null, dev: null })}>
-          <option value="">All communities</option>
-          {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-      </Wrap>
-
-      <Wrap val={filterDev} onClear={() => onChange({ comm: filterComm, dev: null })}>
-        <select value={filterDev ?? ''} style={selStyle(!!filterDev)}
-          onChange={e => onChange({ comm: filterComm, dev: e.target.value || null })}>
-          <option value="">All developments</option>
-          {devOptions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-      </Wrap>
-
-      {active > 0 && (
-        <button onClick={() => onChange({ comm: null, dev: null })} style={{
-          fontSize: 11, color: '#6b7280', background: '#f3f4f6',
-          border: '1px solid #e5e7eb', borderRadius: 4,
-          padding: '3px 8px', cursor: 'pointer',
-        }}>Clear all</button>
-      )}
-
-      <span style={{ marginLeft: 'auto', fontSize: 11, color: '#9ca3af' }}>
-        {totalLabel}
-        {' · '}click any cell to edit
-      </span>
+    <div style={{ minWidth: 220 }}>
+      <div style={{ display: 'flex', gap: 2 }}>
+        {MONTH_ABBR.map((abbr, i) => {
+          const m = i + 1, on = active.has(m)
+          return (
+            <button key={m} onClick={() => toggle(m)} disabled={saving}
+              title={abbr}
+              style={{
+                padding: '2px 4px', fontSize: 10, borderRadius: 3, cursor: saving ? 'default' : 'pointer',
+                border: on ? '1px solid #2563eb' : '1px solid #d1d5db',
+                background: on ? '#eff6ff' : '#fff',
+                color: on ? '#1d4ed8' : '#9ca3af',
+                fontWeight: on ? 600 : 400, minWidth: 26,
+              }}>
+              {abbr}
+            </button>
+          )
+        })}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 3, alignItems: 'center' }}>
+        <button onClick={() => save([1,2,3,4,5,6,7,8,9,10,11,12])} disabled={saving}
+          style={{ fontSize: 10, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          All
+        </button>
+        <button onClick={() => save(null)} disabled={saving}
+          style={{ fontSize: 10, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          None
+        </button>
+        {isGlobal && (
+          <span style={{ fontSize: 10, color: '#9ca3af', fontStyle: 'italic' }}>using global</span>
+        )}
+      </div>
     </div>
   )
 }
 
-// ─── GrainHeader helpers ──────────────────────────────────────────────────────
+// ─── Tab bar ──────────────────────────────────────────────────────────────────
 
-function GrainTh({ label, grain, activeGrain, onSetGrain, style }) {
-  const isActive  = grain === activeGrain
-  const isPast    = GRAIN_ORDER.indexOf(grain) < GRAIN_ORDER.indexOf(activeGrain)
+function TabBar({ active, onChange }) {
   return (
-    <th
-      onClick={() => onSetGrain(grain)}
-      style={{
-        ...style,
-        cursor: 'pointer',
-        userSelect: 'none',
-        color:      isActive ? '#2563eb' : '#6b7280',
-        borderBottom: isActive
-          ? '2px solid #2563eb'
-          : '2px solid #e5e7eb',
-      }}
-      title={isActive ? `Viewing at ${label} grain` : `Collapse to ${label} grain`}
-    >
-      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        {label}
-        {isActive && <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>}
-        {!isActive && !isPast && <span style={{ fontSize: 9, opacity: 0.45 }}>▸</span>}
-      </span>
-    </th>
+    <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb', marginBottom: 14, gap: 0 }}>
+      {TABS.map(t => (
+        <button key={t.id} onClick={() => onChange(t.id)}
+          style={{
+            padding: '7px 18px', fontSize: 13, fontWeight: active === t.id ? 600 : 400,
+            color: active === t.id ? '#2563eb' : '#6b7280',
+            background: 'none', border: 'none',
+            borderBottom: active === t.id ? '2px solid #2563eb' : '2px solid transparent',
+            cursor: 'pointer', marginBottom: -1,
+          }}>
+          {t.label}
+        </button>
+      ))}
+    </div>
   )
 }
 
-// ─── Aggregate stat cell ──────────────────────────────────────────────────────
+// ─── Shared table shell ───────────────────────────────────────────────────────
 
-function StatCell({ val, style }) {
+function TableShell({ children, maxHeight = 'calc(100vh - 170px)' }) {
   return (
-    <span style={{
-      display: 'block', padding: '1px 4px', fontSize: 12, textAlign: 'right',
-      color: val > 0 ? '#374151' : '#d1d5db',
-      ...style,
-    }}>
-      {val > 0 ? val : '—'}
-    </span>
+    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight,
+                  border: '1px solid #e5e7eb', borderRadius: 6 }}>
+      <table style={{ borderCollapse: 'collapse', minWidth: 'max-content', width: '100%' }}>
+        {children}
+      </table>
+    </div>
   )
 }
 
-// ─── Main view ────────────────────────────────────────────────────────────────
+// ─── Community tab ────────────────────────────────────────────────────────────
 
-export default function ConfigView({ showTestCommunities }) {
-  const [data,       setData]       = useState(null)
-  const [loading,    setLoading]    = useState(true)
-  const [loadError,  setLoadError]  = useState(null)
+function CommunityTab({ rows, showTest, onPatchComm }) {
+  const filtered = rows.filter(r => showTest ? r.is_test : !r.is_test)
+
+  const thB = {
+    padding: '5px 8px', fontSize: 11, fontWeight: 600, color: '#6b7280',
+    background: '#f3f4f6', whiteSpace: 'nowrap',
+    borderBottom: '2px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 2,
+    textAlign: 'left',
+  }
+  const thR = { ...thB, textAlign: 'right' }
+  const thG = { ...thR, borderLeft: '2px solid #e0e0e0' }
+
+  return (
+    <TableShell>
+      <thead>
+        <tr>
+          <th style={{ ...thB, width: 200, position: 'sticky', top: 0, left: 0, zIndex: 5,
+                       boxShadow: '4px 0 8px -2px rgba(0,0,0,0.08)' }}>
+            Community
+          </th>
+          <th style={{ ...thG, width: 100 }}>Ledger Start</th>
+          <th style={{ ...thR, width: 110 }}>Bulk Ent. Date</th>
+          <th style={{ ...thG, width: 90, textAlign: 'center' }}>Auto Schedule</th>
+          <th style={{ ...thG, width: 240 }}>Delivery Months</th>
+          <th style={{ ...thR, width: 72 }}>Del / Year</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filtered.length === 0 && (
+          <tr><td colSpan={6} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+            No communities.
+          </td></tr>
+        )}
+        {filtered.map((row, i) => {
+          const bg = BAND[i % 2]
+          const td  = (extra = {}) => ({ padding: '6px 8px', background: bg,
+                                         borderTop: '1px solid #f0f0f0', verticalAlign: 'middle', ...extra })
+          const tdG = (extra = {}) => ({ ...td(extra), borderLeft: '2px solid #ebebeb' })
+
+          return (
+            <tr key={row.ent_group_id}>
+              <td style={{ ...td(), position: 'sticky', left: 0, zIndex: 1,
+                           boxShadow: '4px 0 8px -2px rgba(0,0,0,0.06)' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>
+                  {row.ent_group_name}
+                </span>
+              </td>
+
+              {/* Ledger start = date_paper */}
+              <td style={tdG({ textAlign: 'right' })}>
+                <EditableCell value={row.date_paper} type="date" width={90}
+                  onSave={v => onPatchComm(row.ent_group_id, 'ledger', { date_paper: v, date_ent: row.date_ent })} />
+              </td>
+
+              {/* Bulk ent date = date_ent */}
+              <td style={td({ textAlign: 'right' })}>
+                <EditableCell value={row.date_ent} type="date" width={100}
+                  onSave={v => onPatchComm(row.ent_group_id, 'ledger', { date_paper: row.date_paper, date_ent: v })} />
+              </td>
+
+              {/* Auto schedule */}
+              <td style={tdG({ textAlign: 'center' })}>
+                <input type="checkbox"
+                  checked={row.auto_schedule_enabled ?? false}
+                  onChange={e => onPatchComm(row.ent_group_id, 'delivery', { auto_schedule_enabled: e.target.checked })}
+                  style={{ cursor: 'pointer', width: 14, height: 14 }}
+                />
+              </td>
+
+              {/* Delivery months */}
+              <td style={tdG({ padding: '5px 8px' })}>
+                <MonthCell months={row.delivery_months}
+                  onSave={v => onPatchComm(row.ent_group_id, 'delivery', { delivery_months: v })} />
+              </td>
+
+              {/* Deliveries per year */}
+              <td style={td({ textAlign: 'right' })}>
+                <EditableCell value={row.max_deliveries_per_year} width={60}
+                  onSave={v => onPatchComm(row.ent_group_id, 'delivery', { max_deliveries_per_year: v })} />
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </TableShell>
+  )
+}
+
+// ─── Development tab ──────────────────────────────────────────────────────────
+
+function DevTab({ rows, showTest, onPatchDev }) {
+  const filtered = rows.filter(r => showTest ? r.is_test : !r.is_test)
+  const bi = bandIdx(filtered, r => r.ent_group_id)
+
+  const thB = {
+    padding: '5px 8px', fontSize: 11, fontWeight: 600, color: '#6b7280',
+    background: '#f3f4f6', whiteSpace: 'nowrap',
+    borderBottom: '2px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 2,
+  }
+  const thR  = { ...thB, textAlign: 'right' }
+  const thGR = { ...thR, borderLeft: '2px solid #e0e0e0' }
+
+  return (
+    <TableShell>
+      <thead>
+        <tr>
+          <th style={{ ...thB, width: 180, position: 'sticky', left: 0, zIndex: 5,
+                       boxShadow: '4px 0 8px -2px rgba(0,0,0,0.08)' }}>Community</th>
+          <th style={{ ...thB, width: 160 }}>Development</th>
+          <th style={{ ...thGR, width: 110 }}>Annual Starts</th>
+          <th style={{ ...thR,  width: 90  }}>Max / Month</th>
+        </tr>
+      </thead>
+      <tbody>
+        {filtered.length === 0 && (
+          <tr><td colSpan={4} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+            No developments.
+          </td></tr>
+        )}
+        {filtered.map((row, i) => {
+          const prev = filtered[i - 1]
+          const isFirstComm = i === 0 || row.ent_group_id !== prev.ent_group_id
+          const bg = BAND[(bi[row.ent_group_id] ?? 0) % 2]
+          const topBorder = isFirstComm ? '2px solid #e5e7eb' : '1px solid #f0f0f0'
+
+          const td  = (extra = {}) => ({ padding: '5px 8px', background: bg, borderTop: topBorder,
+                                         verticalAlign: 'middle', ...extra })
+          const tdG = (extra = {}) => ({ ...td(extra), borderLeft: '2px solid #ebebeb' })
+
+          const noParams = row.annual_starts_target == null
+
+          return (
+            <tr key={`${row.ent_group_id}-${row.dev_id}`}>
+              <td style={{ ...td(), position: 'sticky', left: 0, zIndex: 1,
+                           boxShadow: '4px 0 8px -2px rgba(0,0,0,0.06)' }}>
+                <span style={{ fontSize: 12, color: isFirstComm ? '#374151' : '#d1d5db',
+                               fontWeight: isFirstComm ? 500 : 400 }}>
+                  {isFirstComm ? row.ent_group_name : '·'}
+                </span>
+              </td>
+              <td style={td()}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 12, color: '#111827' }}>{row.dev_name}</span>
+                  {noParams && (
+                    <span style={{ fontSize: 10, color: '#d97706', background: '#fef9c3',
+                                   border: '1px solid #fcd34d', borderRadius: 3, padding: '0 4px' }}>
+                      no params
+                    </span>
+                  )}
+                </div>
+              </td>
+              <td style={tdG({ textAlign: 'right' })}>
+                <EditableCell value={row.annual_starts_target} width={90}
+                  onSave={v => onPatchDev(row.dev_id, { annual_starts_target: v })}
+                  placeholder="—" />
+              </td>
+              <td style={td({ textAlign: 'right' })}>
+                <EditableCell value={row.max_starts_per_month} width={78}
+                  onSave={v => onPatchDev(row.dev_id, { max_starts_per_month: v })}
+                  placeholder="—" />
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </TableShell>
+  )
+}
+
+// ─── Instrument tab ───────────────────────────────────────────────────────────
+
+function InstrumentTab({ phaseRows, showTest }) {
+  // Derive instrument summary from phase data
+  const filtered = phaseRows.filter(r => showTest ? r.is_test : !r.is_test)
+  const instMap = new Map()
+  for (const r of filtered) {
+    const k = r.instrument_id
+    if (!instMap.has(k)) {
+      instMap.set(k, {
+        ent_group_id: r.ent_group_id, ent_group_name: r.ent_group_name,
+        dev_id: r.dev_id, dev_name: r.dev_name,
+        instrument_id: k, instrument_name: r.instrument_name,
+        phases: [],
+      })
+    }
+    instMap.get(k).phases.push(r)
+  }
+  const rows = [...instMap.values()].sort((a, b) =>
+    a.ent_group_name.localeCompare(b.ent_group_name) ||
+    a.dev_name.localeCompare(b.dev_name) ||
+    a.instrument_name?.localeCompare(b.instrument_name ?? '')
+  )
+
+  const bi = bandIdx(rows, r => r.ent_group_id)
+
+  const thB = {
+    padding: '5px 8px', fontSize: 11, fontWeight: 600, color: '#6b7280',
+    background: '#f3f4f6', whiteSpace: 'nowrap',
+    borderBottom: '2px solid #e5e7eb', position: 'sticky', top: 0, zIndex: 2,
+  }
+  const thR = { ...thB, textAlign: 'right' }
+  const thG = { ...thR, borderLeft: '2px solid #e0e0e0' }
+
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 10 }}>
+        Instrument-level configuration is not yet available. Showing summary.
+      </div>
+      <TableShell>
+        <thead>
+          <tr>
+            <th style={{ ...thB, width: 180, position: 'sticky', left: 0, zIndex: 5,
+                         boxShadow: '4px 0 8px -2px rgba(0,0,0,0.08)' }}>Community</th>
+            <th style={{ ...thB, width: 160 }}>Development</th>
+            <th style={{ ...thB, width: 160 }}>Instrument</th>
+            <th style={{ ...thG,  width: 72 }}>Phases</th>
+            <th style={{ ...thR,  width: 60 }}>Proj</th>
+            <th style={{ ...thR,  width: 52 }}>Real</th>
+            <th style={{ ...thR,  width: 52 }}>Sim</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr><td colSpan={7} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+              No instruments.
+            </td></tr>
+          )}
+          {rows.map((row, i) => {
+            const prev = rows[i - 1]
+            const isFirstComm = i === 0 || row.ent_group_id !== prev?.ent_group_id
+            const isFirstDev  = i === 0 || row.dev_id       !== prev?.dev_id || isFirstComm
+            const bg = BAND[(bi[row.ent_group_id] ?? 0) % 2]
+            const topBorder = isFirstComm ? '2px solid #e5e7eb' : isFirstDev ? '1px solid #e9e9e9' : '1px solid #f3f4f6'
+
+            const td  = (extra = {}) => ({ padding: '5px 8px', background: bg, borderTop: topBorder,
+                                           verticalAlign: 'middle', ...extra })
+            const tdG = (extra = {}) => ({ ...td(extra), borderLeft: '2px solid #ebebeb' })
+
+            const phaseCount = row.phases.length
+            let projTotal = 0, realTotal = 0, simTotal = 0
+            for (const p of row.phases) {
+              projTotal += Object.values(p.product_splits  ?? {}).reduce((s, v) => s + (v  ?? 0), 0)
+              realTotal += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.real ?? 0), 0)
+              simTotal  += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.sim  ?? 0), 0)
+            }
+            const num = v => (
+              <span style={{ fontSize: 12, display: 'block', textAlign: 'right', padding: '1px 4px',
+                             color: v > 0 ? '#374151' : '#d1d5db' }}>
+                {v > 0 ? v : '—'}
+              </span>
+            )
+            const dim = (show, text) => (
+              <span style={{ fontSize: 12, color: show ? '#374151' : '#d1d5db', fontWeight: show ? 500 : 400 }}>
+                {show ? text : '·'}
+              </span>
+            )
+
+            return (
+              <tr key={row.instrument_id}>
+                <td style={{ ...td(), position: 'sticky', left: 0, zIndex: 1,
+                             boxShadow: '4px 0 8px -2px rgba(0,0,0,0.06)' }}>
+                  {dim(isFirstComm, row.ent_group_name)}
+                </td>
+                <td style={td()}>{dim(isFirstDev, row.dev_name)}</td>
+                <td style={td()}>
+                  <span style={{ fontSize: 12, color: '#111827' }}>{row.instrument_name ?? '—'}</span>
+                </td>
+                <td style={tdG({ textAlign: 'right' })}>{num(phaseCount)}</td>
+                <td style={td({ textAlign: 'right' })}>{num(projTotal)}</td>
+                <td style={td({ textAlign: 'right' })}>{num(realTotal)}</td>
+                <td style={td({ textAlign: 'right' })}>{num(simTotal)}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </TableShell>
+    </div>
+  )
+}
+
+// ─── Phase tab ────────────────────────────────────────────────────────────────
+
+function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSaveBuilderSplit, onToggleLock }) {
   const [filterComm, setFilterComm] = useState(null)
   const [filterDev,  setFilterDev]  = useState(null)
   const [showSplits, setShowSplits] = useState(true)
-  const [grain,      setGrain]      = useState('phase')
 
-  const load = useCallback(() => {
-    setLoading(true)
-    fetch(`${API_BASE}/admin/phase-config`)
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.json() })
-      .then(d  => { setData(d); setLoadError(null) })
-      .catch(e  => setLoadError(String(e)))
-      .finally(()  => setLoading(false))
-  }, [])
-
-  useEffect(() => { load() }, [load])
-
-  // ── Derived data ───────────────────────────────────────────────────────────
-
-  const allRows  = data?.rows ?? []
-  const testRows = allRows.filter(r => showTestCommunities ? r.is_test : !r.is_test)
+  const allRows  = phaseData?.rows ?? []
+  const testRows = allRows.filter(r => showTest ? r.is_test : !r.is_test)
 
   const communities = [...new Map(
     testRows.map(r => [r.ent_group_id, { id: String(r.ent_group_id), name: r.ent_group_name }])
   ).values()]
-
   const devsByComm = testRows.reduce((acc, r) => {
     const k = String(r.ent_group_id)
     if (!acc[k]) acc[k] = []
@@ -354,44 +537,290 @@ export default function ConfigView({ showTestCommunities }) {
     return acc
   }, {})
 
-  const filteredPhaseRows = testRows.filter(r => {
+  const rows = testRows.filter(r => {
     if (filterComm && String(r.ent_group_id) !== filterComm) return false
     if (filterDev  && String(r.dev_id)       !== filterDev)  return false
     return true
   })
 
-  const displayRows = groupRows(filteredPhaseRows, grain)
+  const bi = bandIdx(rows, r => r.ent_group_id)
 
-  // Band by community
-  const commBandIdx = {}
-  let bandN = 0
-  displayRows.forEach(r => {
-    if (commBandIdx[r.ent_group_id] === undefined) commBandIdx[r.ent_group_id] = bandN++
+  const lotTypes = phaseData?.lot_types ?? []
+  const builders = phaseData?.builders  ?? []
+
+  const thBase = {
+    padding: '5px 7px', fontSize: 11, fontWeight: 600, color: '#6b7280',
+    background: '#f3f4f6', whiteSpace: 'nowrap',
+    borderBottom: '2px solid #e5e7eb', position: 'sticky', top: 0,
+  }
+  const thS  = (left, w, extra = {}) => ({ ...thBase, left, zIndex: 5, width: w, minWidth: w, ...extra })
+  const thR  = (extra = {}) => ({ ...thBase, zIndex: 2, textAlign: 'right', ...extra })
+  const thGR = (extra = {}) => ({ ...thR(extra), borderLeft: '2px solid #e0e0e0' })
+
+  // Filter bar
+  const devOptions = filterComm ? (devsByComm[filterComm] ?? [])
+                                : Object.values(devsByComm).flat()
+  const selStyle = on => ({
+    fontSize: 12, padding: '3px 24px 3px 8px', borderRadius: 4,
+    border: on ? '1px solid #2563eb' : '1px solid #d1d5db',
+    background: on ? '#eff6ff' : '#fff', color: on ? '#1d4ed8' : '#374151',
+    appearance: 'none', cursor: 'pointer',
   })
 
-  const totalLabel = (() => {
-    const n = displayRows.length
-    if (grain === 'phase')      return `${n} phase${n !== 1 ? 's' : ''}`
-    if (grain === 'instrument') return `${n} instrument${n !== 1 ? 's' : ''}`
-    if (grain === 'dev')        return `${n} development${n !== 1 ? 's' : ''}`
-    return `${n} communit${n !== 1 ? 'ies' : 'y'}`
-  })()
+  return (
+    <div>
+      {/* Filter bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 500 }}>Filter</span>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <select value={filterComm ?? ''} style={selStyle(!!filterComm)}
+            onChange={e => { setFilterComm(e.target.value || null); setFilterDev(null) }}>
+            <option value="">All communities</option>
+            {communities.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          {filterComm && <button onClick={() => { setFilterComm(null); setFilterDev(null) }}
+            style={{ position: 'absolute', right: 6, fontSize: 13, lineHeight: 1,
+                     background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0 }}>×</button>}
+        </div>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <select value={filterDev ?? ''} style={selStyle(!!filterDev)}
+            onChange={e => setFilterDev(e.target.value || null)}>
+            <option value="">All developments</option>
+            {devOptions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+          {filterDev && <button onClick={() => setFilterDev(null)}
+            style={{ position: 'absolute', right: 6, fontSize: 13, lineHeight: 1,
+                     background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0 }}>×</button>}
+        </div>
+        {(filterComm || filterDev) && (
+          <button onClick={() => { setFilterComm(null); setFilterDev(null) }}
+            style={{ fontSize: 11, color: '#6b7280', background: '#f3f4f6',
+                     border: '1px solid #e5e7eb', borderRadius: 4, padding: '3px 8px', cursor: 'pointer' }}>
+            Clear all
+          </button>
+        )}
+        <button onClick={() => setShowSplits(v => !v)} style={{
+          fontSize: 11, padding: '2px 10px', borderRadius: 4, cursor: 'pointer',
+          border: showSplits ? '1px solid #2563eb' : '1px solid #d1d5db',
+          background: showSplits ? '#eff6ff' : '#fff', color: showSplits ? '#1d4ed8' : '#6b7280',
+          marginLeft: 'auto',
+        }}>
+          {showSplits ? 'Hide' : 'Show'} product splits
+        </button>
+        <span style={{ fontSize: 11, color: '#9ca3af' }}>
+          {rows.length} phase{rows.length !== 1 ? 's' : ''}
+        </span>
+      </div>
 
-  // ── Local state updaters ───────────────────────────────────────────────────
+      <TableShell maxHeight="calc(100vh - 200px)">
+        <thead>
+          <tr>
+            <th style={thS(LEFT.comm,  CW.comm)}>Community</th>
+            <th style={thS(LEFT.dev,   CW.dev)}>Development</th>
+            <th style={thS(LEFT.inst,  CW.inst)}>Instrument</th>
+            <th style={thS(LEFT.phase, CW.phase, PHASE_SHADOW)}>Phase</th>
+            <th style={thGR({ width: 52 })} title="Sum of projected counts">Proj</th>
+            <th style={thR({  width: 44 })} title="Real lots">Real</th>
+            <th style={thR({  width: 44 })} title="Sim lots">Sim</th>
+            <th style={thGR({ width: 90 })}>Dev Date</th>
+            <th style={thR({  width: 84 })}>Lock</th>
+            {showSplits && lotTypes.map((lt, i) => (
+              <th key={lt.lot_type_id} style={{ ...thR({ width: 68 }),
+                ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }} title={lt.lot_type_name}>
+                {lt.lot_type_short}
+              </th>
+            ))}
+            {builders.map((b, i) => (
+              <th key={b.builder_id} style={{ ...thR({ width: 66 }),
+                ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }}>
+                {b.builder_name}
+              </th>
+            ))}
+            {builders.length > 0 && (
+              <th style={thR({ width: 52 })} title="Sum of builder shares">%</th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr><td colSpan={99} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+              No phases match the current filter.
+            </td></tr>
+          )}
+          {rows.map((row, i) => {
+            const prev = rows[i - 1]
+            const isFirstComm = i === 0 || row.ent_group_id  !== prev.ent_group_id
+            const isFirstDev  = i === 0 || row.dev_id        !== prev.dev_id
+            const isFirstInst = i === 0 || row.instrument_id !== prev.instrument_id
+            const bg = BAND[(bi[row.ent_group_id] ?? 0) % 2]
+            const topBorder = isFirstDev ? '2px solid #e5e7eb' : isFirstInst ? '1px solid #e9e9e9' : '1px solid #f3f4f6'
 
-  function patchRow(phaseId, patch) {
-    setData(prev => ({ ...prev, rows: prev.rows.map(r => r.phase_id === phaseId ? { ...r, ...patch } : r) }))
+            const ltc = row.lot_type_counts ?? {}
+            const ps  = row.product_splits  ?? {}
+            const projTotal = Object.values(ps).reduce((s, v) => s + (v ?? 0), 0)
+            const realTotal = Object.values(ltc).reduce((s, v) => s + (v.real ?? 0), 0)
+            const simTotal  = Object.values(ltc).reduce((s, v) => s + (v.sim  ?? 0), 0)
+            const isLocked  = !!row.date_dev_actual
+            const canLock   = !!row.date_dev_projected
+
+            const tdB = (extra = {}) => ({ padding: '4px 6px', background: bg, borderTop: topBorder, verticalAlign: 'middle', ...extra })
+            const tdS = (left, extra = {}) => ({ ...tdB(extra), position: 'sticky', left, zIndex: 1 })
+            const tdG = (extra = {}) => ({ ...tdB(extra), borderLeft: '2px solid #ebebeb' })
+
+            const dimText = (show, text) => (
+              <span style={{ fontSize: 12, color: show ? '#374151' : '#d1d5db',
+                             fontWeight: show ? 500 : 400, display: 'block', paddingLeft: show ? 0 : 11 }}>
+                {show ? text : '·'}
+              </span>
+            )
+            const numCell = val => (
+              <span style={{ fontSize: 12, display: 'block', padding: '1px 4px', textAlign: 'right',
+                             color: val > 0 ? '#374151' : '#d1d5db' }}>
+                {val > 0 ? val : '—'}
+              </span>
+            )
+
+            return (
+              <tr key={row.phase_id}>
+                <td style={tdS(LEFT.comm)}>{dimText(isFirstComm, row.ent_group_name)}</td>
+                <td style={tdS(LEFT.dev)}>{dimText(isFirstDev, row.dev_name)}</td>
+                <td style={tdS(LEFT.inst)}>{dimText(isFirstInst, row.instrument_name ?? '—')}</td>
+                <td style={tdS(LEFT.phase, PHASE_SHADOW)}>
+                  <span style={{ fontSize: 12, color: '#374151' }}>{row.phase_name}</span>
+                </td>
+                <td style={tdG({ textAlign: 'right' })}>{numCell(projTotal)}</td>
+                <td style={tdB({ textAlign: 'right' })}>{numCell(realTotal)}</td>
+                <td style={tdB({ textAlign: 'right' })}>{numCell(simTotal)}</td>
+                <td style={tdG({ textAlign: 'right' })}>
+                  <EditableCell value={row.date_dev_projected} type="date" width={84}
+                    onSave={v => onPatchPhase(row.phase_id, 'date_dev_projected', v)} placeholder="—" />
+                </td>
+                <td style={tdB({ textAlign: 'center' })}>
+                  <LockButton locked={isLocked} disabled={!canLock}
+                    onToggle={shouldLock => onToggleLock(row, shouldLock)} />
+                </td>
+                {showSplits && lotTypes.map((lt, idx) => {
+                  const projVal  = ps[lt.lot_type_id] ?? null
+                  const ltCounts = ltc[lt.lot_type_id] ?? { real: 0, sim: 0 }
+                  return (
+                    <td key={lt.lot_type_id} style={{
+                      ...tdB({ textAlign: 'right', padding: '3px 6px' }),
+                      ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
+                    }}>
+                      <EditableCell value={projVal} width={56} placeholder="0"
+                        onSave={v => onSaveProductSplit(row.phase_id, lt.lot_type_id, v)} />
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 2, paddingRight: 4 }}>
+                        <span style={{ fontSize: 10, color: ltCounts.real > 0 ? '#6b7280' : '#e5e7eb' }} title="Real">R:{ltCounts.real}</span>
+                        <span style={{ fontSize: 10, color: ltCounts.sim  > 0 ? '#9ca3af' : '#e5e7eb' }} title="Sim">S:{ltCounts.sim}</span>
+                      </div>
+                    </td>
+                  )
+                })}
+                {builders.map((b, idx) => (
+                  <td key={b.builder_id} style={{
+                    ...tdB({ textAlign: 'right' }),
+                    ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
+                  }}>
+                    <EditableCell value={row.builder_splits[b.builder_id] ?? null} width={58} placeholder="0"
+                      onSave={v => onSaveBuilderSplit(row.phase_id, b.builder_id, v)} />
+                  </td>
+                ))}
+                {builders.length > 0 && (
+                  <td style={tdB({ textAlign: 'center', padding: '4px 8px' })}>
+                    <BuilderSumBadge splits={row.builder_splits} builders={builders} />
+                  </td>
+                )}
+              </tr>
+            )
+          })}
+        </tbody>
+      </TableShell>
+    </div>
+  )
+}
+
+// ─── Main view ────────────────────────────────────────────────────────────────
+
+export default function ConfigView({ showTestCommunities }) {
+  const [tab,       setTab]       = useState('community')
+  const [phaseData, setPhaseData] = useState(null)
+  const [commData,  setCommData]  = useState(null)
+  const [devData,   setDevData]   = useState(null)
+  const [loading,   setLoading]   = useState(true)
+  const [loadError, setLoadError] = useState(null)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    Promise.all([
+      fetch(`${API_BASE}/admin/phase-config`).then(r => { if (!r.ok) throw new Error(r.status); return r.json() }),
+      fetch(`${API_BASE}/admin/community-config`).then(r => { if (!r.ok) throw new Error(r.status); return r.json() }),
+      fetch(`${API_BASE}/admin/dev-config`).then(r => { if (!r.ok) throw new Error(r.status); return r.json() }),
+    ])
+      .then(([pd, cd, dd]) => { setPhaseData(pd); setCommData(cd); setDevData(dd); setLoadError(null) })
+      .catch(e => setLoadError(String(e)))
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  // ── Community config save ──────────────────────────────────────────────────
+
+  async function patchComm(entGroupId, kind, patch) {
+    if (kind === 'ledger') {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/ledger-config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const updated = await res.json()
+      setCommData(prev => prev.map(r => r.ent_group_id === entGroupId
+        ? { ...r, date_paper: updated.date_paper, date_ent: updated.date_ent }
+        : r))
+    } else {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/delivery-config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const updated = await res.json()
+      setCommData(prev => prev.map(r => r.ent_group_id === entGroupId
+        ? { ...r,
+            auto_schedule_enabled:   updated.auto_schedule_enabled,
+            delivery_months:         updated.delivery_months ? [...updated.delivery_months] : null,
+            max_deliveries_per_year: updated.max_deliveries_per_year }
+        : r))
+    }
   }
 
-  // ── Save helpers ───────────────────────────────────────────────────────────
+  // ── Dev params save ────────────────────────────────────────────────────────
 
-  async function savePhaseField(phaseId, field, value) {
+  async function patchDev(devId, patch) {
+    const res = await fetch(`${API_BASE}/developments/${devId}/sim-params`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const updated = await res.json()
+    setDevData(prev => prev.map(r => r.dev_id === devId
+      ? { ...r,
+          annual_starts_target: updated.annual_starts_target,
+          max_starts_per_month: updated.max_starts_per_month }
+      : r))
+  }
+
+  // ── Phase save helpers ─────────────────────────────────────────────────────
+
+  function patchPhaseRow(phaseId, patch) {
+    setPhaseData(prev => ({ ...prev, rows: prev.rows.map(r => r.phase_id === phaseId ? { ...r, ...patch } : r) }))
+  }
+
+  async function patchPhase(phaseId, field, value) {
     const res = await fetch(`${API_BASE}/admin/phase/${phaseId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [field]: value }),
     })
     if (!res.ok) throw new Error(await res.text())
-    patchRow(phaseId, await res.json())
+    patchPhaseRow(phaseId, await res.json())
   }
 
   async function toggleLock(row, shouldLock) {
@@ -401,7 +830,7 @@ export default function ConfigView({ showTestCommunities }) {
       body: JSON.stringify({ date_dev_actual }),
     })
     if (!res.ok) throw new Error(await res.text())
-    patchRow(row.phase_id, await res.json())
+    patchPhaseRow(row.phase_id, await res.json())
   }
 
   async function saveProductSplit(phaseId, lotTypeId, count) {
@@ -410,8 +839,8 @@ export default function ConfigView({ showTestCommunities }) {
       body: JSON.stringify({ projected_count: count ?? 0 }),
     })
     if (!res.ok) throw new Error(await res.text())
-    const row = allRows.find(r => r.phase_id === phaseId)
-    patchRow(phaseId, { product_splits: { ...(row?.product_splits ?? {}), [lotTypeId]: count ?? 0 } })
+    const row = phaseData?.rows.find(r => r.phase_id === phaseId)
+    patchPhaseRow(phaseId, { product_splits: { ...(row?.product_splits ?? {}), [lotTypeId]: count ?? 0 } })
   }
 
   async function saveBuilderSplit(phaseId, builderId, share) {
@@ -420,10 +849,10 @@ export default function ConfigView({ showTestCommunities }) {
       body: JSON.stringify({ share }),
     })
     if (!res.ok) throw new Error(await res.text())
-    const row = allRows.find(r => r.phase_id === phaseId)
+    const row = phaseData?.rows.find(r => r.phase_id === phaseId)
     const newSplits = { ...(row?.builder_splits ?? {}) }
     if (share == null) delete newSplits[builderId]; else newSplits[builderId] = share
-    patchRow(phaseId, { builder_splits: newSplits })
+    patchPhaseRow(phaseId, { builder_splits: newSplits })
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -431,309 +860,34 @@ export default function ConfigView({ showTestCommunities }) {
   if (loading)   return <div style={{ padding: 24, color: '#6b7280', fontSize: 13 }}>Loading…</div>
   if (loadError) return <div style={{ padding: 24, color: '#dc2626', fontSize: 13 }}>{loadError}</div>
 
-  const lotTypes = data?.lot_types ?? []
-  const builders = data?.builders  ?? []
-
-  const BAND = ['#ffffff', '#f8faff']
-  const vis  = stickyVisible(grain)
-  const shadowCol = shadowFor(grain)
-
-  // Shared style builders
-  const thBase = {
-    padding: '5px 7px', fontSize: 11, fontWeight: 600,
-    background: '#f3f4f6', whiteSpace: 'nowrap',
-    position: 'sticky', top: 0,
-  }
-  const thS  = (left, w, extra = {}) => ({ ...thBase, left, zIndex: 5, width: w, minWidth: w, ...extra })
-  const thR  = (extra = {}) => ({ ...thBase, zIndex: 2, color: '#6b7280', textAlign: 'right',
-                                   borderBottom: '2px solid #e5e7eb', ...extra })
-  const thGR = (extra = {}) => ({ ...thR(extra), borderLeft: '2px solid #e0e0e0' })
-
-  const SHADOW = { boxShadow: '4px 0 8px -2px rgba(0,0,0,0.10)' }
-
   return (
     <div style={{ padding: '14px 20px', fontFamily: 'system-ui, sans-serif', fontSize: 13 }}>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>Phase Configuration</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: '#111827' }}>Configuration</span>
         <button onClick={load} style={{
           fontSize: 11, color: '#6b7280', background: 'none',
           border: '1px solid #e5e7eb', borderRadius: 4, padding: '2px 8px', cursor: 'pointer',
         }}>Refresh</button>
-        {grain === 'phase' && (
-          <button onClick={() => setShowSplits(v => !v)} style={{
-            fontSize: 11, padding: '2px 10px', borderRadius: 4, cursor: 'pointer',
-            border: showSplits ? '1px solid #2563eb' : '1px solid #d1d5db',
-            background: showSplits ? '#eff6ff' : '#fff',
-            color: showSplits ? '#1d4ed8' : '#6b7280',
-          }}>
-            {showSplits ? 'Hide' : 'Show'} product splits
-          </button>
-        )}
       </div>
 
-      <FilterBar
-        communities={communities} devsByComm={devsByComm}
-        filterComm={filterComm} filterDev={filterDev}
-        onChange={({ comm, dev }) => { setFilterComm(comm); setFilterDev(dev) }}
-        rowCount={displayRows.length} totalLabel={totalLabel}
-      />
+      <TabBar active={tab} onChange={setTab} />
 
-      <div style={{ overflowX: 'auto', overflowY: 'auto',
-                    maxHeight: 'calc(100vh - 152px)',
-                    border: '1px solid #e5e7eb', borderRadius: 6 }}>
-        <table style={{ borderCollapse: 'collapse', minWidth: 'max-content', width: '100%' }}>
-          <thead>
-            <tr>
-              {/* Grain hierarchy headers — always render all 4, but only show visible ones */}
-              <GrainTh label="Community"   grain="community"  activeGrain={grain} onSetGrain={setGrain}
-                style={thS(LEFT.comm, CW.comm, shadowCol === 'comm' ? SHADOW : {})} />
-              {vis.dev && (
-                <GrainTh label="Development" grain="dev"       activeGrain={grain} onSetGrain={setGrain}
-                  style={thS(LEFT.dev, CW.dev, shadowCol === 'dev' ? SHADOW : {})} />
-              )}
-              {vis.inst && (
-                <GrainTh label="Instrument"  grain="instrument" activeGrain={grain} onSetGrain={setGrain}
-                  style={thS(LEFT.inst, CW.inst, shadowCol === 'inst' ? SHADOW : {})} />
-              )}
-              {vis.phase && (
-                <GrainTh label="Phase"       grain="phase"      activeGrain={grain} onSetGrain={setGrain}
-                  style={thS(LEFT.phase, CW.phase, shadowCol === 'phase' ? SHADOW : {})} />
-              )}
-
-              {/* ── Community grain columns ── */}
-              {grain === 'community' && <>
-                <th style={thGR({ width: 52 })} title="Distinct developments">Devs</th>
-                <th style={thR({  width: 52 })} title="Total phases">Phases</th>
-                <th style={thGR({ width: 52 })} title="Sum of projected counts">Proj</th>
-                <th style={thR({  width: 44 })} title="Real lots">Real</th>
-                <th style={thR({  width: 44 })} title="Sim lots from last run">Sim</th>
-              </>}
-
-              {/* ── Dev grain columns ── */}
-              {grain === 'dev' && <>
-                <th style={thGR({ width: 52 })} title="Total phases">Phases</th>
-                <th style={thGR({ width: 52 })} title="Sum of projected counts">Proj</th>
-                <th style={thR({  width: 44 })} title="Real lots">Real</th>
-                <th style={thR({  width: 44 })} title="Sim lots from last run">Sim</th>
-              </>}
-
-              {/* ── Instrument grain columns ── */}
-              {grain === 'instrument' && <>
-                <th style={thGR({ width: 52 })} title="Total phases">Phases</th>
-                <th style={thGR({ width: 52 })} title="Sum of projected counts">Proj</th>
-                <th style={thR({  width: 44 })} title="Real lots">Real</th>
-                <th style={thR({  width: 44 })} title="Sim lots from last run">Sim</th>
-              </>}
-
-              {/* ── Phase grain columns ── */}
-              {grain === 'phase' && <>
-                <th style={thGR({ width: 52 })} title="Sum of projected counts across all lot types">Proj</th>
-                <th style={thR({  width: 44 })} title="Real lots in system">Real</th>
-                <th style={thR({  width: 44 })} title="Sim lots from last run">Sim</th>
-                <th style={thGR({ width: 90 })}>Dev Date</th>
-                <th style={thR({  width: 84 })}>Lock</th>
-                {showSplits && lotTypes.map((lt, i) => (
-                  <th key={lt.lot_type_id} style={{
-                    ...thR({ width: 68 }),
-                    ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}),
-                  }} title={lt.lot_type_name}>
-                    {lt.lot_type_short}
-                  </th>
-                ))}
-                {builders.map((b, i) => (
-                  <th key={b.builder_id} style={{
-                    ...thR({ width: 66 }),
-                    ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}),
-                  }}>
-                    {b.builder_name}
-                  </th>
-                ))}
-                {builders.length > 0 && (
-                  <th style={thR({ width: 52 })} title="Sum of builder shares">%</th>
-                )}
-              </>}
-            </tr>
-          </thead>
-          <tbody>
-            {displayRows.length === 0 && (
-              <tr><td colSpan={99} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
-                No data matches the current filter.
-              </td></tr>
-            )}
-
-            {displayRows.map((row, i) => {
-              const prev        = displayRows[i - 1]
-              const isFirstComm = i === 0 || row.ent_group_id  !== prev?.ent_group_id
-              const isFirstDev  = i === 0 || row.dev_id        !== prev?.dev_id || isFirstComm
-              const isFirstInst = i === 0 || row.instrument_id !== prev?.instrument_id || isFirstDev
-              const bg          = BAND[(commBandIdx[row.ent_group_id] ?? 0) % 2]
-
-              const topBorder =
-                isFirstComm ? '2px solid #e5e7eb' :
-                isFirstDev  ? '2px solid #e5e7eb' :
-                isFirstInst ? '1px solid #e9e9e9' :
-                              '1px solid #f3f4f6'
-
-              const tdB = (extra = {}) => ({
-                padding: '4px 6px', background: bg, borderTop: topBorder,
-                verticalAlign: 'middle', ...extra,
-              })
-              const tdS = (left, extra = {}) => ({
-                ...tdB(extra), position: 'sticky', left, zIndex: 1,
-              })
-              const tdG = (extra = {}) => ({ ...tdB(extra), borderLeft: '2px solid #ebebeb' })
-
-              const dimText = (show, text) => (
-                <span style={{ fontSize: 12, color: show ? '#374151' : '#d1d5db',
-                               fontWeight: show ? 500 : 400, display: 'block', paddingLeft: show ? 0 : 11 }}>
-                  {show ? text : '·'}
-                </span>
-              )
-
-              // ── Phase grain: use existing per-phase data ───────────────────
-              if (grain === 'phase') {
-                const ltc = row.lot_type_counts ?? {}
-                const ps  = row.product_splits  ?? {}
-                const projTotal = Object.values(ps).reduce((s, v) => s + (v ?? 0), 0)
-                const realTotal = Object.values(ltc).reduce((s, v) => s + (v.real ?? 0), 0)
-                const simTotal  = Object.values(ltc).reduce((s, v) => s + (v.sim  ?? 0), 0)
-                const isLocked  = !!row.date_dev_actual
-                const canLock   = !!row.date_dev_projected
-
-                const numCell = (val) => (
-                  <span style={{ fontSize: 12, display: 'block', padding: '1px 4px', textAlign: 'right',
-                                 color: val > 0 ? '#374151' : '#d1d5db' }}>
-                    {val > 0 ? val : '—'}
-                  </span>
-                )
-
-                return (
-                  <tr key={row.phase_id}>
-                    <td style={tdS(LEFT.comm,  shadowCol === 'comm'  ? { ...SHADOW, zIndex: 2 } : {})}>
-                      {dimText(isFirstComm, row.ent_group_name)}
-                    </td>
-                    <td style={tdS(LEFT.dev,   shadowCol === 'dev'   ? { ...SHADOW, zIndex: 2 } : {})}>
-                      {dimText(isFirstDev, row.dev_name)}
-                    </td>
-                    <td style={tdS(LEFT.inst,  shadowCol === 'inst'  ? { ...SHADOW, zIndex: 2 } : {})}>
-                      {dimText(isFirstInst, row.instrument_name ?? '—')}
-                    </td>
-                    <td style={tdS(LEFT.phase, shadowCol === 'phase' ? { ...SHADOW, zIndex: 2 } : {})}>
-                      <span style={{ fontSize: 12, color: '#374151' }}>{row.phase_name}</span>
-                    </td>
-                    <td style={tdG({ textAlign: 'right' })}>{numCell(projTotal)}</td>
-                    <td style={tdB({ textAlign: 'right' })}>{numCell(realTotal)}</td>
-                    <td style={tdB({ textAlign: 'right' })}>{numCell(simTotal)}</td>
-                    <td style={tdG({ textAlign: 'right' })}>
-                      <EditableCell
-                        value={row.date_dev_projected} type="date" width={84}
-                        onSave={v => savePhaseField(row.phase_id, 'date_dev_projected', v)}
-                        placeholder="—"
-                      />
-                    </td>
-                    <td style={tdB({ textAlign: 'center' })}>
-                      <LockButton
-                        locked={isLocked} disabled={!canLock}
-                        onToggle={shouldLock => toggleLock(row, shouldLock)}
-                      />
-                    </td>
-                    {showSplits && lotTypes.map((lt, idx) => {
-                      const projVal  = ps[lt.lot_type_id] ?? null
-                      const ltCounts = ltc[lt.lot_type_id] ?? { real: 0, sim: 0 }
-                      return (
-                        <td key={lt.lot_type_id} style={{
-                          ...tdB({ textAlign: 'right', padding: '3px 6px' }),
-                          ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
-                        }}>
-                          <EditableCell
-                            value={projVal} width={56} placeholder="0"
-                            onSave={v => saveProductSplit(row.phase_id, lt.lot_type_id, v)}
-                          />
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6,
-                                        marginTop: 2, paddingRight: 4 }}>
-                            <span style={{ fontSize: 10, color: ltCounts.real > 0 ? '#6b7280' : '#e5e7eb' }}
-                                  title="Real lots">R:{ltCounts.real}</span>
-                            <span style={{ fontSize: 10, color: ltCounts.sim  > 0 ? '#9ca3af' : '#e5e7eb' }}
-                                  title="Sim lots">S:{ltCounts.sim}</span>
-                          </div>
-                        </td>
-                      )
-                    })}
-                    {builders.map((b, idx) => (
-                      <td key={b.builder_id} style={{
-                        ...tdB({ textAlign: 'right' }),
-                        ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
-                      }}>
-                        <EditableCell
-                          value={row.builder_splits[b.builder_id] ?? null} width={58} placeholder="0"
-                          onSave={v => saveBuilderSplit(row.phase_id, b.builder_id, v)}
-                        />
-                      </td>
-                    ))}
-                    {builders.length > 0 && (
-                      <td style={tdB({ textAlign: 'center', padding: '4px 8px' })}>
-                        <BuilderSumBadge splits={row.builder_splits} builders={builders} />
-                      </td>
-                    )}
-                  </tr>
-                )
-              }
-
-              // ── Coarser grains: aggregated read-only rows ─────────────────
-              const rowKey = row._key ?? `${row.ent_group_id}-${i}`
-
-              return (
-                <tr key={rowKey}>
-                  {/* Community sticky col — always visible */}
-                  <td style={tdS(LEFT.comm, shadowCol === 'comm' ? { ...SHADOW, zIndex: 2 } : {})}>
-                    {dimText(isFirstComm, row.ent_group_name)}
-                  </td>
-
-                  {/* Dev col */}
-                  {vis.dev && (
-                    <td style={tdS(LEFT.dev, shadowCol === 'dev' ? { ...SHADOW, zIndex: 2 } : {})}>
-                      {dimText(isFirstDev, row.dev_name)}
-                    </td>
-                  )}
-
-                  {/* Instrument col */}
-                  {vis.inst && (
-                    <td style={tdS(LEFT.inst, shadowCol === 'inst' ? { ...SHADOW, zIndex: 2 } : {})}>
-                      {dimText(isFirstInst, row.instrument_name ?? '—')}
-                    </td>
-                  )}
-
-                  {/* Community grain metric cells */}
-                  {grain === 'community' && <>
-                    <td style={tdG({ textAlign: 'right' })}><StatCell val={row.devCount} /></td>
-                    <td style={tdB({ textAlign: 'right' })}><StatCell val={row.phaseCount} /></td>
-                    <td style={tdG({ textAlign: 'right' })}><StatCell val={row.projTotal} /></td>
-                    <td style={tdB({ textAlign: 'right' })}><StatCell val={row.realTotal} /></td>
-                    <td style={tdB({ textAlign: 'right' })}><StatCell val={row.simTotal} /></td>
-                  </>}
-
-                  {/* Dev grain metric cells */}
-                  {grain === 'dev' && <>
-                    <td style={tdG({ textAlign: 'right' })}><StatCell val={row.phaseCount} /></td>
-                    <td style={tdG({ textAlign: 'right' })}><StatCell val={row.projTotal} /></td>
-                    <td style={tdB({ textAlign: 'right' })}><StatCell val={row.realTotal} /></td>
-                    <td style={tdB({ textAlign: 'right' })}><StatCell val={row.simTotal} /></td>
-                  </>}
-
-                  {/* Instrument grain metric cells */}
-                  {grain === 'instrument' && <>
-                    <td style={tdG({ textAlign: 'right' })}><StatCell val={row.phaseCount} /></td>
-                    <td style={tdG({ textAlign: 'right' })}><StatCell val={row.projTotal} /></td>
-                    <td style={tdB({ textAlign: 'right' })}><StatCell val={row.realTotal} /></td>
-                    <td style={tdB({ textAlign: 'right' })}><StatCell val={row.simTotal} /></td>
-                  </>}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      {tab === 'community'  && commData  && (
+        <CommunityTab rows={commData} showTest={showTestCommunities} onPatchComm={patchComm} />
+      )}
+      {tab === 'dev'        && devData   && (
+        <DevTab rows={devData} showTest={showTestCommunities} onPatchDev={patchDev} />
+      )}
+      {tab === 'instrument' && phaseData && (
+        <InstrumentTab phaseRows={phaseData.rows} showTest={showTestCommunities} />
+      )}
+      {tab === 'phase'      && phaseData && (
+        <PhaseTab
+          phaseData={phaseData} showTest={showTestCommunities}
+          onPatchPhase={patchPhase} onSaveProductSplit={saveProductSplit}
+          onSaveBuilderSplit={saveBuilderSplit} onToggleLock={toggleLock}
+        />
+      )}
     </div>
   )
 }
