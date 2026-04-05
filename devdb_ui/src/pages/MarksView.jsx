@@ -1,7 +1,7 @@
 // MarksView.jsx
 // MARKS lot management: sync dates, import unimported lots, promote pre→real.
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { API_BASE } from '../config'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -182,6 +182,7 @@ function ImportPanel({ devCode, onDone }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const lotTypes = useLotTypes()
+  const anchorIdx = useRef(null)
 
   useEffect(() => {
     Promise.all([
@@ -313,13 +314,35 @@ function ImportPanel({ devCode, onDone }) {
             </tr>
           </thead>
           <tbody>
-            {lots.map(lot => (
+            {lots.map((lot, idx) => (
               <tr key={lot.housenumber}
-                style={{ borderTop: '1px solid #f1f5f9', background: selected.has(lot.housenumber) ? '#f0f9ff' : undefined }}
-                onClick={() => {
-                  const s = new Set(selected)
-                  selected.has(lot.housenumber) ? s.delete(lot.housenumber) : s.add(lot.housenumber)
-                  setSelected(s)
+                style={{
+                  borderTop: '1px solid #f1f5f9',
+                  background: selected.has(lot.housenumber) ? '#f0f9ff' : undefined,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                }}
+                onClick={e => {
+                  if (e.shiftKey && anchorIdx.current !== null) {
+                    // Range select: fill from anchor to current
+                    const lo = Math.min(anchorIdx.current, idx)
+                    const hi = Math.max(anchorIdx.current, idx)
+                    const s = new Set(selected)
+                    for (let i = lo; i <= hi; i++) s.add(lots[i].housenumber)
+                    setSelected(s)
+                  } else if (e.ctrlKey || e.metaKey) {
+                    // Ctrl/Cmd: toggle individual without affecting others
+                    const s = new Set(selected)
+                    selected.has(lot.housenumber) ? s.delete(lot.housenumber) : s.add(lot.housenumber)
+                    setSelected(s)
+                    anchorIdx.current = idx
+                  } else {
+                    // Plain click: toggle and set anchor
+                    const s = new Set(selected)
+                    selected.has(lot.housenumber) ? s.delete(lot.housenumber) : s.add(lot.housenumber)
+                    setSelected(s)
+                    anchorIdx.current = idx
+                  }
                 }}
               >
                 <td style={{ padding: '3px 8px' }}>
