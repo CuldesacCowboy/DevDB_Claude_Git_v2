@@ -686,6 +686,7 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
   })
 
   return (
+    <>
     <div>
       {/* Filter bar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -878,6 +879,7 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
         onInserted={() => { setBulkInsertPhase(null); onLotsAdded?.() }}
       />
     )}
+    </>
   )
 }
 
