@@ -68,15 +68,13 @@ def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
     cur = dict_cursor(conn)
     try:
         # Resolve modern developments.dev_id → legacy dim_development.development_id.
-        # sim_legal_instruments.dev_id must hold the legacy ID used by the simulation
-        # engine and lot-phase-view queries. Bridge: developments.marks_code = dim_development.dev_code2.
+        # create_development always ensures a dim_development row exists (real or synthetic code).
         cur.execute(
             """
             SELECT dd.development_id AS legacy_dev_id
             FROM developments d
             JOIN dim_development dd ON dd.dev_code2 = d.marks_code
             WHERE d.dev_id = %s
-              AND d.marks_code IS NOT NULL
             """,
             (body.dev_id,),
         )
@@ -84,7 +82,8 @@ def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
         if row is None:
             raise HTTPException(
                 status_code=422,
-                detail=f"Development {body.dev_id} has no MARKsystems code and cannot be linked to a legal instrument",
+                detail=f"Development {body.dev_id} has no dim_development bridge row. "
+                       f"Re-save the development to auto-create one.",
             )
         legacy_dev_id = int(row["legacy_dev_id"])
 

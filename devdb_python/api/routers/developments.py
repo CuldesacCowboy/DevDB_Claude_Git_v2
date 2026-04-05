@@ -102,6 +102,7 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
         raise HTTPException(status_code=422, detail="dev_name is required")
     cur = dict_cursor(conn)
     try:
+        # 1. Insert into developments.
         cur.execute(
             """
             INSERT INTO developments
@@ -119,9 +120,46 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
                 body.community_id,
             ),
         )
-        new_id = cur.fetchone()["dev_id"]
-        conn.commit()
+        new_id = int(cur.fetchone()["dev_id"])
 
+        # 2. Ensure a dim_development row exists (bridge for instruments/phases/sim engine).
+        #    Use the real marks_code if provided, otherwise a synthetic code DEV{dev_id:06d}.
+        marks_code = body.marks_code or None
+        if marks_code:
+            # Check if dim_development already has this code (imported from MARKsystems).
+            cur.execute("SELECT development_id FROM dim_development WHERE dev_code2 = %s", (marks_code,))
+            existing = cur.fetchone()
+        else:
+            existing = None
+
+        if not existing:
+            synthetic_code = marks_code or f"DEV{new_id:06d}"
+            if not marks_code:
+                # Store the synthetic code so the bridge always resolves.
+                cur.execute("UPDATE developments SET marks_code = %s WHERE dev_id = %s",
+                            (synthetic_code, new_id))
+            cur.execute("SELECT COALESCE(MAX(development_id), 0) + 1 FROM dim_development")
+            legacy_id = int(cur.fetchone()[0])
+            cur.execute(
+                """INSERT INTO dim_development (development_id, development_name, dev_code2, active)
+                   VALUES (%s, %s, %s, true)""",
+                (legacy_id, name, synthetic_code),
+            )
+        else:
+            legacy_id = int(existing["development_id"])
+
+        # 3. Link to community in sim_ent_group_developments if community_id supplied.
+        if body.community_id:
+            cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM sim_ent_group_developments")
+            next_link_id = int(cur.fetchone()[0])
+            cur.execute(
+                """INSERT INTO sim_ent_group_developments (id, ent_group_id, dev_id)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT DO NOTHING""",
+                (next_link_id, body.community_id, legacy_id),
+            )
+
+        conn.commit()
         cur.execute(_SELECT_SQL + " WHERE d.dev_id = %s", (new_id,))
         row = cur.fetchone()
         return _row_to_dict(row)
