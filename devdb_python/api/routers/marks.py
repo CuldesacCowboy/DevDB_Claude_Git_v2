@@ -62,39 +62,31 @@ def _iso(d):
 @router.get("/summary")
 def get_marks_summary(conn=Depends(get_db_conn)):
     """
-    Per-MARKS-dev-code summary:
-      - total lots in schedhousedetail
-      - imported (matching sim_lots real or pre by lot_number)
-      - unimported (in MARKS, not in sim_lots)
-      - promotable (sim_lots pre lots with a MARKS match)
-    Also returns the internal development name if the dev_code matches a known marks_code.
+    Per-MARKS-dev-code summary using marks_lot_registry as source of truth.
+    Includes P-status lots with no schedhousedetail activity rows.
     """
     cur = dict_cursor(conn)
     try:
         cur.execute(f"""
             {_PIVOT_CTE}
             SELECT
-                p.developmentcode,
+                mlr.developmentcode,
                 d.dev_name,
                 d.dev_id        AS modern_dev_id,
-                COUNT(*)                                                       AS total_marks,
-                COUNT(sl_real.lot_id)                                          AS imported,
-                COUNT(*) - COUNT(sl_real.lot_id)                               AS unimported,
-                COUNT(sl_pre.lot_id)                                           AS promotable
-            FROM pivoted p
-            LEFT JOIN devdb.developments d ON d.marks_code = p.developmentcode
-            -- matched real lots
+                COUNT(*)                          AS total_marks,
+                COUNT(sl_real.lot_id)             AS imported,
+                COUNT(*) - COUNT(sl_real.lot_id)  AS unimported,
+                COUNT(sl_pre.lot_id)              AS promotable
+            FROM devdb.marks_lot_registry mlr
+            LEFT JOIN devdb.developments d ON d.marks_code = mlr.developmentcode
             LEFT JOIN devdb.sim_lots sl_real
-                ON REGEXP_REPLACE(sl_real.lot_number, '[^A-Za-z]', '', 'g') = p.developmentcode
-               AND CAST(REGEXP_REPLACE(sl_real.lot_number, '[^0-9]', '', 'g') AS BIGINT) = p.housenumber
+                ON sl_real.lot_number = mlr.lot_number
                AND sl_real.lot_source = 'real'
-            -- promotable pre lots
             LEFT JOIN devdb.sim_lots sl_pre
-                ON REGEXP_REPLACE(sl_pre.lot_number, '[^A-Za-z]', '', 'g') = p.developmentcode
-               AND CAST(REGEXP_REPLACE(sl_pre.lot_number, '[^0-9]', '', 'g') AS BIGINT) = p.housenumber
+                ON sl_pre.lot_number = mlr.lot_number
                AND sl_pre.lot_source = 'pre'
-            GROUP BY p.developmentcode, d.dev_name, d.dev_id
-            ORDER BY unimported DESC, p.developmentcode
+            GROUP BY mlr.developmentcode, d.dev_name, d.dev_id
+            ORDER BY unimported DESC, mlr.developmentcode
         """)
         return [
             {
@@ -117,39 +109,43 @@ def get_marks_summary(conn=Depends(get_db_conn)):
 @router.get("/unimported")
 def get_unimported(dev_code: str, conn=Depends(get_db_conn)):
     """
-    Lots in schedhousedetail for a dev code that have no matching sim_lots record
-    (neither real nor pre). Returns resolved pipeline dates for preview.
+    Lots in marks_lot_registry for a dev code not yet in sim_lots (real or pre).
+    Joins schedhousedetail for pipeline dates where available — lots with no
+    activity rows appear with all-null dates (true P-status lots).
     """
     cur = dict_cursor(conn)
     try:
         cur.execute(f"""
             {_PIVOT_CTE}
-            SELECT p.developmentcode, p.housenumber,
+            SELECT mlr.developmentcode, mlr.housenumber, mlr.lot_number, mlr.address1,
                    p.date_td, p.date_td_hold, p.date_str, p.date_frm, p.date_cmp, p.date_cls
-            FROM pivoted p
-            WHERE p.developmentcode = %s
+            FROM devdb.marks_lot_registry mlr
+            LEFT JOIN pivoted p
+              ON p.developmentcode = mlr.developmentcode
+             AND p.housenumber     = mlr.housenumber
+            WHERE mlr.developmentcode = %s
               AND NOT EXISTS (
                   SELECT 1 FROM devdb.sim_lots sl
-                  WHERE REGEXP_REPLACE(sl.lot_number, '[^A-Za-z]', '', 'g') = p.developmentcode
-                    AND CAST(REGEXP_REPLACE(sl.lot_number, '[^0-9]', '', 'g') AS BIGINT) = p.housenumber
+                  WHERE sl.lot_number = mlr.lot_number
                     AND sl.lot_source IN ('real', 'pre')
               )
-            ORDER BY p.housenumber
+            ORDER BY mlr.housenumber
         """, (dev_code,))
-        rows = []
-        for r in cur.fetchall():
-            rows.append({
+        return [
+            {
                 "dev_code":     r["developmentcode"],
                 "housenumber":  r["housenumber"],
-                "lot_number":   f"{r['developmentcode']}{str(r['housenumber']).zfill(8)}",
+                "lot_number":   r["lot_number"],
+                "address1":     r["address1"],
                 "date_td":      _iso(r["date_td"]),
                 "date_td_hold": _iso(r["date_td_hold"]),
                 "date_str":     _iso(r["date_str"]),
                 "date_frm":     _iso(r["date_frm"]),
                 "date_cmp":     _iso(r["date_cmp"]),
                 "date_cls":     _iso(r["date_cls"]),
-            })
-        return rows
+            }
+            for r in cur.fetchall()
+        ]
     finally:
         cur.close()
 
