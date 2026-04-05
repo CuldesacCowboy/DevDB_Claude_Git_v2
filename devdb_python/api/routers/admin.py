@@ -322,7 +322,7 @@ def get_dev_config(conn=Depends(get_db_conn)):
                     COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM date_str) = EXTRACT(YEAR FROM CURRENT_DATE) - 2) AS starts_2yr_ago,
                     COUNT(*) FILTER (WHERE date_str IS NULL AND date_cls IS NULL)                             AS unstarted_real
                 FROM sim_lots
-                WHERE lot_source = 'real'
+                WHERE lot_source IN ('real', 'pre')
                 GROUP BY dev_id
             ) ls ON ls.dev_id = segd.dev_id
 

@@ -68,7 +68,7 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
     if (saving) return
     setDraft(value != null ? String(value) : '')
     setEditing(true)
-    requestAnimationFrame(() => inputRef.current?.focus())
+    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.select() })
   }
 
   async function commit() {
@@ -88,7 +88,6 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
   }
 
   function onKeyDown(e) {
-    if (e.key === 'Enter')  { e.preventDefault(); e.stopPropagation(); commit() }
     if (e.key === 'Escape') { e.stopPropagation(); setEditing(false); onDone?.() }
   }
 
@@ -329,14 +328,15 @@ function TableShell({ children, maxHeight = 'calc(100vh - 170px)' }) {
 
 // ─── Community tab ────────────────────────────────────────────────────────────
 
-// Community tab column metadata: index → { editable, kind }
+// Community tab column metadata: index → { editable, kind, autoOpen }
+// autoOpen: immediately enter editing mode when arrow-navigated onto this cell
 const COMM_COLS = [
-  { editable: false },                   // 0 community name
-  { editable: true, kind: 'edit' },      // 1 date_paper
-  { editable: true, kind: 'edit' },      // 2 date_ent
-  { editable: true, kind: 'checkbox' },  // 3 auto_schedule
-  { editable: true, kind: 'month' },     // 4 delivery_months
-  { editable: true, kind: 'edit' },      // 5 del/year
+  { editable: false },                                     // 0 community name
+  { editable: true, kind: 'edit',     autoOpen: false },  // 1 date_paper (date — don't auto-open)
+  { editable: true, kind: 'edit',     autoOpen: false },  // 2 date_ent   (date — don't auto-open)
+  { editable: true, kind: 'checkbox', autoOpen: false },  // 3 auto_schedule
+  { editable: true, kind: 'month',    autoOpen: false },  // 4 delivery_months
+  { editable: true, kind: 'edit',     autoOpen: true  },  // 5 del/year (number)
 ]
 
 function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal }) {
@@ -347,30 +347,31 @@ function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal 
 
   const maxRow = filtered.length - 1
 
+  // Auto-open editable cells immediately on arrow navigation
+  useEffect(() => {
+    if (!activeCell) return
+    const col = COMM_COLS[activeCell.c]
+    if (col?.autoOpen) setActivateSignal(s => s + 1)
+  }, [activeCell])
+
+  // Capture-phase handler: intercepts arrows before any focused child (e.g. number input) sees them.
+  // Date inputs are left alone — their internal arrow nav takes priority.
   function handleKeyDown(e) {
     const NAV = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight']
-    if (NAV.includes(e.key)) {
-      e.preventDefault()
-      setActiveCell(prev => {
-        const r = prev?.r ?? 0
-        const c = prev?.c ?? 1
-        if (e.key === 'ArrowUp')    return { r: Math.max(0, r - 1), c }
-        if (e.key === 'ArrowDown')  return { r: Math.min(maxRow, r + 1), c }
-        if (e.key === 'ArrowLeft')  return { r, c: Math.max(0, c - 1) }
-        if (e.key === 'ArrowRight') return { r, c: Math.min(COMM_COLS.length - 1, c + 1) }
-      })
-      return
-    }
-    if (e.key === 'Enter' && activeCell) {
-      e.preventDefault()
-      const col = COMM_COLS[activeCell.c]
-      if (!col.editable) return
-      if (col.kind === 'edit') { setActivateSignal(s => s + 1) }
-      if (col.kind === 'checkbox') {
-        const row = filtered[activeCell.r]
-        if (row) onPatchComm(row.ent_group_id, 'delivery', { auto_schedule_enabled: !(row.auto_schedule_enabled ?? false) })
-      }
-    }
+    if (!NAV.includes(e.key)) return
+    const ae = document.activeElement
+    if (ae && ae.type === 'date') return   // let date picker handle its own arrows
+    e.preventDefault()
+    e.stopPropagation()
+    if (ae && ae !== containerRef.current) ae.blur()  // commit any open number/text edit
+    setActiveCell(prev => {
+      const r = prev?.r ?? 0
+      const c = prev?.c ?? 1
+      if (e.key === 'ArrowUp')    return { r: Math.max(0, r - 1), c }
+      if (e.key === 'ArrowDown')  return { r: Math.min(maxRow, r + 1), c }
+      if (e.key === 'ArrowLeft')  return { r, c: Math.max(0, c - 1) }
+      if (e.key === 'ArrowRight') return { r, c: Math.min(COMM_COLS.length - 1, c + 1) }
+    })
   }
 
   function onDone() { containerRef.current?.focus() }
@@ -387,7 +388,7 @@ function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal 
   const thG = { ...thR, borderLeft: '2px solid #e0e0e0' }
 
   return (
-    <div ref={containerRef} tabIndex={0} onKeyDown={handleKeyDown}
+    <div ref={containerRef} tabIndex={0} onKeyDownCapture={handleKeyDown}
          style={{ outline: 'none' }}>
       <TableShell>
         <thead>
@@ -511,7 +512,7 @@ function StartsCell({ value, unstarted, onSave, triggerActivate = 0, onDone }) {
     if (saving) return
     setDraft(value != null ? String(value) : '')
     setEditing(true)
-    requestAnimationFrame(() => inputRef.current?.focus())
+    requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.select() })
   }
 
   async function commit() {
@@ -527,7 +528,6 @@ function StartsCell({ value, unstarted, onSave, triggerActivate = 0, onDone }) {
   }
 
   function onKeyDown(e) {
-    if (e.key === 'Enter')  { e.preventDefault(); e.stopPropagation(); commit() }
     if (e.key === 'Escape') { e.stopPropagation(); setEditing(false); onDone?.() }
   }
 
@@ -568,15 +568,15 @@ const CUR_YEAR = new Date().getFullYear()
 
 // Dev tab column metadata (0-8)
 const DEV_COLS = [
-  { editable: false }, // 0 community
-  { editable: false }, // 1 development
-  { editable: false }, // 2 proj
-  { editable: false }, // 3 unstarted
-  { editable: false }, // 4 ytd
-  { editable: false }, // 5 last yr
-  { editable: false }, // 6 2yr ago
-  { editable: true, kind: 'starts' }, // 7 annual starts
-  { editable: true, kind: 'edit'   }, // 8 max/month
+  { editable: false },                                    // 0 community
+  { editable: false },                                    // 1 development
+  { editable: false },                                    // 2 proj
+  { editable: false },                                    // 3 unstarted
+  { editable: false },                                    // 4 ytd
+  { editable: false },                                    // 5 last yr
+  { editable: false },                                    // 6 2yr ago
+  { editable: true, kind: 'starts', autoOpen: true },    // 7 annual starts
+  { editable: true, kind: 'edit',   autoOpen: true },    // 8 max/month
 ]
 
 function DevTab({ rows, showTest, onPatchDev }) {
@@ -588,25 +588,28 @@ function DevTab({ rows, showTest, onPatchDev }) {
 
   const maxRow = filtered.length - 1
 
+  useEffect(() => {
+    if (!activeCell) return
+    const col = DEV_COLS[activeCell.c]
+    if (col?.autoOpen) setActivateSignal(s => s + 1)
+  }, [activeCell])
+
   function handleKeyDown(e) {
     const NAV = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight']
-    if (NAV.includes(e.key)) {
-      e.preventDefault()
-      setActiveCell(prev => {
-        const r = prev?.r ?? 0
-        const c = prev?.c ?? 7
-        if (e.key === 'ArrowUp')    return { r: Math.max(0, r - 1), c }
-        if (e.key === 'ArrowDown')  return { r: Math.min(maxRow, r + 1), c }
-        if (e.key === 'ArrowLeft')  return { r, c: Math.max(0, c - 1) }
-        if (e.key === 'ArrowRight') return { r, c: Math.min(DEV_COLS.length - 1, c + 1) }
-      })
-      return
-    }
-    if (e.key === 'Enter' && activeCell) {
-      e.preventDefault()
-      const col = DEV_COLS[activeCell.c]
-      if (col.editable) setActivateSignal(s => s + 1)
-    }
+    if (!NAV.includes(e.key)) return
+    const ae = document.activeElement
+    if (ae && ae.type === 'date') return
+    e.preventDefault()
+    e.stopPropagation()
+    if (ae && ae !== containerRef.current) ae.blur()
+    setActiveCell(prev => {
+      const r = prev?.r ?? 0
+      const c = prev?.c ?? 7
+      if (e.key === 'ArrowUp')    return { r: Math.max(0, r - 1), c }
+      if (e.key === 'ArrowDown')  return { r: Math.min(maxRow, r + 1), c }
+      if (e.key === 'ArrowLeft')  return { r, c: Math.max(0, c - 1) }
+      if (e.key === 'ArrowRight') return { r, c: Math.min(DEV_COLS.length - 1, c + 1) }
+    })
   }
 
   function onDone() { containerRef.current?.focus() }
@@ -622,7 +625,7 @@ function DevTab({ rows, showTest, onPatchDev }) {
   const thGR = { ...thR, borderLeft: '2px solid #e0e0e0' }
 
   return (
-    <div ref={containerRef} tabIndex={0} onKeyDown={handleKeyDown}
+    <div ref={containerRef} tabIndex={0} onKeyDownCapture={handleKeyDown}
          style={{ outline: 'none' }}>
       <TableShell>
         <thead>
