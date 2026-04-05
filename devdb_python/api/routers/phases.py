@@ -22,7 +22,7 @@ async def list_lot_types(conn=Depends(get_db_conn)):
     cur = dict_cursor(conn)
     try:
         cur.execute(
-            "SELECT lot_type_id, lot_type_short FROM ref_lot_types ORDER BY lot_type_id"
+            "SELECT lot_type_id, lot_type_short FROM ref_lot_types WHERE active = TRUE ORDER BY lot_type_id"
         )
         return [{"lot_type_id": r["lot_type_id"], "lot_type_short": r["lot_type_short"]}
                 for r in cur.fetchall()]
