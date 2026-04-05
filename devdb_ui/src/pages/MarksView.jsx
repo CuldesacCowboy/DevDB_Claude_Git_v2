@@ -176,7 +176,6 @@ function ImportPanel({ devCode, onDone }) {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(new Set())
   const [lotTypeId, setLotTypeId] = useState('')
-  const [instrumentId, setInstrumentId] = useState('')
   const [phaseId, setPhaseId] = useState('')
   const [devPhases, setDevPhases] = useState({ instruments: [], phases: [] })
   const [saving, setSaving] = useState(false)
@@ -194,16 +193,6 @@ function ImportPanel({ devCode, onDone }) {
       setDevPhases(phasesData)
     }).finally(() => setLoading(false))
   }, [devCode])
-
-  // Reset phase when instrument changes
-  function handleInstrumentChange(val) {
-    setInstrumentId(val)
-    setPhaseId('')
-  }
-
-  const filteredPhases = instrumentId
-    ? devPhases.phases.filter(p => String(p.instrument_id) === instrumentId)
-    : []
 
   async function handleImport() {
     if (!lotTypeId) return
@@ -236,7 +225,7 @@ function ImportPanel({ devCode, onDone }) {
 
   const assignmentLabel = phaseId
     ? `→ ${devPhases.phases.find(p => String(p.phase_id) === phaseId)?.phase_name ?? 'phase'}`
-    : instrumentId ? '→ unassigned within instrument' : '→ unassigned'
+    : '→ unassigned'
 
   return (
     <div style={{ padding: '8px 12px' }}>
@@ -255,35 +244,18 @@ function ImportPanel({ devCode, onDone }) {
           ))}
         </select>
 
-        {/* instrument */}
-        <label style={{ fontSize: 12, color: '#374151', marginLeft: 8 }}>Instrument:</label>
+        {/* phase */}
+        <label style={{ fontSize: 12, color: '#374151', marginLeft: 8 }}>Phase:</label>
         <select
-          value={instrumentId}
-          onChange={e => handleInstrumentChange(e.target.value)}
+          value={phaseId}
+          onChange={e => setPhaseId(e.target.value)}
           style={{ fontSize: 12, padding: '2px 6px', borderRadius: 3, border: '1px solid #d1d5db' }}
         >
           <option value="">— unassigned —</option>
-          {devPhases.instruments.map(i => (
-            <option key={i.instrument_id} value={i.instrument_id}>{i.instrument_name}</option>
+          {devPhases.phases.map(p => (
+            <option key={p.phase_id} value={p.phase_id}>{p.phase_name}</option>
           ))}
         </select>
-
-        {/* phase — only shown when instrument selected */}
-        {instrumentId && (
-          <>
-            <label style={{ fontSize: 12, color: '#374151' }}>Phase:</label>
-            <select
-              value={phaseId}
-              onChange={e => setPhaseId(e.target.value)}
-              style={{ fontSize: 12, padding: '2px 6px', borderRadius: 3, border: '1px solid #d1d5db' }}
-            >
-              <option value="">— unassigned —</option>
-              {filteredPhases.map(p => (
-                <option key={p.phase_id} value={p.phase_id}>{p.phase_name}</option>
-              ))}
-            </select>
-          </>
-        )}
       </div>
 
       {/* select all + assignment summary */}
