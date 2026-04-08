@@ -98,14 +98,14 @@ function LotPill({ label, source }) {
 }
 
 // Lot pill with an inline move-to-phase control
-function MovableLotPill({ lot, targetPhases, onMoved }) {
+function MovableLotPill({ lot, targetPhases, onMoved, selected, onSelect }) {
   const [moving, setMoving] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const s = pillStyle(lot)
   const label = lot.lot_number ?? `#${lot.lot_id}`
 
-  async function handleSelect(e) {
+  async function handleMoveSelect(e) {
     const targetPhaseId = parseInt(e.target.value, 10)
     if (!targetPhaseId) return
     setSaving(true)
@@ -125,27 +125,16 @@ function MovableLotPill({ lot, targetPhases, onMoved }) {
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
         <select
-          autoFocus
-          disabled={saving}
-          defaultValue=""
-          onChange={handleSelect}
-          style={{
-            fontSize: 11, padding: '1px 3px', borderRadius: 3,
-            border: '1px solid #d1d5db', maxWidth: 200,
-          }}>
+          autoFocus disabled={saving} defaultValue=""
+          onChange={handleMoveSelect}
+          style={{ fontSize: 11, padding: '1px 3px', borderRadius: 3, border: '1px solid #d1d5db', maxWidth: 200 }}>
           <option value="" disabled>Move to…</option>
           {targetPhases.map(p => (
-            <option key={p.phase_id} value={p.phase_id}>
-              {p.instrument_name} · {p.phase_name}
-            </option>
+            <option key={p.phase_id} value={p.phase_id}>{p.instrument_name} · {p.phase_name}</option>
           ))}
         </select>
-        <button
-          onClick={() => setMoving(false)}
-          style={{
-            fontSize: 11, color: '#9ca3af', background: 'none',
-            border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1,
-          }}>
+        <button onClick={() => setMoving(false)}
+          style={{ fontSize: 11, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}>
           ✕
         </button>
       </span>
@@ -154,16 +143,21 @@ function MovableLotPill({ lot, targetPhases, onMoved }) {
 
   return (
     <span
+      onClick={onSelect}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 2,
         padding: '1px 5px 1px 7px', borderRadius: 10, fontSize: 11,
-        background: s.bg, color: s.text, border: `1px solid ${s.border}`,
-        whiteSpace: 'nowrap',
+        background: selected ? s.border : s.bg,
+        color: s.text,
+        border: `1px solid ${selected ? s.text : s.border}`,
+        outline: selected ? `2px solid ${s.border}` : 'none',
+        outlineOffset: 1,
+        whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none',
       }}>
       {label}
       {targetPhases.length > 0 && (
         <button
-          onClick={() => setMoving(true)}
+          onClick={e => { e.stopPropagation(); setMoving(true) }}
           title="Move to another phase"
           style={{
             background: 'none', border: 'none', cursor: 'pointer',
@@ -179,113 +173,299 @@ function MovableLotPill({ lot, targetPhases, onMoved }) {
   )
 }
 
-function InlineAddPreLot({ phaseId, ltId, onAdded }) {
-  const [adding, setAdding]     = useState(false)
-  const [lotNumber, setLotNumber] = useState('')
-  const [saving, setSaving]     = useState(false)
-  const [error, setError]       = useState(null)
-  const inputRef = useRef(null)
+// ─── Add Pre-MARKS lots panel (2-step: count → review) ───────────────────────
 
-  useEffect(() => { if (adding) inputRef.current?.focus() }, [adding])
+function AddPreLotsPanel({ phaseId, ltId, onAdded }) {
+  const [open, setOpen]       = useState(false)
+  const [step, setStep]       = useState('count')
+  const [count, setCount]     = useState(5)
+  const [rows, setRows]       = useState([])
+  const [prefix, setPrefix]   = useState('')
+  const [startSeq, setStartSeq] = useState(1)
+  const [padWidth, setPadWidth] = useState(3)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving]   = useState(false)
+  const [error, setError]     = useState(null)
 
-  async function handleSave() {
-    const ln = lotNumber.trim()
-    if (!ln) return
-    setSaving(true)
-    setError(null)
+  const pre = LOT_PILL.pre
+
+  function rebuildNums(r, p, s, w) {
+    return r.map((row, i) => ({
+      ...row,
+      lot_number: `${(p || '').toUpperCase()}${String(s + i).padStart(Math.max(1, w), '0')}`,
+    }))
+  }
+
+  async function fetchSuggestions() {
+    setLoading(true); setError(null)
     try {
-      const res = await fetch(`${API_BASE}/bulk-lots/insert`, {
+      const res = await fetch(`${API_BASE}/bulk-lots/suggestions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lots: [{ lot_number: ln, lot_type_id: ltId, phase_id: phaseId }] }),
+        body: JSON.stringify({ phase_id: phaseId, requests: [{ lot_type_id: ltId, count }] }),
       })
       const data = await res.json()
       if (!res.ok) { setError(data.detail ?? 'Failed'); return }
-      setLotNumber('')
-      setAdding(false)
-      onAdded({ ...data.inserted[0], lot_source: 'pre', in_registry: false })
+      setPrefix(data.prefix); setStartSeq(data.next_seq); setPadWidth(data.pad_width)
+      setRows(data.suggestions); setStep('review')
+    } catch { setError('Network error') }
+    finally { setLoading(false) }
+  }
+
+  async function handleInsert() {
+    setSaving(true); setError(null)
+    try {
+      const lots = rows.map(r => ({ lot_number: r.lot_number.trim(), lot_type_id: ltId, phase_id: phaseId }))
+      const res = await fetch(`${API_BASE}/bulk-lots/insert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lots }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.detail ?? 'Failed'); return }
+      onAdded(data.inserted.map(l => ({ ...l, lot_source: 'pre', in_registry: false })))
+      reset()
     } catch { setError('Network error') }
     finally { setSaving(false) }
   }
 
-  const preStyle = LOT_PILL.pre
-  if (!adding) {
-    return (
-      <button
-        onClick={() => setAdding(true)}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 3,
-          padding: '1px 7px', borderRadius: 10, fontSize: 11,
-          background: 'none', color: preStyle.text,
-          border: `1px dashed ${preStyle.border}`,
-          cursor: 'pointer',
-        }}>
-        + Pre-MARKS
-      </button>
-    )
-  }
+  function reset() { setOpen(false); setStep('count'); setCount(5); setRows([]); setError(null) }
+
+  const INP = { fontSize: 11, padding: '2px 5px', borderRadius: 3, border: '1px solid #d1d5db' }
+  const BTN = (extra = {}) => ({
+    fontSize: 11, padding: '2px 8px', borderRadius: 3, cursor: 'pointer',
+    border: '1px solid #d1d5db', background: '#fff', ...extra,
+  })
+
+  if (!open) return (
+    <button onClick={() => setOpen(true)} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+      padding: '1px 7px', borderRadius: 10, fontSize: 11,
+      background: 'none', color: pre.text, border: `1px dashed ${pre.border}`, cursor: 'pointer',
+    }}>+ Pre-MARKS</button>
+  )
+
+  if (step === 'count') return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: '#6b7280' }}>How many?</span>
+        {[5, 10, 20, 50].map(n => (
+          <button key={n} onClick={() => setCount(n)} style={BTN({
+            background: count === n ? pre.bg : '#fff',
+            borderColor: count === n ? pre.border : '#d1d5db',
+            color: count === n ? pre.text : '#374151',
+            fontWeight: count === n ? 600 : 400,
+          })}>{n}</button>
+        ))}
+        <input type="number" min={1} value={count}
+          onChange={e => setCount(Math.max(1, parseInt(e.target.value) || 1))}
+          style={{ ...INP, width: 50 }} />
+        <button onClick={fetchSuggestions} disabled={loading || count < 1}
+          style={BTN({ background: pre.bg, color: pre.text, borderColor: pre.border })}>
+          {loading ? '…' : 'Preview →'}
+        </button>
+        <button onClick={reset} style={BTN({ color: '#9ca3af' })}>✕</button>
+      </div>
+      {error && <span style={{ fontSize: 11, color: '#ef4444' }}>{error}</span>}
+    </div>
+  )
 
   return (
-    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-      <input
-        ref={inputRef}
-        value={lotNumber}
-        onChange={e => setLotNumber(e.target.value)}
-        placeholder="Lot number"
-        onKeyDown={e => {
-          if (e.key === 'Enter') handleSave()
-          if (e.key === 'Escape') { setAdding(false); setLotNumber(''); setError(null) }
-        }}
-        style={{
-          width: 90, fontSize: 11, padding: '1px 5px', borderRadius: 3,
-          border: `1px solid ${error ? '#ef4444' : '#d1d5db'}`,
-        }}
-      />
-      <button
-        onClick={handleSave} disabled={saving}
-        style={{
-          fontSize: 11, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
-          background: '#f0fdf4', color: '#15803d', border: '1px solid #86efac',
-        }}>
-        {saving ? '…' : '✓'}
-      </button>
-      <button
-        onClick={() => { setAdding(false); setLotNumber(''); setError(null) }}
-        style={{
-          fontSize: 11, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
-          background: 'none', color: '#9ca3af', border: '1px solid #e5e7eb',
-        }}>
-        ✕
-      </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 11, color: '#6b7280' }}>Prefix</span>
+        <input value={prefix} onChange={e => {
+          const p = e.target.value.toUpperCase()
+          setPrefix(p); setRows(prev => rebuildNums(prev, p, startSeq, padWidth))
+        }} style={{ ...INP, width: 52 }} />
+        <span style={{ fontSize: 11, color: '#6b7280' }}>Start #</span>
+        <input type="number" min={1} value={startSeq} onChange={e => {
+          const s = Math.max(1, parseInt(e.target.value) || 1)
+          setStartSeq(s); setRows(prev => rebuildNums(prev, prefix, s, padWidth))
+        }} style={{ ...INP, width: 60 }} />
+        <button onClick={handleInsert} disabled={saving}
+          style={BTN({ background: '#f0fdf4', color: '#15803d', borderColor: '#86efac' })}>
+          {saving ? '…' : `Add ${rows.length}`}
+        </button>
+        <button onClick={() => setStep('count')} style={BTN({ color: '#6b7280' })}>← Back</button>
+        <button onClick={reset} style={BTN({ color: '#9ca3af' })}>✕</button>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+        {rows.map((r, i) => (
+          <input key={i} value={r.lot_number}
+            onChange={e => setRows(prev => prev.map((row, j) => j === i ? { ...row, lot_number: e.target.value } : row))}
+            style={{
+              width: 80, fontSize: 11, padding: '1px 5px', borderRadius: 10, textAlign: 'center',
+              background: pre.bg, color: pre.text, border: `1px solid ${pre.border}`,
+            }} />
+        ))}
+      </div>
       {error && <span style={{ fontSize: 11, color: '#ef4444' }}>{error}</span>}
     </div>
   )
 }
 
-const GROUP_LABEL_COLOR = {
-  marks: '#1d4ed8',
-  pre:   '#92400e',
-  sim:   '#9ca3af',
-}
+const GROUP_LABEL_COLOR = { marks: '#1d4ed8', pre: '#92400e', sim: '#9ca3af' }
 
-function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded }) {
+function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded, lotTypes, onLotsRemoved, onRefresh }) {
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [lastClickedId, setLastClickedId] = useState(null)
+  const [actionMode, setActionMode] = useState(null)  // null | 'move' | 'type' | 'delete'
+  const [bulkSaving, setBulkSaving] = useState(false)
+  const [bulkError, setBulkError] = useState(null)
+
+  const allLots = lots ?? []
+
+  // Ordered selectable lots (non-sim, In MARKS first then Pre-MARKS)
+  const ordered = [
+    ...allLots.filter(l => l.lot_source === 'real' && l.in_registry),
+    ...allLots.filter(l => !(l.lot_source === 'real' && l.in_registry) && l.lot_source !== 'sim'),
+  ]
+
+  function handlePillClick(lot, e) {
+    const id = lot.lot_id
+    if (e.shiftKey && lastClickedId !== null) {
+      const ids = ordered.map(l => l.lot_id)
+      const a = ids.indexOf(lastClickedId), b = ids.indexOf(id)
+      if (a !== -1 && b !== -1) {
+        const lo = Math.min(a, b), hi = Math.max(a, b)
+        setSelectedIds(prev => { const n = new Set(prev); ids.slice(lo, hi + 1).forEach(i => n.add(i)); return n })
+      }
+    } else {
+      setLastClickedId(id)
+      setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+    }
+    setActionMode(null)
+  }
+
+  function selectAll() { setSelectedIds(new Set(ordered.map(l => l.lot_id))) }
+  function deselectAll() { setSelectedIds(new Set()); setLastClickedId(null); setActionMode(null); setBulkError(null) }
+
+  async function runBulk(ids, apiFn, onDone) {
+    setBulkSaving(true); setBulkError(null)
+    try {
+      await Promise.all(ids.map(apiFn))
+      onDone()
+    } catch { setBulkError('Operation failed') }
+    finally { setBulkSaving(false) }
+  }
+
+  async function handleBulkMove(targetPhaseId) {
+    const ids = [...selectedIds]
+    await runBulk(ids, id => fetch(`${API_BASE}/lots/${id}/phase`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'setup' }),
+    }), () => { onLotsRemoved(ids); deselectAll() })
+  }
+
+  async function handleBulkChangeType(newLtId) {
+    const ids = [...selectedIds]
+    await runBulk(ids, id => fetch(`${API_BASE}/lots/${id}/lot-type`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lot_type_id: newLtId, changed_by: 'setup' }),
+    }), () => { onLotsRemoved(ids); deselectAll(); onRefresh() })
+  }
+
+  async function handleBulkDelete() {
+    const ids = [...selectedIds].filter(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre')
+    if (!ids.length) return
+    await runBulk(ids, id => fetch(`${API_BASE}/lots/${id}`, { method: 'DELETE' }),
+      () => { onLotsRemoved(ids); deselectAll() })
+  }
+
+  const hasSelection = selectedIds.size > 0
+  const hasPreSelected = [...selectedIds].some(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre')
+  const deleteCount = [...selectedIds].filter(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre').length
+
+  const ABTN = (extra = {}) => ({
+    fontSize: 11, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
+    background: 'none', border: '1px solid #e5e7eb', color: '#6b7280', ...extra,
+  })
+
   const groups = [
-    { key: 'marks', label: 'In MARKS',  items: (lots ?? []).filter(l => l.lot_source === 'real' && l.in_registry) },
-    { key: 'pre',   label: 'Pre-MARKS', items: (lots ?? []).filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
-    { key: 'sim',   label: 'Sim',       items: (lots ?? []).filter(l => l.lot_source === 'sim') },
+    { key: 'marks', label: 'In MARKS',  items: allLots.filter(l => l.lot_source === 'real' && l.in_registry) },
+    { key: 'pre',   label: 'Pre-MARKS', items: allLots.filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
+    { key: 'sim',   label: 'Sim',       items: allLots.filter(l => l.lot_source === 'sim') },
   ].filter(g => g.items.length > 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+
+      {/* ── Action bar ── */}
+      {(ordered.length > 0 || hasSelection) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>
+            {hasSelection ? `${selectedIds.size} selected` : `${ordered.length} lot${ordered.length !== 1 ? 's' : ''}`}
+          </span>
+          <button onClick={selectAll}  style={ABTN()}>All</button>
+          <button onClick={deselectAll} style={ABTN()}>None</button>
+          {hasSelection && <>
+            <span style={{ color: '#e5e7eb' }}>|</span>
+
+            {/* Move */}
+            {actionMode !== 'move' ? (
+              <button onClick={() => setActionMode('move')} disabled={bulkSaving} style={ABTN({ color: '#374151' })}>→ Move</button>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <select defaultValue="" onChange={e => e.target.value && handleBulkMove(parseInt(e.target.value))}
+                  disabled={bulkSaving}
+                  style={{ fontSize: 11, padding: '1px 3px', borderRadius: 3, border: '1px solid #d1d5db' }}>
+                  <option value="">Phase…</option>
+                  {targetPhases.map(p => <option key={p.phase_id} value={p.phase_id}>{p.instrument_name} · {p.phase_name}</option>)}
+                </select>
+                <button onClick={() => setActionMode(null)} style={ABTN()}>✕</button>
+              </span>
+            )}
+
+            {/* Change type */}
+            {actionMode !== 'type' ? (
+              <button onClick={() => setActionMode('type')} disabled={bulkSaving} style={ABTN({ color: '#374151' })}>⟳ Type</button>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <select defaultValue="" onChange={e => e.target.value && handleBulkChangeType(parseInt(e.target.value))}
+                  disabled={bulkSaving}
+                  style={{ fontSize: 11, padding: '1px 3px', borderRadius: 3, border: '1px solid #d1d5db' }}>
+                  <option value="">Type…</option>
+                  {(lotTypes ?? []).filter(lt => lt.lot_type_id !== ltId).map(lt => (
+                    <option key={lt.lot_type_id} value={lt.lot_type_id}>{lt.lot_type_short}</option>
+                  ))}
+                </select>
+                <button onClick={() => setActionMode(null)} style={ABTN()}>✕</button>
+              </span>
+            )}
+
+            {/* Delete */}
+            {actionMode !== 'delete' ? (
+              <button onClick={() => hasPreSelected && setActionMode('delete')}
+                disabled={!hasPreSelected || bulkSaving}
+                title={!hasPreSelected ? 'Only Pre-MARKS lots can be deleted' : undefined}
+                style={ABTN({ color: hasPreSelected ? '#dc2626' : '#d1d5db', borderColor: hasPreSelected ? '#fca5a5' : '#e5e7eb' })}>
+                × Delete
+              </button>
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 11, color: '#dc2626' }}>Delete {deleteCount} lot{deleteCount !== 1 ? 's' : ''}?</span>
+                <button onClick={handleBulkDelete} disabled={bulkSaving}
+                  style={ABTN({ background: '#fef2f2', color: '#dc2626', borderColor: '#fca5a5' })}>
+                  {bulkSaving ? '…' : 'Confirm'}
+                </button>
+                <button onClick={() => setActionMode(null)} style={ABTN()}>Cancel</button>
+              </span>
+            )}
+
+            {bulkError && <span style={{ fontSize: 11, color: '#ef4444' }}>{bulkError}</span>}
+          </>}
+        </div>
+      )}
+
+      {/* ── Pill groups ── */}
       {groups.map(g => (
         <div key={g.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
           <span style={{
             fontSize: 10, color: GROUP_LABEL_COLOR[g.key] ?? '#9ca3af',
             minWidth: 36, paddingTop: 3, textAlign: 'right', flexShrink: 0,
             fontWeight: g.key !== 'sim' ? 600 : 400,
-          }}>
-            {g.label}
-          </span>
+          }}>{g.label}</span>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
             {g.items.map(l =>
               l.lot_source === 'sim' ? (
@@ -296,15 +476,19 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
                   lot={l}
                   targetPhases={targetPhases}
                   onMoved={onMoveLot}
+                  selected={selectedIds.has(l.lot_id)}
+                  onSelect={e => handlePillClick(l, e)}
                 />
               )
             )}
           </div>
         </div>
       ))}
+
+      {/* ── Add Pre-MARKS ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
         <span style={{ minWidth: 36, flexShrink: 0 }} />
-        <InlineAddPreLot phaseId={phaseId} ltId={ltId} onAdded={onLotAdded} />
+        <AddPreLotsPanel phaseId={phaseId} ltId={ltId} onAdded={onLotAdded} />
       </div>
     </div>
   )
@@ -313,7 +497,7 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
 // ─── LotTypeRow — one table row + optional lot-pill detail row ────────────────
 
 function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre, sim,
-                       targetPhases, onSaveTotal, onDelete, onRefresh }) {
+                       targetPhases, lotTypes, onSaveTotal, onDelete, onRefresh }) {
   const [open, setOpen] = useState(false)
   const [lots, setLots] = useState(null)
   const [fetching, setFetching] = useState(false)
@@ -337,8 +521,15 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
     onRefresh()
   }
 
-  function handleLotAdded(newLot) {
-    setLots(prev => [...(prev ?? []), newLot])
+  function handleLotsRemoved(ids) {
+    const s = new Set(ids)
+    setLots(prev => prev ? prev.filter(l => !s.has(l.lot_id)) : null)
+    onRefresh()
+  }
+
+  function handleLotAdded(newLots) {
+    const arr = Array.isArray(newLots) ? newLots : [newLots]
+    setLots(prev => [...(prev ?? []), ...arr])
     onRefresh()
   }
 
@@ -388,7 +579,8 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
             {fetching
               ? <span style={{ fontSize: 11, color: '#9ca3af' }}>Loading…</span>
               : <LotPillGroup lots={lots} targetPhases={targetPhases} onMoveLot={handleLotMoved}
-                              phaseId={phaseId} ltId={ltId} onLotAdded={handleLotAdded} />
+                              phaseId={phaseId} ltId={ltId} onLotAdded={handleLotAdded}
+                              lotTypes={lotTypes} onLotsRemoved={handleLotsRemoved} onRefresh={onRefresh} />
             }
           </td>
         </tr>
@@ -626,6 +818,7 @@ function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
                     realPre={r.realPre}
                     sim={r.sim}
                     targetPhases={targetPhases}
+                    lotTypes={lotTypes}
                     onSaveTotal={n => handleSaveTotal(r.ltId, n)}
                     onDelete={() => handleDelete(r.ltId)}
                     onRefresh={onRefresh}
