@@ -203,6 +203,34 @@ async def add_lot_type_to_phase(
         cur.close()
 
 
+@router.get("/{phase_id}/lot-type/{lot_type_id}/lots")
+async def get_lots_for_lot_type(
+    phase_id: int,
+    lot_type_id: int,
+    conn=Depends(get_db_conn),
+):
+    """Return individual lots for a (phase_id, lot_type_id) pair, ordered by source then lot_id."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            """
+            SELECT lot_id, lot_number, lot_source
+            FROM sim_lots
+            WHERE phase_id = %s AND lot_type_id = %s AND excluded IS NOT TRUE
+            ORDER BY
+                CASE lot_source WHEN 'real' THEN 1 WHEN 'pre' THEN 2 ELSE 3 END,
+                lot_id
+            """,
+            (phase_id, lot_type_id),
+        )
+        return [
+            {"lot_id": r["lot_id"], "lot_number": r["lot_number"], "lot_source": r["lot_source"]}
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
 @router.delete("/{phase_id}/lot-type/{lot_type_id}", status_code=204)
 async def delete_lot_type_from_phase(
     phase_id: int,

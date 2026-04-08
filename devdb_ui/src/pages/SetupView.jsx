@@ -59,6 +59,141 @@ function EditableCount({ value, onSave }) {
   )
 }
 
+// ─── lot pills ───────────────────────────────────────────────────────────────
+
+const LOT_PILL = {
+  real: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
+  pre:  { bg: '#fffbeb', text: '#92400e', border: '#fde68a' },
+  sim:  { bg: '#f3f4f6', text: '#9ca3af', border: '#e5e7eb' },
+}
+
+function LotPill({ label, source }) {
+  const s = LOT_PILL[source] ?? LOT_PILL.sim
+  return (
+    <span style={{
+      display: 'inline-block',
+      padding: '1px 7px', borderRadius: 10, fontSize: 11,
+      background: s.bg, color: s.text,
+      border: `1px solid ${s.border}`,
+      whiteSpace: 'nowrap',
+    }}>
+      {label}
+    </span>
+  )
+}
+
+function LotPillGroup({ lots }) {
+  if (!lots || lots.length === 0) {
+    return (
+      <span style={{ fontSize: 11, color: '#d1d5db', fontStyle: 'italic' }}>no lots</span>
+    )
+  }
+  const groups = [
+    { key: 'real', label: 'MARKS',  items: lots.filter(l => l.lot_source === 'real') },
+    { key: 'pre',  label: 'Pre',    items: lots.filter(l => l.lot_source === 'pre')  },
+    { key: 'sim',  label: 'Sim',    items: lots.filter(l => l.lot_source === 'sim')  },
+  ].filter(g => g.items.length > 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {groups.map(g => (
+        <div key={g.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+          <span style={{
+            fontSize: 10, color: '#9ca3af', minWidth: 36,
+            paddingTop: 3, textAlign: 'right', flexShrink: 0,
+          }}>
+            {g.label}
+          </span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+            {g.items.map(l => (
+              <LotPill
+                key={l.lot_id}
+                label={l.lot_source === 'sim' ? 'sim' : (l.lot_number ?? `#${l.lot_id}`)}
+                source={l.lot_source}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── LotTypeRow — one table row + optional lot-pill detail row ────────────────
+
+function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre, sim, onSaveTotal, onDelete }) {
+  const [open, setOpen] = useState(false)
+  const [lots, setLots] = useState(null)
+  const [fetching, setFetching] = useState(false)
+
+  async function toggle() {
+    const next = !open
+    setOpen(next)
+    if (next && lots === null) {
+      setFetching(true)
+      try {
+        const res = await fetch(`${API_BASE}/phases/${phaseId}/lot-type/${ltId}/lots`)
+        setLots(res.ok ? await res.json() : [])
+      } finally {
+        setFetching(false)
+      }
+    }
+  }
+
+  return (
+    <>
+      <tr style={{ borderBottom: open ? 'none' : '1px solid #f3f4f6' }}>
+        <td style={{ padding: '3px 6px', color: '#374151' }}>
+          <button
+            onClick={toggle}
+            title={open ? 'Hide lots' : 'Show lots'}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: 0, marginRight: 4, verticalAlign: 'middle',
+              display: 'inline-flex', alignItems: 'center',
+            }}>
+            <span style={{
+              display: 'inline-block', fontSize: 9, color: '#9ca3af',
+              transition: 'transform 0.15s',
+              transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+            }}>▶</span>
+          </button>
+          {lotTypeName}
+        </td>
+        <td style={{ padding: '3px 6px', textAlign: 'right' }}>
+          <EditableCount value={projected} onSave={onSaveTotal} />
+        </td>
+        <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{realMarks}</td>
+        <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{realPre}</td>
+        <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{sim}</td>
+        <td style={{ padding: '3px 2px', textAlign: 'center' }}>
+          <button
+            onClick={onDelete}
+            title="Remove lot type"
+            style={{
+              fontSize: 14, lineHeight: 1, color: '#d1d5db',
+              background: 'none', border: 'none', cursor: 'pointer', padding: '0 3px',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+            onMouseLeave={e => e.currentTarget.style.color = '#d1d5db'}>
+            ×
+          </button>
+        </td>
+      </tr>
+      {open && (
+        <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
+          <td colSpan={6} style={{ padding: '4px 6px 8px 28px', background: '#fafafa' }}>
+            {fetching
+              ? <span style={{ fontSize: 11, color: '#9ca3af' }}>Loading…</span>
+              : <LotPillGroup lots={lots} />
+            }
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
 // ─── inline add forms ─────────────────────────────────────────────────────────
 
 function AddForm({ fields, onSave, onCancel, saving, error }) {
@@ -274,40 +409,18 @@ function PhaseRow({ phase, lotTypes, onRefresh }) {
               </thead>
               <tbody>
                 {tableRows.map(r => (
-                  <tr key={r.ltId} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                    <td style={{ padding: '3px 6px', color: '#374151' }}>
-                      {lotTypeMap[r.ltId]?.lot_type_short ?? `#${r.ltId}`}
-                    </td>
-                    <td style={{ padding: '3px 6px', textAlign: 'right' }}>
-                      <EditableCount
-                        value={r.projected}
-                        onSave={n => handleSaveTotal(r.ltId, n)}
-                      />
-                    </td>
-                    <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>
-                      {r.realMarks}
-                    </td>
-                    <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>
-                      {r.realPre}
-                    </td>
-                    <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>
-                      {r.sim}
-                    </td>
-                    <td style={{ padding: '3px 2px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => handleDelete(r.ltId)}
-                        title="Remove lot type"
-                        style={{
-                          fontSize: 14, lineHeight: 1, color: '#d1d5db',
-                          background: 'none', border: 'none',
-                          cursor: 'pointer', padding: '0 3px',
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
-                        onMouseLeave={e => e.currentTarget.style.color = '#d1d5db'}>
-                        ×
-                      </button>
-                    </td>
-                  </tr>
+                  <LotTypeRow
+                    key={r.ltId}
+                    phaseId={phase.phase_id}
+                    ltId={r.ltId}
+                    lotTypeName={lotTypeMap[r.ltId]?.lot_type_short ?? `#${r.ltId}`}
+                    projected={r.projected}
+                    realMarks={r.realMarks}
+                    realPre={r.realPre}
+                    sim={r.sim}
+                    onSaveTotal={n => handleSaveTotal(r.ltId, n)}
+                    onDelete={() => handleDelete(r.ltId)}
+                  />
                 ))}
               </tbody>
             </table>
