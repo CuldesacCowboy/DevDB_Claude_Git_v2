@@ -214,17 +214,26 @@ async def get_lots_for_lot_type(
     try:
         cur.execute(
             """
-            SELECT lot_id, lot_number, lot_source
-            FROM sim_lots
-            WHERE phase_id = %s AND lot_type_id = %s AND excluded IS NOT TRUE
+            SELECT sl.lot_id, sl.lot_number, sl.lot_source,
+                EXISTS (
+                    SELECT 1 FROM devdb.marks_lot_registry mlr
+                    WHERE mlr.lot_number = sl.lot_number
+                ) AS in_registry
+            FROM sim_lots sl
+            WHERE sl.phase_id = %s AND sl.lot_type_id = %s AND sl.excluded IS NOT TRUE
             ORDER BY
-                CASE lot_source WHEN 'real' THEN 1 WHEN 'pre' THEN 2 ELSE 3 END,
-                lot_id
+                CASE sl.lot_source WHEN 'real' THEN 1 WHEN 'pre' THEN 2 ELSE 3 END,
+                sl.lot_id
             """,
             (phase_id, lot_type_id),
         )
         return [
-            {"lot_id": r["lot_id"], "lot_number": r["lot_number"], "lot_source": r["lot_source"]}
+            {
+                "lot_id": r["lot_id"],
+                "lot_number": r["lot_number"],
+                "lot_source": r["lot_source"],
+                "in_registry": bool(r["in_registry"]),
+            }
             for r in cur.fetchall()
         ]
     finally:

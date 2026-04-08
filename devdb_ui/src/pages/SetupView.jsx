@@ -171,9 +171,9 @@ function LotPillGroup({ lots, targetPhases, onMoveLot }) {
     )
   }
   const groups = [
-    { key: 'real', label: 'MARKS', items: lots.filter(l => l.lot_source === 'real') },
-    { key: 'pre',  label: 'Pre',   items: lots.filter(l => l.lot_source === 'pre')  },
-    { key: 'sim',  label: 'Sim',   items: lots.filter(l => l.lot_source === 'sim')  },
+    { key: 'marks', label: 'MARKS', items: lots.filter(l => l.lot_source === 'real' && l.in_registry) },
+    { key: 'pre',   label: 'Pre',   items: lots.filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
+    { key: 'sim',   label: 'Sim',   items: lots.filter(l => l.lot_source === 'sim')  },
   ].filter(g => g.items.length > 0)
 
   return (
@@ -420,8 +420,8 @@ function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
   const tableRows = ltIds.map(ltId => {
     const counts    = phase.lot_type_counts?.[ltId] ?? {}
     const projected = phase.product_splits?.[ltId]  ?? 0
-    const realMarks = counts.real ?? 0
-    const realPre   = counts.pre  ?? 0
+    const realMarks = counts.marks ?? 0
+    const realPre   = counts.pre   ?? 0
     const sim       = Math.max(0, projected - realMarks - realPre)
     return { ltId, projected, realMarks, realPre, sim }
   })

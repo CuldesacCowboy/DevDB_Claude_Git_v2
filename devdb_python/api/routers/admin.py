@@ -64,23 +64,35 @@ def get_phase_config(conn=Depends(get_db_conn)):
         phases = cur.fetchall()
         phase_ids = [r['phase_id'] for r in phases]
 
-        # Lot counts by (phase_id, lot_type_id) — real/pre/sim separately
-        lot_count_map = {}   # phase_id -> {lot_type_id: {real: N, pre: N, sim: N}}
+        # Lot counts by (phase_id, lot_type_id) — marks/pre/sim separately.
+        # "marks" = lot_source='real' WITH a marks_lot_registry entry (actively in MARKS).
+        # "pre"   = lot_source='pre' OR lot_source='real' with no registry entry (orphaned).
+        lot_count_map = {}   # phase_id -> {lot_type_id: {marks: N, pre: N, sim: N}}
         if phase_ids:
             cur.execute("""
                 SELECT phase_id, lot_type_id,
-                    COUNT(*) FILTER (WHERE lot_source = 'real' AND excluded IS NOT TRUE) AS real_count,
-                    COUNT(*) FILTER (WHERE lot_source = 'pre'  AND excluded IS NOT TRUE) AS pre_count,
-                    COUNT(*) FILTER (WHERE lot_source = 'sim'  AND excluded IS NOT TRUE) AS sim_count
-                FROM sim_lots
+                    COUNT(*) FILTER (
+                        WHERE lot_source = 'real' AND excluded IS NOT TRUE
+                          AND EXISTS (SELECT 1 FROM devdb.marks_lot_registry mlr
+                                      WHERE mlr.lot_number = sl.lot_number)
+                    ) AS marks_count,
+                    COUNT(*) FILTER (
+                        WHERE excluded IS NOT TRUE
+                          AND (lot_source = 'pre'
+                               OR (lot_source = 'real'
+                                   AND NOT EXISTS (SELECT 1 FROM devdb.marks_lot_registry mlr
+                                                   WHERE mlr.lot_number = sl.lot_number)))
+                    ) AS pre_count,
+                    COUNT(*) FILTER (WHERE lot_source = 'sim' AND excluded IS NOT TRUE) AS sim_count
+                FROM sim_lots sl
                 WHERE phase_id = ANY(%s)
                 GROUP BY phase_id, lot_type_id
             """, (phase_ids,))
             for r in cur.fetchall():
                 lot_count_map.setdefault(r['phase_id'], {})[r['lot_type_id']] = {
-                    'real': r['real_count'],
-                    'pre':  r['pre_count'],
-                    'sim':  r['sim_count'],
+                    'marks': r['marks_count'],
+                    'pre':   r['pre_count'],
+                    'sim':   r['sim_count'],
                 }
 
         # Product splits: phase_id -> {lot_type_id: projected_count}
