@@ -47,7 +47,6 @@ def locked_event_rebuilder(conn, ent_group_id: int) -> int:
     locked_event_ids = [int(r) for r in event_df["delivery_event_id"]]
 
     if locked_event_ids:
-        ids_tuple = tuple(locked_event_ids)
         # Delete predecessors referencing these events (both directions).
         conn.execute(
             """
@@ -55,17 +54,17 @@ def locked_event_rebuilder(conn, ent_group_id: int) -> int:
             WHERE event_id = ANY(%s::bigint[])
                OR predecessor_event_id = ANY(%s::bigint[])
             """,
-            (ids_tuple, ids_tuple),
+            (locked_event_ids, locked_event_ids),
         )
         # Delete event–phase links.
         conn.execute(
             "DELETE FROM sim_delivery_event_phases WHERE delivery_event_id = ANY(%s::bigint[])",
-            (ids_tuple,),
+            (locked_event_ids,),
         )
         # Delete the events themselves.
         conn.execute(
             "DELETE FROM sim_delivery_events WHERE delivery_event_id = ANY(%s::bigint[])",
-            (ids_tuple,),
+            (locked_event_ids,),
         )
         logger.info(
             f"  p_pre: deleted {len(locked_event_ids)} locked delivery event(s) "
