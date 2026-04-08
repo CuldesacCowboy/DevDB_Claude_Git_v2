@@ -171,8 +171,8 @@ function LotPillGroup({ lots, targetPhases, onMoveLot }) {
     )
   }
   const groups = [
-    { key: 'marks', label: 'MARKS', items: lots.filter(l => l.lot_source === 'real' && l.in_registry) },
-    { key: 'pre',   label: 'Pre',   items: lots.filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
+    { key: 'marks', label: 'In MARKS',  items: lots.filter(l => l.lot_source === 'real' && l.in_registry) },
+    { key: 'pre',   label: 'Pre-MARKS', items: lots.filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
     { key: 'sim',   label: 'Sim',   items: lots.filter(l => l.lot_source === 'sim')  },
   ].filter(g => g.items.length > 0)
 
@@ -494,7 +494,7 @@ function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
               <thead>
                 <tr>
-                  {['Product', 'Total', 'MARKS', 'Pre', 'Sim', ''].map((h, i) => (
+                  {['Product', 'Total', 'In MARKS', 'Pre-MARKS', 'Sim', ''].map((h, i) => (
                     <th key={i} style={{
                       textAlign: i === 0 ? 'left' : i === 5 ? 'center' : 'right',
                       padding: '2px 6px 4px',
