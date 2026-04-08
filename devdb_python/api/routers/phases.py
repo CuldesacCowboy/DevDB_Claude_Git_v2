@@ -311,6 +311,40 @@ async def delete_lot_type_from_phase(
         cur.close()
 
 
+@router.patch("/{phase_id}/lot-type/{lot_type_id}/projected/delta", response_model=dict)
+async def adjust_projected_delta(
+    phase_id: int,
+    lot_type_id: int,
+    body: PhaseUpdateRequest,
+    conn=Depends(get_db_conn),
+):
+    """Adjust projected_count by body.projected_count as a signed delta (floors at 0).
+    Upserts the split row if it does not yet exist."""
+    if body.projected_count is None:
+        raise HTTPException(status_code=422, detail="projected_count (delta) required")
+    delta = body.projected_count
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            """
+            INSERT INTO sim_phase_product_splits (phase_id, lot_type_id, projected_count)
+            VALUES (%s, %s, GREATEST(0, %s))
+            ON CONFLICT (phase_id, lot_type_id) DO UPDATE
+                SET projected_count = GREATEST(0, sim_phase_product_splits.projected_count + %s)
+            RETURNING projected_count
+            """,
+            (phase_id, lot_type_id, max(0, delta), delta),
+        )
+        new_count = cur.fetchone()["projected_count"]
+        conn.commit()
+        return {"phase_id": phase_id, "lot_type_id": lot_type_id, "projected_count": new_count}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
 @router.patch("/{phase_id}/lot-type/{lot_type_id}/projected", response_model=dict)
 async def update_lot_type_projected(
     phase_id: int,

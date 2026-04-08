@@ -6,6 +6,13 @@ import { API_BASE } from '../config'
 
 // ─── small helpers ───────────────────────────────────────────────────────────
 
+// Strip leading zeros from the numeric suffix: "WS083" → "WS83", "083" → "83"
+function formatLotNum(s) {
+  if (!s) return s ?? ''
+  const m = s.match(/^([A-Za-z]*)(\d+)$/)
+  return m ? `${m[1]}${parseInt(m[2], 10)}` : s
+}
+
 function ChevronIcon({ open }) {
   return (
     <span style={{
@@ -97,56 +104,16 @@ function LotPill({ label, source }) {
   )
 }
 
-// Lot pill with an inline move-to-phase control
-function MovableLotPill({ lot, targetPhases, onMoved, selected, onSelect }) {
-  const [moving, setMoving] = useState(false)
-  const [saving, setSaving] = useState(false)
-
+// Selectable lot pill — click to select/deselect, shift+click for range
+function MovableLotPill({ lot, selected, onSelect }) {
   const s = pillStyle(lot)
-  const label = lot.lot_number ?? `#${lot.lot_id}`
-
-  async function handleMoveSelect(e) {
-    const targetPhaseId = parseInt(e.target.value, 10)
-    if (!targetPhaseId) return
-    setSaving(true)
-    try {
-      const res = await fetch(`${API_BASE}/lots/${lot.lot_id}/phase`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'setup' }),
-      })
-      if (res.ok) { setMoving(false); onMoved(lot.lot_id) }
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (moving) {
-    return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-        <select
-          autoFocus disabled={saving} defaultValue=""
-          onChange={handleMoveSelect}
-          style={{ fontSize: 11, padding: '1px 3px', borderRadius: 3, border: '1px solid #d1d5db', maxWidth: 200 }}>
-          <option value="" disabled>Move to…</option>
-          {targetPhases.map(p => (
-            <option key={p.phase_id} value={p.phase_id}>{p.instrument_name} · {p.phase_name}</option>
-          ))}
-        </select>
-        <button onClick={() => setMoving(false)}
-          style={{ fontSize: 11, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}>
-          ✕
-        </button>
-      </span>
-    )
-  }
-
+  const label = formatLotNum(lot.lot_number) || `#${lot.lot_id}`
   return (
     <span
       onClick={onSelect}
       style={{
-        display: 'inline-flex', alignItems: 'center', gap: 2,
-        padding: '1px 5px 1px 7px', borderRadius: 10, fontSize: 11,
+        display: 'inline-flex', alignItems: 'center',
+        padding: '1px 7px', borderRadius: 10, fontSize: 11,
         background: selected ? s.border : s.bg,
         color: s.text,
         border: `1px solid ${selected ? s.text : s.border}`,
@@ -155,20 +122,6 @@ function MovableLotPill({ lot, targetPhases, onMoved, selected, onSelect }) {
         whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none',
       }}>
       {label}
-      {targetPhases.length > 0 && (
-        <button
-          onClick={e => { e.stopPropagation(); setMoving(true) }}
-          title="Move to another phase"
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            padding: 0, fontSize: 10, color: 'inherit',
-            opacity: 0.4, lineHeight: 1, marginLeft: 1,
-          }}
-          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-          onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}>
-          →
-        </button>
-      )}
     </span>
   )
 }
@@ -189,11 +142,8 @@ function AddPreLotsPanel({ phaseId, ltId, onAdded }) {
 
   const pre = LOT_PILL.pre
 
-  function rebuildNums(r, p, s, w) {
-    return r.map((row, i) => ({
-      ...row,
-      lot_number: `${(p || '').toUpperCase()}${String(s + i).padStart(Math.max(1, w), '0')}`,
-    }))
+  function rebuildNums(r, p, s) {
+    return r.map((row, i) => ({ ...row, lot_number: `${(p || '').toUpperCase()}${s + i}` }))
   }
 
   async function fetchSuggestions() {
@@ -206,8 +156,10 @@ function AddPreLotsPanel({ phaseId, ltId, onAdded }) {
       })
       const data = await res.json()
       if (!res.ok) { setError(data.detail ?? 'Failed'); return }
-      setPrefix(data.prefix); setStartSeq(data.next_seq); setPadWidth(data.pad_width)
-      setRows(data.suggestions); setStep('review')
+      setPrefix(data.prefix); setStartSeq(data.next_seq)
+      // Strip any leading zeros from suggestion lot_numbers (legacy data may be padded)
+      setRows(data.suggestions.map(r => ({ ...r, lot_number: formatLotNum(r.lot_number) || r.lot_number })))
+      setStep('review')
     } catch { setError('Network error') }
     finally { setLoading(false) }
   }
@@ -276,12 +228,12 @@ function AddPreLotsPanel({ phaseId, ltId, onAdded }) {
         <span style={{ fontSize: 11, color: '#6b7280' }}>Prefix</span>
         <input value={prefix} onChange={e => {
           const p = e.target.value.toUpperCase()
-          setPrefix(p); setRows(prev => rebuildNums(prev, p, startSeq, padWidth))
+          setPrefix(p); setRows(prev => rebuildNums(prev, p, startSeq))
         }} style={{ ...INP, width: 52 }} />
         <span style={{ fontSize: 11, color: '#6b7280' }}>Start #</span>
         <input type="number" min={1} value={startSeq} onChange={e => {
           const s = Math.max(1, parseInt(e.target.value) || 1)
-          setStartSeq(s); setRows(prev => rebuildNums(prev, prefix, s, padWidth))
+          setStartSeq(s); setRows(prev => rebuildNums(prev, prefix, s))
         }} style={{ ...INP, width: 60 }} />
         <button onClick={handleInsert} disabled={saving}
           style={BTN({ background: '#f0fdf4', color: '#15803d', borderColor: '#86efac' })}>
@@ -345,25 +297,38 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
     setBulkSaving(true); setBulkError(null)
     try {
       await Promise.all(ids.map(apiFn))
-      onDone()
+      await onDone()
     } catch { setBulkError('Operation failed') }
     finally { setBulkSaving(false) }
   }
 
+  function adjustDelta(pid, lid, delta) {
+    return fetch(`${API_BASE}/phases/${pid}/lot-type/${lid}/projected/delta`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projected_count: delta }),
+    })
+  }
+
   async function handleBulkMove(targetPhaseId) {
-    const ids = [...selectedIds]
+    const ids = [...selectedIds]; const N = ids.length
     await runBulk(ids, id => fetch(`${API_BASE}/lots/${id}/phase`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'setup' }),
-    }), () => { onLotsRemoved(ids); deselectAll() })
+    }), async () => {
+      await Promise.all([adjustDelta(phaseId, ltId, -N), adjustDelta(targetPhaseId, ltId, N)])
+      onLotsRemoved(ids); deselectAll()
+    })
   }
 
   async function handleBulkChangeType(newLtId) {
-    const ids = [...selectedIds]
+    const ids = [...selectedIds]; const N = ids.length
     await runBulk(ids, id => fetch(`${API_BASE}/lots/${id}/lot-type`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ lot_type_id: newLtId, changed_by: 'setup' }),
-    }), () => { onLotsRemoved(ids); deselectAll(); onRefresh() })
+    }), async () => {
+      await Promise.all([adjustDelta(phaseId, ltId, -N), adjustDelta(phaseId, newLtId, N)])
+      onLotsRemoved(ids); deselectAll(); onRefresh()
+    })
   }
 
   async function handleBulkDelete() {
@@ -474,8 +439,6 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
                 <MovableLotPill
                   key={l.lot_id}
                   lot={l}
-                  targetPhases={targetPhases}
-                  onMoved={onMoveLot}
                   selected={selectedIds.has(l.lot_id)}
                   onSelect={e => handlePillClick(l, e)}
                 />

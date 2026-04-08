@@ -84,7 +84,7 @@ def _infer_pattern(cur, dev_id: int, dev_code: str):
 
 
 def _format_lot_number(prefix: str, seq: int, pad_width: int) -> str:
-    return f"{prefix}{str(seq).zfill(pad_width)}"
+    return f"{prefix}{seq}"  # no zero-padding — display as plain integer
 
 
 def _maintain_splits(cur, phase_id: int) -> None:
