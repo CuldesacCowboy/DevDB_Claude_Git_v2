@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: April 2026 (2026-04-05) | Architecture v20 | Decision Log: D-001 through D-155 | Next ID: D-156*
+*Last updated: April 2026 (2026-04-08) | Architecture v20 | Decision Log: D-001 through D-155 | Next ID: D-156*
 
 ---
 

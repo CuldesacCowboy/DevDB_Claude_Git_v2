@@ -25,7 +25,7 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Imports: psycopg2
 - Imported by: coordinator.py (called as first step of run_supply_pipeline)
 - Tables: sim_delivery_events, sim_delivery_event_phases, sim_delivery_event_predecessors, sim_dev_phases, sim_ent_group_developments, sim_legal_instruments
-- Last commit: 2026-04-05
+- Last commit: 2026-04-08
 
 ### devdb_python/engine/s0100_lot_loader.py
 - Owns: S-0100 -- loads real lots for ent_group from sim_lots into a DataFrame
@@ -106,10 +106,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/s1100_persistence_writer.py
-- Owns: S-1100 -- atomic DELETE+INSERT of sim lots; assigns lot_id via MAX(lot_id)+offset per D-086
+- Owns: S-1100 -- atomic DELETE+INSERT of sim lots; assigns lot_id via MAX(lot_id)+offset per D-086; _LOCKED_COLS frozenset defaults NOT NULL boolean columns (locked flags + excluded) to False for sim lots
 - Imported by: coordinator.py
 - Tables: sim_lots (DELETE sim rows, INSERT new sim rows)
-- Last commit: 2026-03-26
+- Last commit: 2026-04-08
 
 ### devdb_python/engine/s1200_ledger_aggregator.py
 - Owns: S-1200 -- creates/replaces v_sim_ledger_monthly view; COUNT-based pipeline stage counts
