@@ -19,8 +19,9 @@ function ChevronIcon({ open }) {
 
 // ─── editable integer cell ────────────────────────────────────────────────────
 
-function EditableCount({ value, onSave }) {
+function EditableCount({ value, onSave, min = 0 }) {
   const [local, setLocal] = useState(String(value ?? 0))
+  const [error, setError] = useState(false)
   const committed = useRef(value)
 
   useEffect(() => {
@@ -32,17 +33,22 @@ function EditableCount({ value, onSave }) {
 
   function commit() {
     const n = parseInt(local, 10)
-    if (!isNaN(n) && n >= 0) {
+    if (!isNaN(n) && n >= min) {
+      setError(false)
       committed.current = n
       if (n !== (value ?? 0)) onSave(n)
     } else {
-      setLocal(String(value ?? 0))
+      setError(true)
+      setTimeout(() => {
+        setError(false)
+        setLocal(String(value ?? 0))
+      }, 600)
     }
   }
 
   return (
     <input
-      type="number" min={0}
+      type="number" min={min}
       value={local}
       onChange={e => setLocal(e.target.value)}
       onBlur={commit}
@@ -53,7 +59,9 @@ function EditableCount({ value, onSave }) {
       style={{
         width: 52, textAlign: 'right', fontSize: 12,
         padding: '1px 4px', borderRadius: 3,
-        border: '1px solid #d1d5db',
+        border: `1px solid ${error ? '#ef4444' : '#d1d5db'}`,
+        background: error ? '#fef2f2' : undefined,
+        transition: 'border-color 0.15s, background 0.15s',
       }}
     />
   )
@@ -170,10 +178,15 @@ function LotPillGroup({ lots, targetPhases, onMoveLot }) {
       <span style={{ fontSize: 11, color: '#d1d5db', fontStyle: 'italic' }}>no lots</span>
     )
   }
+  const GROUP_LABEL_COLOR = {
+    marks: '#1d4ed8',  // blue — matches In MARKS pill text
+    pre:   '#92400e',  // amber — matches Pre-MARKS pill text
+    sim:   '#9ca3af',  // gray
+  }
   const groups = [
     { key: 'marks', label: 'In MARKS',  items: lots.filter(l => l.lot_source === 'real' && l.in_registry) },
     { key: 'pre',   label: 'Pre-MARKS', items: lots.filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
-    { key: 'sim',   label: 'Sim',   items: lots.filter(l => l.lot_source === 'sim')  },
+    { key: 'sim',   label: 'Sim',       items: lots.filter(l => l.lot_source === 'sim')  },
   ].filter(g => g.items.length > 0)
 
   return (
@@ -181,8 +194,9 @@ function LotPillGroup({ lots, targetPhases, onMoveLot }) {
       {groups.map(g => (
         <div key={g.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
           <span style={{
-            fontSize: 10, color: '#9ca3af', minWidth: 36,
-            paddingTop: 3, textAlign: 'right', flexShrink: 0,
+            fontSize: 10, color: GROUP_LABEL_COLOR[g.key] ?? '#9ca3af',
+            minWidth: 36, paddingTop: 3, textAlign: 'right', flexShrink: 0,
+            fontWeight: g.key !== 'sim' ? 600 : 400,
           }}>
             {g.label}
           </span>
@@ -255,7 +269,7 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
           {lotTypeName}
         </td>
         <td style={{ padding: '3px 6px', textAlign: 'right' }}>
-          <EditableCount value={projected} onSave={onSaveTotal} />
+          <EditableCount value={projected} onSave={onSaveTotal} min={realMarks + realPre} />
         </td>
         <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{realMarks}</td>
         <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{realPre}</td>
