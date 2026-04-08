@@ -82,16 +82,98 @@ function LotPill({ label, source }) {
   )
 }
 
-function LotPillGroup({ lots }) {
+// Lot pill with an inline move-to-phase control
+function MovableLotPill({ lot, targetPhases, onMoved }) {
+  const [moving, setMoving] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const s = LOT_PILL[lot.lot_source] ?? LOT_PILL.sim
+  const label = lot.lot_number ?? `#${lot.lot_id}`
+
+  async function handleSelect(e) {
+    const targetPhaseId = parseInt(e.target.value, 10)
+    if (!targetPhaseId) return
+    setSaving(true)
+    try {
+      const res = await fetch(`${API_BASE}/lots/${lot.lot_id}/phase`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_phase_id: targetPhaseId, changed_by: 'setup' }),
+      })
+      if (res.ok) { setMoving(false); onMoved(lot.lot_id) }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (moving) {
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+        <select
+          autoFocus
+          disabled={saving}
+          defaultValue=""
+          onChange={handleSelect}
+          style={{
+            fontSize: 11, padding: '1px 3px', borderRadius: 3,
+            border: '1px solid #d1d5db', maxWidth: 200,
+          }}>
+          <option value="" disabled>Move to…</option>
+          {targetPhases.map(p => (
+            <option key={p.phase_id} value={p.phase_id}>
+              {p.instrument_name} · {p.phase_name}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={() => setMoving(false)}
+          style={{
+            fontSize: 11, color: '#9ca3af', background: 'none',
+            border: 'none', cursor: 'pointer', padding: '0 2px', lineHeight: 1,
+          }}>
+          ✕
+        </button>
+      </span>
+    )
+  }
+
+  return (
+    <span
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 2,
+        padding: '1px 5px 1px 7px', borderRadius: 10, fontSize: 11,
+        background: s.bg, color: s.text, border: `1px solid ${s.border}`,
+        whiteSpace: 'nowrap',
+      }}>
+      {label}
+      {targetPhases.length > 0 && (
+        <button
+          onClick={() => setMoving(true)}
+          title="Move to another phase"
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            padding: 0, fontSize: 10, color: 'inherit',
+            opacity: 0.4, lineHeight: 1, marginLeft: 1,
+          }}
+          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+          onMouseLeave={e => e.currentTarget.style.opacity = '0.4'}>
+          →
+        </button>
+      )}
+    </span>
+  )
+}
+
+function LotPillGroup({ lots, targetPhases, onMoveLot }) {
   if (!lots || lots.length === 0) {
     return (
       <span style={{ fontSize: 11, color: '#d1d5db', fontStyle: 'italic' }}>no lots</span>
     )
   }
   const groups = [
-    { key: 'real', label: 'MARKS',  items: lots.filter(l => l.lot_source === 'real') },
-    { key: 'pre',  label: 'Pre',    items: lots.filter(l => l.lot_source === 'pre')  },
-    { key: 'sim',  label: 'Sim',    items: lots.filter(l => l.lot_source === 'sim')  },
+    { key: 'real', label: 'MARKS', items: lots.filter(l => l.lot_source === 'real') },
+    { key: 'pre',  label: 'Pre',   items: lots.filter(l => l.lot_source === 'pre')  },
+    { key: 'sim',  label: 'Sim',   items: lots.filter(l => l.lot_source === 'sim')  },
   ].filter(g => g.items.length > 0)
 
   return (
@@ -105,13 +187,18 @@ function LotPillGroup({ lots }) {
             {g.label}
           </span>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-            {g.items.map(l => (
-              <LotPill
-                key={l.lot_id}
-                label={l.lot_source === 'sim' ? 'sim' : (l.lot_number ?? `#${l.lot_id}`)}
-                source={l.lot_source}
-              />
-            ))}
+            {g.items.map(l =>
+              l.lot_source === 'sim' ? (
+                <LotPill key={l.lot_id} label="sim" source="sim" />
+              ) : (
+                <MovableLotPill
+                  key={l.lot_id}
+                  lot={l}
+                  targetPhases={targetPhases}
+                  onMoved={onMoveLot}
+                />
+              )
+            )}
           </div>
         </div>
       ))}
@@ -121,7 +208,8 @@ function LotPillGroup({ lots }) {
 
 // ─── LotTypeRow — one table row + optional lot-pill detail row ────────────────
 
-function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre, sim, onSaveTotal, onDelete }) {
+function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre, sim,
+                       targetPhases, onSaveTotal, onDelete, onRefresh }) {
   const [open, setOpen] = useState(false)
   const [lots, setLots] = useState(null)
   const [fetching, setFetching] = useState(false)
@@ -138,6 +226,12 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
         setFetching(false)
       }
     }
+  }
+
+  function handleLotMoved(movedLotId) {
+    // Remove lot from local list immediately for instant feedback
+    setLots(prev => prev ? prev.filter(l => l.lot_id !== movedLotId) : null)
+    onRefresh()
   }
 
   return (
@@ -185,7 +279,7 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
           <td colSpan={6} style={{ padding: '4px 6px 8px 28px', background: '#fafafa' }}>
             {fetching
               ? <span style={{ fontSize: 11, color: '#9ca3af' }}>Loading…</span>
-              : <LotPillGroup lots={lots} />
+              : <LotPillGroup lots={lots} targetPhases={targetPhases} onMoveLot={handleLotMoved} />
             }
           </td>
         </tr>
@@ -302,7 +396,11 @@ function AddButton({ label, onClick }) {
 
 // ─── Phase row — expandable lot-type table ────────────────────────────────────
 
-function PhaseRow({ phase, lotTypes, onRefresh }) {
+function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
+  // All other phases in the same development — valid move targets
+  const targetPhases = (phases || []).filter(
+    p => p.dev_id === phase.dev_id && p.phase_id !== phase.phase_id
+  )
   const [open, setOpen] = useState(false)
   const [addLtOpen, setAddLtOpen] = useState(false)
   const [addLtId, setAddLtId] = useState('')
@@ -418,8 +516,10 @@ function PhaseRow({ phase, lotTypes, onRefresh }) {
                     realMarks={r.realMarks}
                     realPre={r.realPre}
                     sim={r.sim}
+                    targetPhases={targetPhases}
                     onSaveTotal={n => handleSaveTotal(r.ltId, n)}
                     onDelete={() => handleDelete(r.ltId)}
+                    onRefresh={onRefresh}
                   />
                 ))}
               </tbody>
@@ -528,6 +628,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRefresh }) {
             <PhaseRow
               key={p.phase_id}
               phase={p}
+              phases={phases}
               lotTypes={lotTypes}
               onRefresh={onRefresh}
             />
