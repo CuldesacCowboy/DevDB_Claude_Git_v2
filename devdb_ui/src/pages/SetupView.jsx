@@ -70,9 +70,16 @@ function EditableCount({ value, onSave, min = 0 }) {
 // ─── lot pills ───────────────────────────────────────────────────────────────
 
 const LOT_PILL = {
-  real: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
-  pre:  { bg: '#fffbeb', text: '#92400e', border: '#fde68a' },
-  sim:  { bg: '#f3f4f6', text: '#9ca3af', border: '#e5e7eb' },
+  marks: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
+  pre:   { bg: '#fffbeb', text: '#92400e', border: '#fde68a' },
+  sim:   { bg: '#f3f4f6', text: '#9ca3af', border: '#e5e7eb' },
+}
+
+// Resolve pill style from lot data: orphaned real (no registry match) → pre/amber
+function pillStyle(lot) {
+  if (lot.lot_source === 'sim') return LOT_PILL.sim
+  if (lot.lot_source === 'real' && lot.in_registry) return LOT_PILL.marks
+  return LOT_PILL.pre
 }
 
 function LotPill({ label, source }) {
@@ -95,7 +102,7 @@ function MovableLotPill({ lot, targetPhases, onMoved }) {
   const [moving, setMoving] = useState(false)
   const [saving, setSaving] = useState(false)
 
-  const s = LOT_PILL[lot.lot_source] ?? LOT_PILL.sim
+  const s = pillStyle(lot)
   const label = lot.lot_number ?? `#${lot.lot_id}`
 
   async function handleSelect(e) {
@@ -172,21 +179,100 @@ function MovableLotPill({ lot, targetPhases, onMoved }) {
   )
 }
 
-function LotPillGroup({ lots, targetPhases, onMoveLot }) {
-  if (!lots || lots.length === 0) {
+function InlineAddPreLot({ phaseId, ltId, onAdded }) {
+  const [adding, setAdding]     = useState(false)
+  const [lotNumber, setLotNumber] = useState('')
+  const [saving, setSaving]     = useState(false)
+  const [error, setError]       = useState(null)
+  const inputRef = useRef(null)
+
+  useEffect(() => { if (adding) inputRef.current?.focus() }, [adding])
+
+  async function handleSave() {
+    const ln = lotNumber.trim()
+    if (!ln) return
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/bulk-lots/insert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lots: [{ lot_number: ln, lot_type_id: ltId, phase_id: phaseId }] }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.detail ?? 'Failed'); return }
+      setLotNumber('')
+      setAdding(false)
+      onAdded({ ...data.inserted[0], lot_source: 'pre', in_registry: false })
+    } catch { setError('Network error') }
+    finally { setSaving(false) }
+  }
+
+  const preStyle = LOT_PILL.pre
+  if (!adding) {
     return (
-      <span style={{ fontSize: 11, color: '#d1d5db', fontStyle: 'italic' }}>no lots</span>
+      <button
+        onClick={() => setAdding(true)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 3,
+          padding: '1px 7px', borderRadius: 10, fontSize: 11,
+          background: 'none', color: preStyle.text,
+          border: `1px dashed ${preStyle.border}`,
+          cursor: 'pointer',
+        }}>
+        + Pre-MARKS
+      </button>
     )
   }
-  const GROUP_LABEL_COLOR = {
-    marks: '#1d4ed8',  // blue — matches In MARKS pill text
-    pre:   '#92400e',  // amber — matches Pre-MARKS pill text
-    sim:   '#9ca3af',  // gray
-  }
+
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+      <input
+        ref={inputRef}
+        value={lotNumber}
+        onChange={e => setLotNumber(e.target.value)}
+        placeholder="Lot number"
+        onKeyDown={e => {
+          if (e.key === 'Enter') handleSave()
+          if (e.key === 'Escape') { setAdding(false); setLotNumber(''); setError(null) }
+        }}
+        style={{
+          width: 90, fontSize: 11, padding: '1px 5px', borderRadius: 3,
+          border: `1px solid ${error ? '#ef4444' : '#d1d5db'}`,
+        }}
+      />
+      <button
+        onClick={handleSave} disabled={saving}
+        style={{
+          fontSize: 11, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
+          background: '#f0fdf4', color: '#15803d', border: '1px solid #86efac',
+        }}>
+        {saving ? '…' : '✓'}
+      </button>
+      <button
+        onClick={() => { setAdding(false); setLotNumber(''); setError(null) }}
+        style={{
+          fontSize: 11, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
+          background: 'none', color: '#9ca3af', border: '1px solid #e5e7eb',
+        }}>
+        ✕
+      </button>
+      {error && <span style={{ fontSize: 11, color: '#ef4444' }}>{error}</span>}
+    </div>
+  )
+}
+
+const GROUP_LABEL_COLOR = {
+  marks: '#1d4ed8',
+  pre:   '#92400e',
+  sim:   '#9ca3af',
+}
+
+function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded }) {
   const groups = [
-    { key: 'marks', label: 'In MARKS',  items: lots.filter(l => l.lot_source === 'real' && l.in_registry) },
-    { key: 'pre',   label: 'Pre-MARKS', items: lots.filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
-    { key: 'sim',   label: 'Sim',       items: lots.filter(l => l.lot_source === 'sim')  },
+    { key: 'marks', label: 'In MARKS',  items: (lots ?? []).filter(l => l.lot_source === 'real' && l.in_registry) },
+    { key: 'pre',   label: 'Pre-MARKS', items: (lots ?? []).filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
+    { key: 'sim',   label: 'Sim',       items: (lots ?? []).filter(l => l.lot_source === 'sim') },
   ].filter(g => g.items.length > 0)
 
   return (
@@ -216,6 +302,10 @@ function LotPillGroup({ lots, targetPhases, onMoveLot }) {
           </div>
         </div>
       ))}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+        <span style={{ minWidth: 36, flexShrink: 0 }} />
+        <InlineAddPreLot phaseId={phaseId} ltId={ltId} onAdded={onLotAdded} />
+      </div>
     </div>
   )
 }
@@ -243,8 +333,12 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
   }
 
   function handleLotMoved(movedLotId) {
-    // Remove lot from local list immediately for instant feedback
     setLots(prev => prev ? prev.filter(l => l.lot_id !== movedLotId) : null)
+    onRefresh()
+  }
+
+  function handleLotAdded(newLot) {
+    setLots(prev => [...(prev ?? []), newLot])
     onRefresh()
   }
 
@@ -293,7 +387,8 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
           <td colSpan={6} style={{ padding: '4px 6px 8px 28px', background: '#fafafa' }}>
             {fetching
               ? <span style={{ fontSize: 11, color: '#9ca3af' }}>Loading…</span>
-              : <LotPillGroup lots={lots} targetPhases={targetPhases} onMoveLot={handleLotMoved} />
+              : <LotPillGroup lots={lots} targetPhases={targetPhases} onMoveLot={handleLotMoved}
+                              phaseId={phaseId} ltId={ltId} onLotAdded={handleLotAdded} />
             }
           </td>
         </tr>
