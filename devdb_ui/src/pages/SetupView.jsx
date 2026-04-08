@@ -13,6 +13,15 @@ function formatLotNum(s) {
   return m ? `${m[1]}${parseInt(m[2], 10)}` : s
 }
 
+// Fixed-width display: "WS1" → "WS__1" when maxDigits=3 (underscore-padded, monospace)
+function formatLotNumPadded(s, maxDigits) {
+  if (!s) return s ?? ''
+  const m = s.match(/^([A-Za-z]*)(\d+)$/)
+  if (!m) return s
+  const numStr = String(parseInt(m[2], 10))
+  return `${m[1]}${'_'.repeat(Math.max(0, maxDigits - numStr.length))}${numStr}`
+}
+
 function ChevronIcon({ open }) {
   return (
     <span style={{
@@ -105,15 +114,16 @@ function LotPill({ label, source }) {
 }
 
 // Selectable lot pill — click to select/deselect, shift+click for range
-function MovableLotPill({ lot, selected, onSelect }) {
+function MovableLotPill({ lot, selected, onSelect, maxDigits = 1 }) {
   const s = pillStyle(lot)
-  const label = formatLotNum(lot.lot_number) || `#${lot.lot_id}`
+  const label = formatLotNumPadded(lot.lot_number, maxDigits) || `#${lot.lot_id}`
   return (
     <span
       onClick={onSelect}
       style={{
         display: 'inline-flex', alignItems: 'center',
         padding: '1px 7px', borderRadius: 10, fontSize: 11,
+        fontFamily: 'monospace',
         background: selected ? s.border : s.bg,
         color: s.text,
         border: `1px solid ${selected ? s.text : s.border}`,
@@ -347,6 +357,12 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
     background: 'none', border: '1px solid #e5e7eb', color: '#6b7280', ...extra,
   })
 
+  // Max digit count across all non-sim lot numbers → uniform pill width
+  const digitLengths = allLots
+    .filter(l => l.lot_number)
+    .map(l => { const m = l.lot_number.match(/^[A-Za-z]*(\d+)$/); return m ? String(parseInt(m[1], 10)).length : 0 })
+  const maxDigits = digitLengths.length > 0 ? Math.max(...digitLengths) : 1
+
   const groups = [
     { key: 'marks', label: 'In MARKS',  items: allLots.filter(l => l.lot_source === 'real' && l.in_registry) },
     { key: 'pre',   label: 'Pre-MARKS', items: allLots.filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
@@ -428,7 +444,7 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
         <div key={g.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
           <span style={{
             fontSize: 10, color: GROUP_LABEL_COLOR[g.key] ?? '#9ca3af',
-            minWidth: 36, paddingTop: 3, textAlign: 'right', flexShrink: 0,
+            width: 70, paddingTop: 3, textAlign: 'right', flexShrink: 0,
             fontWeight: g.key !== 'sim' ? 600 : 400,
           }}>{g.label}</span>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
@@ -439,6 +455,7 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
                 <MovableLotPill
                   key={l.lot_id}
                   lot={l}
+                  maxDigits={maxDigits}
                   selected={selectedIds.has(l.lot_id)}
                   onSelect={e => handlePillClick(l, e)}
                 />
@@ -450,7 +467,7 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
 
       {/* ── Add Pre-MARKS ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-        <span style={{ minWidth: 36, flexShrink: 0 }} />
+        <span style={{ width: 70, flexShrink: 0 }} />
         <AddPreLotsPanel phaseId={phaseId} ltId={ltId} onAdded={onLotAdded} />
       </div>
     </div>
