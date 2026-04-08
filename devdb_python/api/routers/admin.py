@@ -64,12 +64,13 @@ def get_phase_config(conn=Depends(get_db_conn)):
         phases = cur.fetchall()
         phase_ids = [r['phase_id'] for r in phases]
 
-        # Lot counts by (phase_id, lot_type_id) — real and sim separately
-        lot_count_map = {}   # phase_id -> {lot_type_id: {real: N, sim: N}}
+        # Lot counts by (phase_id, lot_type_id) — real/pre/sim separately
+        lot_count_map = {}   # phase_id -> {lot_type_id: {real: N, pre: N, sim: N}}
         if phase_ids:
             cur.execute("""
                 SELECT phase_id, lot_type_id,
                     COUNT(*) FILTER (WHERE lot_source = 'real' AND excluded IS NOT TRUE) AS real_count,
+                    COUNT(*) FILTER (WHERE lot_source = 'pre'  AND excluded IS NOT TRUE) AS pre_count,
                     COUNT(*) FILTER (WHERE lot_source = 'sim'  AND excluded IS NOT TRUE) AS sim_count
                 FROM sim_lots
                 WHERE phase_id = ANY(%s)
@@ -78,6 +79,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
             for r in cur.fetchall():
                 lot_count_map.setdefault(r['phase_id'], {})[r['lot_type_id']] = {
                     'real': r['real_count'],
+                    'pre':  r['pre_count'],
                     'sim':  r['sim_count'],
                 }
 

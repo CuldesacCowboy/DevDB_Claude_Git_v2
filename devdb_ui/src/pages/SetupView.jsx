@@ -1,17 +1,10 @@
 // SetupView.jsx
-// Hierarchical setup tree: Community → Development → Instrument → Phase → Lots
+// Hierarchical setup tree: Community → Development → Instrument → Phase → Lot Types
 
 import { useState, useEffect, useRef } from 'react'
-import BulkLotInsertModal from '../components/BulkLotInsertModal'
 import { API_BASE } from '../config'
 
 // ─── small helpers ───────────────────────────────────────────────────────────
-
-function totalLots(lot_type_counts) {
-  return Object.values(lot_type_counts || {}).reduce(
-    (s, v) => s + (v.real || 0) + (v.sim || 0), 0
-  )
-}
 
 function ChevronIcon({ open }) {
   return (
@@ -21,6 +14,48 @@ function ChevronIcon({ open }) {
       transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
       color: '#9ca3af', fontSize: 10, lineHeight: 1,
     }}>▶</span>
+  )
+}
+
+// ─── editable integer cell ────────────────────────────────────────────────────
+
+function EditableCount({ value, onSave }) {
+  const [local, setLocal] = useState(String(value ?? 0))
+  const committed = useRef(value)
+
+  useEffect(() => {
+    if (value !== committed.current) {
+      setLocal(String(value ?? 0))
+      committed.current = value
+    }
+  }, [value])
+
+  function commit() {
+    const n = parseInt(local, 10)
+    if (!isNaN(n) && n >= 0) {
+      committed.current = n
+      if (n !== (value ?? 0)) onSave(n)
+    } else {
+      setLocal(String(value ?? 0))
+    }
+  }
+
+  return (
+    <input
+      type="number" min={0}
+      value={local}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter') { commit(); e.target.blur() }
+        if (e.key === 'Escape') { setLocal(String(value ?? 0)); e.target.blur() }
+      }}
+      style={{
+        width: 52, textAlign: 'right', fontSize: 12,
+        padding: '1px 4px', borderRadius: 3,
+        border: '1px solid #d1d5db',
+      }}
+    />
   )
 }
 
@@ -130,35 +165,213 @@ function AddButton({ label, onClick }) {
   )
 }
 
-// ─── Phase row ───────────────────────────────────────────────────────────────
+// ─── Phase row — expandable lot-type table ────────────────────────────────────
 
-function PhaseRow({ phase, lotTypes, onAddLots }) {
-  const lots = totalLots(phase.lot_type_counts)
+function PhaseRow({ phase, lotTypes, onRefresh }) {
+  const [open, setOpen] = useState(false)
+  const [addLtOpen, setAddLtOpen] = useState(false)
+  const [addLtId, setAddLtId] = useState('')
+  const [addSaving, setAddSaving] = useState(false)
+  const [addError, setAddError] = useState(null)
+
+  const lotTypeMap = Object.fromEntries(
+    (lotTypes || []).map(lt => [lt.lot_type_id, lt])
+  )
+
+  // Collect all lot type IDs present in splits or actual lots
+  const ltIds = [...new Set([
+    ...Object.keys(phase.lot_type_counts || {}),
+    ...Object.keys(phase.product_splits || {}),
+  ].map(Number))].sort((a, b) => a - b)
+
+  const tableRows = ltIds.map(ltId => {
+    const counts    = phase.lot_type_counts?.[ltId] ?? {}
+    const projected = phase.product_splits?.[ltId]  ?? 0
+    const realMarks = counts.real ?? 0
+    const realPre   = counts.pre  ?? 0
+    const sim       = Math.max(0, projected - realMarks - realPre)
+    return { ltId, projected, realMarks, realPre, sim }
+  })
+
+  const availableLotTypes = (lotTypes || []).filter(
+    lt => !ltIds.includes(lt.lot_type_id)
+  )
+
+  async function handleSaveTotal(ltId, newCount) {
+    const res = await fetch(
+      `${API_BASE}/phases/${phase.phase_id}/lot-type/${ltId}/projected`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projected_count: newCount }),
+      }
+    )
+    if (res.ok) onRefresh()
+  }
+
+  async function handleDelete(ltId) {
+    const res = await fetch(
+      `${API_BASE}/phases/${phase.phase_id}/lot-type/${ltId}`,
+      { method: 'DELETE' }
+    )
+    if (res.ok || res.status === 204) onRefresh()
+  }
+
+  async function handleAddLotType() {
+    if (!addLtId) return
+    setAddSaving(true)
+    setAddError(null)
+    try {
+      const res = await fetch(
+        `${API_BASE}/phases/${phase.phase_id}/lot-type/${parseInt(addLtId, 10)}/projected`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projected_count: 0 }),
+        }
+      )
+      if (!res.ok) throw new Error((await res.json()).detail ?? 'Failed')
+      setAddLtOpen(false)
+      setAddLtId('')
+      onRefresh()
+    } catch (e) {
+      setAddError(e.message)
+    } finally {
+      setAddSaving(false)
+    }
+  }
+
   return (
     <div style={{ paddingLeft: 24, paddingTop: 2, paddingBottom: 2 }}>
-      <div style={{ ...ROW, cursor: 'default' }}>
-        <span style={{ width: 8 }} />
+      {/* Phase header */}
+      <div style={{ ...ROW }} onClick={() => setOpen(o => !o)}>
+        <ChevronIcon open={open} />
         <span style={{ color: '#374151', flex: 1 }}>{phase.phase_name}</span>
-        <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 8 }}>
-          {lots} lot{lots !== 1 ? 's' : ''}
-        </span>
-        <button
-          onClick={() => onAddLots(phase)}
-          style={{
-            fontSize: 11, color: '#059669', background: '#f0fdf4',
-            border: '1px solid #bbf7d0', borderRadius: 3,
-            padding: '1px 8px', cursor: 'pointer', marginLeft: 4,
-          }}>
-          + Lots
-        </button>
+        {!open && ltIds.length > 0 && (
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>
+            {ltIds.length} type{ltIds.length !== 1 ? 's' : ''}
+          </span>
+        )}
       </div>
+
+      {/* Expanded lot-type table */}
+      {open && (
+        <div style={{ paddingLeft: 16, paddingTop: 4, paddingBottom: 6 }}>
+          {tableRows.length > 0 && (
+            <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  {['Product', 'Total', 'MARKS', 'Pre', 'Sim', ''].map((h, i) => (
+                    <th key={i} style={{
+                      textAlign: i === 0 ? 'left' : i === 5 ? 'center' : 'right',
+                      padding: '2px 6px 4px',
+                      fontWeight: 400, fontSize: 11, color: '#9ca3af',
+                      borderBottom: '1px solid #e5e7eb',
+                      width: i === 5 ? 24 : undefined,
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.map(r => (
+                  <tr key={r.ltId} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '3px 6px', color: '#374151' }}>
+                      {lotTypeMap[r.ltId]?.lot_type_short ?? `#${r.ltId}`}
+                    </td>
+                    <td style={{ padding: '3px 6px', textAlign: 'right' }}>
+                      <EditableCount
+                        value={r.projected}
+                        onSave={n => handleSaveTotal(r.ltId, n)}
+                      />
+                    </td>
+                    <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>
+                      {r.realMarks}
+                    </td>
+                    <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>
+                      {r.realPre}
+                    </td>
+                    <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>
+                      {r.sim}
+                    </td>
+                    <td style={{ padding: '3px 2px', textAlign: 'center' }}>
+                      <button
+                        onClick={() => handleDelete(r.ltId)}
+                        title="Remove lot type"
+                        style={{
+                          fontSize: 14, lineHeight: 1, color: '#d1d5db',
+                          background: 'none', border: 'none',
+                          cursor: 'pointer', padding: '0 3px',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                        onMouseLeave={e => e.currentTarget.style.color = '#d1d5db'}>
+                        ×
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {/* Add lot type */}
+          {addLtOpen ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+              <select
+                value={addLtId}
+                onChange={e => setAddLtId(e.target.value)}
+                style={{ fontSize: 12, padding: '2px 4px', borderRadius: 3, border: '1px solid #d1d5db' }}>
+                <option value="">— lot type —</option>
+                {availableLotTypes.map(lt => (
+                  <option key={lt.lot_type_id} value={lt.lot_type_id}>
+                    {lt.lot_type_short}
+                  </option>
+                ))}
+              </select>
+              {addError && (
+                <span style={{ fontSize: 11, color: '#dc2626' }}>{addError}</span>
+              )}
+              <button
+                onClick={handleAddLotType}
+                disabled={!addLtId || addSaving}
+                style={{
+                  fontSize: 11, padding: '2px 8px', borderRadius: 3,
+                  background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer',
+                }}>
+                {addSaving ? '…' : 'Add'}
+              </button>
+              <button
+                onClick={() => { setAddLtOpen(false); setAddLtId('') }}
+                style={{
+                  fontSize: 11, padding: '2px 6px', borderRadius: 3,
+                  background: '#f1f5f9', color: '#6b7280',
+                  border: '1px solid #d1d5db', cursor: 'pointer',
+                }}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            availableLotTypes.length > 0 && (
+              <button
+                onClick={e => { e.stopPropagation(); setAddLtOpen(true) }}
+                style={{
+                  marginTop: 4, fontSize: 11, color: '#6b7280',
+                  background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = '#2563eb'}
+                onMouseLeave={e => e.currentTarget.style.color = '#6b7280'}>
+                + lot type
+              </button>
+            )
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── Instrument row ───────────────────────────────────────────────────────────
 
-function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onAddLots }) {
+function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRefresh }) {
   const instrPhases = phases.filter(p => p.instrument_id === instr.instrument_id)
   const [open, setOpen] = useState(false)
   const addPhase = useAddForm(async (vals) => {
@@ -203,7 +416,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onAddLots }) {
               key={p.phase_id}
               phase={p}
               lotTypes={lotTypes}
-              onAddLots={onAddLots}
+              onRefresh={onRefresh}
             />
           ))}
           {instrPhases.length === 0 && !addPhase.open && (
@@ -219,7 +432,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onAddLots }) {
 
 // ─── Development row ─────────────────────────────────────────────────────────
 
-function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onAddLots }) {
+function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRefresh }) {
   const devInstrs = instruments.filter(i => i.modern_dev_id === dev.dev_id)
   const [open, setOpen] = useState(false)
   const addInstr = useAddForm(async (vals) => {
@@ -272,7 +485,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
               phases={phases}
               lotTypes={lotTypes}
               onAddPhase={onAddPhase}
-              onAddLots={onAddLots}
+              onRefresh={onRefresh}
             />
           ))}
           {devInstrs.length === 0 && !addInstr.open && (
@@ -289,7 +502,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
 // ─── Community row ───────────────────────────────────────────────────────────
 
 function CommunityRow({ comm, devs, instruments, phases, lotTypes,
-  onAddDev, onAddInstrument, onAddPhase, onAddLots }) {
+  onAddDev, onAddInstrument, onAddPhase, onRefresh }) {
   const [open, setOpen] = useState(false)
   const addDev = useAddForm(async (vals) => {
     await onAddDev(comm.ent_group_id, vals.dev_name, vals.marks_code || null)
@@ -300,7 +513,6 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
       border: '1px solid #e5e7eb', borderRadius: 6,
       marginBottom: 6, overflow: 'hidden',
     }}>
-      {/* Community header */}
       <div
         style={{
           ...ROW, padding: '6px 10px', background: '#f9fafb',
@@ -345,7 +557,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
               lotTypes={lotTypes}
               onAddInstrument={onAddInstrument}
               onAddPhase={onAddPhase}
-              onAddLots={onAddLots}
+              onRefresh={onRefresh}
             />
           ))}
           {devs.length === 0 && !addDev.open && (
@@ -369,7 +581,7 @@ export default function SetupView({ showTestCommunities }) {
   const [lotTypes, setLotTypes] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
-  const [bulkPhase, setBulkPhase] = useState(null)
+
   const addComm = useAddForm(async (vals) => {
     const res = await fetch(`${API_BASE}/entitlement-groups`, {
       method: 'POST',
@@ -381,8 +593,8 @@ export default function SetupView({ showTestCommunities }) {
     setCommunities(prev => [...prev, { ...data, is_test: false }])
   })
 
-  async function load() {
-    setLoading(true)
+  async function load(silent = false) {
+    if (!silent) setLoading(true)
     setLoadError(null)
     try {
       const [eg, devs, instrs, cfg] = await Promise.all([
@@ -399,7 +611,7 @@ export default function SetupView({ showTestCommunities }) {
     } catch (e) {
       setLoadError(e.message)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
@@ -424,7 +636,6 @@ export default function SetupView({ showTestCommunities }) {
     })
     if (!res.ok) throw new Error((await res.json()).detail ?? 'Create failed')
     const data = await res.json()
-    // Instrument returned has legacy_dev_id; attach modern_dev_id for tree joins
     setInstruments(prev => [...prev, { ...data, modern_dev_id: devId }])
   }
 
@@ -492,18 +703,9 @@ export default function SetupView({ showTestCommunities }) {
           onAddDev={handleAddDev}
           onAddInstrument={handleAddInstrument}
           onAddPhase={handleAddPhase}
-          onAddLots={setBulkPhase}
+          onRefresh={() => load(true)}
         />
       ))}
-
-      {bulkPhase && (
-        <BulkLotInsertModal
-          phase={bulkPhase}
-          knownLotTypes={lotTypes}
-          onClose={() => setBulkPhase(null)}
-          onInserted={() => { setBulkPhase(null); load() }}
-        />
-      )}
     </div>
   )
 }
