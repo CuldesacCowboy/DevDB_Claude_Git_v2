@@ -1851,6 +1851,8 @@ export default function SetupView({ showTestCommunities }) {
         <div style={{
           display: 'flex', alignItems: 'center', paddingRight: 6, marginBottom: 4,
           borderBottom: '1px solid #e5e7eb', paddingBottom: 4,
+          position: 'sticky', top: 0, zIndex: 10,
+          background: '#fff',
         }}>
           <SortHeader label="Community" sortKey="name" sort={commSort} onSort={setCommSort}
             style={{ flex: 1, textAlign: 'left' }} />
