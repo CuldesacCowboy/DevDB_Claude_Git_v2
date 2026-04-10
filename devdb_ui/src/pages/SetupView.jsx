@@ -8,7 +8,8 @@ import { API_BASE } from '../config'
 const LotRefreshContext = createContext(0)
 
 // ─── subtotal layout ──────────────────────────────────────────────────────────
-const SUB = { D: 52, I: 52, P: 52, L: 60 }
+const SUB = { D: 52, I: 78, P: 58, L: 56 }
+const SUB_LABELS = { D: 'Devs', I: 'Instruments', P: 'Phases', L: 'Lots' }
 
 function phaseTotal(p) {
   return Object.values(p.product_splits ?? {}).reduce((s, v) => s + (v ?? 0), 0)
@@ -22,6 +23,27 @@ function SubCell({ n, w, left = false }) {
       ...(left ? { borderLeft: '2px solid #e5e7eb' } : {}),
     }}>
       {n > 0 ? n : '—'}
+    </div>
+  )
+}
+
+function SortHeader({ label, sortKey, sort, onSort, style = {} }) {
+  const active = sort.key === sortKey
+  return (
+    <div
+      onClick={() => onSort(prev =>
+        prev.key === sortKey
+          ? { ...prev, dir: prev.dir * -1 }
+          : { key: sortKey, dir: 1 }
+      )}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 2,
+        fontSize: 10, fontWeight: 600, cursor: 'pointer', userSelect: 'none',
+        color: active ? '#2563eb' : '#9ca3af',
+        ...style,
+      }}>
+      {label}
+      {active && <span style={{ fontSize: 8 }}>{sort.dir > 0 ? '▲' : '▼'}</span>}
     </div>
   )
 }
@@ -1600,7 +1622,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
       </div>
 
       {open && (
-        <div style={{ padding: '4px 4px 6px' }}>
+        <div style={{ padding: '4px 0 6px 4px' }}>
           {addDev.open && (
             <div style={{ paddingLeft: 20, paddingTop: 4 }}>
               <AddForm
@@ -1652,6 +1674,7 @@ export default function SetupView({ showTestCommunities }) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [refreshTick, setRefreshTick] = useState(0)
+  const [commSort, setCommSort] = useState({ key: null, dir: 1 })
 
   const addComm = useAddForm(async (vals) => {
     const res = await fetch(`${API_BASE}/entitlement-groups`, {
@@ -1766,6 +1789,25 @@ export default function SetupView({ showTestCommunities }) {
     showTestCommunities ? c.is_test : !c.is_test
   )
 
+  const commStats = {}
+  for (const comm of visibleCommunities) {
+    const cDevs = developments.filter(d => d.community_id === comm.ent_group_id)
+    const cIIds = new Set(instruments.filter(i => cDevs.some(d => d.dev_id === i.modern_dev_id)).map(i => i.instrument_id))
+    const cPhases = phases.filter(p => cIIds.has(p.instrument_id))
+    commStats[comm.ent_group_id] = {
+      D: cDevs.length, I: cIIds.size, P: cPhases.length,
+      L: cPhases.reduce((s, p) => s + phaseTotal(p), 0),
+    }
+  }
+
+  const sortedCommunities = commSort.key
+    ? [...visibleCommunities].sort((a, b) => {
+        const av = commSort.key === 'name' ? a.ent_group_name : (commStats[a.ent_group_id]?.[commSort.key] ?? 0)
+        const bv = commSort.key === 'name' ? b.ent_group_name : (commStats[b.ent_group_id]?.[commSort.key] ?? 0)
+        return commSort.dir * (typeof av === 'string' ? av.localeCompare(bv) : av - bv)
+      })
+    : visibleCommunities
+
   if (loading) return (
     <div style={{ padding: 40, color: '#9ca3af', fontSize: 13 }}>Loading…</div>
   )
@@ -1806,22 +1848,25 @@ export default function SetupView({ showTestCommunities }) {
       )}
 
       {visibleCommunities.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 6, marginBottom: 2 }}>
-          {[
-            { label: 'D', w: SUB.D, title: 'Developments' },
-            { label: 'I', w: SUB.I, title: 'Instruments' },
-            { label: 'P', w: SUB.P, title: 'Phases' },
-            { label: 'L', w: SUB.L, title: 'Lots (projected)' },
-          ].map(({ label, w, title }) => (
-            <div key={label} title={title} style={{
-              width: w, textAlign: 'right', padding: '0 5px',
-              fontSize: 10, color: '#9ca3af', fontWeight: 600,
-            }}>{label}</div>
+        <div style={{
+          display: 'flex', alignItems: 'center', paddingRight: 6, marginBottom: 4,
+          borderBottom: '1px solid #e5e7eb', paddingBottom: 4,
+        }}>
+          <SortHeader label="Community" sortKey="name" sort={commSort} onSort={setCommSort}
+            style={{ flex: 1, textAlign: 'left' }} />
+          {(['D', 'I', 'P', 'L']).map((key, idx) => (
+            <SortHeader key={key} label={SUB_LABELS[key]} sortKey={key}
+              sort={commSort} onSort={setCommSort}
+              style={{
+                width: SUB[key], flexShrink: 0,
+                justifyContent: 'flex-end', padding: '0 5px',
+                ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
+              }} />
           ))}
         </div>
       )}
 
-      {visibleCommunities.map(comm => (
+      {sortedCommunities.map(comm => (
         <CommunityRow
           key={comm.ent_group_id}
           comm={comm}
