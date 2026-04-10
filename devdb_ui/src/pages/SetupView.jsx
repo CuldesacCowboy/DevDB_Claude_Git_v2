@@ -7,6 +7,25 @@ import { API_BASE } from '../config'
 // Broadcast tick to all open LotTypeRows after any silent refresh
 const LotRefreshContext = createContext(0)
 
+// ─── subtotal layout ──────────────────────────────────────────────────────────
+const SUB = { D: 52, I: 52, P: 52, L: 60 }
+
+function phaseTotal(p) {
+  return Object.values(p.product_splits ?? {}).reduce((s, v) => s + (v ?? 0), 0)
+}
+
+function SubCell({ n, w, left = false }) {
+  return (
+    <div style={{
+      width: w, flexShrink: 0, textAlign: 'right', padding: '0 5px',
+      fontSize: 11, color: n > 0 ? '#374151' : '#d1d5db',
+      ...(left ? { borderLeft: '2px solid #e5e7eb' } : {}),
+    }}>
+      {n > 0 ? n : '—'}
+    </div>
+  )
+}
+
 // ─── small helpers ───────────────────────────────────────────────────────────
 
 // Strip leading zeros from the numeric suffix: "WS083" → "WS83", "083" → "83"
@@ -746,10 +765,17 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
             ×
           </button>
         </td>
+        <td style={{
+          padding: '3px 6px', textAlign: 'right', width: SUB.L,
+          borderLeft: '2px solid #e5e7eb',
+          fontSize: 11, color: projected > 0 ? '#374151' : '#d1d5db',
+        }}>
+          {projected > 0 ? projected : '—'}
+        </td>
       </tr>
       {open && (
         <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-          <td colSpan={7} style={{ padding: '4px 6px 8px 28px', background: '#fafafa' }}>
+          <td colSpan={8} style={{ padding: '4px 6px 8px 28px', background: '#fafafa' }}>
             {fetching
               ? <span style={{ fontSize: 11, color: '#9ca3af' }}>Loading…</span>
               : <LotPillGroup lots={lots} targetPhases={targetPhases} onMoveLot={handleLotMoved}
@@ -1230,6 +1256,8 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
     }
   }
 
+  const phaseL = tableRows.reduce((s, r) => s + (r.projected ?? 0), 0)
+
   return (
     <div style={{ paddingLeft: 24, paddingTop: 2, paddingBottom: 2 }}>
       {/* Phase header */}
@@ -1243,11 +1271,17 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
             {ltIds.length} type{ltIds.length !== 1 ? 's' : ''}
           </span>
         )}
+        <div style={{ display: 'flex', flexShrink: 0 }}>
+          <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
+          <div style={{ width: SUB.I, flexShrink: 0 }} />
+          <div style={{ width: SUB.P, flexShrink: 0 }} />
+          <SubCell n={phaseL} w={SUB.L} />
+        </div>
       </div>
 
       {/* Expanded content */}
       {open && (
-        <div style={{ paddingLeft: 16, paddingTop: 4, paddingBottom: 6 }}>
+        <div style={{ paddingLeft: 16, paddingRight: 6, paddingTop: 4, paddingBottom: 6 }}>
           {/* Tab bar */}
           <div style={{ display: 'flex', gap: 2, marginBottom: 8 }}>
             {[['lots', 'Lots'], ['buildings', 'Buildings']].map(([key, label]) => (
@@ -1271,13 +1305,14 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
               <thead>
                 <tr>
-                  {['Product', 'Total', 'In MARKS', 'Pre-MARKS', 'Sim', 'Excl', ''].map((h, i) => (
+                  {['Product', 'Total', 'In MARKS', 'Pre-MARKS', 'Sim', 'Excl', '', 'L'].map((h, i) => (
                     <th key={i} style={{
                       textAlign: i === 0 ? 'left' : i === 6 ? 'center' : 'right',
                       padding: '2px 6px 4px',
                       fontWeight: 400, fontSize: 11, color: '#9ca3af',
                       borderBottom: '1px solid #e5e7eb',
-                      width: i === 6 ? 24 : undefined,
+                      width: i === 6 ? 24 : i === 7 ? SUB.L : undefined,
+                      ...(i === 7 ? { borderLeft: '2px solid #e5e7eb' } : {}),
                     }}>{h}</th>
                   ))}
                 </tr>
@@ -1371,26 +1406,32 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
     await onAddPhase(instr.instrument_id, vals.phase_name)
   })
 
+  const instrP = instrPhases.length
+  const instrL = instrPhases.reduce((s, p) => s + phaseTotal(p), 0)
+
   return (
     <div style={{ paddingLeft: 24 }}>
       <div style={{ ...ROW, color: '#4b5563' }}
         onClick={() => setOpen(o => !o)}>
         <ChevronIcon open={open} />
-        <span style={{ fontWeight: 500 }}>
+        <span style={{ fontWeight: 500, flex: 1, minWidth: 0 }}>
           <InlineEdit value={instr.instrument_name} onSave={onRenameInstr} />
         </span>
         <span style={{ fontSize: 10, color: '#9ca3af', background: '#f1f5f9',
           padding: '0 5px', borderRadius: 10, marginLeft: 4 }}>
           {instr.instrument_type}
         </span>
-        <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 4 }}>
-          {instrPhases.length} phase{instrPhases.length !== 1 ? 's' : ''}
-        </span>
         {open && (
           <span onClick={e => e.stopPropagation()}>
             <AddButton label="phase" onClick={() => addPhase.setOpen(o => !o)} />
           </span>
         )}
+        <div style={{ display: 'flex', flexShrink: 0 }}>
+          <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
+          <div style={{ width: SUB.I, flexShrink: 0 }} />
+          <SubCell n={instrP} w={SUB.P} />
+          <SubCell n={instrL} w={SUB.L} />
+        </div>
       </div>
 
       {open && (
@@ -1436,12 +1477,18 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
     await onAddInstrument(dev.dev_id, vals.instrument_name, vals.instrument_type)
   })
 
+  const devInstrIds = new Set(devInstrs.map(i => i.instrument_id))
+  const devPhases = phases.filter(p => devInstrIds.has(p.instrument_id))
+  const devI = devInstrs.length
+  const devP = devPhases.length
+  const devL = devPhases.reduce((s, p) => s + phaseTotal(p), 0)
+
   return (
     <div style={{ paddingLeft: 20 }}>
       <div style={{ ...ROW, color: '#374151' }}
         onClick={() => setOpen(o => !o)}>
         <ChevronIcon open={open} />
-        <span style={{ fontWeight: 500 }}>
+        <span style={{ fontWeight: 500, flex: 1, minWidth: 0 }}>
           <InlineEdit value={dev.dev_name} onSave={onRenameDev} />
         </span>
         {dev.marks_code && (
@@ -1450,14 +1497,17 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
             {dev.marks_code}
           </span>
         )}
-        <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 4 }}>
-          {devInstrs.length} instrument{devInstrs.length !== 1 ? 's' : ''}
-        </span>
         {open && (
           <span onClick={e => e.stopPropagation()}>
             <AddButton label="instrument" onClick={() => addInstr.setOpen(o => !o)} />
           </span>
         )}
+        <div style={{ display: 'flex', flexShrink: 0 }}>
+          <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
+          <SubCell n={devI} w={SUB.I} />
+          <SubCell n={devP} w={SUB.P} />
+          <SubCell n={devL} w={SUB.L} />
+        </div>
       </div>
 
       {open && (
@@ -1511,6 +1561,15 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
     await onAddDev(comm.ent_group_id, vals.dev_name, vals.marks_code || null)
   })
 
+  const commInstrIds = new Set(
+    instruments.filter(i => devs.some(d => d.dev_id === i.modern_dev_id)).map(i => i.instrument_id)
+  )
+  const commPhases = phases.filter(p => commInstrIds.has(p.instrument_id))
+  const commD = devs.length
+  const commI = commInstrIds.size
+  const commP = commPhases.length
+  const commL = commPhases.reduce((s, p) => s + phaseTotal(p), 0)
+
   return (
     <div style={{
       border: '1px solid #e5e7eb', borderRadius: 6,
@@ -1518,7 +1577,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
     }}>
       <div
         style={{
-          ...ROW, padding: '6px 10px', background: '#f9fafb',
+          ...ROW, padding: '6px 6px 6px 10px', background: '#f9fafb',
           borderBottom: open ? '1px solid #e5e7eb' : 'none',
           cursor: 'pointer', fontWeight: 600, color: '#111827', fontSize: 13,
         }}
@@ -1527,14 +1586,17 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
         <span style={{ flex: 1 }}>
           <InlineEdit value={comm.ent_group_name} onSave={onRenameComm} />
         </span>
-        <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400 }}>
-          {devs.length} dev{devs.length !== 1 ? 's' : ''}
-        </span>
         {open && (
           <span onClick={e => e.stopPropagation()}>
             <AddButton label="development" onClick={() => addDev.setOpen(o => !o)} />
           </span>
         )}
+        <div style={{ display: 'flex', flexShrink: 0 }}>
+          <SubCell n={commD} w={SUB.D} left />
+          <SubCell n={commI} w={SUB.I} />
+          <SubCell n={commP} w={SUB.P} />
+          <SubCell n={commL} w={SUB.L} />
+        </div>
       </div>
 
       {open && (
@@ -1741,6 +1803,22 @@ export default function SetupView({ showTestCommunities }) {
 
       {visibleCommunities.length === 0 && (
         <div style={{ fontSize: 13, color: '#9ca3af' }}>No communities yet.</div>
+      )}
+
+      {visibleCommunities.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', paddingRight: 6, marginBottom: 2 }}>
+          {[
+            { label: 'D', w: SUB.D, title: 'Developments' },
+            { label: 'I', w: SUB.I, title: 'Instruments' },
+            { label: 'P', w: SUB.P, title: 'Phases' },
+            { label: 'L', w: SUB.L, title: 'Lots (projected)' },
+          ].map(({ label, w, title }) => (
+            <div key={label} title={title} style={{
+              width: w, textAlign: 'right', padding: '0 5px',
+              fontSize: 10, color: '#9ca3af', fontWeight: 600,
+            }}>{label}</div>
+          ))}
+        </div>
       )}
 
       {visibleCommunities.map(comm => (
