@@ -914,6 +914,25 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
 
   const bi = bandIdx(rows, r => r.ent_group_id)
 
+  // Precompute subtotals at each hierarchy level
+  const commSubs = {}, devSubs = {}, instSubs = {}
+  for (const r of rows) {
+    const proj = Object.values(r.product_splits ?? {}).reduce((s, v) => s + (v ?? 0), 0)
+    const cid = r.ent_group_id
+    const dk  = `${r.ent_group_id}|${r.dev_id}`
+    const iid = r.instrument_id
+    if (!commSubs[cid]) commSubs[cid] = { devs: new Set(), insts: new Set(), phases: 0, lots: 0 }
+    commSubs[cid].devs.add(r.dev_id); commSubs[cid].insts.add(r.instrument_id)
+    commSubs[cid].phases++; commSubs[cid].lots += proj
+    if (!devSubs[dk])  devSubs[dk]  = { insts: new Set(), phases: 0, lots: 0 }
+    devSubs[dk].insts.add(r.instrument_id); devSubs[dk].phases++; devSubs[dk].lots += proj
+    if (!instSubs[iid]) instSubs[iid] = { phases: 0, lots: 0 }
+    instSubs[iid].phases++; instSubs[iid].lots += proj
+  }
+
+  const SUB_W = { comm: 76, dev: 90, inst: 72, phase: 50, lots: 56 }
+  const SUB_ROW1_H = 26
+
   const lotTypes = phaseData?.lot_types ?? []
   const builders = phaseData?.builders  ?? []
 
@@ -985,32 +1004,46 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
       <TableShell maxHeight="calc(100vh - 200px)">
         <thead>
           <tr>
-            <th style={thS(LEFT.comm,  CW.comm)}>Community</th>
-            <th style={thS(LEFT.dev,   CW.dev)}>Development</th>
-            <th style={thS(LEFT.inst,  CW.inst)}>Instrument</th>
-            <th style={thS(LEFT.phase, CW.phase, PHASE_SHADOW)}>Phase</th>
-            <th style={thGR({ width: 52 })} title="Sum of projected counts">Proj</th>
-            <th style={thR({  width: 56 })} title="In MARKS">In MARKS</th>
-            <th style={thR({  width: 60 })} title="Pre-MARKS">Pre-MARKS</th>
-            <th style={thR({  width: 44 })} title="Sim lots">Sim</th>
-            <th style={thR({  width: 44 })} title="Excluded lots">Excl</th>
-            <th style={thGR({ width: 90 })}>Dev Date</th>
-            <th style={thR({  width: 84 })}>Lock</th>
+            <th rowSpan={2} style={thS(LEFT.comm,  CW.comm)}>Community</th>
+            <th rowSpan={2} style={thS(LEFT.dev,   CW.dev)}>Development</th>
+            <th rowSpan={2} style={thS(LEFT.inst,  CW.inst)}>Instrument</th>
+            <th rowSpan={2} style={thS(LEFT.phase, CW.phase, PHASE_SHADOW)}>Phase</th>
+            <th rowSpan={2} style={thGR({ width: 52 })} title="Sum of projected counts">Proj</th>
+            <th rowSpan={2} style={thR({  width: 56 })} title="In MARKS">In MARKS</th>
+            <th rowSpan={2} style={thR({  width: 60 })} title="Pre-MARKS">Pre-MARKS</th>
+            <th rowSpan={2} style={thR({  width: 44 })} title="Sim lots">Sim</th>
+            <th rowSpan={2} style={thR({  width: 44 })} title="Excluded lots">Excl</th>
+            <th rowSpan={2} style={thGR({ width: 90 })}>Dev Date</th>
+            <th rowSpan={2} style={thR({  width: 84 })}>Lock</th>
             {showSplits && lotTypes.map((lt, i) => (
-              <th key={lt.lot_type_id} style={{ ...thR({ width: 68 }),
+              <th key={lt.lot_type_id} rowSpan={2} style={{ ...thR({ width: 68 }),
                 ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }} title={lt.lot_type_name}>
                 {lt.lot_type_short}
               </th>
             ))}
             {builders.map((b, i) => (
-              <th key={b.builder_id} style={{ ...thR({ width: 66 }),
+              <th key={b.builder_id} rowSpan={2} style={{ ...thR({ width: 66 }),
                 ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }}>
                 {b.builder_name}
               </th>
             ))}
             {builders.length > 0 && (
-              <th style={thR({ width: 52 })} title="Sum of builder shares">%</th>
+              <th rowSpan={2} style={thR({ width: 52 })} title="Sum of builder shares">%</th>
             )}
+            <th colSpan={5} style={{ ...thBase, textAlign: 'center',
+              borderLeft: '3px solid #c7d2e2', fontSize: 10, color: '#9ca3af',
+              letterSpacing: '0.09em', textTransform: 'uppercase', fontWeight: 700,
+              paddingBottom: 2 }}>
+              Subtotals
+            </th>
+          </tr>
+          <tr>
+            <th style={{ ...thBase, top: SUB_ROW1_H, width: SUB_W.comm, textAlign: 'right',
+                         borderLeft: '3px solid #c7d2e2' }}>Community</th>
+            <th style={{ ...thBase, top: SUB_ROW1_H, width: SUB_W.dev,  textAlign: 'right' }}>Development</th>
+            <th style={{ ...thBase, top: SUB_ROW1_H, width: SUB_W.inst, textAlign: 'right' }}>Instrument</th>
+            <th style={{ ...thBase, top: SUB_ROW1_H, width: SUB_W.phase,textAlign: 'right' }}>Phase</th>
+            <th style={{ ...thBase, top: SUB_ROW1_H, width: SUB_W.lots, textAlign: 'right' }}>Lots</th>
           </tr>
         </thead>
         <tbody>
@@ -1128,6 +1161,58 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                     <BuilderSumBadge splits={row.builder_splits} builders={builders} />
                   </td>
                 )}
+                {/* Subtotals */}
+                {(() => {
+                  const csub = commSubs[row.ent_group_id]
+                  const dsub = devSubs[`${row.ent_group_id}|${row.dev_id}`]
+                  const isub = instSubs[row.instrument_id]
+                  const stTd = (extra = {}) => ({
+                    padding: '4px 6px', background: bg, borderTop: topBorder,
+                    verticalAlign: 'middle', textAlign: 'right', ...extra,
+                  })
+                  const sn = v => (
+                    <span style={{ fontSize: 12, display: 'block', textAlign: 'right',
+                                   padding: '1px 4px', color: v > 0 ? '#374151' : '#d1d5db' }}>
+                      {v > 0 ? v : '—'}
+                    </span>
+                  )
+                  const blank = <span style={{ fontSize: 12, color: '#e5e7eb' }}>—</span>
+                  return (
+                    <>
+                      {/* Community */}
+                      <td style={{ ...stTd(), borderLeft: '3px solid #c7d2e2' }}>
+                        {isFirstComm ? sn(1) : blank}
+                      </td>
+                      {/* Development */}
+                      <td style={stTd()}>
+                        {isFirstComm ? sn(csub?.devs.size ?? 0)
+                          : isFirstDev ? sn(1)
+                          : blank}
+                      </td>
+                      {/* Instrument */}
+                      <td style={stTd()}>
+                        {isFirstComm ? sn(csub?.insts.size ?? 0)
+                          : isFirstDev  ? sn(dsub?.insts.size ?? 0)
+                          : isFirstInst ? sn(1)
+                          : blank}
+                      </td>
+                      {/* Phase */}
+                      <td style={stTd()}>
+                        {isFirstComm ? sn(csub?.phases ?? 0)
+                          : isFirstDev  ? sn(dsub?.phases ?? 0)
+                          : isFirstInst ? sn(isub?.phases ?? 0)
+                          : blank}
+                      </td>
+                      {/* Lots */}
+                      <td style={stTd()}>
+                        {isFirstComm ? sn(csub?.lots ?? 0)
+                          : isFirstDev  ? sn(dsub?.lots ?? 0)
+                          : isFirstInst ? sn(isub?.lots ?? 0)
+                          : sn(projTotal)}
+                      </td>
+                    </>
+                  )
+                })()}
               </tr>
             )
           })}
