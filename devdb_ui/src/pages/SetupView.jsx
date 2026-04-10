@@ -16,14 +16,40 @@ function formatLotNum(s) {
   return m ? `${m[1]}${parseInt(m[2], 10)}` : s
 }
 
-// Fixed-width display: "WS1" → "WS   1" when maxDigits=3 (space-padded, always ≥1 space, monospace)
-function formatLotNumPadded(s, maxDigits) {
+// Extract the sequence string from a lot number given its dev code.
+// Handles both alphabetic prefixes ("WS001" → "1") and numeric dev codes ("4300000001" with devCode="43" → "1").
+function lotSeqStr(lotNumber, devCode = '') {
+  if (!lotNumber) return ''
+  const m = lotNumber.match(/^([A-Za-z]+)(\d+)$/)
+  if (m) return String(parseInt(m[2], 10))
+  if (devCode && lotNumber.startsWith(devCode)) {
+    const seq = parseInt(lotNumber.slice(devCode.length), 10)
+    if (!isNaN(seq)) return String(seq)
+  }
+  return lotNumber
+}
+
+// Fixed-width display: "WS1" → "WS   1", "4300000001" (devCode="43") → "43   1"
+// Always ≥1 non-breaking space between prefix and number, monospace font required.
+function formatLotNumPadded(s, maxDigits, devCode = '') {
   if (!s) return s ?? ''
-  const m = s.match(/^([A-Za-z]*)(\d+)$/)
-  if (!m) return s
-  const numStr = String(parseInt(m[2], 10))
-  const spaces = Math.max(1, maxDigits - numStr.length + 1)
-  return `${m[1]}${'\u00a0'.repeat(spaces)}${numStr}`
+  // Alphabetic prefix case
+  const m = s.match(/^([A-Za-z]+)(\d+)$/)
+  if (m) {
+    const numStr = String(parseInt(m[2], 10))
+    const spaces = Math.max(1, maxDigits - numStr.length + 1)
+    return `${m[1]}${'\u00a0'.repeat(spaces)}${numStr}`
+  }
+  // Numeric dev code prefix case
+  if (devCode && s.startsWith(devCode)) {
+    const seq = parseInt(s.slice(devCode.length), 10)
+    if (!isNaN(seq)) {
+      const numStr = String(seq)
+      const spaces = Math.max(1, maxDigits - numStr.length + 1)
+      return `${devCode}${'\u00a0'.repeat(spaces)}${numStr}`
+    }
+  }
+  return s
 }
 
 function ChevronIcon({ open }) {
@@ -122,7 +148,7 @@ function MovableLotPill({ lot, selected, onSelect, maxDigits = 1 }) {
   const s = lot.excluded
     ? { bg: '#f9fafb', text: '#9ca3af', border: '#e5e7eb' }
     : pillStyle(lot)
-  const label = formatLotNumPadded(lot.lot_number, maxDigits) || `#${lot.lot_id}`
+  const label = formatLotNumPadded(lot.lot_number, maxDigits, lot.dev_code ?? '') || `#${lot.lot_id}`
   return (
     <span
       onClick={onSelect}
@@ -383,7 +409,7 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
   // Max digit count across all non-sim lot numbers → uniform pill width
   const digitLengths = allLots
     .filter(l => l.lot_number)
-    .map(l => { const m = l.lot_number.match(/^[A-Za-z]*(\d+)$/); return m ? String(parseInt(m[1], 10)).length : 0 })
+    .map(l => lotSeqStr(l.lot_number, l.dev_code ?? '').length)
   const maxDigits = digitLengths.length > 0 ? Math.max(...digitLengths) : 1
 
   const groups = [
