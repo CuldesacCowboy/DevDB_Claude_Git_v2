@@ -93,7 +93,7 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
         # Python applies _sort_phases_for_display() after grouping by instrument.
         cur.execute(
             """
-            SELECT phase_id, phase_name, sequence_number, dev_id,
+            SELECT phase_id, phase_name, COALESCE(sequence_number, 0) AS sequence_number, dev_id,
                    instrument_id, display_order
             FROM sim_dev_phases
             WHERE dev_id = ANY(%s)
