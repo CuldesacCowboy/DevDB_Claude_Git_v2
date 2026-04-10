@@ -870,7 +870,11 @@ function InstrumentTab({ phaseRows, showTest }) {
                 <td style={td({ textAlign: 'right' })}>{num(marksTotal)}</td>
                 <td style={td({ textAlign: 'right' })}>{num(preTotal)}</td>
                 <td style={td({ textAlign: 'right' })}>{num(simTotal)}</td>
-                <td style={td({ textAlign: 'right' })}>{num(exclTotal)}</td>
+                <td style={td({ textAlign: 'right' })}>
+                  {exclTotal > 0
+                    ? <span style={{ fontSize: 11, color: '#9ca3af' }}>{exclTotal}</span>
+                    : <span style={{ color: '#d1d5db' }}>—</span>}
+                </td>
               </tr>
             )
           })}
@@ -1074,7 +1078,11 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                 <td style={tdB({ textAlign: 'right' })}>{numCell(marksTotal)}</td>
                 <td style={tdB({ textAlign: 'right' })}>{numCell(preTotal)}</td>
                 <td style={tdB({ textAlign: 'right' })}>{numCell(simTotal)}</td>
-                <td style={tdB({ textAlign: 'right' })}>{numCell(exclTotal)}</td>
+                <td style={tdB({ textAlign: 'right' })}>
+                  {exclTotal > 0
+                    ? <span style={{ fontSize: 11, color: '#9ca3af' }}>{exclTotal}</span>
+                    : <span style={{ fontSize: 12, color: '#d1d5db' }}>—</span>}
+                </td>
                 <td style={tdG({ textAlign: 'right' })}>
                   <EditableCell value={row.date_dev_projected} type="date" width={84}
                     onSave={v => onPatchPhase(row.phase_id, 'date_dev_projected', v)} placeholder="—" />
