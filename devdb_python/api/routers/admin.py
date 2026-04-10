@@ -83,7 +83,8 @@ def get_phase_config(conn=Depends(get_db_conn)):
                                    AND NOT EXISTS (SELECT 1 FROM devdb.marks_lot_registry mlr
                                                    WHERE mlr.lot_number = sl.lot_number)))
                     ) AS pre_count,
-                    COUNT(*) FILTER (WHERE lot_source = 'sim' AND excluded IS NOT TRUE) AS sim_count
+                    COUNT(*) FILTER (WHERE lot_source = 'sim' AND excluded IS NOT TRUE) AS sim_count,
+                    COUNT(*) FILTER (WHERE excluded IS TRUE AND lot_source != 'sim') AS excl_count
                 FROM sim_lots sl
                 WHERE phase_id = ANY(%s)
                 GROUP BY phase_id, lot_type_id
@@ -93,6 +94,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                     'marks': r['marks_count'],
                     'pre':   r['pre_count'],
                     'sim':   r['sim_count'],
+                    'excl':  r['excl_count'],
                 }
 
         # Product splits: phase_id -> {lot_type_id: projected_count}

@@ -115,7 +115,9 @@ function LotPill({ label, source }) {
 
 // Selectable lot pill — click to select/deselect, shift+click for range
 function MovableLotPill({ lot, selected, onSelect, maxDigits = 1 }) {
-  const s = pillStyle(lot)
+  const s = lot.excluded
+    ? { bg: '#f9fafb', text: '#9ca3af', border: '#e5e7eb' }
+    : pillStyle(lot)
   const label = formatLotNumPadded(lot.lot_number, maxDigits) || `#${lot.lot_id}`
   return (
     <span
@@ -130,6 +132,7 @@ function MovableLotPill({ lot, selected, onSelect, maxDigits = 1 }) {
         outline: selected ? `2px solid ${s.border}` : 'none',
         outlineOffset: 1,
         whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none',
+        textDecoration: lot.excluded ? 'line-through' : 'none',
       }}>
       {label}
     </span>
@@ -269,19 +272,21 @@ function AddPreLotsPanel({ phaseId, ltId, onAdded }) {
 
 const GROUP_LABEL_COLOR = { marks: '#1d4ed8', pre: '#92400e', sim: '#9ca3af' }
 
-function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded, lotTypes, onLotsRemoved, onRefresh }) {
+function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded, lotTypes, onLotsRemoved, onLotsUpdated, onRefresh }) {
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [lastClickedId, setLastClickedId] = useState(null)
-  const [actionMode, setActionMode] = useState(null)  // null | 'move' | 'type' | 'delete'
+  const [actionMode, setActionMode] = useState(null)  // null | 'move' | 'type' | 'delete' | 'exclude'
   const [bulkSaving, setBulkSaving] = useState(false)
   const [bulkError, setBulkError] = useState(null)
+  const [excludedOpen, setExcludedOpen] = useState(false)
 
   const allLots = lots ?? []
 
-  // Ordered selectable lots (non-sim, In MARKS first then Pre-MARKS)
+  // Ordered selectable lots (non-sim, active first then excluded)
   const ordered = [
-    ...allLots.filter(l => l.lot_source === 'real' && l.in_registry),
-    ...allLots.filter(l => !(l.lot_source === 'real' && l.in_registry) && l.lot_source !== 'sim'),
+    ...allLots.filter(l => !l.excluded && l.lot_source === 'real' && l.in_registry),
+    ...allLots.filter(l => !l.excluded && !(l.lot_source === 'real' && l.in_registry) && l.lot_source !== 'sim'),
+    ...allLots.filter(l => l.excluded && l.lot_source !== 'sim'),
   ]
 
   function handlePillClick(lot, e) {
@@ -348,9 +353,23 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
       () => { onLotsRemoved(ids); deselectAll() })
   }
 
+  async function handleBulkExclude(excluded) {
+    const ids = [...selectedIds].filter(id => {
+      const lot = allLots.find(l => l.lot_id === id)
+      return lot && Boolean(lot.excluded) !== excluded
+    })
+    if (!ids.length) return
+    await runBulk(ids, id => fetch(`${API_BASE}/lots/${id}/excluded`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ excluded }),
+    }), async () => { onLotsUpdated(ids, { excluded }); deselectAll() })
+  }
+
   const hasSelection = selectedIds.size > 0
   const hasPreSelected = [...selectedIds].some(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre')
   const deleteCount = [...selectedIds].filter(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre').length
+  const hasNonExcludedSelected = [...selectedIds].some(id => { const l = allLots.find(l => l.lot_id === id); return l && !l.excluded })
+  const hasExcludedSelected = [...selectedIds].some(id => { const l = allLots.find(l => l.lot_id === id); return l && l.excluded })
 
   const ABTN = (extra = {}) => ({
     fontSize: 11, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
@@ -364,10 +383,13 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
   const maxDigits = digitLengths.length > 0 ? Math.max(...digitLengths) : 1
 
   const groups = [
-    { key: 'marks', label: 'In MARKS',  items: allLots.filter(l => l.lot_source === 'real' && l.in_registry) },
-    { key: 'pre',   label: 'Pre-MARKS', items: allLots.filter(l => l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry)) },
-    { key: 'sim',   label: 'Sim',       items: allLots.filter(l => l.lot_source === 'sim') },
+    { key: 'marks', label: 'In MARKS',  items: allLots.filter(l => !l.excluded && l.lot_source === 'real' && l.in_registry) },
+    { key: 'pre',   label: 'Pre-MARKS', items: allLots.filter(l => !l.excluded && (l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry))) },
+    { key: 'sim',   label: 'Sim',       items: allLots.filter(l => !l.excluded && l.lot_source === 'sim') },
   ].filter(g => g.items.length > 0)
+
+  const excludedLots = allLots.filter(l => l.excluded && l.lot_source !== 'sim')
+  const activeCount = ordered.length - excludedLots.length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -376,7 +398,7 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
       {(ordered.length > 0 || hasSelection) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', paddingBottom: 4, borderBottom: '1px solid #f3f4f6' }}>
           <span style={{ fontSize: 11, color: '#9ca3af' }}>
-            {hasSelection ? `${selectedIds.size} selected` : `${ordered.length} lot${ordered.length !== 1 ? 's' : ''}`}
+            {hasSelection ? `${selectedIds.size} selected` : `${activeCount} lot${activeCount !== 1 ? 's' : ''}`}
           </span>
           <button onClick={selectAll}  style={ABTN()}>All</button>
           <button onClick={deselectAll} style={ABTN()}>None</button>
@@ -434,6 +456,22 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
               </span>
             )}
 
+            <span style={{ color: '#e5e7eb' }}>|</span>
+
+            {/* Exclude / Un-exclude */}
+            {hasNonExcludedSelected && (
+              <button onClick={() => handleBulkExclude(true)} disabled={bulkSaving}
+                style={ABTN({ color: '#6b7280' })}>
+                Exclude
+              </button>
+            )}
+            {hasExcludedSelected && (
+              <button onClick={() => handleBulkExclude(false)} disabled={bulkSaving}
+                style={ABTN({ color: '#2563eb', borderColor: '#bfdbfe' })}>
+                Un-exclude
+              </button>
+            )}
+
             {bulkError && <span style={{ fontSize: 11, color: '#ef4444' }}>{bulkError}</span>}
           </>}
         </div>
@@ -465,6 +503,46 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
         </div>
       ))}
 
+      {/* ── Excluded section ── */}
+      {excludedLots.length > 0 && (
+        <div>
+          <button
+            onClick={() => setExcludedOpen(o => !o)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0',
+            }}>
+            <span style={{ width: 70, flexShrink: 0 }} />
+            <span style={{
+              fontSize: 10, color: '#9ca3af', display: 'flex', alignItems: 'center', gap: 3,
+            }}>
+              <span style={{
+                display: 'inline-block', fontSize: 8,
+                transition: 'transform 0.15s',
+                transform: excludedOpen ? 'rotate(90deg)' : 'rotate(0deg)',
+              }}>▶</span>
+              Excluded ({excludedLots.length})
+            </span>
+          </button>
+          {excludedOpen && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 2 }}>
+              <span style={{ width: 70, flexShrink: 0 }} />
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                {excludedLots.map(l => (
+                  <MovableLotPill
+                    key={l.lot_id}
+                    lot={l}
+                    maxDigits={maxDigits}
+                    selected={selectedIds.has(l.lot_id)}
+                    onSelect={e => handlePillClick(l, e)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Add Pre-MARKS ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
         <span style={{ width: 70, flexShrink: 0 }} />
@@ -476,7 +554,7 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
 
 // ─── LotTypeRow — one table row + optional lot-pill detail row ────────────────
 
-function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre, sim,
+function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre, sim, excluded,
                        targetPhases, lotTypes, onSaveTotal, onDelete, onRefresh }) {
   const [open, setOpen] = useState(false)
   const [lots, setLots] = useState(null)
@@ -504,6 +582,12 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
   function handleLotsRemoved(ids) {
     const s = new Set(ids)
     setLots(prev => prev ? prev.filter(l => !s.has(l.lot_id)) : null)
+    onRefresh()
+  }
+
+  function handleLotsUpdated(ids, updates) {
+    const s = new Set(ids)
+    setLots(prev => prev ? prev.map(l => s.has(l.lot_id) ? { ...l, ...updates } : l) : null)
     onRefresh()
   }
 
@@ -539,6 +623,7 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
         <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{realMarks}</td>
         <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{realPre}</td>
         <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{sim}</td>
+        <td style={{ padding: '3px 6px', textAlign: 'right', color: '#9ca3af' }}>{excluded > 0 ? excluded : ''}</td>
         <td style={{ padding: '3px 2px', textAlign: 'center' }}>
           <button
             onClick={onDelete}
@@ -555,12 +640,13 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
       </tr>
       {open && (
         <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-          <td colSpan={6} style={{ padding: '4px 6px 8px 28px', background: '#fafafa' }}>
+          <td colSpan={7} style={{ padding: '4px 6px 8px 28px', background: '#fafafa' }}>
             {fetching
               ? <span style={{ fontSize: 11, color: '#9ca3af' }}>Loading…</span>
               : <LotPillGroup lots={lots} targetPhases={targetPhases} onMoveLot={handleLotMoved}
                               phaseId={phaseId} ltId={ltId} onLotAdded={handleLotAdded}
-                              lotTypes={lotTypes} onLotsRemoved={handleLotsRemoved} onRefresh={onRefresh} />
+                              lotTypes={lotTypes} onLotsRemoved={handleLotsRemoved}
+                              onLotsUpdated={handleLotsUpdated} onRefresh={onRefresh} />
             }
           </td>
         </tr>
@@ -703,8 +789,9 @@ function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
     const projected = phase.product_splits?.[ltId]  ?? 0
     const realMarks = counts.marks ?? 0
     const realPre   = counts.pre   ?? 0
+    const excl      = counts.excl  ?? 0
     const sim       = Math.max(0, projected - realMarks - realPre)
-    return { ltId, projected, realMarks, realPre, sim }
+    return { ltId, projected, realMarks, realPre, sim, excl }
   })
 
   const availableLotTypes = (lotTypes || []).filter(
@@ -775,13 +862,13 @@ function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
               <thead>
                 <tr>
-                  {['Product', 'Total', 'In MARKS', 'Pre-MARKS', 'Sim', ''].map((h, i) => (
+                  {['Product', 'Total', 'In MARKS', 'Pre-MARKS', 'Sim', 'Excl', ''].map((h, i) => (
                     <th key={i} style={{
-                      textAlign: i === 0 ? 'left' : i === 5 ? 'center' : 'right',
+                      textAlign: i === 0 ? 'left' : i === 6 ? 'center' : 'right',
                       padding: '2px 6px 4px',
                       fontWeight: 400, fontSize: 11, color: '#9ca3af',
                       borderBottom: '1px solid #e5e7eb',
-                      width: i === 5 ? 24 : undefined,
+                      width: i === 6 ? 24 : undefined,
                     }}>{h}</th>
                   ))}
                 </tr>
@@ -797,6 +884,7 @@ function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
                     realMarks={r.realMarks}
                     realPre={r.realPre}
                     sim={r.sim}
+                    excluded={r.excl}
                     targetPhases={targetPhases}
                     lotTypes={lotTypes}
                     onSaveTotal={n => handleSaveTotal(r.ltId, n)}
