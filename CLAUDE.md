@@ -135,6 +135,10 @@ The equalization logic in usePhaseEqualization.js runs after paint to match row 
 ## Rules for Claude Code Sessions
 
 - **After every file change:** `git add`, `git commit` with descriptive message, `git push`. Do not wait.
+- **After every completed update:** tell the user which restarts are needed — frontend, backend, both, or neither — using this logic:
+  - Frontend restart needed: any change to `devdb_ui/src/` files
+  - Backend restart needed: any change to `devdb_python/api/` or `devdb_python/engine/` or `devdb_python/services/` files, or any new migration file in `devdb_python/migrations/`
+  - Neither: changes only to docs, CLAUDE.md, scripts, or config files
 - **Never `git push` alone** without staging and committing first.
 - **Never write a single simulation loop.** 12 starts modules + 8 supply modules + coordinator.
 - **All SQL for Databricks must be plain ASCII only.** No Unicode.
