@@ -365,12 +365,13 @@ function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal 
   }, [activeCell])
 
   // Capture-phase handler: intercepts arrows before any focused child (e.g. number input) sees them.
-  // Date inputs are left alone — their internal arrow nav takes priority.
+  // Date and number inputs are left alone — their internal arrow nav takes priority.
   function handleKeyDown(e) {
     const NAV = ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight']
     if (!NAV.includes(e.key)) return
     const ae = document.activeElement
     if (ae && ae.type === 'date') return   // let date picker handle its own arrows
+    if (ae && ae.type === 'number') return // let number input handle up/down spin
     e.preventDefault()
     e.stopPropagation()
     if (ae && ae !== containerRef.current) ae.blur()  // commit any open number/text edit
@@ -615,6 +616,7 @@ function DevTab({ rows, showTest, onPatchDev }) {
     if (!NAV.includes(e.key)) return
     const ae = document.activeElement
     if (ae && ae.type === 'date') return
+    if (ae && ae.type === 'number') return
     e.preventDefault()
     e.stopPropagation()
     if (ae && ae !== containerRef.current) ae.blur()
