@@ -63,6 +63,73 @@ function ChevronIcon({ open }) {
   )
 }
 
+// ─── inline name editor ──────────────────────────────────────────────────────
+// Double-click the name (or click the pencil) to edit. Enter/blur saves, Escape cancels.
+
+function InlineEdit({ value, onSave, style }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft]     = useState(value)
+  const [saving, setSaving]   = useState(false)
+  const inputRef = useRef(null)
+
+  useEffect(() => { if (editing) inputRef.current?.select() }, [editing])
+
+  function start(e) { e.stopPropagation(); setDraft(value); setEditing(true) }
+
+  async function commit() {
+    const trimmed = draft.trim()
+    if (!trimmed || trimmed === value) { setEditing(false); return }
+    setSaving(true)
+    try {
+      await onSave(trimmed)
+    } finally {
+      setSaving(false)
+      setEditing(false)
+    }
+  }
+
+  if (editing) return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={e => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === 'Enter')  { e.preventDefault(); commit() }
+        if (e.key === 'Escape') { setEditing(false) }
+        e.stopPropagation()
+      }}
+      onClick={e => e.stopPropagation()}
+      disabled={saving}
+      style={{
+        fontSize: 'inherit', fontWeight: 'inherit', color: 'inherit',
+        background: '#fff', border: '1px solid #2563eb', borderRadius: 3,
+        padding: '0 4px', minWidth: 80, width: Math.max(120, value.length * 8),
+        outline: 'none',
+        ...style,
+      }}
+    />
+  )
+
+  return (
+    <span
+      onDoubleClick={start}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'default', ...style }}
+    >
+      <span>{value}</span>
+      <span
+        onClick={start}
+        title="Rename"
+        style={{
+          fontSize: 10, color: '#d1d5db', cursor: 'pointer', lineHeight: 1,
+          opacity: 0, transition: 'opacity 0.1s',
+        }}
+        className="inline-edit-pencil"
+      >✎</span>
+    </span>
+  )
+}
+
 // ─── editable integer cell ────────────────────────────────────────────────────
 
 function EditableCount({ value, onSave, min = 0 }) {
@@ -805,7 +872,7 @@ function AddButton({ label, onClick }) {
 
 // ─── Phase row — expandable lot-type table ────────────────────────────────────
 
-function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
+function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
   // All other phases in the same development — valid move targets
   const targetPhases = (phases || []).filter(
     p => p.dev_id === phase.dev_id && p.phase_id !== phase.phase_id
@@ -889,7 +956,9 @@ function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
       {/* Phase header */}
       <div style={{ ...ROW }} onClick={() => setOpen(o => !o)}>
         <ChevronIcon open={open} />
-        <span style={{ color: '#374151', flex: 1 }}>{phase.phase_name}</span>
+        <span style={{ color: '#374151', flex: 1 }}>
+          <InlineEdit value={phase.phase_name} onSave={onRename} />
+        </span>
         {!open && ltIds.length > 0 && (
           <span style={{ fontSize: 11, color: '#9ca3af' }}>
             {ltIds.length} type{ltIds.length !== 1 ? 's' : ''}
@@ -996,7 +1065,7 @@ function PhaseRow({ phase, phases, lotTypes, onRefresh }) {
 
 // ─── Instrument row ───────────────────────────────────────────────────────────
 
-function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRefresh }) {
+function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onRefresh }) {
   const instrPhases = phases.filter(p => p.instrument_id === instr.instrument_id)
   const [open, setOpen] = useState(false)
   const addPhase = useAddForm(async (vals) => {
@@ -1008,7 +1077,9 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRefresh }) {
       <div style={{ ...ROW, color: '#4b5563' }}
         onClick={() => setOpen(o => !o)}>
         <ChevronIcon open={open} />
-        <span style={{ fontWeight: 500 }}>{instr.instrument_name}</span>
+        <span style={{ fontWeight: 500 }}>
+          <InlineEdit value={instr.instrument_name} onSave={onRenameInstr} />
+        </span>
         <span style={{ fontSize: 10, color: '#9ca3af', background: '#f1f5f9',
           padding: '0 5px', borderRadius: 10, marginLeft: 4 }}>
           {instr.instrument_type}
@@ -1042,6 +1113,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRefresh }) {
               phase={p}
               phases={phases}
               lotTypes={lotTypes}
+              onRename={name => onRenamePhase(p.phase_id, name)}
               onRefresh={onRefresh}
             />
           ))}
@@ -1058,7 +1130,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRefresh }) {
 
 // ─── Development row ─────────────────────────────────────────────────────────
 
-function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRefresh }) {
+function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onRenamePhase, onRefresh }) {
   const devInstrs = instruments.filter(i => i.modern_dev_id === dev.dev_id)
   const [open, setOpen] = useState(false)
   const addInstr = useAddForm(async (vals) => {
@@ -1070,7 +1142,9 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
       <div style={{ ...ROW, color: '#374151' }}
         onClick={() => setOpen(o => !o)}>
         <ChevronIcon open={open} />
-        <span style={{ fontWeight: 500 }}>{dev.dev_name}</span>
+        <span style={{ fontWeight: 500 }}>
+          <InlineEdit value={dev.dev_name} onSave={onRenameDev} />
+        </span>
         {dev.marks_code && (
           <span style={{ fontSize: 10, color: '#6b7280', background: '#f9fafb',
             border: '1px solid #e5e7eb', padding: '0 5px', borderRadius: 10 }}>
@@ -1111,6 +1185,8 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
               phases={phases}
               lotTypes={lotTypes}
               onAddPhase={onAddPhase}
+              onRenameInstr={name => onRenameInstr(instr.instrument_id, name)}
+              onRenamePhase={onRenamePhase}
               onRefresh={onRefresh}
             />
           ))}
@@ -1128,7 +1204,9 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
 // ─── Community row ───────────────────────────────────────────────────────────
 
 function CommunityRow({ comm, devs, instruments, phases, lotTypes,
-  onAddDev, onAddInstrument, onAddPhase, onRefresh }) {
+  onAddDev, onAddInstrument, onAddPhase,
+  onRenameComm, onRenameDev, onRenameInstr, onRenamePhase,
+  onRefresh }) {
   const [open, setOpen] = useState(false)
   const addDev = useAddForm(async (vals) => {
     await onAddDev(comm.ent_group_id, vals.dev_name, vals.marks_code || null)
@@ -1147,7 +1225,9 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
         }}
         onClick={() => setOpen(o => !o)}>
         <ChevronIcon open={open} />
-        <span style={{ flex: 1 }}>{comm.ent_group_name}</span>
+        <span style={{ flex: 1 }}>
+          <InlineEdit value={comm.ent_group_name} onSave={onRenameComm} />
+        </span>
         <span style={{ fontSize: 11, color: '#9ca3af', fontWeight: 400 }}>
           {devs.length} dev{devs.length !== 1 ? 's' : ''}
         </span>
@@ -1183,6 +1263,9 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
               lotTypes={lotTypes}
               onAddInstrument={onAddInstrument}
               onAddPhase={onAddPhase}
+              onRenameDev={name => onRenameDev(dev.dev_id, name)}
+              onRenameInstr={onRenameInstr}
+              onRenamePhase={onRenamePhase}
               onRefresh={onRefresh}
             />
           ))}
@@ -1267,6 +1350,46 @@ export default function SetupView({ showTestCommunities }) {
     setInstruments(prev => [...prev, { ...data, modern_dev_id: devId }])
   }
 
+  async function handleRenameComm(commId, name) {
+    const res = await fetch(`${API_BASE}/entitlement-groups/${commId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ent_group_name: name }),
+    })
+    if (!res.ok) throw new Error((await res.json()).detail ?? 'Rename failed')
+    setCommunities(prev => prev.map(c => c.ent_group_id === commId ? { ...c, ent_group_name: name } : c))
+  }
+
+  async function handleRenameDev(devId, name) {
+    const res = await fetch(`${API_BASE}/developments/${devId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dev_name: name }),
+    })
+    if (!res.ok) throw new Error((await res.json()).detail ?? 'Rename failed')
+    setDevelopments(prev => prev.map(d => d.dev_id === devId ? { ...d, dev_name: name } : d))
+  }
+
+  async function handleRenameInstr(instrId, name) {
+    const res = await fetch(`${API_BASE}/instruments/${instrId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instrument_name: name }),
+    })
+    if (!res.ok) throw new Error((await res.json()).detail ?? 'Rename failed')
+    setInstruments(prev => prev.map(i => i.instrument_id === instrId ? { ...i, instrument_name: name } : i))
+  }
+
+  async function handleRenamePhase(phaseId, name) {
+    const res = await fetch(`${API_BASE}/phases/${phaseId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phase_name: name }),
+    })
+    if (!res.ok) throw new Error((await res.json()).detail ?? 'Rename failed')
+    setPhases(prev => prev.map(p => p.phase_id === phaseId ? { ...p, phase_name: name } : p))
+  }
+
   async function handleAddPhase(instrumentId, name) {
     const res = await fetch(`${API_BASE}/phases`, {
       method: 'POST',
@@ -1332,6 +1455,10 @@ export default function SetupView({ showTestCommunities }) {
           onAddDev={handleAddDev}
           onAddInstrument={handleAddInstrument}
           onAddPhase={handleAddPhase}
+          onRenameComm={name => handleRenameComm(comm.ent_group_id, name)}
+          onRenameDev={handleRenameDev}
+          onRenameInstr={handleRenameInstr}
+          onRenamePhase={handleRenamePhase}
           onRefresh={() => load(true)}
         />
       ))}
