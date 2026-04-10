@@ -349,9 +349,21 @@ function ImportPanel({ devCode, onDone }) {
   )
 }
 
+// ─── Column layout constants ──────────────────────────────────────────────────
+
+const COL = {
+  code:     { width: 56,  flexShrink: 0 },
+  name:     { flex: 1,    minWidth: 0   },
+  marks:    { width: 80,  flexShrink: 0, textAlign: 'right' },
+  imported: { width: 80,  flexShrink: 0, textAlign: 'right' },
+  newLots:  { width: 60,  flexShrink: 0, textAlign: 'right' },
+  syncBtn:  { width: 92,  flexShrink: 0, textAlign: 'right' },
+  importBtn:{ width: 100, flexShrink: 0, textAlign: 'right' },
+}
+
 // ─── Dev code row ─────────────────────────────────────────────────────────────
 
-function DevCodeRow({ row, onSyncDev, onRefresh }) {
+function DevCodeRow({ row, onRefresh }) {
   const [importOpen, setImportOpen] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [toast, setToast] = useState(null)
@@ -379,59 +391,78 @@ function DevCodeRow({ row, onSyncDev, onRefresh }) {
     onRefresh()
   }
 
-  const hasActivity = row.unimported > 0 || row.imported > 0
-
   return (
-    <div style={{
-      border: '1px solid #e5e7eb', borderRadius: 6, marginBottom: 6, overflow: 'hidden',
-    }}>
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 6, marginBottom: 4, overflow: 'hidden' }}>
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '6px 12px', background: '#f9fafb',
+        display: 'flex', alignItems: 'center',
+        padding: '5px 12px', background: '#f9fafb',
         borderBottom: importOpen ? '1px solid #e5e7eb' : 'none',
+        gap: 8,
       }}>
-        {/* dev code + name */}
-        <code style={{ fontSize: 13, fontWeight: 700, color: '#111827', width: 48 }}>{row.dev_code}</code>
-        <span style={{ fontSize: 13, color: '#374151', flex: 1 }}>
-          {row.dev_name ?? <span style={{ color: '#9ca3af', fontSize: 11 }}>not linked to internal dev</span>}
+        <code style={{ ...COL.code, fontSize: 13, fontWeight: 700, color: '#111827' }}>{row.dev_code}</code>
+
+        <span style={{ ...COL.name, fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {row.dev_name
+            ? <>
+                {row.dev_name}
+                {row.promotable > 0 && (
+                  <span style={{ marginLeft: 6, fontSize: 10, color: '#7c3aed', fontWeight: 600 }}>
+                    {row.promotable} promotable
+                  </span>
+                )}
+              </>
+            : <span style={{ color: '#9ca3af', fontSize: 11 }}>not linked</span>
+          }
         </span>
 
-        {/* counts */}
-        <span style={{ fontSize: 11, color: '#6b7280' }}>{row.total_marks} in MARKS</span>
-        <span style={{ fontSize: 11, color: '#059669' }}>{row.imported} imported</span>
-        {row.unimported > 0 && (
-          <span style={{ fontSize: 11, color: '#2563eb', fontWeight: 600 }}>{row.unimported} new</span>
-        )}
-        {row.promotable > 0 && (
-          <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>{row.promotable} promotable</span>
-        )}
+        <span style={{ ...COL.marks, fontSize: 12, color: '#6b7280' }}>{row.total_marks}</span>
+        <span style={{ ...COL.imported, fontSize: 12, color: row.imported > 0 ? '#059669' : '#d1d5db' }}>{row.imported || '—'}</span>
+        <span style={{ ...COL.newLots, fontSize: 12, color: row.unimported > 0 ? '#2563eb' : '#d1d5db', fontWeight: row.unimported > 0 ? 600 : 400 }}>
+          {row.unimported || '—'}
+        </span>
 
-        {/* toast */}
-        {toast && <span style={{ fontSize: 11, color: '#059669', fontWeight: 500 }}>{toast}</span>}
+        <div style={COL.syncBtn}>
+          {row.imported > 0
+            ? <Btn small onClick={handleSync} disabled={syncing}>{syncing ? '…' : 'Sync dates'}</Btn>
+            : null}
+          {toast && <span style={{ fontSize: 10, color: '#059669', marginLeft: 4 }}>{toast}</span>}
+        </div>
 
-        {/* actions */}
-        <div style={{ display: 'flex', gap: 6 }}>
-          {row.imported > 0 && (
-            <Btn small onClick={handleSync} disabled={syncing}>
-              {syncing ? '…' : 'Sync dates'}
-            </Btn>
-          )}
-          {row.unimported > 0 && (
-            <Btn small variant="primary" onClick={() => setImportOpen(o => !o)}>
-              {importOpen ? 'Close' : 'Import lots'}
-            </Btn>
-          )}
+        <div style={COL.importBtn}>
+          {row.unimported > 0
+            ? <Btn small variant="primary" onClick={() => setImportOpen(o => !o)}>
+                {importOpen ? 'Close' : 'Import lots'}
+              </Btn>
+            : null}
         </div>
       </div>
 
-      {importOpen && (
-        <ImportPanel devCode={row.dev_code} onDone={handleImportDone} />
-      )}
+      {importOpen && <ImportPanel devCode={row.dev_code} onDone={handleImportDone} />}
     </div>
   )
 }
 
 // ─── MarksView ─────────────────────────────────────────────────────────────────
+
+function SortHdr({ col, label, sortCol, sortDir, onSort, style }) {
+  const active = sortCol === col
+  return (
+    <div
+      onClick={() => onSort(col)}
+      style={{
+        ...style, cursor: 'pointer', userSelect: 'none', display: 'flex',
+        alignItems: 'center', justifyContent: style?.textAlign === 'right' ? 'flex-end' : 'flex-start',
+        gap: 3, color: active ? '#2563eb' : '#6b7280', fontWeight: active ? 600 : 500,
+        fontSize: 11,
+      }}
+    >
+      {label}
+      <span style={{ fontSize: 9, opacity: active ? 1 : 0.35 }}>
+        {active ? (sortDir === 'asc' ? '▲' : '▼') : '⬍'}
+      </span>
+    </div>
+  )
+}
 
 export default function MarksView() {
   const [summary, setSummary] = useState(null)
@@ -440,6 +471,13 @@ export default function MarksView() {
   const [syncingAll, setSyncingAll] = useState(false)
   const [syncToast, setSyncToast] = useState(null)
   const [filter, setFilter] = useState('all') // all | new | promotable
+  const [sortCol, setSortCol] = useState('code')
+  const [sortDir, setSortDir] = useState('asc')
+
+  function handleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -476,6 +514,19 @@ export default function MarksView() {
     if (filter === 'new')        return row.unimported > 0
     if (filter === 'promotable') return row.promotable > 0
     return true
+  })
+
+  const sorted = [...filtered].sort((a, b) => {
+    let av, bv
+    if      (sortCol === 'code')     { av = a.dev_code  ?? ''; bv = b.dev_code  ?? '' }
+    else if (sortCol === 'name')     { av = a.dev_name  ?? ''; bv = b.dev_name  ?? '' }
+    else if (sortCol === 'marks')    { av = a.total_marks;     bv = b.total_marks     }
+    else if (sortCol === 'imported') { av = a.imported;        bv = b.imported        }
+    else if (sortCol === 'new')      { av = a.unimported;      bv = b.unimported      }
+    else                             { av = a.dev_code  ?? ''; bv = b.dev_code  ?? '' }
+    if (av < bv) return sortDir === 'asc' ? -1 : 1
+    if (av > bv) return sortDir === 'asc' ?  1 : -1
+    return 0
   })
 
   const totalUnimported  = (summary || []).reduce((s, r) => s + r.unimported, 0)
@@ -527,11 +578,27 @@ export default function MarksView() {
         ))}
       </div>
 
+      {/* column header row */}
+      {(sorted.length > 0) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', padding: '4px 12px',
+          marginBottom: 2, gap: 8,
+        }}>
+          <SortHdr col="code"     label="Code"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.code} />
+          <SortHdr col="name"     label="Name"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.name} />
+          <SortHdr col="marks"    label="In MARKS"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.marks} />
+          <SortHdr col="imported" label="Imported"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.imported} />
+          <SortHdr col="new"      label="New"       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.newLots} />
+          <div style={COL.syncBtn} />
+          <div style={COL.importBtn} />
+        </div>
+      )}
+
       {/* dev code rows */}
-      {filtered.length === 0 ? (
+      {sorted.length === 0 ? (
         <div style={{ fontSize: 13, color: '#9ca3af' }}>Nothing to show.</div>
       ) : (
-        filtered.map(row => (
+        sorted.map(row => (
           <DevCodeRow key={row.dev_code} row={row} onRefresh={load} />
         ))
       )}
