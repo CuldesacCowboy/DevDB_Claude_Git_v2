@@ -48,7 +48,7 @@ function cellHighlight(isActive, editable) {
 
 // ─── EditableCell ─────────────────────────────────────────────────────────────
 
-function EditableCell({ value, type = 'number', onSave, placeholder = '—', width = 52, align = 'right', triggerActivate = 0, onDone }) {
+function EditableCell({ value, type = 'number', onSave, placeholder = '—', width = 52, align = 'right', triggerActivate = 0, onDone, min = 0 }) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
   const [saving,  setSaving]  = useState(false)
@@ -82,7 +82,12 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
     if (raw === '') { parsed = null }
     else if (type === 'number') {
       parsed = Number(raw)
-      if (isNaN(parsed)) { setError('!'); return }
+      if (isNaN(parsed)) { setError('!'); setTimeout(() => setError(null), 1200); return }
+      if (parsed < min) {
+        setError(`Min ${min}`)
+        setTimeout(() => setError(null), 1200)
+        return
+      }
     } else { parsed = raw }
     if (parsed === value || (parsed == null && value == null)) { onDone?.(); return }
     setSaving(true); setError(null)
@@ -103,7 +108,7 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
          style={{ width, minHeight: 20, textAlign: align, cursor: 'text' }}>
       {editing ? (
         <input ref={inputRef} type={type === 'date' ? 'date' : 'number'}
-          min={type === 'number' ? 0 : undefined}
+          min={type === 'number' ? min : undefined}
           value={draft} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={onKeyDown}
           style={{ width: '100%', padding: '1px 4px', fontSize: 12, textAlign: align,
@@ -1078,7 +1083,7 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                       ...tdB({ textAlign: 'right', padding: '3px 6px' }),
                       ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
                     }}>
-                      <EditableCell value={projVal} width={56} placeholder="0"
+                      <EditableCell value={projVal} width={56} placeholder="0" min={m + p}
                         onSave={v => onSaveProductSplit(row.phase_id, lt.lot_type_id, v)} />
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 5, marginTop: 2, paddingRight: 4 }}>
                         <span style={{ fontSize: 10, color: m > 0 ? '#1d4ed8' : '#e5e7eb' }} title="In MARKS">M:{m}</span>
