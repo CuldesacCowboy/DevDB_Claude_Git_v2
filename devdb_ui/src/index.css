@@ -9,3 +9,10 @@ body {
 @keyframes spin {
   to { transform: rotate(360deg) }
 }
+
+/* Hide native number spinners on inputs that manage increment themselves */
+input.no-spin::-webkit-outer-spin-button,
+input.no-spin::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

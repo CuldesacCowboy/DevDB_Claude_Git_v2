@@ -99,6 +99,14 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
   function onKeyDown(e) {
     if (e.key === 'Escape') { e.stopPropagation(); setEditing(false); onDone?.() }
     if (e.key === 'Enter')  { e.stopPropagation(); commit() }
+    if (type === 'number' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault()
+      e.stopPropagation()
+      const cur = parseFloat(draft)
+      const base = isNaN(cur) ? min : cur
+      const next = e.key === 'ArrowUp' ? base + 1 : base - 1
+      setDraft(String(Math.max(min, next)))
+    }
   }
 
   const display = type === 'date' ? fmtDate(value) : (value != null ? String(value) : '')
@@ -112,7 +120,9 @@ function EditableCell({ value, type = 'number', onSave, placeholder = '—', wid
           value={draft} onChange={e => setDraft(e.target.value)}
           onBlur={commit} onKeyDown={onKeyDown}
           style={{ width: '100%', padding: '1px 4px', fontSize: 12, textAlign: align,
-                   border: '1px solid #2563eb', borderRadius: 3, background: '#fff', outline: 'none' }} />
+                   border: '1px solid #2563eb', borderRadius: 3, background: '#fff', outline: 'none',
+                   MozAppearance: 'textfield' }}
+          className="no-spin" />
       ) : (
         <span style={{
           display: 'block', padding: '1px 4px', fontSize: 12, borderRadius: 3,
