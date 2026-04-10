@@ -1,8 +1,11 @@
 // SetupView.jsx
 // Hierarchical setup tree: Community → Development → Instrument → Phase → Lot Types
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, createContext, useContext } from 'react'
 import { API_BASE } from '../config'
+
+// Broadcast tick to all open LotTypeRows after any silent refresh
+const LotRefreshContext = createContext(0)
 
 // ─── small helpers ───────────────────────────────────────────────────────────
 
@@ -13,13 +16,14 @@ function formatLotNum(s) {
   return m ? `${m[1]}${parseInt(m[2], 10)}` : s
 }
 
-// Fixed-width display: "WS1" → "WS__1" when maxDigits=3 (underscore-padded, monospace)
+// Fixed-width display: "WS1" → "WS   1" when maxDigits=3 (space-padded, always ≥1 space, monospace)
 function formatLotNumPadded(s, maxDigits) {
   if (!s) return s ?? ''
   const m = s.match(/^([A-Za-z]*)(\d+)$/)
   if (!m) return s
   const numStr = String(parseInt(m[2], 10))
-  return `${m[1]}${'_'.repeat(Math.max(0, maxDigits - numStr.length))}${numStr}`
+  const spaces = Math.max(1, maxDigits - numStr.length + 1)
+  return `${m[1]}${'\u00a0'.repeat(spaces)}${numStr}`
 }
 
 function ChevronIcon({ open }) {
@@ -559,6 +563,18 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
   const [open, setOpen] = useState(false)
   const [lots, setLots] = useState(null)
   const [fetching, setFetching] = useState(false)
+  const refreshTick = useContext(LotRefreshContext)
+  const isFirstTick = useRef(true)
+
+  // When parent data reloads (e.g. after a move), silently re-fetch if already open and loaded
+  useEffect(() => {
+    if (isFirstTick.current) { isFirstTick.current = false; return }
+    if (open && lots !== null) {
+      fetch(`${API_BASE}/phases/${phaseId}/lot-type/${ltId}/lots`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => { if (data) setLots(data) })
+    }
+  }, [refreshTick]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function toggle() {
     const next = !open
@@ -1165,6 +1181,7 @@ export default function SetupView({ showTestCommunities }) {
   const [lotTypes, setLotTypes] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
+  const [refreshTick, setRefreshTick] = useState(0)
 
   const addComm = useAddForm(async (vals) => {
     const res = await fetch(`${API_BASE}/entitlement-groups`, {
@@ -1192,6 +1209,7 @@ export default function SetupView({ showTestCommunities }) {
       setInstruments(instrs)
       setPhases(cfg.rows ?? [])
       setLotTypes(cfg.lot_types ?? [])
+      setRefreshTick(t => t + 1)
     } catch (e) {
       setLoadError(e.message)
     } finally {
@@ -1246,6 +1264,7 @@ export default function SetupView({ showTestCommunities }) {
   )
 
   return (
+    <LotRefreshContext.Provider value={refreshTick}>
     <div style={{ padding: '24px 32px', maxWidth: 820, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
         <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>Setup</h1>
@@ -1291,5 +1310,6 @@ export default function SetupView({ showTestCommunities }) {
         />
       ))}
     </div>
+    </LotRefreshContext.Provider>
   )
 }
