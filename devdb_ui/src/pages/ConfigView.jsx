@@ -794,13 +794,15 @@ function InstrumentTab({ phaseRows, showTest }) {
             <th style={{ ...thB, width: 160 }}>Instrument</th>
             <th style={{ ...thG,  width: 72 }}>Phases</th>
             <th style={{ ...thR,  width: 60 }}>Proj</th>
-            <th style={{ ...thR,  width: 52 }}>Real</th>
-            <th style={{ ...thR,  width: 52 }}>Sim</th>
+            <th style={{ ...thR,  width: 56 }} title="In MARKS">In MARKS</th>
+            <th style={{ ...thR,  width: 60 }} title="Pre-MARKS">Pre-MARKS</th>
+            <th style={{ ...thR,  width: 44 }}>Sim</th>
+            <th style={{ ...thR,  width: 44 }}>Excl</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={7} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+            <tr><td colSpan={9} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
               No instruments.
             </td></tr>
           )}
@@ -816,11 +818,13 @@ function InstrumentTab({ phaseRows, showTest }) {
             const tdG = (extra = {}) => ({ ...td(extra), borderLeft: '2px solid #ebebeb' })
 
             const phaseCount = row.phases.length
-            let projTotal = 0, realTotal = 0, simTotal = 0
+            let projTotal = 0, marksTotal = 0, preTotal = 0, simTotal = 0, exclTotal = 0
             for (const p of row.phases) {
-              projTotal += Object.values(p.product_splits  ?? {}).reduce((s, v) => s + (v  ?? 0), 0)
-              realTotal += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.real ?? 0), 0)
-              simTotal  += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.sim  ?? 0), 0)
+              projTotal  += Object.values(p.product_splits  ?? {}).reduce((s, v) => s + (v        ?? 0), 0)
+              marksTotal += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.marks  ?? 0), 0)
+              preTotal   += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.pre    ?? 0), 0)
+              simTotal   += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.sim    ?? 0), 0)
+              exclTotal  += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.excl   ?? 0), 0)
             }
             const num = v => (
               <span style={{ fontSize: 12, display: 'block', textAlign: 'right', padding: '1px 4px',
@@ -846,8 +850,10 @@ function InstrumentTab({ phaseRows, showTest }) {
                 </td>
                 <td style={tdG({ textAlign: 'right' })}>{num(phaseCount)}</td>
                 <td style={td({ textAlign: 'right' })}>{num(projTotal)}</td>
-                <td style={td({ textAlign: 'right' })}>{num(realTotal)}</td>
+                <td style={td({ textAlign: 'right' })}>{num(marksTotal)}</td>
+                <td style={td({ textAlign: 'right' })}>{num(preTotal)}</td>
                 <td style={td({ textAlign: 'right' })}>{num(simTotal)}</td>
+                <td style={td({ textAlign: 'right' })}>{num(exclTotal)}</td>
               </tr>
             )
           })}
@@ -963,8 +969,10 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
             <th style={thS(LEFT.inst,  CW.inst)}>Instrument</th>
             <th style={thS(LEFT.phase, CW.phase, PHASE_SHADOW)}>Phase</th>
             <th style={thGR({ width: 52 })} title="Sum of projected counts">Proj</th>
-            <th style={thR({  width: 44 })} title="Real lots">Real</th>
+            <th style={thR({  width: 56 })} title="In MARKS">In MARKS</th>
+            <th style={thR({  width: 60 })} title="Pre-MARKS">Pre-MARKS</th>
             <th style={thR({  width: 44 })} title="Sim lots">Sim</th>
+            <th style={thR({  width: 44 })} title="Excluded lots">Excl</th>
             <th style={thGR({ width: 90 })}>Dev Date</th>
             <th style={thR({  width: 84 })}>Lock</th>
             {showSplits && lotTypes.map((lt, i) => (
@@ -1000,9 +1008,11 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
 
             const ltc = row.lot_type_counts ?? {}
             const ps  = row.product_splits  ?? {}
-            const projTotal = Object.values(ps).reduce((s, v) => s + (v ?? 0), 0)
-            const realTotal = Object.values(ltc).reduce((s, v) => s + (v.real ?? 0), 0)
-            const simTotal  = Object.values(ltc).reduce((s, v) => s + (v.sim  ?? 0), 0)
+            const projTotal  = Object.values(ps).reduce((s, v) => s + (v        ?? 0), 0)
+            const marksTotal = Object.values(ltc).reduce((s, v) => s + (v.marks  ?? 0), 0)
+            const preTotal   = Object.values(ltc).reduce((s, v) => s + (v.pre    ?? 0), 0)
+            const simTotal   = Object.values(ltc).reduce((s, v) => s + (v.sim    ?? 0), 0)
+            const exclTotal  = Object.values(ltc).reduce((s, v) => s + (v.excl   ?? 0), 0)
             const isLocked  = !!row.date_dev_actual
             const canLock   = !!row.date_dev_projected
 
@@ -1044,8 +1054,10 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                   </div>
                 </td>
                 <td style={tdG({ textAlign: 'right' })}>{numCell(projTotal)}</td>
-                <td style={tdB({ textAlign: 'right' })}>{numCell(realTotal)}</td>
+                <td style={tdB({ textAlign: 'right' })}>{numCell(marksTotal)}</td>
+                <td style={tdB({ textAlign: 'right' })}>{numCell(preTotal)}</td>
                 <td style={tdB({ textAlign: 'right' })}>{numCell(simTotal)}</td>
+                <td style={tdB({ textAlign: 'right' })}>{numCell(exclTotal)}</td>
                 <td style={tdG({ textAlign: 'right' })}>
                   <EditableCell value={row.date_dev_projected} type="date" width={84}
                     onSave={v => onPatchPhase(row.phase_id, 'date_dev_projected', v)} placeholder="—" />
@@ -1056,7 +1068,11 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                 </td>
                 {showSplits && lotTypes.map((lt, idx) => {
                   const projVal  = ps[lt.lot_type_id] ?? null
-                  const ltCounts = ltc[lt.lot_type_id] ?? { real: 0, sim: 0 }
+                  const ltCounts = ltc[lt.lot_type_id] ?? {}
+                  const m = ltCounts.marks ?? 0
+                  const p = ltCounts.pre   ?? 0
+                  const s = ltCounts.sim   ?? 0
+                  const x = ltCounts.excl  ?? 0
                   return (
                     <td key={lt.lot_type_id} style={{
                       ...tdB({ textAlign: 'right', padding: '3px 6px' }),
@@ -1064,9 +1080,11 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                     }}>
                       <EditableCell value={projVal} width={56} placeholder="0"
                         onSave={v => onSaveProductSplit(row.phase_id, lt.lot_type_id, v)} />
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 2, paddingRight: 4 }}>
-                        <span style={{ fontSize: 10, color: ltCounts.real > 0 ? '#6b7280' : '#e5e7eb' }} title="Real">R:{ltCounts.real}</span>
-                        <span style={{ fontSize: 10, color: ltCounts.sim  > 0 ? '#9ca3af' : '#e5e7eb' }} title="Sim">S:{ltCounts.sim}</span>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 5, marginTop: 2, paddingRight: 4 }}>
+                        <span style={{ fontSize: 10, color: m > 0 ? '#1d4ed8' : '#e5e7eb' }} title="In MARKS">M:{m}</span>
+                        <span style={{ fontSize: 10, color: p > 0 ? '#92400e' : '#e5e7eb' }} title="Pre-MARKS">P:{p}</span>
+                        <span style={{ fontSize: 10, color: s > 0 ? '#9ca3af' : '#e5e7eb' }} title="Sim">S:{s}</span>
+                        {x > 0 && <span style={{ fontSize: 10, color: '#9ca3af' }} title="Excluded">X:{x}</span>}
                       </div>
                     </td>
                   )
