@@ -818,14 +818,14 @@ function InstrumentTab({ phaseRows, showTest }) {
             const tdG = (extra = {}) => ({ ...td(extra), borderLeft: '2px solid #ebebeb' })
 
             const phaseCount = row.phases.length
-            let projTotal = 0, marksTotal = 0, preTotal = 0, simTotal = 0, exclTotal = 0
+            let projTotal = 0, marksTotal = 0, preTotal = 0, exclTotal = 0
             for (const p of row.phases) {
               projTotal  += Object.values(p.product_splits  ?? {}).reduce((s, v) => s + (v        ?? 0), 0)
               marksTotal += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.marks  ?? 0), 0)
               preTotal   += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.pre    ?? 0), 0)
-              simTotal   += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.sim    ?? 0), 0)
               exclTotal  += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.excl   ?? 0), 0)
             }
+            const simTotal = Math.max(0, projTotal - marksTotal - preTotal)
             const num = v => (
               <span style={{ fontSize: 12, display: 'block', textAlign: 'right', padding: '1px 4px',
                              color: v > 0 ? '#374151' : '#d1d5db' }}>
@@ -1011,8 +1011,8 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
             const projTotal  = Object.values(ps).reduce((s, v) => s + (v        ?? 0), 0)
             const marksTotal = Object.values(ltc).reduce((s, v) => s + (v.marks  ?? 0), 0)
             const preTotal   = Object.values(ltc).reduce((s, v) => s + (v.pre    ?? 0), 0)
-            const simTotal   = Object.values(ltc).reduce((s, v) => s + (v.sim    ?? 0), 0)
             const exclTotal  = Object.values(ltc).reduce((s, v) => s + (v.excl   ?? 0), 0)
+            const simTotal   = Math.max(0, projTotal - marksTotal - preTotal)
             const isLocked  = !!row.date_dev_actual
             const canLock   = !!row.date_dev_projected
 
@@ -1071,8 +1071,8 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                   const ltCounts = ltc[lt.lot_type_id] ?? {}
                   const m = ltCounts.marks ?? 0
                   const p = ltCounts.pre   ?? 0
-                  const s = ltCounts.sim   ?? 0
                   const x = ltCounts.excl  ?? 0
+                  const s = Math.max(0, (projVal ?? 0) - m - p)
                   return (
                     <td key={lt.lot_type_id} style={{
                       ...tdB({ textAlign: 'right', padding: '3px 6px' }),
