@@ -1,11 +1,29 @@
 // SetupView.jsx
 // Hierarchical setup tree: Community → Development → Instrument → Phase → Lot Types
 
-import { useState, useEffect, useRef, createContext, useContext } from 'react'
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react'
 import { API_BASE } from '../config'
 
 // Broadcast tick to all open LotTypeRows after any silent refresh
 const LotRefreshContext = createContext(0)
+// Broadcast expand-all / collapse-all commands down the tree
+const ExpandAllContext = createContext({ tick: 0, value: null })
+
+// Persistent open state backed by localStorage
+function useLocalOpen(key) {
+  const [open, setOpenRaw] = useState(() => {
+    try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : false }
+    catch { return false }
+  })
+  const setOpen = useCallback((val) => {
+    setOpenRaw(prev => {
+      const next = typeof val === 'function' ? val(prev) : val
+      try { localStorage.setItem(key, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [key]) // eslint-disable-line react-hooks/exhaustive-deps
+  return [open, setOpen]
+}
 
 // ─── subtotal layout ──────────────────────────────────────────────────────────
 const SUB = { D: 52, I: 78, P: 58, L: 56 }
@@ -15,13 +33,16 @@ function phaseTotal(p) {
   return Object.values(p.product_splits ?? {}).reduce((s, v) => s + (v ?? 0), 0)
 }
 
-function SubCell({ n, w, left = false }) {
+function SubCell({ n, w, left = false, onClick }) {
   return (
-    <div style={{
-      width: w, flexShrink: 0, textAlign: 'right', padding: '0 5px',
-      fontSize: 11, color: n > 0 ? '#374151' : '#d1d5db',
-      ...(left ? { borderLeft: '2px solid #e5e7eb' } : {}),
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        width: w, flexShrink: 0, textAlign: 'right', padding: '0 5px',
+        fontSize: 11, color: n > 0 ? '#374151' : '#d1d5db',
+        cursor: onClick ? 'pointer' : undefined,
+        ...(left ? { borderLeft: '2px solid #e5e7eb' } : {}),
+      }}>
       {n > 0 ? n : '—'}
     </div>
   )
@@ -163,7 +184,7 @@ function InlineEdit({ value, onSave, style }) {
         title="Rename"
         style={{
           fontSize: 10, color: '#d1d5db', cursor: 'pointer', lineHeight: 1,
-          opacity: 0, transition: 'opacity 0.1s',
+          opacity: 0.35, transition: 'opacity 0.1s',
         }}
         className="inline-edit-pencil"
       >✎</span>
@@ -521,9 +542,9 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
   const maxDigits = digitLengths.length > 0 ? Math.max(...digitLengths) : 1
 
   const groups = [
-    { key: 'marks', label: 'In MARKS',  items: allLots.filter(l => !l.excluded && l.lot_source === 'real' && l.in_registry) },
-    { key: 'pre',   label: 'Pre-MARKS', items: allLots.filter(l => !l.excluded && (l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry))) },
-    { key: 'sim',   label: 'Sim',       items: allLots.filter(l => !l.excluded && l.lot_source === 'sim') },
+    { key: 'marks', label: 'Recorded', items: allLots.filter(l => !l.excluded && l.lot_source === 'real' && l.in_registry) },
+    { key: 'pre',   label: 'Pending',  items: allLots.filter(l => !l.excluded && (l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry))) },
+    { key: 'sim',   label: 'Sim',      items: allLots.filter(l => !l.excluded && l.lot_source === 'sim') },
   ].filter(g => g.items.length > 0)
 
   const excludedLots = allLots.filter(l => l.excluded && l.lot_source !== 'sim')
@@ -693,7 +714,7 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
 // ─── LotTypeRow — one table row + optional lot-pill detail row ────────────────
 
 function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre, sim, excluded,
-                       targetPhases, lotTypes, onSaveTotal, onDelete, onRefresh }) {
+                       targetPhases, lotTypes, onSaveTotal, onDelete, onRefresh, showMirror = true }) {
   const [open, setOpen] = useState(false)
   const [lots, setLots] = useState(null)
   const [fetching, setFetching] = useState(false)
@@ -770,10 +791,10 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
         <td style={{ padding: '3px 6px', textAlign: 'right' }}>
           <EditableCount value={projected} onSave={onSaveTotal} min={realMarks + realPre} />
         </td>
-        <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{realMarks}</td>
-        <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{realPre}</td>
-        <td style={{ padding: '3px 6px', textAlign: 'right', color: '#6b7280' }}>{sim}</td>
-        <td style={{ padding: '3px 6px', textAlign: 'right', color: '#9ca3af' }}>{excluded > 0 ? excluded : ''}</td>
+        <td style={{ padding: '3px 6px', textAlign: 'right', color: realMarks > 0 ? '#1d4ed8' : '#d1d5db' }}>{realMarks > 0 ? realMarks : '—'}</td>
+        <td style={{ padding: '3px 6px', textAlign: 'right', color: realPre > 0 ? '#92400e' : '#d1d5db' }}>{realPre > 0 ? realPre : '—'}</td>
+        <td style={{ padding: '3px 6px', textAlign: 'right', color: sim > 0 ? '#6b7280' : '#d1d5db' }}>{sim > 0 ? sim : '—'}</td>
+        <td style={{ padding: '3px 6px', textAlign: 'right', color: excluded > 0 ? '#9ca3af' : '#d1d5db' }}>{excluded > 0 ? excluded : '—'}</td>
         <td style={{ padding: '3px 2px', textAlign: 'center' }}>
           <button
             onClick={onDelete}
@@ -787,17 +808,19 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
             ×
           </button>
         </td>
-        <td style={{
-          padding: '3px 6px', textAlign: 'right', width: SUB.L,
-          borderLeft: '2px solid #e5e7eb',
-          fontSize: 11, color: projected > 0 ? '#374151' : '#d1d5db',
-        }}>
-          {projected > 0 ? projected : '—'}
-        </td>
+        {showMirror && (
+          <td style={{
+            padding: '3px 6px', textAlign: 'right', width: SUB.L,
+            borderLeft: '2px solid #e5e7eb',
+            fontSize: 11, color: projected > 0 ? '#374151' : '#d1d5db',
+          }}>
+            {projected > 0 ? projected : '—'}
+          </td>
+        )}
       </tr>
       {open && (
         <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
-          <td colSpan={8} style={{ padding: '4px 6px 8px 28px', background: '#fafafa' }}>
+          <td colSpan={showMirror ? 8 : 7} style={{ padding: '4px 6px 8px 28px', background: '#fafafa' }}>
             {fetching
               ? <span style={{ fontSize: 11, color: '#9ca3af' }}>Loading…</span>
               : <LotPillGroup lots={lots} targetPhases={targetPhases} onMoveLot={handleLotMoved}
@@ -903,16 +926,16 @@ const ROW = {
   fontSize: 13,
 }
 
-function AddButton({ label, onClick }) {
+function AddButton({ label, onClick, dim = false }) {
   return (
     <button onClick={onClick}
       style={{
-        fontSize: 11, color: '#6b7280', background: 'none', border: 'none',
+        fontSize: 11, color: dim ? '#d1d5db' : '#6b7280', background: 'none', border: 'none',
         cursor: 'pointer', padding: '1px 4px', borderRadius: 3,
-        marginLeft: 4,
+        marginLeft: 4, transition: 'color 0.15s',
       }}
       onMouseEnter={e => { e.currentTarget.style.color = '#2563eb'; e.currentTarget.style.background = '#eff6ff' }}
-      onMouseLeave={e => { e.currentTarget.style.color = '#6b7280'; e.currentTarget.style.background = 'none' }}>
+      onMouseLeave={e => { e.currentTarget.style.color = dim ? '#d1d5db' : '#6b7280'; e.currentTarget.style.background = 'none' }}>
       + {label}
     </button>
   )
@@ -1203,9 +1226,11 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
   const targetPhases = (phases || []).filter(
     p => p.dev_id === phase.dev_id && p.phase_id !== phase.phase_id
   )
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useLocalOpen(`setup_open_phase_${phase.phase_id}`)
   const [tab, setTab]   = useState('lots')   // 'lots' | 'buildings'
   const [addLtOpen, setAddLtOpen] = useState(false)
+  const { tick: xTick, value: xVal } = useContext(ExpandAllContext)
+  useEffect(() => { if (xTick > 0) setOpen(xVal) }, [xTick]) // eslint-disable-line
   const [addLtId, setAddLtId] = useState('')
   const [addSaving, setAddSaving] = useState(false)
   const [addError, setAddError] = useState(null)
@@ -1279,11 +1304,13 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
   }
 
   const phaseL = tableRows.reduce((s, r) => s + (r.projected ?? 0), 0)
+  const showMirror = tableRows.length > 1
 
   return (
     <div style={{ paddingLeft: 24, paddingTop: 2, paddingBottom: 2 }}>
       {/* Phase header */}
-      <div style={{ ...ROW }} onClick={() => setOpen(o => !o)}>
+      <div style={{ ...ROW }} onClick={() => setOpen(o => !o)}
+        tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
         <span style={{ color: '#374151', flex: 1 }}>
           <InlineEdit value={phase.phase_name} onSave={onRename} />
@@ -1327,14 +1354,14 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
               <thead>
                 <tr>
-                  {['Product', 'Total', 'In MARKS', 'Pre-MARKS', 'Sim', 'Excl', '', 'L'].map((h, i) => (
+                  {['Product', 'Total', 'Recorded', 'Pending', 'Sim', 'Excl', '', ...(showMirror ? ['L'] : [])].map((h, i) => (
                     <th key={i} style={{
                       textAlign: i === 0 ? 'left' : i === 6 ? 'center' : 'right',
                       padding: '2px 6px 4px',
                       fontWeight: 400, fontSize: 11, color: '#9ca3af',
                       borderBottom: '1px solid #e5e7eb',
-                      width: i === 6 ? 24 : i === 7 ? SUB.L : undefined,
-                      ...(i === 7 ? { borderLeft: '2px solid #e5e7eb' } : {}),
+                      width: i === 6 ? 24 : (showMirror && i === 7) ? SUB.L : undefined,
+                      ...((showMirror && i === 7) ? { borderLeft: '2px solid #e5e7eb' } : {}),
                     }}>{h}</th>
                   ))}
                 </tr>
@@ -1356,6 +1383,7 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
                     onSaveTotal={n => handleSaveTotal(r.ltId, n)}
                     onDelete={() => handleDelete(r.ltId)}
                     onRefresh={onRefresh}
+                    showMirror={showMirror}
                   />
                 ))}
               </tbody>
@@ -1423,10 +1451,12 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
 
 function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onRefresh }) {
   const instrPhases = phases.filter(p => p.instrument_id === instr.instrument_id)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useLocalOpen(`setup_open_instr_${instr.instrument_id}`)
   const addPhase = useAddForm(async (vals) => {
     await onAddPhase(instr.instrument_id, vals.phase_name)
   })
+  const { tick: xTick, value: xVal } = useContext(ExpandAllContext)
+  useEffect(() => { if (xTick > 0) setOpen(xVal) }, [xTick]) // eslint-disable-line
 
   const instrP = instrPhases.length
   const instrL = instrPhases.reduce((s, p) => s + phaseTotal(p), 0)
@@ -1434,7 +1464,8 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
   return (
     <div style={{ paddingLeft: 24 }}>
       <div style={{ ...ROW, color: '#4b5563' }}
-        onClick={() => setOpen(o => !o)}>
+        onClick={() => setOpen(o => !o)}
+        tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
         <span style={{ fontWeight: 500, flex: 1, minWidth: 0 }}>
           <InlineEdit value={instr.instrument_name} onSave={onRenameInstr} />
@@ -1443,16 +1474,14 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
           padding: '0 5px', borderRadius: 10, marginLeft: 4 }}>
           {instr.instrument_type}
         </span>
-        {open && (
-          <span onClick={e => e.stopPropagation()}>
-            <AddButton label="phase" onClick={() => addPhase.setOpen(o => !o)} />
-          </span>
-        )}
+        <span onClick={e => e.stopPropagation()}>
+          <AddButton label="phase" dim={!open} onClick={() => { setOpen(true); addPhase.setOpen(true) }} />
+        </span>
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
           <div style={{ width: SUB.I, flexShrink: 0 }} />
-          <SubCell n={instrP} w={SUB.P} />
-          <SubCell n={instrL} w={SUB.L} />
+          <SubCell n={instrP} w={SUB.P} onClick={e => { e.stopPropagation(); setOpen(true) }} />
+          <SubCell n={instrL} w={SUB.L} onClick={e => { e.stopPropagation(); setOpen(true) }} />
         </div>
       </div>
 
@@ -1494,10 +1523,12 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
 
 function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onRenamePhase, onRefresh }) {
   const devInstrs = instruments.filter(i => i.modern_dev_id === dev.dev_id)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useLocalOpen(`setup_open_dev_${dev.dev_id}`)
   const addInstr = useAddForm(async (vals) => {
     await onAddInstrument(dev.dev_id, vals.instrument_name, vals.instrument_type)
   })
+  const { tick: xTick, value: xVal } = useContext(ExpandAllContext)
+  useEffect(() => { if (xTick > 0) setOpen(xVal) }, [xTick]) // eslint-disable-line
 
   const devInstrIds = new Set(devInstrs.map(i => i.instrument_id))
   const devPhases = phases.filter(p => devInstrIds.has(p.instrument_id))
@@ -1508,7 +1539,8 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
   return (
     <div style={{ paddingLeft: 20 }}>
       <div style={{ ...ROW, color: '#374151' }}
-        onClick={() => setOpen(o => !o)}>
+        onClick={() => setOpen(o => !o)}
+        tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
         <span style={{ fontWeight: 500, flex: 1, minWidth: 0 }}>
           <InlineEdit value={dev.dev_name} onSave={onRenameDev} />
@@ -1519,16 +1551,14 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
             {dev.marks_code}
           </span>
         )}
-        {open && (
-          <span onClick={e => e.stopPropagation()}>
-            <AddButton label="instrument" onClick={() => addInstr.setOpen(o => !o)} />
-          </span>
-        )}
+        <span onClick={e => e.stopPropagation()}>
+          <AddButton label="instrument" dim={!open} onClick={() => { setOpen(true); addInstr.setOpen(true) }} />
+        </span>
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
-          <SubCell n={devI} w={SUB.I} />
-          <SubCell n={devP} w={SUB.P} />
-          <SubCell n={devL} w={SUB.L} />
+          <SubCell n={devI} w={SUB.I} onClick={e => { e.stopPropagation(); setOpen(true) }} />
+          <SubCell n={devP} w={SUB.P} onClick={e => { e.stopPropagation(); setOpen(true) }} />
+          <SubCell n={devL} w={SUB.L} onClick={e => { e.stopPropagation(); setOpen(true) }} />
         </div>
       </div>
 
@@ -1578,10 +1608,12 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
   onAddDev, onAddInstrument, onAddPhase,
   onRenameComm, onRenameDev, onRenameInstr, onRenamePhase,
   onRefresh }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useLocalOpen(`setup_open_comm_${comm.ent_group_id}`)
   const addDev = useAddForm(async (vals) => {
     await onAddDev(comm.ent_group_id, vals.dev_name, vals.marks_code || null)
   })
+  const { tick: xTick, value: xVal } = useContext(ExpandAllContext)
+  useEffect(() => { if (xTick > 0) setOpen(xVal) }, [xTick]) // eslint-disable-line
 
   const commInstrIds = new Set(
     instruments.filter(i => devs.some(d => d.dev_id === i.modern_dev_id)).map(i => i.instrument_id)
@@ -1591,6 +1623,15 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
   const commI = commInstrIds.size
   const commP = commPhases.length
   const commL = commPhases.reduce((s, p) => s + phaseTotal(p), 0)
+  const phasesWithLots = commPhases.filter(p => phaseTotal(p) > 0).length
+  const dotColor = commP === 0 ? '#e5e7eb'
+    : phasesWithLots === commP ? '#10b981'
+    : phasesWithLots === 0    ? '#f87171'
+    : '#f59e0b'
+  const dotTitle = commP === 0 ? 'No phases'
+    : phasesWithLots === commP ? 'All phases have projected lots'
+    : phasesWithLots === 0    ? 'No phases have projected lots'
+    : `${phasesWithLots} of ${commP} phases have projected lots`
 
   return (
     <div style={{
@@ -1603,16 +1644,16 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
           borderBottom: open ? '1px solid #e5e7eb' : 'none',
           cursor: 'pointer', fontWeight: 600, color: '#111827', fontSize: 13,
         }}
-        onClick={() => setOpen(o => !o)}>
+        onClick={() => setOpen(o => !o)}
+        tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, display: 'inline-block', background: dotColor, marginRight: 2 }} title={dotTitle} />
         <ChevronIcon open={open} />
         <span style={{ flex: 1 }}>
           <InlineEdit value={comm.ent_group_name} onSave={onRenameComm} />
         </span>
-        {open && (
-          <span onClick={e => e.stopPropagation()}>
-            <AddButton label="development" onClick={() => addDev.setOpen(o => !o)} />
-          </span>
-        )}
+        <span onClick={e => e.stopPropagation()}>
+          <AddButton label="development" dim={!open} onClick={() => { setOpen(true); addDev.setOpen(true) }} />
+        </span>
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <SubCell n={commD} w={SUB.D} left />
           <SubCell n={commI} w={SUB.I} />
@@ -1675,6 +1716,7 @@ export default function SetupView({ showTestCommunities }) {
   const [loadError, setLoadError] = useState(null)
   const [refreshTick, setRefreshTick] = useState(0)
   const [commSort, setCommSort] = useState({ key: null, dir: 1 })
+  const [expandCtx, setExpandCtx] = useState({ tick: 0, value: null })
 
   const addComm = useAddForm(async (vals) => {
     const res = await fetch(`${API_BASE}/entitlement-groups`, {
@@ -1817,6 +1859,7 @@ export default function SetupView({ showTestCommunities }) {
 
   return (
     <LotRefreshContext.Provider value={refreshTick}>
+    <ExpandAllContext.Provider value={expandCtx}>
     <div style={{ padding: '24px 32px', maxWidth: 820, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
         <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>Setup</h1>
@@ -1829,6 +1872,18 @@ export default function SetupView({ showTestCommunities }) {
           }}>
           + New community
         </button>
+        <span style={{ flex: 1 }} />
+        {[['Expand all', true], ['Collapse all', false]].map(([label, val]) => (
+          <button key={label}
+            onClick={() => setExpandCtx(prev => ({ tick: prev.tick + 1, value: val }))}
+            style={{
+              fontSize: 11, color: '#6b7280', background: 'none',
+              border: '1px solid #e5e7eb', borderRadius: 4,
+              padding: '2px 8px', cursor: 'pointer',
+            }}>
+            {label}
+          </button>
+        ))}
       </div>
 
       {addComm.open && (
@@ -1886,7 +1941,27 @@ export default function SetupView({ showTestCommunities }) {
           onRefresh={() => load(true)}
         />
       ))}
+
+      {sortedCommunities.length > 0 && (() => {
+        const totals = Object.values(commStats).reduce(
+          (acc, s) => ({ D: acc.D + s.D, I: acc.I + s.I, P: acc.P + s.P, L: acc.L + s.L }),
+          { D: 0, I: 0, P: 0, L: 0 }
+        )
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', paddingRight: 6, paddingTop: 6, borderTop: '1px solid #e5e7eb', marginTop: 2 }}>
+            <span style={{ flex: 1, fontSize: 11, color: '#9ca3af', paddingLeft: 4 }}>Total</span>
+            {(['D', 'I', 'P', 'L']).map((key, idx) => (
+              <div key={key} style={{
+                width: SUB[key], flexShrink: 0, textAlign: 'right', padding: '0 5px',
+                fontSize: 11, fontWeight: 600, color: '#374151',
+                ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
+              }}>{totals[key]}</div>
+            ))}
+          </div>
+        )
+      })()}
     </div>
+    </ExpandAllContext.Provider>
     </LotRefreshContext.Provider>
   )
 }
