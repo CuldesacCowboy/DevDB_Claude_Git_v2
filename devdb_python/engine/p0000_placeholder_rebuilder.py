@@ -3,10 +3,14 @@ P-0000 placeholder_rebuilder — Rebuild placeholder delivery events from demand
 
 Reads:   sim_delivery_events, sim_delivery_event_phases, sim_dev_phases,
          sim_entitlement_delivery_config (DB)
-Writes:  sim_delivery_events, sim_delivery_event_phases (DB, DELETE + INSERT)
+Writes:  sim_delivery_events, sim_delivery_event_phases,
+         sim_delivery_event_predecessors (DB, DELETE + INSERT)
 Input:   conn: DBConnection, ent_group_id: int
 Rules:   Deletes all placeholder events (date_dev_actual IS NULL) for the ent_group.
          Inserts new auto-scheduled events per D-139 cross-dev bundling logic.
+         After writing events, inserts predecessor rows between consecutive events
+         per development (ordered by sequence_number) so P-0200/P-0400 enforce
+         absolute intra-dev phase ordering (simultaneous OK; never out of order).
          No-ops if auto_schedule_enabled is False. Never touches locked events.
          No undelivered phases → return empty list.
          Not Own: touching locked events, writing to sim_lots or sim_dev_phases date fields.
@@ -672,4 +676,44 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         f"P-00: Created {len(new_event_ids)} placeholder delivery event(s) "
         f"for ent_group_id={ent_group_id}."
     )
+
+    # ------------------------------------------------------------------
+    # Step 7: Generate intra-dev sequence predecessor rows
+    # ------------------------------------------------------------------
+    # Within each development, phases must deliver in sequence_number order
+    # (simultaneous is fine; earlier sequence must never follow later sequence).
+    # events_to_create is already in chronological order and phases within each
+    # event were popped in sequence_number order — so creation order == sequence
+    # order per dev. Write predecessor rows between consecutive events per dev
+    # so P-0200/P-0400 enforce this as an absolute constraint.
+    phase_dev_map = {
+        int(r["phase_id"]): int(r["dev_id"])
+        for _, r in all_phases_df.iterrows()
+    }
+
+    dev_event_sequence: dict[int, list[int]] = defaultdict(list)
+    for ev_dict, event_id in zip(events_to_create, new_event_ids):
+        devs_seen: set[int] = set()
+        for ph_id in ev_dict["phases"]:
+            dev_id = phase_dev_map.get(ph_id)
+            if dev_id is not None and dev_id not in devs_seen:
+                dev_event_sequence[dev_id].append(event_id)
+                devs_seen.add(dev_id)
+
+    pred_count = 0
+    for dev_id, event_ids in dev_event_sequence.items():
+        for i in range(1, len(event_ids)):
+            conn.execute(
+                """
+                INSERT INTO sim_delivery_event_predecessors
+                    (event_id, predecessor_event_id)
+                VALUES (%s, %s)
+                """,
+                (event_ids[i], event_ids[i - 1]),
+            )
+            pred_count += 1
+
+    if pred_count:
+        logger.info(f"P-00: Created {pred_count} intra-dev sequence predecessor row(s).")
+
     return new_event_ids

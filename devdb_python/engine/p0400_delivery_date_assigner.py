@@ -1,12 +1,15 @@
 """
 P-0400 delivery_date_assigner — Assign date_dev_projected to the highest-priority event.
 
-Reads:   sim_dev_phases, sim_delivery_event_phases, sim_entitlement_delivery_config (DB)
+Reads:   sim_dev_phases, sim_delivery_event_phases, sim_delivery_event_predecessors,
+         sim_entitlement_delivery_config (DB)
 Writes:  sim_delivery_events.date_dev_projected (DB, UPDATE)
 Input:   conn: DBConnection, delivery_event_id: int, ent_group_id: int
 Rules:   Computes MIN(date_dev_demand_derived) across child phases; adjusts for window.
-         Date can only move earlier, never later (D-115).
+         Date can only move earlier, never later (D-115) — demand guard.
          Placeholder guard: never move date_dev_projected earlier than P-0000 wrote (D-141).
+         Sequence constraint: projected date floored to MAX(predecessor date_dev_projected).
+         Sequence constraint overrides the demand guard — phase ordering is absolute.
          MIN outside window → latest permissible month before MIN; if none, first permissible.
          Not Own: writing to phase or lot tables, ranking events.
 """
@@ -130,10 +133,29 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
         if projected > cur and cur >= today_first:
             logger.info(f"P-04: Projected date {projected} is later than current "
                         f"{cur}. Keeping current.")
-            return cur
+            projected = cur  # demand guard — predecessor floor may override below
 
     if cur is not None and is_placeholder and projected < cur:
-        return cur  # never move placeholder earlier — P-00's lean date is authoritative
+        projected = cur  # never move placeholder earlier — P-00's lean date is authoritative
+
+    # Predecessor sequence floor — absolute constraint; overrides demand/placeholder guards
+    pred_floor_df = conn.read_df(
+        """
+        SELECT MAX(sde.date_dev_projected) AS max_pred_date
+        FROM sim_delivery_event_predecessors sep
+        JOIN sim_delivery_events sde ON sde.delivery_event_id = sep.predecessor_event_id
+        WHERE sep.event_id = %s
+        """,
+        (delivery_event_id,),
+    )
+    if not pred_floor_df.empty:
+        max_pred_raw = pred_floor_df.iloc[0]["max_pred_date"]
+        if max_pred_raw is not None and not pd.isnull(max_pred_raw):
+            pred_floor = max_pred_raw.date() if hasattr(max_pred_raw, "date") else max_pred_raw
+            if projected < pred_floor:
+                logger.info(f"P-04: Sequence constraint -- event {delivery_event_id} "
+                            f"floored from {projected} to predecessor date {pred_floor}.")
+                projected = pred_floor
 
     conn.execute(
         "UPDATE sim_delivery_events SET date_dev_projected = %s WHERE delivery_event_id = %s",
