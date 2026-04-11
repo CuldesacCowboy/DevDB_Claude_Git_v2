@@ -178,3 +178,43 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Drops delivery_window_start and delivery_window_end from sim_entitlement_delivery_config and sim_delivery_events; adds delivery_months integer[] to sim_entitlement_delivery_config; migrates existing rows using generate_series (handles year-boundary wrap where start > end)
 - Tables: sim_entitlement_delivery_config (ADD COLUMN, DROP COLUMNS), sim_delivery_events (DROP COLUMNS)
 - Last commit: 2026-04-04
+
+### devdb_python/migrations/031_global_settings.sql
+- Owns: Creates sim_global_settings (single-row id=1 table) for global simulation defaults — build times, inventory floors, delivery defaults; community delivery config overrides where non-null
+- Tables: sim_global_settings (CREATE TABLE)
+- Last commit: 2026-04-05
+
+### devdb_python/migrations/032_phase_config_spreadsheet.sql
+- Owns: Adds date_dev_actual to sim_dev_phases (locks delivery date when set); adds UNIQUE constraint on sim_phase_builder_splits(phase_id, builder_id) for ON CONFLICT upserts; adds sequence for sim_phase_builder_splits.split_id
+- Tables: sim_dev_phases (ADD COLUMN), sim_phase_builder_splits (ADD CONSTRAINT, ADD SEQUENCE)
+- Last commit: 2026-04-05
+
+### devdb_python/migrations/033_backfill_phase_date_dev_actual.sql
+- Owns: One-time backfill — sets sim_dev_phases.date_dev_actual from existing locked delivery events so Configure page reflects locks entered before phase-level locking existed
+- Tables: sim_dev_phases (UPDATE from sim_delivery_events/sim_delivery_event_phases)
+- Last commit: 2026-04-05
+
+### devdb_python/migrations/034_backfill_dim_development_bridge.sql
+- Owns: Widens developments.marks_code from CHAR(2) to TEXT; backfills dim_development rows for devs missing a bridge; backfills sim_ent_group_developments links for devs with community_id but no link row
+- Tables: developments (ALTER COLUMN), dim_development (INSERT), sim_ent_group_developments (INSERT)
+- Last commit: 2026-04-08
+
+### devdb_python/migrations/035_lot_excluded_flag.sql
+- Owns: Adds excluded boolean (DEFAULT FALSE) to sim_lots; excluded lots are invisible to simulation, phase counts, unstarted inventory, and delivery scheduling; user-togglable
+- Tables: sim_lots (ADD COLUMN IF NOT EXISTS)
+- Last commit: 2026-04-08
+
+### devdb_python/migrations/036_marks_lot_registry.sql
+- Owns: Creates marks_lot_registry — one row per distinct MARKS lot deduped from OPTIONLOTMASTER; source of truth for "what lots exist in MARKS" including P-status lots with no schedhousedetail activity
+- Tables: marks_lot_registry (CREATE TABLE IF NOT EXISTS)
+- Last commit: 2026-04-08
+
+### devdb_python/migrations/037_link_legacy_phases_to_instruments.sql
+- Owns: Links legacy phases (instrument_id=NULL) to sim_legal_instruments; creates synthetic instruments per dev for orphaned phases so all phases are visible in the UI's instrument-based hierarchy
+- Tables: sim_legal_instruments (INSERT), sim_dev_phases (UPDATE instrument_id)
+- Last commit: 2026-04-08
+
+### devdb_python/migrations/038_predecessor_sequence.sql
+- Owns: Adds auto-increment sequence to sim_delivery_event_predecessors.id so P-0000 Step 7 can INSERT predecessor rows without supplying explicit IDs; seeds sequence above existing MAX
+- Tables: sim_delivery_event_predecessors (ADD SEQUENCE + SET DEFAULT)
+- Last commit: 2026-04-10

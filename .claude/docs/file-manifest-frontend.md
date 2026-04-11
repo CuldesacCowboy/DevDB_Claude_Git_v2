@@ -32,6 +32,41 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Tables: none (API calls via /api/entitlement-groups, /api/developments, /api/instruments, /api/phases)
 - Last commit: 2026-04-04
 
+### devdb_ui/src/pages/SetupView.jsx
+- Owns: Setup tree page — Community → Development → Instrument → Phase hierarchy; sortable community list; sticky sort header + summary row; D/I/P/L subtotal columns at each level; hover-only add buttons on tree rows; ExpandAllContext + LotRefreshContext providers; CommunityRow, DevRow, InstrumentRow components; delegates phase detail to PhaseRow
+- Imports: react (useState, useEffect, useContext, useRef, createContext), API_BASE from config, setupShared (all shared atoms), PhaseRow
+- Imported by: App.jsx (via /setup route)
+- Tables: none (API calls via /admin/setup-tree, /phases, /instruments, /developments, /entitlement-groups)
+- Last commit: 2026-04-10
+
+### devdb_ui/src/components/setup/setupShared.jsx
+- Owns: All shared hooks, utilities, and UI atoms for the Setup tree; exports LotRefreshContext, ExpandAllContext, useLocalOpen, SUB (column widths), SUB_LABELS, phaseTotal, fmtRelative, SubCell, SortHeader, formatLotNum, lotSeqStr, formatLotNumPadded, ChevronIcon, InlineEdit, EditableCount, AddForm, useAddForm, ROW, AddButton
+- Imports: react (useState, useEffect, useRef, useCallback, createContext, useContext)
+- Imported by: SetupView.jsx, PhaseRow.jsx, LotPillGroup.jsx, BuildingsTab.jsx
+- Tables: none
+- Last commit: 2026-04-10
+
+### devdb_ui/src/components/setup/PhaseRow.jsx
+- Owns: PhaseRow (expandable phase header with Lots/Buildings tab bar) and LotTypeRow (one table row + lot pill detail expand); lot type table: Product/Total/Active/Pending/Sim/Excl columns; inline lot pill expand via LotPillGroup; silent re-fetch on LotRefreshContext tick
+- Imports: react (useState, useEffect, useRef, useContext), API_BASE, setupShared (multiple), LotPillGroup, BuildingsTab
+- Imported by: SetupView.jsx
+- Tables: none (API calls via /phases/{id}/lot-type/{ltId}/lots, /phases/{id}/lot-type/{ltId}/projected, DELETE /phases/{id}/lot-type/{ltId})
+- Last commit: 2026-04-10
+
+### devdb_ui/src/components/setup/LotPillGroup.jsx
+- Owns: LotPillGroup (pill grid with add-pre-lots panel); MovableLotPill (drag-to-move, exclude/un-exclude actions); AddPreLotsPanel (bulk pre-lot creation inline); exports LOT_PILL, LotPill, LotPillGroup
+- Imports: react (useState), API_BASE, formatLotNum/formatLotNumPadded/lotSeqStr from setupShared
+- Imported by: PhaseRow.jsx
+- Tables: none (API calls via /lots/{id}/move, /lots/{id}/exclude, /bulk-lots/suggestions, /bulk-lots/insert)
+- Last commit: 2026-04-10
+
+### devdb_ui/src/components/setup/BuildingsTab.jsx
+- Owns: BuildingsTab — building list per phase; create/rename/retype/delete buildings; assign lots to buildings; BUILDING_TYPES color map; TypePill, LotChip internal components
+- Imports: react (useState, useEffect), API_BASE, formatLotNumPadded/InlineEdit from setupShared
+- Imported by: PhaseRow.jsx
+- Tables: none (API calls via /phases/{id}/buildings, /buildings/{id})
+- Last commit: 2026-04-10
+
 ### devdb_ui/src/pages/ConfigView.jsx
 - Owns: 4-tab configuration view (Community / Development / Instrument / Phase); Community tab — editable ledger dates (date_paper, date_ent), auto_schedule_enabled checkbox, MonthCell (12-button inline delivery month picker, All/None, "using global" when null), del/year; Development tab — historical pace context (starts YTD/last yr/2yr ago, unstarted lots, total projected, 2yr avg pace), StartsCell (editable annual_starts_target + reactive supply label: ≈ X.x yrs green/≈ N mo amber/exhausted red), editable max_starts_per_month; Instrument tab — read-only summary; Phase tab — phase config spreadsheet with '+' button per row opening BulkLotInsertModal; data loaded via parallel Promise.all on mount from /admin/community-config, /admin/dev-config, /admin/phase-config
 - Imports: react (useState, useEffect, useRef, useCallback), BulkLotInsertModal

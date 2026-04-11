@@ -118,10 +118,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-02
 
 ### devdb_python/engine/p0000_placeholder_rebuilder.py
-- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config; uses delivery_months integer[] (frozenset) for window logic — supports arbitrary month sets
+- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config; uses delivery_months integer[] (frozenset) for window logic — supports arbitrary month sets; Step 7 auto-generates sim_delivery_event_predecessors rows between consecutive events per dev (ordered by sequence_number) so P-0200/P-0400 enforce absolute phase ordering
 - Imported by: coordinator.py
-- Tables: sim_delivery_events, sim_delivery_event_phases, sim_dev_phases, sim_entitlement_delivery_config (SELECT/INSERT/UPDATE)
-- Last commit: 2026-04-04
+- Tables: sim_delivery_events, sim_delivery_event_phases, sim_delivery_event_predecessors, sim_dev_phases, sim_entitlement_delivery_config (SELECT/INSERT/UPDATE)
+- Last commit: 2026-04-10
 
 ### devdb_python/engine/p0100_actual_date_applicator.py
 - Owns: P-0100 -- applies locked delivery event dates to sim_dev_phases.date_dev_projected per D-112/D-125
@@ -142,10 +142,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/p0400_delivery_date_assigner.py
-- Owns: P-0400 -- assigns delivery dates to placeholder events; never moves placeholder earlier than P-0000 wrote per D-141; uses delivery_months integer[] (frozenset) — replaced window_start/end range checks
+- Owns: P-0400 -- assigns delivery dates to placeholder events; never moves placeholder earlier than P-0000 wrote per D-141; uses delivery_months integer[] (frozenset) — replaced window_start/end range checks; predecessor sequence floor applied after demand/placeholder guards as absolute constraint (phase ordering always wins)
 - Imported by: coordinator.py
-- Tables: sim_delivery_events (UPDATE), sim_dev_phases (SELECT)
-- Last commit: 2026-04-04
+- Tables: sim_delivery_events (UPDATE), sim_dev_phases, sim_delivery_event_predecessors (SELECT)
+- Last commit: 2026-04-10
 
 ### devdb_python/engine/p0500_eligibility_updater.py
 - Owns: P-0500 -- updates phase delivery eligibility flags after date assignment; uses event_id column

@@ -124,11 +124,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/admin.py
-- Owns: GET /admin/phase-config (full phase hierarchy with lot counts, product splits, builder splits for the phase config spreadsheet); PATCH /admin/phase/{phase_id} (lot_count_projected, date_dev_projected, date_dev_actual); PUT /admin/product-split/{phase_id}/{lot_type_id}; PUT /admin/builder-split/{phase_id}/{builder_id}; GET /admin/community-config (ledger dates + delivery scheduling config per ent_group); GET /admin/dev-config (dev sim params + historical pace: starts_ytd/last_year/2yr_ago, unstarted_real, total_projected)
+- Owns: GET /admin/phase-config (full phase hierarchy with lot counts, product splits, builder splits for the phase config spreadsheet); PATCH /admin/phase/{phase_id} (lot_count_projected, date_dev_projected, date_dev_actual); PUT /admin/product-split/{phase_id}/{lot_type_id}; PUT /admin/builder-split/{phase_id}/{builder_id}; GET /admin/community-config (ledger dates + delivery scheduling config per ent_group); GET /admin/dev-config (dev sim params + historical pace: starts_ytd/last_year/2yr_ago, unstarted_real, total_projected); GET /admin/setup-tree (full community → dev → instrument → phase tree with D/I/P/L subtotals and updated_at per phase)
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_entitlement_groups, sim_ent_group_developments, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, sim_phase_builder_splits, ref_lot_types, dim_builders, sim_entitlement_delivery_config, sim_dev_params, dim_development, developments
-- Last commit: 2026-04-05
+- Last commit: 2026-04-10
 
 ### devdb_python/api/routers/bulk_lots.py
 - Owns: POST /bulk-lots/suggestions (infers dev lot-number prefix + max seq from existing lots, returns flat suggestion list for given phase + lot type counts); POST /bulk-lots/insert (inserts pre-MARKS lots as lot_source='pre', sequence-backed lot_id, validates no duplicate lot_numbers, maintains product splits, audit logs each insertion)
