@@ -52,7 +52,8 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 sdp.sequence_number,
                 sdp.lot_count_projected,
                 sdp.date_dev_projected,
-                sdp.date_dev_actual
+                sdp.date_dev_actual,
+                sdp.updated_at
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
             JOIN sim_legal_instruments sli       ON sli.dev_id = segd.dev_id
@@ -139,6 +140,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 'lot_count_projected': p['lot_count_projected'],
                 'date_dev_projected':  p['date_dev_projected'].isoformat() if p['date_dev_projected'] else None,
                 'date_dev_actual':     p['date_dev_actual'].isoformat()    if p['date_dev_actual']    else None,
+                'updated_at':          p['updated_at'].isoformat()         if p['updated_at']         else None,
                 'lot_type_counts':     lc,          # {lot_type_id: {real, sim}}
                 'product_splits':      prod_map.get(pid, {}),
                 'builder_splits':      bldr_map.get(pid, {}),

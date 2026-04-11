@@ -33,6 +33,17 @@ function phaseTotal(p) {
   return Object.values(p.product_splits ?? {}).reduce((s, v) => s + (v ?? 0), 0)
 }
 
+function fmtRelative(iso) {
+  if (!iso) return null
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
+  if (days === 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 30)  return `${days}d ago`
+  const mo = Math.floor(days / 30)
+  if (mo < 12)    return `${mo}mo ago`
+  return `${Math.floor(mo / 12)}y ago`
+}
+
 function SubCell({ n, w, left = false, onClick }) {
   return (
     <div
@@ -542,7 +553,7 @@ function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded
   const maxDigits = digitLengths.length > 0 ? Math.max(...digitLengths) : 1
 
   const groups = [
-    { key: 'marks', label: 'Recorded', items: allLots.filter(l => !l.excluded && l.lot_source === 'real' && l.in_registry) },
+    { key: 'marks', label: 'Active', items: allLots.filter(l => !l.excluded && l.lot_source === 'real' && l.in_registry) },
     { key: 'pre',   label: 'Pending',  items: allLots.filter(l => !l.excluded && (l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry))) },
     { key: 'sim',   label: 'Sim',      items: allLots.filter(l => !l.excluded && l.lot_source === 'sim') },
   ].filter(g => g.items.length > 0)
@@ -1320,6 +1331,11 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
             {ltIds.length} type{ltIds.length !== 1 ? 's' : ''}
           </span>
         )}
+        {!open && phase.updated_at && (
+          <span style={{ fontSize: 10, color: '#d1d5db', marginLeft: 6 }}>
+            {fmtRelative(phase.updated_at)}
+          </span>
+        )}
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
           <div style={{ width: SUB.I, flexShrink: 0 }} />
@@ -1354,7 +1370,7 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
               <thead>
                 <tr>
-                  {['Product', 'Total', 'Recorded', 'Pending', 'Sim', 'Excl', '', ...(showMirror ? ['L'] : [])].map((h, i) => (
+                  {['Product', 'Total', 'Active', 'Pending', 'Sim', 'Excl', '', ...(showMirror ? ['L'] : [])].map((h, i) => (
                     <th key={i} style={{
                       textAlign: i === 0 ? 'left' : i === 6 ? 'center' : 'right',
                       padding: '2px 6px 4px',
@@ -1452,6 +1468,7 @@ function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
 function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onRefresh }) {
   const instrPhases = phases.filter(p => p.instrument_id === instr.instrument_id)
   const [open, setOpen] = useLocalOpen(`setup_open_instr_${instr.instrument_id}`)
+  const [hovered, setHovered] = useState(false)
   const addPhase = useAddForm(async (vals) => {
     await onAddPhase(instr.instrument_id, vals.phase_name)
   })
@@ -1465,6 +1482,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
     <div style={{ paddingLeft: 24 }}>
       <div style={{ ...ROW, color: '#4b5563' }}
         onClick={() => setOpen(o => !o)}
+        onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
         <span style={{ fontWeight: 500, flex: 1, minWidth: 0 }}>
@@ -1474,8 +1492,9 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
           padding: '0 5px', borderRadius: 10, marginLeft: 4 }}>
           {instr.instrument_type}
         </span>
-        <span onClick={e => e.stopPropagation()}>
-          <AddButton label="phase" dim={!open} onClick={() => { setOpen(true); addPhase.setOpen(true) }} />
+        <span onClick={e => e.stopPropagation()}
+          style={{ opacity: hovered || open ? 1 : 0, pointerEvents: hovered || open ? undefined : 'none', transition: 'opacity 0.1s' }}>
+          <AddButton label="phase" onClick={() => { setOpen(true); addPhase.setOpen(true) }} />
         </span>
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
@@ -1524,6 +1543,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
 function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onRenamePhase, onRefresh }) {
   const devInstrs = instruments.filter(i => i.modern_dev_id === dev.dev_id)
   const [open, setOpen] = useLocalOpen(`setup_open_dev_${dev.dev_id}`)
+  const [hovered, setHovered] = useState(false)
   const addInstr = useAddForm(async (vals) => {
     await onAddInstrument(dev.dev_id, vals.instrument_name, vals.instrument_type)
   })
@@ -1540,6 +1560,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
     <div style={{ paddingLeft: 20 }}>
       <div style={{ ...ROW, color: '#374151' }}
         onClick={() => setOpen(o => !o)}
+        onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
         <span style={{ fontWeight: 500, flex: 1, minWidth: 0 }}>
@@ -1551,8 +1572,9 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
             {dev.marks_code}
           </span>
         )}
-        <span onClick={e => e.stopPropagation()}>
-          <AddButton label="instrument" dim={!open} onClick={() => { setOpen(true); addInstr.setOpen(true) }} />
+        <span onClick={e => e.stopPropagation()}
+          style={{ opacity: hovered || open ? 1 : 0, pointerEvents: hovered || open ? undefined : 'none', transition: 'opacity 0.1s' }}>
+          <AddButton label="instrument" onClick={() => { setOpen(true); addInstr.setOpen(true) }} />
         </span>
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
@@ -1609,6 +1631,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
   onRenameComm, onRenameDev, onRenameInstr, onRenamePhase,
   onRefresh }) {
   const [open, setOpen] = useLocalOpen(`setup_open_comm_${comm.ent_group_id}`)
+  const [hovered, setHovered] = useState(false)
   const addDev = useAddForm(async (vals) => {
     await onAddDev(comm.ent_group_id, vals.dev_name, vals.marks_code || null)
   })
@@ -1645,14 +1668,16 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
           cursor: 'pointer', fontWeight: 600, color: '#111827', fontSize: 13,
         }}
         onClick={() => setOpen(o => !o)}
+        onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, display: 'inline-block', background: dotColor, marginRight: 2 }} title={dotTitle} />
         <ChevronIcon open={open} />
         <span style={{ flex: 1 }}>
           <InlineEdit value={comm.ent_group_name} onSave={onRenameComm} />
         </span>
-        <span onClick={e => e.stopPropagation()}>
-          <AddButton label="development" dim={!open} onClick={() => { setOpen(true); addDev.setOpen(true) }} />
+        <span onClick={e => e.stopPropagation()}
+          style={{ opacity: hovered || open ? 1 : 0, pointerEvents: hovered || open ? undefined : 'none', transition: 'opacity 0.1s' }}>
+          <AddButton label="development" onClick={() => { setOpen(true); addDev.setOpen(true) }} />
         </span>
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <SubCell n={commD} w={SUB.D} left />
@@ -1902,26 +1927,39 @@ export default function SetupView({ showTestCommunities }) {
         <div style={{ fontSize: 13, color: '#9ca3af' }}>No communities yet.</div>
       )}
 
-      {visibleCommunities.length > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', paddingRight: 6, marginBottom: 4,
-          borderBottom: '1px solid #e5e7eb', paddingBottom: 4,
-          position: 'sticky', top: 0, zIndex: 10,
-          background: '#fff',
-        }}>
-          <SortHeader label="Community" sortKey="name" sort={commSort} onSort={setCommSort}
-            style={{ flex: 1, textAlign: 'left' }} />
-          {(['D', 'I', 'P', 'L']).map((key, idx) => (
-            <SortHeader key={key} label={SUB_LABELS[key]} sortKey={key}
-              sort={commSort} onSort={setCommSort}
-              style={{
-                width: SUB[key], flexShrink: 0,
-                justifyContent: 'flex-end', padding: '0 5px',
-                ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
-              }} />
-          ))}
-        </div>
-      )}
+      {visibleCommunities.length > 0 && (() => {
+        const totals = Object.values(commStats).reduce(
+          (acc, s) => ({ D: acc.D + s.D, I: acc.I + s.I, P: acc.P + s.P, L: acc.L + s.L }),
+          { D: 0, I: 0, P: 0, L: 0 }
+        )
+        return (
+          <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', paddingRight: 6, borderBottom: '1px solid #e5e7eb', paddingBottom: 4 }}>
+              <SortHeader label="Community" sortKey="name" sort={commSort} onSort={setCommSort}
+                style={{ flex: 1, textAlign: 'left' }} />
+              {(['D', 'I', 'P', 'L']).map((key, idx) => (
+                <SortHeader key={key} label={SUB_LABELS[key]} sortKey={key}
+                  sort={commSort} onSort={setCommSort}
+                  style={{
+                    width: SUB[key], flexShrink: 0,
+                    justifyContent: 'flex-end', padding: '0 5px',
+                    ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
+                  }} />
+              ))}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', paddingRight: 6, paddingTop: 3, paddingBottom: 3, borderBottom: '2px solid #e5e7eb' }}>
+              <span style={{ flex: 1, fontSize: 11, color: '#9ca3af', paddingLeft: 4 }}>Total</span>
+              {(['D', 'I', 'P', 'L']).map((key, idx) => (
+                <div key={key} style={{
+                  width: SUB[key], flexShrink: 0, textAlign: 'right', padding: '0 5px',
+                  fontSize: 11, fontWeight: 600, color: '#374151',
+                  ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
+                }}>{totals[key]}</div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {sortedCommunities.map(comm => (
         <CommunityRow
@@ -1942,24 +1980,6 @@ export default function SetupView({ showTestCommunities }) {
         />
       ))}
 
-      {sortedCommunities.length > 0 && (() => {
-        const totals = Object.values(commStats).reduce(
-          (acc, s) => ({ D: acc.D + s.D, I: acc.I + s.I, P: acc.P + s.P, L: acc.L + s.L }),
-          { D: 0, I: 0, P: 0, L: 0 }
-        )
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', paddingRight: 6, paddingTop: 6, borderTop: '1px solid #e5e7eb', marginTop: 2 }}>
-            <span style={{ flex: 1, fontSize: 11, color: '#9ca3af', paddingLeft: 4 }}>Total</span>
-            {(['D', 'I', 'P', 'L']).map((key, idx) => (
-              <div key={key} style={{
-                width: SUB[key], flexShrink: 0, textAlign: 'right', padding: '0 5px',
-                fontSize: 11, fontWeight: 600, color: '#374151',
-                ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
-              }}>{totals[key]}</div>
-            ))}
-          </div>
-        )
-      })()}
     </div>
     </ExpandAllContext.Provider>
     </LotRefreshContext.Provider>
