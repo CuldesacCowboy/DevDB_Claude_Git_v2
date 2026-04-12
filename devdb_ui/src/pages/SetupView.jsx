@@ -253,10 +253,14 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
     if (!res.ok) throw new Error((await res.json()).detail ?? 'Delete failed')
     onDeleteComm?.()
   })
-  const dotColor = commP === 0 ? '#e5e7eb'
+  const dotColor = commP === 0 ? '#d1d5db'
     : phasesWithLots === commP ? '#10b981'
     : phasesWithLots === 0    ? '#f87171'
     : '#f59e0b'
+  const dotIcon = commP === 0 ? '○'
+    : phasesWithLots === commP ? '✓'
+    : phasesWithLots === 0    ? '✗'
+    : '◐'
   const dotTitle = commP === 0 ? 'No phases'
     : phasesWithLots === commP ? 'All phases have lots'
     : phasesWithLots === 0    ? 'No phases have lots'
@@ -276,7 +280,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
         onClick={() => { if (!delComm.confirming) setOpen(o => !o) }}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
-        <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, display: 'inline-block', background: dotColor, marginRight: 2 }} title={dotTitle} />
+        <span title={dotTitle} style={{ color: dotColor, fontSize: 13, lineHeight: 1, flexShrink: 0, marginRight: 2, fontWeight: 700 }}>{dotIcon}</span>
         <ChevronIcon open={open} />
         <span style={{ flex: 1 }}>
           <InlineEdit value={comm.ent_group_name} onSave={onRenameComm} />
