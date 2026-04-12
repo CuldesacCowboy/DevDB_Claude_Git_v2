@@ -938,26 +938,44 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
     instrPhaseCounts[r.instrument_id] = (instrPhaseCounts[r.instrument_id] ?? 0) + 1
   }
 
-  // Builder split save — propagates to all linked peers in the same instrument
-  async function handleBuilderSplit(phaseId, builderId, value) {
+  // Builder split save — accepts pct (0–100 whole number), propagates to linked peers,
+  // and auto-fills the complement builder when exactly 2 builders are active.
+  async function handleBuilderSplit(phaseId, builderId, pctValue) {
+    const share = pctValue != null ? Math.min(1, Math.max(0, Math.round(pctValue) / 100)) : null
+
+    // Complement: for a 2-builder setup, auto-set the other builder
+    const complement = builders.length === 2 ? builders.find(b => b.builder_id !== builderId) : null
+    const compShare  = (complement && share != null) ? Math.round((1 - share) * 100) / 100 : null
+
     const row = testRows.find(r => r.phase_id === phaseId)
-    if (!row || independentPhases.has(phaseId) || instrPhaseCounts[row.instrument_id] <= 1) {
-      await onSaveBuilderSplit(phaseId, builderId, value)
-      return
-    }
-    // All non-independent peers in the same instrument
-    const peers = testRows.filter(r =>
-      r.instrument_id === row.instrument_id && !independentPhases.has(r.phase_id)
-    )
-    // Optimistic update across all peers
+
+    // Determine which phases to update (group vs solo)
+    const isIndependent = independentPhases.has(phaseId) || !row
+    const peers = (!isIndependent && instrPhaseCounts[row?.instrument_id] > 1)
+      ? testRows.filter(r => r.instrument_id === row.instrument_id && !independentPhases.has(r.phase_id))
+      : [row].filter(Boolean)
+
+    if (peers.length === 0) { await onSaveBuilderSplit(phaseId, builderId, share); return }
+
+    // Optimistic update — primary builder + complement across all peers
     setLocalSplits(prev => {
       const next = { ...prev }
       for (const p of peers) {
-        next[p.phase_id] = { ...(p.builder_splits ?? {}), ...(next[p.phase_id] ?? {}), [builderId]: value }
+        const base = { ...(p.builder_splits ?? {}), ...(next[p.phase_id] ?? {}) }
+        base[builderId] = share
+        if (complement && compShare != null) base[complement.builder_id] = compShare
+        next[p.phase_id] = base
       }
       return next
     })
-    await Promise.all(peers.map(p => onSaveBuilderSplit(p.phase_id, builderId, value)))
+
+    // Persist
+    const saves = peers.flatMap(p => {
+      const ops = [onSaveBuilderSplit(p.phase_id, builderId, share)]
+      if (complement) ops.push(onSaveBuilderSplit(p.phase_id, complement.builder_id, compShare))
+      return ops
+    })
+    await Promise.all(saves)
   }
 
   // Precompute subtotals at each hierarchy level
@@ -1068,14 +1086,12 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
               </th>
             ))}
             {builders.map((b, i) => (
-              <th key={b.builder_id} rowSpan={2} style={{ ...thR({ width: 66 }),
-                ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }}>
-                {b.builder_name}
+              <th key={b.builder_id} rowSpan={2} style={{ ...thR({ width: 74 }),
+                ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }}
+                title={`${b.builder_name} — projected split % (enter 0–100)`}>
+                {b.builder_name.split(' ')[0]}
               </th>
             ))}
-            {builders.length > 0 && (
-              <th rowSpan={2} style={thR({ width: 52 })} title="Sum of builder shares">%</th>
-            )}
             <th colSpan={5} style={{ ...thBase, textAlign: 'center',
               borderLeft: '3px solid #c7d2e2', fontSize: 10, color: '#9ca3af',
               letterSpacing: '0.09em', textTransform: 'uppercase', fontWeight: 700,
@@ -1211,25 +1227,41 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                   )
                 })}
                 {builders.map((b, idx) => {
-                  const effectiveValue = localSplits[row.phase_id]?.[b.builder_id] ?? row.builder_splits[b.builder_id] ?? null
+                  const rawShare   = localSplits[row.phase_id]?.[b.builder_id] ?? row.builder_splits[b.builder_id] ?? null
+                  const pctDisplay = rawShare != null ? Math.round(rawShare * 100) : null
+                  // Projected lot allocation: configured % × total projected
+                  const projAlloc  = (rawShare != null && projTotal > 0) ? Math.round(rawShare * projTotal) : null
+                  // Committed lot allocation: configured % × real+pre (approximate — no per-lot builder data)
+                  const committedAlloc = (rawShare != null && (marksTotal + preTotal) > 0)
+                    ? Math.round(rawShare * (marksTotal + preTotal)) : null
+                  // Overall weighted average: same as configured % since we have no separate committed split
+                  // expressed as "X of Y total"
+                  const totalAlloc = projAlloc != null ? projAlloc : null
                   return (
                     <td key={b.builder_id} style={{
-                      ...tdB({ textAlign: 'right' }),
+                      ...tdB({ textAlign: 'right', verticalAlign: 'top', paddingBottom: 5 }),
                       ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
                     }}>
-                      <EditableCell value={effectiveValue} width={58} placeholder="0"
-                        onSave={v => handleBuilderSplit(row.phase_id, b.builder_id, v)} />
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+                        <EditableCell value={pctDisplay} width={46} placeholder="—" min={0}
+                          onSave={v => handleBuilderSplit(row.phase_id, b.builder_id, v)} />
+                        {pctDisplay != null && <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 1 }}>%</span>}
+                      </div>
+                      {committedAlloc != null && (
+                        <div style={{ fontSize: 10, color: '#93c5fd', textAlign: 'right', marginTop: 2, paddingRight: 2 }}
+                          title={`~${committedAlloc} of ${marksTotal + preTotal} committed (real/pre) lots at this split`}>
+                          {committedAlloc}&thinsp;/&thinsp;{marksTotal + preTotal} act
+                        </div>
+                      )}
+                      {projAlloc != null && projTotal > 0 && (
+                        <div style={{ fontSize: 10, color: '#9ca3af', textAlign: 'right', marginTop: 1, paddingRight: 2 }}
+                          title={`~${projAlloc} of ${projTotal} total projected lots at this split`}>
+                          {projAlloc}&thinsp;/&thinsp;{projTotal} proj
+                        </div>
+                      )}
                     </td>
                   )
                 })}
-                {builders.length > 0 && (
-                  <td style={tdB({ textAlign: 'center', padding: '4px 8px' })}>
-                    <BuilderSumBadge
-                      splits={{ ...row.builder_splits, ...(localSplits[row.phase_id] ?? {}) }}
-                      builders={builders}
-                    />
-                  </td>
-                )}
                 {/* Subtotals */}
                 {(() => {
                   const csub = commSubs[row.ent_group_id]
