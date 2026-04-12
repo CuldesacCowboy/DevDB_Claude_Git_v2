@@ -113,6 +113,40 @@ class LotExcludeRequest(BaseModel):
     excluded: bool
 
 
+class LotBuilderOverrideRequest(BaseModel):
+    builder_id: int | None  # null clears the override; int sets it
+
+
+@router.patch("/{lot_id}/builder", response_model=dict)
+async def set_lot_builder_override(lot_id: int, body: LotBuilderOverrideRequest, conn=Depends(get_db_conn)):
+    """Set or clear the builder override for a lot.
+    Priority: builder_id_override > builder_id (MARKS-seeded) > NULL (engine assigns via splits).
+    """
+    cur = dict_cursor(conn)
+    try:
+        if body.builder_id is not None:
+            cur.execute("SELECT builder_id FROM dim_builders WHERE builder_id = %s AND active = true", (body.builder_id,))
+            if not cur.fetchone():
+                raise HTTPException(status_code=422, detail=f"Builder {body.builder_id} not found or inactive")
+        cur.execute(
+            "UPDATE sim_lots SET builder_id_override = %s, updated_at = NOW() "
+            "WHERE lot_id = %s RETURNING lot_id, lot_number, builder_id, builder_id_override",
+            (body.builder_id, lot_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found")
+        conn.commit()
+        return {**dict(row), "effective_builder_id": row["builder_id_override"] if row["builder_id_override"] is not None else row["builder_id"]}
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
 @router.patch("/{lot_id}/excluded", response_model=dict)
 async def set_lot_excluded(lot_id: int, body: LotExcludeRequest, conn=Depends(get_db_conn)):
     """Toggle the excluded flag on a lot. Excluded lots stay in the table but are

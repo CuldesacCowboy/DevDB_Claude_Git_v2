@@ -1229,14 +1229,22 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                 {builders.map((b, idx) => {
                   const rawShare   = localSplits[row.phase_id]?.[b.builder_id] ?? row.builder_splits[b.builder_id] ?? null
                   const pctDisplay = rawShare != null ? Math.round(rawShare * 100) : null
-                  // Projected lot allocation: configured % × total projected
-                  const projAlloc  = (rawShare != null && projTotal > 0) ? Math.round(rawShare * projTotal) : null
-                  // Committed lot allocation: configured % × real+pre (approximate — no per-lot builder data)
-                  const committedAlloc = (rawShare != null && (marksTotal + preTotal) > 0)
-                    ? Math.round(rawShare * (marksTotal + preTotal)) : null
-                  // Overall weighted average: same as configured % since we have no separate committed split
-                  // expressed as "X of Y total"
-                  const totalAlloc = projAlloc != null ? projAlloc : null
+
+                  // Actual committed lots from DB (MARKS-seeded + overrides)
+                  const abc        = row.actual_builder_counts ?? {}
+                  const totalReal  = marksTotal + preTotal
+                  const actualCnt  = abc[b.builder_id] ?? 0
+                  const unassigned = abc[null] ?? abc['null'] ?? 0  // null key from JSON
+
+                  // Future sim lots this builder will receive based on configured split
+                  // (total projected minus already-committed real/pre lots)
+                  const simFuture  = Math.max(0, projTotal - totalReal)
+                  const futureAlloc = (rawShare != null && simFuture > 0) ? Math.round(rawShare * simFuture) : null
+
+                  // Overall projected: actual committed (known) + future allocated
+                  const overallAlloc = actualCnt + (futureAlloc ?? 0)
+                  const overallTotal = totalReal + simFuture
+
                   return (
                     <td key={b.builder_id} style={{
                       ...tdB({ textAlign: 'right', verticalAlign: 'top', paddingBottom: 5 }),
@@ -1247,16 +1255,17 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                           onSave={v => handleBuilderSplit(row.phase_id, b.builder_id, v)} />
                         {pctDisplay != null && <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 1 }}>%</span>}
                       </div>
-                      {committedAlloc != null && (
-                        <div style={{ fontSize: 10, color: '#93c5fd', textAlign: 'right', marginTop: 2, paddingRight: 2 }}
-                          title={`~${committedAlloc} of ${marksTotal + preTotal} committed (real/pre) lots at this split`}>
-                          {committedAlloc}&thinsp;/&thinsp;{marksTotal + preTotal} act
+                      {totalReal > 0 && (
+                        <div style={{ fontSize: 10, color: actualCnt > 0 ? '#60a5fa' : '#d1d5db',
+                                      textAlign: 'right', marginTop: 2, paddingRight: 2 }}
+                          title={`${actualCnt} of ${totalReal} committed (real/pre) lots assigned to ${b.builder_name}${unassigned > 0 ? ` — ${unassigned} lot(s) unassigned` : ''}`}>
+                          {actualCnt}&thinsp;/&thinsp;{totalReal} act
                         </div>
                       )}
-                      {projAlloc != null && projTotal > 0 && (
+                      {overallTotal > 0 && (
                         <div style={{ fontSize: 10, color: '#9ca3af', textAlign: 'right', marginTop: 1, paddingRight: 2 }}
-                          title={`~${projAlloc} of ${projTotal} total projected lots at this split`}>
-                          {projAlloc}&thinsp;/&thinsp;{projTotal} proj
+                          title={`Overall projected: ${actualCnt} actual + ~${futureAlloc ?? 0} future = ${overallAlloc} of ${overallTotal} total lots`}>
+                          ~{overallAlloc}&thinsp;/&thinsp;{overallTotal} tot
                         </div>
                       )}
                     </td>

@@ -61,7 +61,7 @@ def ledger_aggregator(conn: DBConnection) -> None:
         CREATE OR REPLACE VIEW v_sim_ledger_monthly AS
         SELECT
             l.dev_id,
-            l.builder_id,
+            COALESCE(l.builder_id_override, l.builder_id) AS builder_id,
             m.calendar_month,
 
             COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_ent) = m.calendar_month
@@ -122,14 +122,14 @@ def ledger_aggregator(conn: DBConnection) -> None:
 
             SUM(COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected)) = m.calendar_month
                            THEN 1 END))
-                OVER (PARTITION BY l.dev_id, l.builder_id
+                OVER (PARTITION BY l.dev_id, COALESCE(l.builder_id_override, l.builder_id)
                       ORDER BY m.calendar_month
                       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
                 AS closed_cumulative
 
         FROM sim_lots l
         CROSS JOIN month_spine m
-        GROUP BY l.dev_id, l.builder_id, m.calendar_month
+        GROUP BY COALESCE(l.builder_id_override, l.builder_id), l.dev_id, m.calendar_month
     """)
 
     print("S-12: v_sim_ledger_monthly and month_spine views created.")

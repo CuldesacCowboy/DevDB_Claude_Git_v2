@@ -109,7 +109,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
             for r in cur.fetchall():
                 prod_map.setdefault(r['phase_id'], {})[r['lot_type_id']] = r['projected_count']
 
-        # Builder splits: phase_id -> {builder_id: share}
+        # Builder splits (configured): phase_id -> {builder_id: share}
         bldr_map = {}
         if phase_ids:
             cur.execute("""
@@ -121,6 +121,24 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 bldr_map.setdefault(r['phase_id'], {})[r['builder_id']] = (
                     float(r['share']) if r['share'] is not None else None
                 )
+
+        # Actual builder counts per phase: use effective builder (override > marks > null)
+        # Only real/pre lots, non-excluded. Null effective builder counted separately.
+        actual_bldr_map = {}   # phase_id -> {builder_id_or_None: count}
+        if phase_ids:
+            cur.execute("""
+                SELECT
+                    phase_id,
+                    COALESCE(builder_id_override, builder_id) AS eff_builder_id,
+                    COUNT(*) AS cnt
+                FROM sim_lots
+                WHERE phase_id = ANY(%s)
+                  AND lot_source IN ('real', 'pre')
+                  AND excluded IS NOT TRUE
+                GROUP BY phase_id, COALESCE(builder_id_override, builder_id)
+            """, (phase_ids,))
+            for r in cur.fetchall():
+                actual_bldr_map.setdefault(r['phase_id'], {})[r['eff_builder_id']] = int(r['cnt'])
 
         rows = []
         for p in phases:
@@ -141,9 +159,10 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 'date_dev_projected':  p['date_dev_projected'].isoformat() if p['date_dev_projected'] else None,
                 'date_dev_actual':     p['date_dev_actual'].isoformat()    if p['date_dev_actual']    else None,
                 'updated_at':          p['updated_at'].isoformat()         if p['updated_at']         else None,
-                'lot_type_counts':     lc,          # {lot_type_id: {real, sim}}
-                'product_splits':      prod_map.get(pid, {}),
-                'builder_splits':      bldr_map.get(pid, {}),
+                'lot_type_counts':        lc,
+                'product_splits':         prod_map.get(pid, {}),
+                'builder_splits':         bldr_map.get(pid, {}),
+                'actual_builder_counts':  actual_bldr_map.get(pid, {}),  # {builder_id: count, None: count_unassigned}
             })
 
         return {'lot_types': lot_types, 'builders': builders, 'rows': rows}
