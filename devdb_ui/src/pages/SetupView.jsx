@@ -6,12 +6,13 @@ import { useState, useEffect, useContext } from 'react'
 import { API_BASE } from '../config'
 import {
   LotRefreshContext, ExpandAllContext,
-  useLocalOpen, SUB, SUB_LABELS, phaseTotal,
+  useLocalOpen, SUB, SUB_LABELS, phaseTotal, phaseHasLots,
   SubCell, SortHeader, ChevronIcon, InlineEdit,
   AddForm, useAddForm, ROW, AddButton,
   useDeleteConfirm, DeleteButton, DeleteConfirmBanner,
 } from '../components/setup/setupShared'
 import PhaseRow from '../components/setup/PhaseRow'
+import DeliveryEventsSection from '../components/setup/DeliveryEventsSection'
 
 // ─── Instrument row ───────────────────────────────────────────────────────────
 
@@ -245,7 +246,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
   const commLots = commPhases.reduce((s, p) => {
     return s + Object.values(p.lot_type_counts ?? {}).reduce((t, c) => t + (c.marks ?? 0) + (c.pre ?? 0), 0)
   }, 0)
-  const phasesWithLots = commPhases.filter(p => phaseTotal(p) > 0).length
+  const phasesWithLots = commPhases.filter(p => phaseHasLots(p)).length
 
   const delComm = useDeleteConfirm(async () => {
     const res = await fetch(`${API_BASE}/entitlement-groups/${comm.ent_group_id}`, { method: 'DELETE' })
@@ -257,9 +258,9 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
     : phasesWithLots === 0    ? '#f87171'
     : '#f59e0b'
   const dotTitle = commP === 0 ? 'No phases'
-    : phasesWithLots === commP ? 'All phases have projected lots'
-    : phasesWithLots === 0    ? 'No phases have projected lots'
-    : `${phasesWithLots} of ${commP} phases have projected lots`
+    : phasesWithLots === commP ? 'All phases have lots'
+    : phasesWithLots === 0    ? 'No phases have lots'
+    : `${phasesWithLots} of ${commP} phases have lots`
 
   return (
     <div style={{
@@ -343,6 +344,11 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
               No developments assigned
             </div>
           )}
+
+          <DeliveryEventsSection
+            entGroupId={comm.ent_group_id}
+            allPhases={commPhases}
+          />
         </div>
       )}
     </div>

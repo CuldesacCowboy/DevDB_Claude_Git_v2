@@ -34,6 +34,12 @@ export function phaseTotal(p) {
   return Object.values(p.product_splits ?? {}).reduce((s, v) => s + (v ?? 0), 0)
 }
 
+// A phase is "configured" if it has projected lots OR any real/pre/excluded lots assigned to it.
+export function phaseHasLots(p) {
+  if (phaseTotal(p) > 0) return true
+  return Object.values(p.lot_type_counts ?? {}).some(c => (c.marks ?? 0) + (c.pre ?? 0) + (c.excl ?? 0) > 0)
+}
+
 export function fmtRelative(iso) {
   if (!iso) return null
   const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)
