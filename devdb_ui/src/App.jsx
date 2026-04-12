@@ -7,6 +7,7 @@ import ConfigView from './pages/ConfigView'
 import SetupView from './pages/SetupView'
 import MarksView from './pages/MarksView'
 import PlanningView from './pages/PlanningView'
+import AuditView from './pages/AuditView'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const LS_KEY = 'devdb_active_community'
@@ -75,6 +76,7 @@ export default function App() {
         <NavLink to="/site-plan" style={navLinkStyle}>Site Plan</NavLink>
         <NavLink to="/simulation" style={navLinkStyle}>Simulation</NavLink>
         <NavLink to="/configure" style={navLinkStyle}>Configure</NavLink>
+        <NavLink to="/audit" style={navLinkStyle}>Audit</NavLink>
         <NavLink to="/setup" style={navLinkStyle}>Setup</NavLink>
         <NavLink to="/planning" style={navLinkStyle}>Planning</NavLink>
         <NavLink to="/marks" style={navLinkStyle}>MARKS</NavLink>
@@ -100,6 +102,7 @@ export default function App() {
           <Route path="/configure" element={<ConfigView showTestCommunities={showTestCommunities} />} />
           <Route path="/setup" element={<SetupView showTestCommunities={showTestCommunities} />} />
           <Route path="/planning" element={<PlanningView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
+          <Route path="/audit" element={<AuditView showTestCommunities={showTestCommunities} />} />
           <Route path="/marks" element={<MarksView />} />
         </Routes>
       </ErrorBoundary>

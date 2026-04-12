@@ -374,3 +374,173 @@ def get_dev_config(conn=Depends(get_db_conn)):
         return rows
     finally:
         cur.close()
+
+
+# ─── Audit data ───────────────────────────────────────────────────────────────
+
+@router.get("/audit-data")
+def get_audit_data(conn=Depends(get_db_conn)):
+    """
+    All data needed for the config audit view in a single fetch:
+    global delivery months, all communities with delivery config,
+    phases (splits + lot counts), and delivery events.
+    """
+    cur = dict_cursor(conn)
+    try:
+        # Global settings
+        cur.execute("SELECT delivery_months, max_deliveries_per_year FROM sim_global_settings WHERE id = 1")
+        gs = cur.fetchone()
+        global_months      = list(gs['delivery_months']) if gs and gs['delivery_months'] else [5,6,7,8,9,10,11]
+        global_max_per_year = gs['max_deliveries_per_year'] if gs else None
+
+        # Active builders
+        cur.execute("SELECT builder_id, builder_name FROM dim_builders WHERE active = true ORDER BY builder_id")
+        builders = [dict(r) for r in cur.fetchall()]
+
+        # Communities with delivery config
+        cur.execute("""
+            SELECT
+                seg.ent_group_id, seg.ent_group_name, seg.is_test,
+                edc.delivery_months,
+                edc.max_deliveries_per_year,
+                edc.auto_schedule_enabled
+            FROM sim_entitlement_groups seg
+            LEFT JOIN sim_entitlement_delivery_config edc
+                   ON edc.ent_group_id = seg.ent_group_id
+            ORDER BY seg.ent_group_name
+        """)
+        comm_map = {}
+        for r in cur.fetchall():
+            comm_map[r['ent_group_id']] = {
+                'ent_group_id':            r['ent_group_id'],
+                'ent_group_name':          r['ent_group_name'],
+                'is_test':                 r['is_test'],
+                'delivery_months':         list(r['delivery_months']) if r['delivery_months'] is not None else None,
+                'max_deliveries_per_year': r['max_deliveries_per_year'],
+                'auto_schedule_enabled':   r['auto_schedule_enabled'],
+                'phases':                  [],
+                'delivery_events':         [],
+            }
+
+        # All phases with hierarchy
+        cur.execute("""
+            SELECT
+                seg.ent_group_id,
+                segd.dev_id,
+                d.dev_name,
+                sli.instrument_id,
+                sli.instrument_name,
+                sdp.phase_id,
+                sdp.phase_name,
+                sdp.sequence_number
+            FROM sim_entitlement_groups seg
+            JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
+            JOIN sim_legal_instruments sli        ON sli.dev_id = segd.dev_id
+            JOIN sim_dev_phases sdp               ON sdp.instrument_id = sli.instrument_id
+            JOIN dim_development dd               ON dd.development_id = segd.dev_id
+            JOIN developments d                   ON d.marks_code = dd.dev_code2
+            ORDER BY seg.ent_group_name, d.dev_name, sli.instrument_name, sdp.sequence_number
+        """)
+        phases     = cur.fetchall()
+        phase_ids  = [r['phase_id'] for r in phases]
+
+        # Real+pre lot counts per phase
+        real_pre_map = {}
+        if phase_ids:
+            cur.execute("""
+                SELECT phase_id,
+                    COUNT(*) FILTER (WHERE excluded IS NOT TRUE AND lot_source IN ('real','pre')) AS real_pre_count
+                FROM sim_lots
+                WHERE phase_id = ANY(%s)
+                GROUP BY phase_id
+            """, (phase_ids,))
+            for r in cur.fetchall():
+                real_pre_map[r['phase_id']] = int(r['real_pre_count'])
+
+        # Product split totals per phase
+        prod_total_map = {}
+        if phase_ids:
+            cur.execute("""
+                SELECT phase_id, SUM(projected_count) AS total
+                FROM sim_phase_product_splits
+                WHERE phase_id = ANY(%s)
+                GROUP BY phase_id
+            """, (phase_ids,))
+            for r in cur.fetchall():
+                prod_total_map[r['phase_id']] = int(r['total']) if r['total'] else 0
+
+        # Builder splits per phase
+        bldr_map = {}
+        if phase_ids:
+            cur.execute("""
+                SELECT phase_id, builder_id, share
+                FROM sim_phase_builder_splits
+                WHERE phase_id = ANY(%s)
+            """, (phase_ids,))
+            for r in cur.fetchall():
+                bldr_map.setdefault(r['phase_id'], {})[r['builder_id']] = (
+                    float(r['share']) if r['share'] is not None else None
+                )
+
+        # All delivery events with phase assignments
+        cur.execute("""
+            SELECT
+                de.delivery_event_id, de.ent_group_id, de.event_name,
+                de.date_dev_actual, de.date_dev_projected, de.is_auto_created,
+                ARRAY_AGG(dep.phase_id ORDER BY dep.phase_id)
+                    FILTER (WHERE dep.phase_id IS NOT NULL) AS phase_ids
+            FROM sim_delivery_events de
+            LEFT JOIN sim_delivery_event_phases dep ON dep.delivery_event_id = de.delivery_event_id
+            GROUP BY de.delivery_event_id, de.ent_group_id, de.event_name,
+                     de.date_dev_actual, de.date_dev_projected, de.is_auto_created
+            ORDER BY de.ent_group_id, de.date_dev_actual NULLS LAST, de.date_dev_projected NULLS LAST
+        """)
+        for r in cur.fetchall():
+            egid = r['ent_group_id']
+            if egid not in comm_map:
+                continue
+            comm_map[egid]['delivery_events'].append({
+                'delivery_event_id':  r['delivery_event_id'],
+                'event_name':         r['event_name'],
+                'date_dev_actual':    r['date_dev_actual'].isoformat()    if r['date_dev_actual']    else None,
+                'date_dev_projected': r['date_dev_projected'].isoformat() if r['date_dev_projected'] else None,
+                'is_auto_created':    r['is_auto_created'],
+                'phase_ids':          list(r['phase_ids']) if r['phase_ids'] else [],
+            })
+
+        # Covered phases per community
+        covered_phases = {
+            egid: set(pid for ev in comm['delivery_events'] for pid in ev['phase_ids'])
+            for egid, comm in comm_map.items()
+        }
+
+        # Assemble phases into communities
+        for p in phases:
+            pid  = p['phase_id']
+            egid = p['ent_group_id']
+            if egid not in comm_map:
+                continue
+            bs     = bldr_map.get(pid, {})
+            bs_sum = round(sum(v for v in bs.values() if v is not None) * 100, 1) if bs else None
+            comm_map[egid]['phases'].append({
+                'phase_id':            pid,
+                'phase_name':          p['phase_name'],
+                'dev_name':            p['dev_name'],
+                'instrument_id':       p['instrument_id'],
+                'instrument_name':     p['instrument_name'],
+                'sequence_number':     p['sequence_number'],
+                'real_pre_lots':       real_pre_map.get(pid, 0),
+                'product_split_total': prod_total_map.get(pid, 0),
+                'builder_splits':      bs,
+                'builder_split_sum':   bs_sum,
+                'in_delivery_event':   pid in covered_phases.get(egid, set()),
+            })
+
+        return {
+            'global_months':       global_months,
+            'global_max_per_year': global_max_per_year,
+            'builders':            builders,
+            'communities':         list(comm_map.values()),
+        }
+    finally:
+        cur.close()
