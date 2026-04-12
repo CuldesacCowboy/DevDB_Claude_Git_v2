@@ -190,6 +190,42 @@ def update_phase_order(
         cur.close()
 
 
+@router.delete("/{instrument_id}", response_model=dict)
+def delete_instrument(instrument_id: int, conn=Depends(get_db_conn)):
+    """Delete an instrument and cascade-delete all its phases.
+    Lots are unassigned (phase_id set to NULL) not deleted."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT instrument_id FROM sim_legal_instruments WHERE instrument_id = %s",
+            (instrument_id,),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Instrument {instrument_id} not found")
+
+        cur.execute("SELECT phase_id FROM sim_dev_phases WHERE instrument_id = %s", (instrument_id,))
+        phase_ids = [r["phase_id"] for r in cur.fetchall()]
+
+        for phase_id in phase_ids:
+            cur.execute("UPDATE sim_lots SET phase_id = NULL WHERE phase_id = %s", (phase_id,))
+            cur.execute("DELETE FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
+            cur.execute("DELETE FROM sim_phase_builder_splits WHERE phase_id = %s", (phase_id,))
+            cur.execute("DELETE FROM sim_delivery_event_phases WHERE phase_id = %s", (phase_id,))
+
+        cur.execute("DELETE FROM sim_dev_phases WHERE instrument_id = %s", (instrument_id,))
+        cur.execute("DELETE FROM sim_legal_instruments WHERE instrument_id = %s", (instrument_id,))
+        conn.commit()
+        return {"success": True, "instrument_id": instrument_id, "phases_deleted": len(phase_ids)}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
 @router.post("/{instrument_id}/phase-order/auto-sort", response_model=dict)
 def auto_sort_phases(instrument_id: int, conn=Depends(get_db_conn)):
     """Auto-sort phases alphabetically by prefix, then numerically by ph. N suffix.

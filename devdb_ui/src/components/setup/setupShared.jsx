@@ -343,6 +343,81 @@ export const ROW = {
   fontSize: 13,
 }
 
+// ─── DeleteButton / useDeleteConfirm ─────────────────────────────────────────
+// Hover-visible delete trigger + inline confirm state.
+
+export function useDeleteConfirm(deleteFn) {
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting]     = useState(false)
+  const [error, setError]           = useState(null)
+
+  async function handleConfirm() {
+    setDeleting(true)
+    setError(null)
+    try {
+      await deleteFn()
+    } catch (e) {
+      setError(e.message)
+      setDeleting(false)
+    }
+  }
+
+  return { confirming, setConfirming, deleting, error, handleConfirm }
+}
+
+// Small red trash button — visible only on hover (parent controls opacity via hovered prop)
+export function DeleteButton({ onClick, visible }) {
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onClick() }}
+      title="Delete"
+      style={{
+        fontSize: 10, color: '#f87171', background: 'none', border: 'none',
+        cursor: 'pointer', padding: '1px 4px', borderRadius: 3,
+        marginLeft: 2, lineHeight: 1,
+        opacity: visible ? 1 : 0,
+        pointerEvents: visible ? undefined : 'none',
+        transition: 'opacity 0.1s',
+      }}>
+      🗑
+    </button>
+  )
+}
+
+// Inline confirmation banner rendered below the row header
+export function DeleteConfirmBanner({ label, warning, onConfirm, onCancel, deleting, error }) {
+  return (
+    <div
+      onClick={e => e.stopPropagation()}
+      style={{
+        display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+        padding: '4px 8px', marginLeft: 12, marginBottom: 2,
+        background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 4, fontSize: 12,
+      }}>
+      <span style={{ color: '#991b1b', fontWeight: 600 }}>Delete {label}?</span>
+      {warning && <span style={{ color: '#b45309', fontSize: 11 }}>{warning}</span>}
+      <button
+        onClick={onConfirm}
+        disabled={deleting}
+        style={{
+          fontSize: 11, padding: '2px 10px', borderRadius: 3, border: 'none',
+          background: deleting ? '#fca5a5' : '#dc2626', color: '#fff', cursor: deleting ? 'default' : 'pointer',
+        }}>
+        {deleting ? 'Deleting…' : 'Confirm delete'}
+      </button>
+      <button
+        onClick={onCancel}
+        style={{
+          fontSize: 11, padding: '2px 8px', borderRadius: 3,
+          background: '#f1f5f9', color: '#6b7280', border: '1px solid #d1d5db', cursor: 'pointer',
+        }}>
+        Cancel
+      </button>
+      {error && <span style={{ color: '#dc2626', fontSize: 11 }}>{error}</span>}
+    </div>
+  )
+}
+
 export function AddButton({ label, onClick, dim = false }) {
   return (
     <button onClick={onClick}

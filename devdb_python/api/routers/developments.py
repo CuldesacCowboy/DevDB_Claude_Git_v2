@@ -171,6 +171,64 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
 
 
 # ---------------------------------------------------------------------------
+# DELETE /developments/{dev_id}  — cascade delete
+# ---------------------------------------------------------------------------
+
+@router.delete("/{dev_id}", response_model=dict)
+def delete_development(dev_id: int, conn=Depends(get_db_conn)):
+    """Delete a development and cascade-delete all its instruments and phases.
+    Lots are unassigned (phase_id NULL) not deleted."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute("SELECT dev_id FROM developments WHERE dev_id = %s", (dev_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Development {dev_id} not found")
+
+        # Find all instruments for this dev via the dim_development bridge
+        cur.execute("""
+            SELECT sli.instrument_id
+            FROM sim_legal_instruments sli
+            JOIN dim_development dd ON dd.development_id = sli.dev_id
+            JOIN developments d ON d.marks_code = dd.dev_code2
+            WHERE d.dev_id = %s
+        """, (dev_id,))
+        instr_ids = [r["instrument_id"] for r in cur.fetchall()]
+
+        for instr_id in instr_ids:
+            cur.execute("SELECT phase_id FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))
+            phase_ids = [r["phase_id"] for r in cur.fetchall()]
+            for phase_id in phase_ids:
+                cur.execute("UPDATE sim_lots SET phase_id = NULL WHERE phase_id = %s", (phase_id,))
+                cur.execute("DELETE FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
+                cur.execute("DELETE FROM sim_phase_builder_splits WHERE phase_id = %s", (phase_id,))
+                cur.execute("DELETE FROM sim_delivery_event_phases WHERE phase_id = %s", (phase_id,))
+            cur.execute("DELETE FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))
+        cur.execute("DELETE FROM sim_legal_instruments WHERE instrument_id = ANY(%s)", (instr_ids or [-1],))
+
+        # Remove from ent group dev mapping and sim_dev_params (keyed on dim_development.development_id)
+        cur.execute("""
+            DELETE FROM sim_ent_group_developments
+            WHERE dev_id IN (
+                SELECT dd.development_id FROM dim_development dd
+                JOIN developments d ON d.marks_code = dd.dev_code2
+                WHERE d.dev_id = %s
+            )
+        """, (dev_id,))
+
+        cur.execute("DELETE FROM developments WHERE dev_id = %s", (dev_id,))
+        conn.commit()
+        return {"success": True, "dev_id": dev_id, "instruments_deleted": len(instr_ids)}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
 # GET /developments/{dev_id}  — single development
 # ---------------------------------------------------------------------------
 

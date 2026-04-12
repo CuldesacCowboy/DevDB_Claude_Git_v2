@@ -97,6 +97,69 @@ def create_entitlement_group(body: EntGroupCreateRequest, conn=Depends(get_db_co
         cur.close()
 
 
+@router.delete("/{ent_group_id}", response_model=dict)
+def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
+    """Delete a community and cascade-delete all devs, instruments, and phases.
+    Lots are unassigned (phase_id NULL) not deleted. Delivery events are also removed."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT ent_group_id FROM sim_entitlement_groups WHERE ent_group_id = %s",
+            (ent_group_id,),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail=f"Community {ent_group_id} not found")
+
+        # Find all developments in this community
+        cur.execute(
+            "SELECT dev_id FROM developments WHERE community_id = %s",
+            (ent_group_id,),
+        )
+        dev_ids = [r["dev_id"] for r in cur.fetchall()]
+
+        for dev_id in dev_ids:
+            cur.execute("""
+                SELECT sli.instrument_id
+                FROM sim_legal_instruments sli
+                JOIN dim_development dd ON dd.development_id = sli.dev_id
+                JOIN developments d ON d.marks_code = dd.dev_code2
+                WHERE d.dev_id = %s
+            """, (dev_id,))
+            instr_ids = [r["instrument_id"] for r in cur.fetchall()]
+            for instr_id in instr_ids:
+                cur.execute("SELECT phase_id FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))
+                phase_ids = [r["phase_id"] for r in cur.fetchall()]
+                for phase_id in phase_ids:
+                    cur.execute("UPDATE sim_lots SET phase_id = NULL WHERE phase_id = %s", (phase_id,))
+                    cur.execute("DELETE FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
+                    cur.execute("DELETE FROM sim_phase_builder_splits WHERE phase_id = %s", (phase_id,))
+                    cur.execute("DELETE FROM sim_delivery_event_phases WHERE phase_id = %s", (phase_id,))
+                cur.execute("DELETE FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))
+            if instr_ids:
+                cur.execute("DELETE FROM sim_legal_instruments WHERE instrument_id = ANY(%s)", (instr_ids,))
+
+        if dev_ids:
+            cur.execute("DELETE FROM developments WHERE dev_id = ANY(%s)", (dev_ids,))
+
+        # Remove delivery events and config for this group
+        cur.execute("DELETE FROM sim_entitlement_delivery_config WHERE ent_group_id = %s", (ent_group_id,))
+        cur.execute("""
+            DELETE FROM sim_delivery_events WHERE ent_group_id = %s
+        """, (ent_group_id,))
+        cur.execute("DELETE FROM sim_ent_group_developments WHERE ent_group_id = %s", (ent_group_id,))
+        cur.execute("DELETE FROM sim_entitlement_groups WHERE ent_group_id = %s", (ent_group_id,))
+        conn.commit()
+        return {"success": True, "ent_group_id": ent_group_id, "devs_deleted": len(dev_ids)}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
 @router.patch("/{ent_group_id}", response_model=dict)
 def patch_entitlement_group(ent_group_id: int, body: EntGroupPatchRequest, conn=Depends(get_db_conn)):
     name = (body.ent_group_name or "").strip()

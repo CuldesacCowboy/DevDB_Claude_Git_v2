@@ -7,6 +7,7 @@ import {
   useLocalOpen, ExpandAllContext, LotRefreshContext,
   SUB, fmtRelative, SubCell, EditableCount,
   ChevronIcon, InlineEdit, ROW,
+  useDeleteConfirm, DeleteButton, DeleteConfirmBanner,
 } from './setupShared'
 import { LotPillGroup } from './LotPillGroup'
 import BuildingsTab from './BuildingsTab'
@@ -137,13 +138,19 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
 
 // ─── PhaseRow ─────────────────────────────────────────────────────────────────
 
-export default function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh }) {
+export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, onRefresh }) {
   // All other phases in the same development — valid move targets
   const targetPhases = (phases || []).filter(
     p => p.dev_id === phase.dev_id && p.phase_id !== phase.phase_id
   )
   const [open, setOpen] = useLocalOpen(`setup_open_phase_${phase.phase_id}`)
   const [tab, setTab]   = useState('lots')   // 'lots' | 'buildings'
+  const [hovered, setHovered] = useState(false)
+  const delPhase = useDeleteConfirm(async () => {
+    const res = await fetch(`${API_BASE}/phases/${phase.phase_id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error((await res.json()).detail ?? 'Delete failed')
+    onDelete?.()
+  })
   const [addLtOpen, setAddLtOpen] = useState(false)
   const { tick: xTick, value: xVal } = useContext(ExpandAllContext)
   useEffect(() => { if (xTick > 0) setOpen(xVal) }, [xTick]) // eslint-disable-line
@@ -222,10 +229,13 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh 
   const phaseL = tableRows.reduce((s, r) => s + (r.projected ?? 0), 0)
   const showMirror = tableRows.length > 1
 
+  const lotCount = Object.values(phase.lot_type_counts ?? {}).reduce((s, c) => s + (c.marks ?? 0) + (c.pre ?? 0), 0)
+
   return (
     <div style={{ paddingLeft: 24, paddingTop: 2, paddingBottom: 2 }}>
       {/* Phase header */}
-      <div style={{ ...ROW }} onClick={() => setOpen(o => !o)}
+      <div style={{ ...ROW }} onClick={() => { if (!delPhase.confirming) setOpen(o => !o) }}
+        onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
         <span style={{ color: '#374151', flex: 1 }}>
@@ -241,6 +251,10 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh 
             {fmtRelative(phase.updated_at)}
           </span>
         )}
+        <DeleteButton
+          visible={hovered && !delPhase.confirming}
+          onClick={() => delPhase.setConfirming(true)}
+        />
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
           <div style={{ width: SUB.I, flexShrink: 0 }} />
@@ -248,6 +262,17 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onRefresh 
           <SubCell n={phaseL} w={SUB.L} />
         </div>
       </div>
+
+      {delPhase.confirming && (
+        <DeleteConfirmBanner
+          label={`"${phase.phase_name}"`}
+          warning={lotCount > 0 ? `${lotCount} lot${lotCount !== 1 ? 's' : ''} will be unassigned` : undefined}
+          onConfirm={delPhase.handleConfirm}
+          onCancel={() => delPhase.setConfirming(false)}
+          deleting={delPhase.deleting}
+          error={delPhase.error}
+        />
+      )}
 
       {/* Expanded content */}
       {open && (

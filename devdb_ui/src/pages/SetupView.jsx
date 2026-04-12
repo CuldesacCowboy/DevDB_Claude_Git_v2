@@ -9,12 +9,13 @@ import {
   useLocalOpen, SUB, SUB_LABELS, phaseTotal,
   SubCell, SortHeader, ChevronIcon, InlineEdit,
   AddForm, useAddForm, ROW, AddButton,
+  useDeleteConfirm, DeleteButton, DeleteConfirmBanner,
 } from '../components/setup/setupShared'
 import PhaseRow from '../components/setup/PhaseRow'
 
 // ─── Instrument row ───────────────────────────────────────────────────────────
 
-function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onRefresh }) {
+function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onDeleteInstr, onRefresh }) {
   const instrPhases = phases.filter(p => p.instrument_id === instr.instrument_id)
   const [open, setOpen] = useLocalOpen(`setup_open_instr_${instr.instrument_id}`)
   const [hovered, setHovered] = useState(false)
@@ -26,11 +27,20 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
 
   const instrP = instrPhases.length
   const instrL = instrPhases.reduce((s, p) => s + phaseTotal(p), 0)
+  const instrLots = instrPhases.reduce((s, p) => {
+    return s + Object.values(p.lot_type_counts ?? {}).reduce((t, c) => t + (c.marks ?? 0) + (c.pre ?? 0), 0)
+  }, 0)
+
+  const delInstr = useDeleteConfirm(async () => {
+    const res = await fetch(`${API_BASE}/instruments/${instr.instrument_id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error((await res.json()).detail ?? 'Delete failed')
+    onDeleteInstr?.()
+  })
 
   return (
     <div style={{ paddingLeft: 24 }}>
       <div style={{ ...ROW, color: '#4b5563' }}
-        onClick={() => setOpen(o => !o)}
+        onClick={() => { if (!delInstr.confirming) setOpen(o => !o) }}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
@@ -45,6 +55,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
           style={{ opacity: hovered || open ? 1 : 0, pointerEvents: hovered || open ? undefined : 'none', transition: 'opacity 0.1s' }}>
           <AddButton label="phase" onClick={() => { setOpen(true); addPhase.setOpen(true) }} />
         </span>
+        <DeleteButton visible={hovered && !delInstr.confirming} onClick={() => delInstr.setConfirming(true)} />
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
           <div style={{ width: SUB.I, flexShrink: 0 }} />
@@ -52,6 +63,17 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
           <SubCell n={instrL} w={SUB.L} onClick={e => { e.stopPropagation(); setOpen(true) }} />
         </div>
       </div>
+
+      {delInstr.confirming && (
+        <DeleteConfirmBanner
+          label={`"${instr.instrument_name}"`}
+          warning={instrLots > 0 ? `${instrP} phase${instrP !== 1 ? 's' : ''}, ${instrLots} lot${instrLots !== 1 ? 's' : ''} unassigned` : instrP > 0 ? `${instrP} phase${instrP !== 1 ? 's' : ''} deleted` : undefined}
+          onConfirm={delInstr.handleConfirm}
+          onCancel={() => delInstr.setConfirming(false)}
+          deleting={delInstr.deleting}
+          error={delInstr.error}
+        />
+      )}
 
       {open && (
         <div>
@@ -73,6 +95,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
               phases={phases}
               lotTypes={lotTypes}
               onRename={name => onRenamePhase(p.phase_id, name)}
+              onDelete={onRefresh}
               onRefresh={onRefresh}
             />
           ))}
@@ -89,7 +112,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
 
 // ─── Development row ──────────────────────────────────────────────────────────
 
-function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onRenamePhase, onRefresh }) {
+function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onRenamePhase, onDeleteDev, onRefresh }) {
   const devInstrs = instruments.filter(i => i.modern_dev_id === dev.dev_id)
   const [open, setOpen] = useLocalOpen(`setup_open_dev_${dev.dev_id}`)
   const [hovered, setHovered] = useState(false)
@@ -104,11 +127,20 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
   const devI = devInstrs.length
   const devP = devPhases.length
   const devL = devPhases.reduce((s, p) => s + phaseTotal(p), 0)
+  const devLots = devPhases.reduce((s, p) => {
+    return s + Object.values(p.lot_type_counts ?? {}).reduce((t, c) => t + (c.marks ?? 0) + (c.pre ?? 0), 0)
+  }, 0)
+
+  const delDev = useDeleteConfirm(async () => {
+    const res = await fetch(`${API_BASE}/developments/${dev.dev_id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error((await res.json()).detail ?? 'Delete failed')
+    onDeleteDev?.()
+  })
 
   return (
     <div style={{ paddingLeft: 20 }}>
       <div style={{ ...ROW, color: '#374151' }}
-        onClick={() => setOpen(o => !o)}
+        onClick={() => { if (!delDev.confirming) setOpen(o => !o) }}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
@@ -125,6 +157,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
           style={{ opacity: hovered || open ? 1 : 0, pointerEvents: hovered || open ? undefined : 'none', transition: 'opacity 0.1s' }}>
           <AddButton label="instrument" onClick={() => { setOpen(true); addInstr.setOpen(true) }} />
         </span>
+        <DeleteButton visible={hovered && !delDev.confirming} onClick={() => delDev.setConfirming(true)} />
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <div style={{ width: SUB.D, flexShrink: 0, borderLeft: '2px solid #e5e7eb' }} />
           <SubCell n={devI} w={SUB.I} onClick={e => { e.stopPropagation(); setOpen(true) }} />
@@ -132,6 +165,19 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
           <SubCell n={devL} w={SUB.L} onClick={e => { e.stopPropagation(); setOpen(true) }} />
         </div>
       </div>
+
+      {delDev.confirming && (
+        <DeleteConfirmBanner
+          label={`"${dev.dev_name}"`}
+          warning={devLots > 0
+            ? `${devI} instrument${devI !== 1 ? 's' : ''}, ${devP} phase${devP !== 1 ? 's' : ''}, ${devLots} lot${devLots !== 1 ? 's' : ''} unassigned`
+            : devP > 0 ? `${devI} instrument${devI !== 1 ? 's' : ''}, ${devP} phase${devP !== 1 ? 's' : ''} deleted` : undefined}
+          onConfirm={delDev.handleConfirm}
+          onCancel={() => delDev.setConfirming(false)}
+          deleting={delDev.deleting}
+          error={delDev.error}
+        />
+      )}
 
       {open && (
         <div>
@@ -159,6 +205,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
               onAddPhase={onAddPhase}
               onRenameInstr={name => onRenameInstr(instr.instrument_id, name)}
               onRenamePhase={onRenamePhase}
+              onDeleteInstr={onRefresh}
               onRefresh={onRefresh}
             />
           ))}
@@ -178,7 +225,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
 function CommunityRow({ comm, devs, instruments, phases, lotTypes,
   onAddDev, onAddInstrument, onAddPhase,
   onRenameComm, onRenameDev, onRenameInstr, onRenamePhase,
-  onRefresh }) {
+  onDeleteComm, onDeleteDev, onRefresh }) {
   const [open, setOpen] = useLocalOpen(`setup_open_comm_${comm.ent_group_id}`)
   const [hovered, setHovered] = useState(false)
   const addDev = useAddForm(async (vals) => {
@@ -195,7 +242,16 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
   const commI = commInstrIds.size
   const commP = commPhases.length
   const commL = commPhases.reduce((s, p) => s + phaseTotal(p), 0)
+  const commLots = commPhases.reduce((s, p) => {
+    return s + Object.values(p.lot_type_counts ?? {}).reduce((t, c) => t + (c.marks ?? 0) + (c.pre ?? 0), 0)
+  }, 0)
   const phasesWithLots = commPhases.filter(p => phaseTotal(p) > 0).length
+
+  const delComm = useDeleteConfirm(async () => {
+    const res = await fetch(`${API_BASE}/entitlement-groups/${comm.ent_group_id}`, { method: 'DELETE' })
+    if (!res.ok) throw new Error((await res.json()).detail ?? 'Delete failed')
+    onDeleteComm?.()
+  })
   const dotColor = commP === 0 ? '#e5e7eb'
     : phasesWithLots === commP ? '#10b981'
     : phasesWithLots === 0    ? '#f87171'
@@ -216,7 +272,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
           borderBottom: open ? '1px solid #e5e7eb' : 'none',
           cursor: 'pointer', fontWeight: 600, color: '#111827', fontSize: 13,
         }}
-        onClick={() => setOpen(o => !o)}
+        onClick={() => { if (!delComm.confirming) setOpen(o => !o) }}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, display: 'inline-block', background: dotColor, marginRight: 2 }} title={dotTitle} />
@@ -228,6 +284,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
           style={{ opacity: hovered || open ? 1 : 0, pointerEvents: hovered || open ? undefined : 'none', transition: 'opacity 0.1s' }}>
           <AddButton label="development" onClick={() => { setOpen(true); addDev.setOpen(true) }} />
         </span>
+        <DeleteButton visible={hovered && !delComm.confirming} onClick={() => delComm.setConfirming(true)} />
         <div style={{ display: 'flex', flexShrink: 0 }}>
           <SubCell n={commD} w={SUB.D} left />
           <SubCell n={commI} w={SUB.I} />
@@ -235,6 +292,19 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
           <SubCell n={commL} w={SUB.L} />
         </div>
       </div>
+
+      {delComm.confirming && (
+        <DeleteConfirmBanner
+          label={`"${comm.ent_group_name}"`}
+          warning={commLots > 0
+            ? `${commD} dev${commD !== 1 ? 's' : ''}, ${commP} phase${commP !== 1 ? 's' : ''}, ${commLots} lot${commLots !== 1 ? 's' : ''} unassigned`
+            : commD > 0 ? `${commD} dev${commD !== 1 ? 's' : ''} and all nested objects deleted` : undefined}
+          onConfirm={delComm.handleConfirm}
+          onCancel={() => delComm.setConfirming(false)}
+          deleting={delComm.deleting}
+          error={delComm.error}
+        />
+      )}
 
       {open && (
         <div style={{ padding: '4px 0 6px 4px' }}>
@@ -264,6 +334,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
               onRenameDev={name => onRenameDev(dev.dev_id, name)}
               onRenameInstr={onRenameInstr}
               onRenamePhase={onRenamePhase}
+              onDeleteDev={onDeleteDev ? () => onDeleteDev(dev.dev_id) : undefined}
               onRefresh={onRefresh}
             />
           ))}
@@ -388,6 +459,15 @@ export default function SetupView({ showTestCommunities }) {
     })
     if (!res.ok) throw new Error((await res.json()).detail ?? 'Rename failed')
     setPhases(prev => prev.map(p => p.phase_id === phaseId ? { ...p, phase_name: name } : p))
+  }
+
+  // Delete handlers — use silent reload so the removed item disappears cleanly
+  async function handleDeleteComm(commId) {
+    load(true)
+  }
+
+  async function handleDeleteDev(devId) {
+    load(true)
   }
 
   async function handleAddPhase(instrumentId, name) {
@@ -525,6 +605,8 @@ export default function SetupView({ showTestCommunities }) {
           onRenameDev={handleRenameDev}
           onRenameInstr={handleRenameInstr}
           onRenamePhase={handleRenamePhase}
+          onDeleteComm={() => handleDeleteComm(comm.ent_group_id)}
+          onDeleteDev={handleDeleteDev}
           onRefresh={() => load(true)}
         />
       ))}
