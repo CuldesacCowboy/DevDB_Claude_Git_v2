@@ -385,6 +385,40 @@ def _persist_violations(conn: DBConnection, violations_df, dev_id: int,
                f"(sim_run_id={sim_run_id}).")
 
 
+_OVERRIDE_FIELDS = ['date_td_hold', 'date_td', 'date_str', 'date_frm', 'date_cmp', 'date_cls']
+
+
+def _apply_lot_date_overrides(conn: DBConnection, snapshot: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply active planning overrides from sim_lot_date_overrides to the lot snapshot.
+    Called between S-02 and S-03 so overrides win over MARKS actuals in the engine.
+    sim_lots in the DB is unchanged — overrides only affect the in-memory snapshot.
+    """
+    if snapshot.empty:
+        return snapshot
+    lot_ids = snapshot['lot_id'].dropna().astype(int).tolist()
+    if not lot_ids:
+        return snapshot
+    ov_df = conn.read_df(
+        "SELECT lot_id, date_field, override_value FROM sim_lot_date_overrides WHERE lot_id = ANY(%s)",
+        (lot_ids,),
+    )
+    if ov_df.empty:
+        return snapshot
+    df = snapshot.copy()
+    for _, row in ov_df.iterrows():
+        lot_id = int(row['lot_id'])
+        field = row['date_field']
+        value = row['override_value']
+        if field not in _OVERRIDE_FIELDS:
+            continue
+        mask = df['lot_id'] == lot_id
+        if field in df.columns:
+            df.loc[mask, field] = value
+    logger.info(f"  Overrides applied: {len(ov_df)} field(s) across {ov_df['lot_id'].nunique()} lot(s).")
+    return df
+
+
 def run_starts_pipeline(conn: DBConnection, dev_id: int,
                         sim_run_id: int, run_start_date: date,
                         builder_splits: dict,
@@ -400,6 +434,11 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
 
     # S-02
     snapshot = date_actualizer(conn, snapshot)
+
+    # Override application: manager-entered planning dates win over MARKS actuals.
+    # Applied after S-02 so MARKS is still written back to sim_lots (ground truth),
+    # but the engine operates on the override values from this point forward.
+    snapshot = _apply_lot_date_overrides(conn, snapshot)
 
     # S-03 (load phase delivery dates for no-anchor fallback, Scenario 7)
     phase_delivery_dates = _load_phase_delivery_dates(conn, dev_id)

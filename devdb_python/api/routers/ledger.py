@@ -93,6 +93,17 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
     try:
         cur.execute(
             f"""
+            WITH overrides AS (
+                SELECT lot_id,
+                    MAX(CASE WHEN date_field = 'date_td_hold' THEN override_value END) AS ov_date_td_hold,
+                    MAX(CASE WHEN date_field = 'date_td'      THEN override_value END) AS ov_date_td,
+                    MAX(CASE WHEN date_field = 'date_str'     THEN override_value END) AS ov_date_str,
+                    MAX(CASE WHEN date_field = 'date_frm'     THEN override_value END) AS ov_date_frm,
+                    MAX(CASE WHEN date_field = 'date_cmp'     THEN override_value END) AS ov_date_cmp,
+                    MAX(CASE WHEN date_field = 'date_cls'     THEN override_value END) AS ov_date_cls
+                FROM sim_lot_date_overrides
+                GROUP BY lot_id
+            )
             SELECT
                 sl.lot_id,
                 sl.lot_number,
@@ -108,16 +119,24 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 sl.date_td_hold,
                 sl.date_td,
                 sl.date_str,
+                sl.date_frm,
                 sl.date_cmp,
                 sl.date_cls,
                 sl.date_str_projected,
                 sl.date_cmp_projected,
-                sl.date_cls_projected
+                sl.date_cls_projected,
+                o.ov_date_td_hold,
+                o.ov_date_td,
+                o.ov_date_str,
+                o.ov_date_frm,
+                o.ov_date_cmp,
+                o.ov_date_cls
             FROM sim_lots sl
             JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
             JOIN dim_development dd ON dd.development_id = sl.dev_id
             JOIN developments d ON d.marks_code = dd.dev_code2
             LEFT JOIN ref_lot_types rlt ON rlt.lot_type_id = sl.lot_type_id
+            LEFT JOIN overrides o ON o.lot_id = sl.lot_id
             WHERE sl.dev_id IN (
                 SELECT dev_id FROM sim_ent_group_developments
                 WHERE ent_group_id = %s
@@ -145,11 +164,18 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 "date_td_hold":        _d(r["date_td_hold"]),
                 "date_td":             _d(r["date_td"]),
                 "date_str":            _d(r["date_str"]),
+                "date_frm":            _d(r["date_frm"]),
                 "date_cmp":            _d(r["date_cmp"]),
                 "date_cls":            _d(r["date_cls"]),
                 "date_str_projected":  _d(r["date_str_projected"]),
                 "date_cmp_projected":  _d(r["date_cmp_projected"]),
                 "date_cls_projected":  _d(r["date_cls_projected"]),
+                "ov_date_td_hold":     _d(r["ov_date_td_hold"]),
+                "ov_date_td":          _d(r["ov_date_td"]),
+                "ov_date_str":         _d(r["ov_date_str"]),
+                "ov_date_frm":         _d(r["ov_date_frm"]),
+                "ov_date_cmp":         _d(r["ov_date_cmp"]),
+                "ov_date_cls":         _d(r["ov_date_cls"]),
             }
             for r in cur.fetchall()
         ]

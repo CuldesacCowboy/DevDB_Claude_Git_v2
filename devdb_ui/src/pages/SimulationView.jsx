@@ -5,6 +5,10 @@ import {
 } from 'recharts'
 import { STATUS_CFG, STATUS_COLOR, StatusBadge } from '../utils/statusConfig'
 import { API_BASE } from '../utils/api'
+import { useOverrides } from '../hooks/useOverrides'
+import OverrideDateCell from '../components/overrides/OverrideDateCell'
+import OverridesPanel from '../components/overrides/OverridesPanel'
+import SyncReconciliationModal from '../components/overrides/SyncReconciliationModal'
 
 // ─── Column definitions ──────────────────────────────────────────────────────
 
@@ -907,7 +911,7 @@ function DeliveryScheduleTab({ rows, loading }) {
 
 // ─── LotLedger ───────────────────────────────────────────────────────────────
 
-function LotLedger({ lots, loading }) {
+function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
   const [devFilter, setDevFilter] = useState('all')
   const [srcFilter, setSrcFilter] = useState('all')
 
@@ -920,11 +924,7 @@ function LotLedger({ lots, loading }) {
     (srcFilter === 'all' || l.lot_source === srcFilter)
   )
 
-  function dateCell(actual, projected) {
-    if (actual) return <span>{fmt(actual)}</span>
-    if (projected) return <span style={{ color: '#93c5fd', fontStyle: 'italic' }}>{fmt(projected)}</span>
-    return <span style={{ color: '#e5e7eb' }}>—</span>
-  }
+  const overrideable = l => l.lot_source === 'real'
 
   return (
     <div>
@@ -942,6 +942,7 @@ function LotLedger({ lots, loading }) {
         </select>
         <span style={{ fontSize: 11, color: '#6b7280' }}>{filtered.length} lots</span>
         <span style={{ fontSize: 11, color: '#93c5fd', fontStyle: 'italic', marginLeft: 6 }}>italic blue = projected</span>
+        <span style={{ fontSize: 11, color: '#92400e', marginLeft: 6 }}>amber = override (click to edit)</span>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
@@ -955,8 +956,9 @@ function LotLedger({ lots, loading }) {
               <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Status</th>
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>ENT</th>
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>DEV</th>
-              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>TD</th>
-              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>STR</th>
+              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>HC</th>
+              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>BLDR</th>
+              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>DIG</th>
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>CMP</th>
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>CLS</th>
             </tr>
@@ -972,10 +974,41 @@ function LotLedger({ lots, loading }) {
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>{l.date_ent ? fmt(l.date_ent) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
                 <td style={tdS()}>{l.date_dev ? fmt(l.date_dev) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
-                <td style={tdS()}>{l.date_td  ? fmt(l.date_td)  : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
-                <td style={tdS()}>{dateCell(l.date_str, l.date_str_projected)}</td>
-                <td style={tdS()}>{dateCell(l.date_cmp, l.date_cmp_projected)}</td>
-                <td style={tdS()}>{dateCell(l.date_cls, l.date_cls_projected)}</td>
+                <td style={tdS()}>
+                  <OverrideDateCell lotId={l.lot_id} dateField="date_td_hold" label="HC"
+                    marksValue={l.date_td_hold} projectedValue={null}
+                    overrideValue={l.ov_date_td_hold}
+                    onApply={onApplyOverride} onClear={onClearOverride}
+                    disabled={!overrideable(l)} />
+                </td>
+                <td style={tdS()}>
+                  <OverrideDateCell lotId={l.lot_id} dateField="date_td" label="BLDR"
+                    marksValue={l.date_td} projectedValue={null}
+                    overrideValue={l.ov_date_td}
+                    onApply={onApplyOverride} onClear={onClearOverride}
+                    disabled={!overrideable(l)} />
+                </td>
+                <td style={tdS()}>
+                  <OverrideDateCell lotId={l.lot_id} dateField="date_str" label="DIG"
+                    marksValue={l.date_str} projectedValue={l.date_str_projected}
+                    overrideValue={l.ov_date_str}
+                    onApply={onApplyOverride} onClear={onClearOverride}
+                    disabled={!overrideable(l)} />
+                </td>
+                <td style={tdS()}>
+                  <OverrideDateCell lotId={l.lot_id} dateField="date_cmp" label="CMP"
+                    marksValue={l.date_cmp} projectedValue={l.date_cmp_projected}
+                    overrideValue={l.ov_date_cmp}
+                    onApply={onApplyOverride} onClear={onClearOverride}
+                    disabled={!overrideable(l)} />
+                </td>
+                <td style={tdS()}>
+                  <OverrideDateCell lotId={l.lot_id} dateField="date_cls" label="CLS"
+                    marksValue={l.date_cls} projectedValue={l.date_cls_projected}
+                    overrideValue={l.ov_date_cls}
+                    onApply={onApplyOverride} onClear={onClearOverride}
+                    disabled={!overrideable(l)} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1012,6 +1045,14 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   const [ledgerSubView, setLedgerSubView] = useState('graph')   // 'table' | 'graph'
   const [lots, setLots]             = useState([])
   const [lotsLoading, setLotsLoading] = useState(false)
+  const [showReconModal, setShowReconModal] = useState(false)
+
+  const {
+    overrides, loading: ovLoading,
+    reconciliation,
+    fetchOverrides, applyOverrides, clearOverride, clearBatch,
+    fetchReconciliation, exportOverrides,
+  } = useOverrides(entGroupId)
   const [deliverySchedule, setDeliverySchedule]               = useState([])
   const [deliveryScheduleLoading, setDeliveryScheduleLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -1096,9 +1137,10 @@ const loadLedger = useCallback((id) => {
     loadLedger(entGroupId)
     loadConfig(entGroupId)
     loadGlobalSettings()
+    fetchOverrides()
     setRunErrors([])
     setSelectedDevIds(null)
-  }, [entGroupId, checkSplits, loadLedger, loadConfig])
+  }, [entGroupId, checkSplits, loadLedger, loadConfig, fetchOverrides])
 
   async function handleRun() {
     if (!entGroupId) return
@@ -1305,24 +1347,34 @@ const loadLedger = useCallback((id) => {
       )}
 
       {/* ── View tabs ── */}
-      <div style={{ display: 'flex', gap: 2, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 2, marginBottom: 12, alignItems: 'center' }}>
         {[
           ['ledger',      'Monthly Ledger'],
           ['lots',        'Lot List'],
           ['delivery',    'Delivery Schedule'],
           ['utilization', 'Phase Utilization'],
-        ].map(([v, label]) => (
-          <button key={v} onClick={() => {
-            setView(v)
-            if (v === 'lots'     && entGroupId) loadLots(entGroupId)
-            if (v === 'delivery' && entGroupId) loadDeliverySchedule(entGroupId)
-          }}
-            style={{ padding: '4px 14px', fontSize: 12, borderRadius: 4, border: '1px solid #d1d5db',
-                     cursor: 'pointer', background: view === v ? '#1e40af' : '#f9fafb',
-                     color: view === v ? '#fff' : '#374151', fontWeight: view === v ? 600 : 400 }}>
-            {label}
-          </button>
-        ))}
+          ['overrides',   null],
+        ].map(([v, label]) => {
+          const isOverrides = v === 'overrides'
+          const count = overrides.length
+          return (
+            <button key={v} onClick={() => {
+              setView(v)
+              if (v === 'lots'     && entGroupId) loadLots(entGroupId)
+              if (v === 'delivery' && entGroupId) loadDeliverySchedule(entGroupId)
+              if (v === 'overrides' && entGroupId) fetchOverrides()
+            }}
+              style={{ padding: '4px 14px', fontSize: 12, borderRadius: 4, border: '1px solid #d1d5db',
+                       cursor: 'pointer',
+                       background: view === v ? (isOverrides ? '#92400e' : '#1e40af') : '#f9fafb',
+                       color: view === v ? '#fff' : (isOverrides && count > 0 ? '#92400e' : '#374151'),
+                       fontWeight: view === v ? 600 : (isOverrides && count > 0 ? 600 : 400) }}>
+              {isOverrides
+                ? <>Plan{count > 0 && <span style={{ marginLeft: 5, background: view === v ? 'rgba(255,255,255,0.3)' : '#fef3c7', color: view === v ? '#fff' : '#92400e', borderRadius: 10, fontSize: 10, padding: '0 5px', fontWeight: 700 }}>{count}</span>}</>
+                : label}
+            </button>
+          )
+        })}
       </div>
 
       {/* ── Monthly Ledger ── */}
@@ -1418,7 +1470,53 @@ const loadLedger = useCallback((id) => {
       )}
 
       {/* ── Lot List ── */}
-      {view === 'lots' && <LotLedger lots={lots} loading={lotsLoading} />}
+      {view === 'lots' && (
+        <LotLedger
+          lots={lots}
+          loading={lotsLoading}
+          onApplyOverride={async (lotId, changes) => {
+            await applyOverrides(lotId, changes)
+            loadLots(entGroupId)
+          }}
+          onClearOverride={async (lotId, dateField) => {
+            await clearOverride(lotId, dateField)
+            loadLots(entGroupId)
+          }}
+        />
+      )}
+
+      {/* ── Plan / Overrides ── */}
+      {view === 'overrides' && (
+        <OverridesPanel
+          overrides={overrides}
+          loading={ovLoading}
+          onClear={(lotId, dateField) => clearOverride(lotId, dateField)}
+          onClearAll={() => {
+            const lotIds = [...new Set(overrides.map(o => o.lot_id))]
+            clearBatch({ lotIds })
+          }}
+          onExport={async () => {
+            const rows = await exportOverrides()
+            if (!rows.length) { alert('No overrides to export.'); return }
+            const headers = ['Lot','Dev','Phase','Field','Activity','MARKS Current','Override','Delta Days','Note']
+            const csv = [
+              headers.join(','),
+              ...rows.map(r => [
+                r.lot_number, r.dev_name, r.phase_name, r.label, r.marks_activity,
+                r.current_marks ?? '', r.override_value, r.delta_days ?? '', r.override_note ?? '',
+              ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')),
+            ].join('\n')
+            const blob = new Blob([csv], { type: 'text/csv' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a'); a.href = url; a.download = 'itk_changes.csv'; a.click()
+            URL.revokeObjectURL(url)
+          }}
+          onCheckReconciliation={async () => {
+            await fetchReconciliation()
+            setShowReconModal(true)
+          }}
+        />
+      )}
 
       {/* ── Delivery Schedule ── */}
       {view === 'delivery' && <DeliveryScheduleTab rows={deliverySchedule} loading={deliveryScheduleLoading} />}
@@ -1429,6 +1527,18 @@ const loadLedger = useCallback((id) => {
           {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
           {!loading && <UtilizationPanel phases={filteredUtilization} />}
         </>
+      )}
+
+      {/* ── Sync reconciliation modal ── */}
+      {showReconModal && reconciliation.length > 0 && (
+        <SyncReconciliationModal
+          rows={reconciliation}
+          onClearSelected={async (ids) => {
+            await clearBatch({ overrideIds: ids })
+            setShowReconModal(false)
+          }}
+          onDismiss={() => setShowReconModal(false)}
+        />
       )}
 
       {/* ── Global settings modal (triggered from nav) ── */}
