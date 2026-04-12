@@ -892,6 +892,24 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
   const [showSplits,    setShowSplits]    = useState(true)
   const [bulkInsertPhase, setBulkInsertPhase] = useState(null) // row object or null
 
+  // Builder split grouping state
+  const [independentPhases, setIndependentPhases] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('devdb_phase_solo') || '[]')) }
+    catch { return new Set() }
+  })
+  const [localSplits, setLocalSplits] = useState({}) // optimistic overrides: { phase_id: { builder_id: value } }
+
+  function toggleIndependent(phaseId) {
+    setIndependentPhases(prev => {
+      const next = new Set(prev)
+      if (next.has(phaseId)) next.delete(phaseId)
+      else next.add(phaseId)
+      localStorage.setItem('devdb_phase_solo', JSON.stringify([...next]))
+      return next
+    })
+    setLocalSplits(prev => { const next = { ...prev }; delete next[phaseId]; return next })
+  }
+
   const allRows  = phaseData?.rows ?? []
   const testRows = allRows.filter(r => showTest ? r.is_test : !r.is_test)
 
@@ -913,6 +931,34 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
   })
 
   const bi = bandIdx(rows, r => r.ent_group_id)
+
+  // Per-instrument phase count (across all rows, not just filtered, so toggle is stable)
+  const instrPhaseCounts = {}
+  for (const r of testRows) {
+    instrPhaseCounts[r.instrument_id] = (instrPhaseCounts[r.instrument_id] ?? 0) + 1
+  }
+
+  // Builder split save — propagates to all linked peers in the same instrument
+  async function handleBuilderSplit(phaseId, builderId, value) {
+    const row = testRows.find(r => r.phase_id === phaseId)
+    if (!row || independentPhases.has(phaseId) || instrPhaseCounts[row.instrument_id] <= 1) {
+      await onSaveBuilderSplit(phaseId, builderId, value)
+      return
+    }
+    // All non-independent peers in the same instrument
+    const peers = testRows.filter(r =>
+      r.instrument_id === row.instrument_id && !independentPhases.has(r.phase_id)
+    )
+    // Optimistic update across all peers
+    setLocalSplits(prev => {
+      const next = { ...prev }
+      for (const p of peers) {
+        next[p.phase_id] = { ...(p.builder_splits ?? {}), ...(next[p.phase_id] ?? {}), [builderId]: value }
+      }
+      return next
+    })
+    await Promise.all(peers.map(p => onSaveBuilderSplit(p.phase_id, builderId, value)))
+  }
 
   // Precompute subtotals at each hierarchy level
   const commSubs = {}, devSubs = {}, instSubs = {}
@@ -1095,6 +1141,23 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                 <td style={tdS(LEFT.phase, PHASE_SHADOW)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontSize: 12, color: '#374151', flex: 1 }}>{row.phase_name}</span>
+                    {instrPhaseCounts[row.instrument_id] > 1 && (() => {
+                      const solo = independentPhases.has(row.phase_id)
+                      return (
+                        <button
+                          onClick={() => toggleIndependent(row.phase_id)}
+                          title={solo
+                            ? 'Solo — builder split edits apply only to this phase. Click to re-link.'
+                            : 'Grouped — builder split edits apply to all linked phases in this instrument. Click for solo.'}
+                          style={{
+                            flexShrink: 0, fontSize: 9, padding: '1px 4px', borderRadius: 3, cursor: 'pointer',
+                            border: solo ? '1px solid #d97706' : '1px solid #d1d5db',
+                            background: solo ? '#fef9c3' : 'transparent',
+                            color: solo ? '#92400e' : '#9ca3af',
+                          }}
+                        >{solo ? 'solo' : 'grp'}</button>
+                      )
+                    })()}
                     <button
                       onClick={() => setBulkInsertPhase(row)}
                       title="Add lots"
@@ -1147,18 +1210,24 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                     </td>
                   )
                 })}
-                {builders.map((b, idx) => (
-                  <td key={b.builder_id} style={{
-                    ...tdB({ textAlign: 'right' }),
-                    ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
-                  }}>
-                    <EditableCell value={row.builder_splits[b.builder_id] ?? null} width={58} placeholder="0"
-                      onSave={v => onSaveBuilderSplit(row.phase_id, b.builder_id, v)} />
-                  </td>
-                ))}
+                {builders.map((b, idx) => {
+                  const effectiveValue = localSplits[row.phase_id]?.[b.builder_id] ?? row.builder_splits[b.builder_id] ?? null
+                  return (
+                    <td key={b.builder_id} style={{
+                      ...tdB({ textAlign: 'right' }),
+                      ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
+                    }}>
+                      <EditableCell value={effectiveValue} width={58} placeholder="0"
+                        onSave={v => handleBuilderSplit(row.phase_id, b.builder_id, v)} />
+                    </td>
+                  )
+                })}
                 {builders.length > 0 && (
                   <td style={tdB({ textAlign: 'center', padding: '4px 8px' })}>
-                    <BuilderSumBadge splits={row.builder_splits} builders={builders} />
+                    <BuilderSumBadge
+                      splits={{ ...row.builder_splits, ...(localSplits[row.phase_id] ?? {}) }}
+                      builders={builders}
+                    />
                   </td>
                 )}
                 {/* Subtotals */}
