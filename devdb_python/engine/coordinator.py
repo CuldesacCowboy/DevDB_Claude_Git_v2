@@ -175,7 +175,7 @@ def _write_real_lot_projections(
     """
     from dateutil.relativedelta import relativedelta
 
-    # 1. Clear all projected dates on real lots for this dev.
+    # 1. Clear all projected dates on real lots for this dev, skipping locked lots.
     conn.execute(
         """
         UPDATE sim_lots
@@ -184,21 +184,26 @@ def _write_real_lot_projections(
             date_cls_projected = NULL
         WHERE lot_source = 'real'
           AND dev_id = %s
+          AND date_str_is_locked IS NOT TRUE
+          AND date_cmp_is_locked IS NOT TRUE
+          AND date_cls_is_locked IS NOT TRUE
         """,
         (dev_id,),
     )
 
     # 2. Real P lots: no actual start, takedown, or hold date — ordered by lot_id.
+    #    Exclude lots where the projected start is locked (retain their existing projection).
     p_lots_df = conn.read_df(
         """
         SELECT lot_id, lot_type_id
         FROM sim_lots
         WHERE lot_source = 'real'
-          AND dev_id          = %s
-          AND date_str        IS NULL
-          AND date_td         IS NULL
-          AND date_td_hold    IS NULL
-          AND excluded IS NOT TRUE
+          AND dev_id             = %s
+          AND date_str           IS NULL
+          AND date_td            IS NULL
+          AND date_td_hold       IS NULL
+          AND excluded           IS NOT TRUE
+          AND date_str_is_locked IS NOT TRUE
         ORDER BY lot_id
         """,
         (dev_id,),

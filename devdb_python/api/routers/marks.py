@@ -278,12 +278,21 @@ def sync_marks_dates(body: SyncRequest, conn=Depends(get_db_conn)):
             {_PIVOT_CTE}
             UPDATE devdb.sim_lots sl
             SET
-                date_td       = p.date_td,
-                date_td_hold  = p.date_td_hold,
+                date_td       = CASE WHEN sl.date_td_is_locked      IS TRUE THEN sl.date_td      ELSE p.date_td      END,
+                date_td_hold  = CASE WHEN sl.date_td_hold_is_locked IS TRUE THEN sl.date_td_hold ELSE p.date_td_hold END,
                 date_str      = CASE WHEN sl.date_str_source = 'manual' THEN sl.date_str ELSE p.date_str END,
                 date_frm      = p.date_frm,
                 date_cmp      = CASE WHEN sl.date_cmp_source = 'manual' THEN sl.date_cmp ELSE p.date_cmp END,
                 date_cls      = CASE WHEN sl.date_cls_source = 'manual' THEN sl.date_cls ELSE p.date_cls END,
+                date_str_source = CASE WHEN sl.date_str_source = 'manual' THEN 'manual'
+                                       WHEN p.date_str IS NOT NULL         THEN 'marks'
+                                       ELSE sl.date_str_source             END,
+                date_cmp_source = CASE WHEN sl.date_cmp_source = 'manual' THEN 'manual'
+                                       WHEN p.date_cmp IS NOT NULL         THEN 'marks'
+                                       ELSE sl.date_cmp_source             END,
+                date_cls_source = CASE WHEN sl.date_cls_source = 'manual' THEN 'manual'
+                                       WHEN p.date_cls IS NOT NULL         THEN 'marks'
+                                       ELSE sl.date_cls_source             END,
                 updated_at    = NOW()
             FROM pivoted p
             WHERE {_LOT_JOIN}
@@ -407,8 +416,8 @@ def promote_pre_lots(body: PromoteRequest, conn=Depends(get_db_conn)):
             UPDATE devdb.sim_lots sl
             SET
                 lot_source    = 'real',
-                date_td       = p.date_td,
-                date_td_hold  = p.date_td_hold,
+                date_td       = CASE WHEN sl.date_td_is_locked      IS TRUE THEN sl.date_td      ELSE p.date_td      END,
+                date_td_hold  = CASE WHEN sl.date_td_hold_is_locked IS TRUE THEN sl.date_td_hold ELSE p.date_td_hold END,
                 date_str      = CASE WHEN sl.date_str_source = 'manual' THEN sl.date_str ELSE p.date_str END,
                 date_frm      = p.date_frm,
                 date_cmp      = CASE WHEN sl.date_cmp_source = 'manual' THEN sl.date_cmp ELSE p.date_cmp END,

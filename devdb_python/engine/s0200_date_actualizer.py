@@ -95,6 +95,7 @@ def _write_back_dates(conn: DBConnection, df: pd.DataFrame) -> None:
                 FROM (VALUES %s) AS v(lot_id, d)
                 WHERE t.lot_id = v.lot_id::bigint
                   AND t.lot_source = 'real'
+                  AND t.{date_col}_is_locked IS NOT TRUE
                 """,
                 pairs,
             )
@@ -106,6 +107,7 @@ def _write_back_dates(conn: DBConnection, df: pd.DataFrame) -> None:
                 FROM (VALUES %s) AS v(lot_id, d)
                 WHERE t.lot_id = v.lot_id::bigint
                   AND t.lot_source = 'real'
+                  AND t.{source_col} IS DISTINCT FROM 'manual'
                 """,
                 pairs,
             )
