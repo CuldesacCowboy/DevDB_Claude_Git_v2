@@ -238,3 +238,8 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Corrects sim_legal_instruments.dev_id and sim_dev_phases.dev_id for 37 instruments and ~73 phases that were mis-assigned during original seeding; instrument_name is the authoritative anchor for correct dev_id; phase dev_id updated to match its instrument
 - Tables: sim_legal_instruments (UPDATE dev_id, 37 rows), sim_dev_phases (UPDATE dev_id, ~73 rows)
 - Last commit: 2026-04-13
+
+### devdb_python/migrations/043_abbey_farms_restructure.sql
+- Owns: Restructures Abbey Farms to match 2026-04-13 phasing plan (Nederveld C-205/C-300): renames dev 101 to Ranch Condos, renames instruments 7/5 to SF/GW West, creates GW East and Ranch Condos instruments (both new), reassigns phase_ids 159/161 to GW East, fixes TH seq/names, updates SF projected counts (ph.4→27, ph.5→9, ph.6→15), creates 4 new phases (TH ph.3/4, GW West ph.2, Ranch Condos ph.1); sets date_dev_actual=2027-05-01 on Phase 1 bundle. Total 283 units (SF 136 + TH 52 + GW West 40 + GW East 31 + Ranch Condos 24).
+- Tables: developments (UPDATE dev_name), sim_legal_instruments (UPDATE 2, INSERT 2), sim_dev_phases (UPDATE 9, INSERT 4), sim_phase_product_splits (UPDATE 3, INSERT 4)
+- Last commit: 2026-04-13
