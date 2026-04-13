@@ -7,7 +7,8 @@
 --   3. NULL                 (sim engine assigns via S-0900 using phase splits)
 --
 -- COALESCE(builder_id_override, builder_id) = effective builder for display/reporting.
--- S-0900 writes only to builder_id on sim lots; real lots are never touched by the engine.
+-- S-0900 assigns builder_id to sim lots (temp lot generation) AND to real/pre lots where
+-- COALESCE(builder_id_override, builder_id) IS NULL (assign_real_lot_builders pre-pass).
 
 -- Ensure dim_builders has a primary key so FK references work.
 -- (IF NOT EXISTS is not valid for ADD CONSTRAINT; use DO block to guard.)

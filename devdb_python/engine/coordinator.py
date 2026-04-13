@@ -27,7 +27,7 @@ from .s0400_chronology_validator import chronology_validator
 from .s0500_takedown_engine import takedown_engine
 from .s0600_demand_generator import demand_generator
 from .s0820_post_generation_chronology_guard import post_generation_chronology_guard
-from .s0900_builder_assignment import builder_assignment
+from .s0900_builder_assignment import builder_assignment, assign_real_lot_builders
 from kernel import plan, FrozenInput
 from kernel.frozen_input_builder import build_frozen_input
 from .s1000_demand_derived_date_writer import demand_derived_date_writer
@@ -635,6 +635,10 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         _cfg = load_delivery_config(conn, ent_group_id)
         build_lag_curves["_default_cmp"] = _cfg["default_cmp_lag_days"]
         build_lag_curves["_default_cls"] = _cfg["default_cls_lag_days"]
+
+        # S-0900 pre-pass: assign builder_id to real/pre lots with no committed builder.
+        # Runs once per engine run (idempotent — already-assigned lots are skipped).
+        assign_real_lot_builders(conn, ent_group_id, builder_splits)
 
         # Seeded RNG: date-based by default (YYYYMMDD), giving reproducibility
         # within a day. Pass rng_seed explicitly for test-time control.
