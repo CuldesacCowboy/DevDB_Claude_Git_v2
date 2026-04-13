@@ -30,6 +30,10 @@ export function useLocalOpen(key) {
 export const SUB = { D: 52, I: 78, P: 58, L: 56 }
 export const SUB_LABELS = { D: 'Devs', I: 'Instruments', P: 'Phases', L: 'Lots' }
 
+// Fixed column widths for phase-row badges — ensures all phases stack in the same columns
+// regardless of name length or badge content.
+export const PHASE_COLS = { date: 92, tier: 38, types: 52, ago: 52 }
+
 export function phaseTotal(p) {
   return Object.values(p.product_splits ?? {}).reduce((s, v) => s + (v ?? 0), 0)
 }

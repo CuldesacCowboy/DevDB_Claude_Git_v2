@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useContext, useCallback } from 'react'
 import { API_BASE } from '../../config'
 import {
   useLocalOpen, ExpandAllContext, LotRefreshContext,
-  SUB, fmtRelative, SubCell, EditableCount,
+  SUB, PHASE_COLS, fmtRelative, SubCell, EditableCount,
   ChevronIcon, InlineEdit, ROW,
   useDeleteConfirm, DeleteButton, DeleteConfirmBanner,
 } from './setupShared'
@@ -277,78 +277,88 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
         <span style={{ color: '#374151', flex: 1 }}>
           <InlineEdit value={phase.phase_name} onSave={onRename} />
         </span>
-        {/* Delivery date */}
-        {editingDate ? (
-          <input
-            type="date"
-            defaultValue={deliveryDate}
-            autoFocus
-            onClick={e => e.stopPropagation()}
-            onKeyDown={e => {
-              e.stopPropagation()
-              if (e.key === 'Enter') handleSaveDeliveryDate(e.currentTarget.value)
-              if (e.key === 'Escape') setEditingDate(false)
-            }}
-            onBlur={e => handleSaveDeliveryDate(e.currentTarget.value)}
-            style={{
-              fontSize: 10, padding: '1px 4px', border: '1px solid #0d9488',
-              borderRadius: 3, marginLeft: 8, flexShrink: 0,
-            }}
-          />
-        ) : (
-          <span
-            onClick={e => { e.stopPropagation(); setEditingDate(true) }}
-            title="Set locked delivery date for this phase"
-            style={{
-              fontSize: 10, marginLeft: 8, flexShrink: 0, cursor: 'pointer',
-              color: deliveryDate ? '#0d9488' : '#d1d5db',
-              borderBottom: deliveryDate ? '1px dashed #0d9488' : '1px dashed #d1d5db',
-            }}>
-            {savingDate ? '…' : deliveryDate ? `del. ${deliveryDate}` : 'del. date'}
-          </span>
-        )}
-        {/* Delivery tier */}
-        {editingTier ? (
-          <input
-            type="number"
-            min="1"
-            max="99"
-            defaultValue={deliveryTier ?? ''}
-            autoFocus
-            onClick={e => e.stopPropagation()}
-            onKeyDown={e => {
-              e.stopPropagation()
-              if (e.key === 'Enter') handleSaveTier(e.currentTarget.value)
-              if (e.key === 'Escape') setEditingTier(false)
-            }}
-            onBlur={e => handleSaveTier(e.currentTarget.value)}
-            style={{
-              fontSize: 10, padding: '1px 4px', width: 38,
-              border: '1px solid #6366f1', borderRadius: 3, marginLeft: 6, flexShrink: 0,
-            }}
-          />
-        ) : (
-          <span
-            onClick={e => { e.stopPropagation(); setEditingTier(true) }}
-            title="Set delivery tier (cross-instrument ordering)"
-            style={{
-              fontSize: 10, marginLeft: 6, flexShrink: 0, cursor: 'pointer',
-              color: deliveryTier != null ? '#4f46e5' : '#d1d5db',
-              borderBottom: deliveryTier != null ? '1px dashed #6366f1' : '1px dashed #d1d5db',
-            }}>
-            {savingTier ? '…' : deliveryTier != null ? `T${deliveryTier}` : 'tier'}
-          </span>
-        )}
-        {!open && ltIds.length > 0 && (
-          <span style={{ fontSize: 11, color: '#9ca3af' }}>
-            {ltIds.length} type{ltIds.length !== 1 ? 's' : ''}
-          </span>
-        )}
-        {!open && phase.updated_at && (
-          <span style={{ fontSize: 10, color: '#d1d5db', marginLeft: 6 }}>
-            {fmtRelative(phase.updated_at)}
-          </span>
-        )}
+        {/* Delivery date — fixed column */}
+        <div style={{ width: PHASE_COLS.date, flexShrink: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          {editingDate ? (
+            <input
+              type="date"
+              defaultValue={deliveryDate}
+              autoFocus
+              onClick={e => e.stopPropagation()}
+              onKeyDown={e => {
+                e.stopPropagation()
+                if (e.key === 'Enter') handleSaveDeliveryDate(e.currentTarget.value)
+                if (e.key === 'Escape') setEditingDate(false)
+              }}
+              onBlur={e => handleSaveDeliveryDate(e.currentTarget.value)}
+              style={{
+                fontSize: 10, padding: '1px 4px', border: '1px solid #0d9488',
+                borderRadius: 3, width: PHASE_COLS.date - 4,
+              }}
+            />
+          ) : (
+            <span
+              onClick={e => { e.stopPropagation(); setEditingDate(true) }}
+              title="Set locked delivery date for this phase"
+              style={{
+                fontSize: 10, cursor: 'pointer',
+                color: deliveryDate ? '#0d9488' : '#d1d5db',
+                borderBottom: deliveryDate ? '1px dashed #0d9488' : '1px dashed #d1d5db',
+              }}>
+              {savingDate ? '…' : deliveryDate ? `del. ${deliveryDate}` : 'del. date'}
+            </span>
+          )}
+        </div>
+        {/* Delivery tier — fixed column */}
+        <div style={{ width: PHASE_COLS.tier, flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {editingTier ? (
+            <input
+              type="number"
+              min="1"
+              max="99"
+              defaultValue={deliveryTier ?? ''}
+              autoFocus
+              onClick={e => e.stopPropagation()}
+              onKeyDown={e => {
+                e.stopPropagation()
+                if (e.key === 'Enter') handleSaveTier(e.currentTarget.value)
+                if (e.key === 'Escape') setEditingTier(false)
+              }}
+              onBlur={e => handleSaveTier(e.currentTarget.value)}
+              style={{
+                fontSize: 10, padding: '1px 4px', width: PHASE_COLS.tier - 4,
+                border: '1px solid #6366f1', borderRadius: 3,
+              }}
+            />
+          ) : (
+            <span
+              onClick={e => { e.stopPropagation(); setEditingTier(true) }}
+              title="Set delivery tier (cross-instrument ordering)"
+              style={{
+                fontSize: 10, cursor: 'pointer',
+                color: deliveryTier != null ? '#4f46e5' : '#d1d5db',
+                borderBottom: deliveryTier != null ? '1px dashed #6366f1' : '1px dashed #d1d5db',
+              }}>
+              {savingTier ? '…' : deliveryTier != null ? `T${deliveryTier}` : 'tier'}
+            </span>
+          )}
+        </div>
+        {/* Type count — fixed column, always reserves space */}
+        <div style={{ width: PHASE_COLS.types, flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {!open && ltIds.length > 0 && (
+            <span style={{ fontSize: 11, color: '#9ca3af' }}>
+              {ltIds.length} type{ltIds.length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        {/* Updated — fixed column, always reserves space */}
+        <div style={{ width: PHASE_COLS.ago, flexShrink: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          {!open && phase.updated_at && (
+            <span style={{ fontSize: 10, color: '#d1d5db' }}>
+              {fmtRelative(phase.updated_at)}
+            </span>
+          )}
+        </div>
         <DeleteButton
           visible={hovered && !delPhase.confirming}
           onClick={() => delPhase.setConfirming(true)}
