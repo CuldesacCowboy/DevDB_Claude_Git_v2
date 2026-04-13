@@ -121,11 +121,10 @@ def date_actualizer(conn: DBConnection, lot_snapshot: pd.DataFrame) -> pd.DataFr
     """
     Apply MARKsystems actual dates to lot snapshot from schedhousedetail.
 
-    Join key:
-      REGEXP_EXTRACT(lot_number, '^([A-Z]+)', 1) = developmentcode
-      CAST(REGEXP_EXTRACT(lot_number, '([0-9]+)$', 1) AS INT) = housenumber
+    Join key: marks_lot_registry (lot_number → developmentcode + housenumber).
+    Replaces the old regex approach which failed for numeric dev codes (e.g. '43').
 
-    Only rows for dev_codes present in the snapshot are pulled from Databricks.
+    Only rows for dev_codes present in the snapshot are pulled from schedhousedetail.
     Never overwrites date_str_source = 'manual'.
     Persists resolved dates back to sim_lots for real lots (_write_back_dates).
     """
@@ -134,14 +133,22 @@ def date_actualizer(conn: DBConnection, lot_snapshot: pd.DataFrame) -> pd.DataFr
 
     df = lot_snapshot.copy()
 
-    # Extract dev_code and lot_seq from lot_number (e.g. 'WT00000074' -> 'WT', 74)
-    df["_dev_code"] = df["lot_number"].str.extract(r"^([A-Z]+)", expand=False)
-    df["_lot_seq"] = (
-        df["lot_number"]
-        .str.extract(r"([0-9]+)$", expand=False)
-        .pipe(pd.to_numeric, errors="coerce")
-        .astype("Int64")
-    )
+    # Map real lot_number → (developmentcode, housenumber) via marks_lot_registry.
+    # The old regex approach ('^([A-Z]+)') silently dropped lots whose lot numbers start
+    # with digits, e.g. '4300000002' for 43 North (dev code '43').
+    # marks_lot_registry is the authoritative mapping for all real MARKS lots.
+    real_lot_numbers = df.loc[df["lot_source"] == "real", "lot_number"].dropna().unique().tolist()
+    if real_lot_numbers:
+        mlr = conn.read_df(
+            "SELECT DISTINCT lot_number, developmentcode AS _dev_code, housenumber AS _lot_seq "
+            "FROM marks_lot_registry WHERE lot_number = ANY(%s)",
+            (real_lot_numbers,),
+        )
+        mlr["_lot_seq"] = pd.to_numeric(mlr["_lot_seq"], errors="coerce").astype("Int64")
+        df = df.merge(mlr[["lot_number", "_dev_code", "_lot_seq"]], on="lot_number", how="left")
+    else:
+        df["_dev_code"] = pd.NA
+        df["_lot_seq"] = pd.NA
 
     dev_codes = df["_dev_code"].dropna().unique().tolist()
     if not dev_codes:

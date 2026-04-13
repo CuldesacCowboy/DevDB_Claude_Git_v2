@@ -141,6 +141,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 SELECT dev_id FROM sim_ent_group_developments
                 WHERE ent_group_id = %s
             )
+              AND sl.excluded IS NOT TRUE
             ORDER BY d.dev_name, sdp.sequence_number, sl.lot_number NULLS LAST
             """,
             (ent_group_id,),
