@@ -716,4 +716,96 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     if pred_count:
         logger.info(f"P-00: Created {pred_count} intra-dev sequence predecessor row(s).")
 
+    # ------------------------------------------------------------------
+    # Step 7b: Cross-tier predecessors (strict)
+    # ------------------------------------------------------------------
+    # A phase with delivery_tier = N cannot be scheduled until ALL phases
+    # with delivery_tier = N-1 are delivered.  Enforce by adding predecessor
+    # rows: every tier-N event must list every tier-(N-1) event as a
+    # predecessor.  Phases with delivery_tier = NULL are unaffected.
+    tier_df = conn.read_df(
+        """
+        SELECT sdp.phase_id, sdp.delivery_tier
+        FROM sim_dev_phases sdp
+        JOIN sim_ent_group_developments egd ON egd.dev_id = sdp.dev_id
+        WHERE egd.ent_group_id = %s
+          AND sdp.delivery_tier IS NOT NULL
+        """,
+        (ent_group_id,),
+    )
+
+    if not tier_df.empty:
+        phase_tier_map = {
+            int(r["phase_id"]): int(r["delivery_tier"])
+            for _, r in tier_df.iterrows()
+        }
+
+        # Build event_id -> set of tiers from phases in that event
+        event_tiers: dict[int, set[int]] = {}
+
+        # New placeholder events (created this run)
+        for ev_dict, ev_id in zip(events_to_create, new_event_ids):
+            tiers = set()
+            for ph_id in ev_dict["phases"]:
+                t = phase_tier_map.get(ph_id)
+                if t is not None:
+                    tiers.add(t)
+            if tiers:
+                event_tiers[ev_id] = tiers
+
+        # Locked events
+        if locked_phase_ids:
+            locked_ev_df = conn.read_df(
+                """
+                SELECT dep.delivery_event_id, dep.phase_id
+                FROM sim_delivery_event_phases dep
+                JOIN sim_delivery_events sde
+                     ON sde.delivery_event_id = dep.delivery_event_id
+                WHERE sde.ent_group_id = %s
+                  AND sde.date_dev_actual IS NOT NULL
+                """,
+                (ent_group_id,),
+            )
+            for _, r in locked_ev_df.iterrows():
+                ev_id = int(r["delivery_event_id"])
+                ph_id = int(r["phase_id"])
+                t = phase_tier_map.get(ph_id)
+                if t is not None:
+                    event_tiers.setdefault(ev_id, set()).add(t)
+
+        # Group events by tier
+        tier_to_events: dict[int, list[int]] = defaultdict(list)
+        for ev_id, tiers in event_tiers.items():
+            for t in tiers:
+                tier_to_events[t].append(ev_id)
+
+        # Insert: every tier-N event must come after every tier-(N-1) event
+        tier_pred_count = 0
+        tier_pairs_written: set[tuple[int, int]] = set()
+
+        for tier_n in sorted(tier_to_events.keys()):
+            tier_n1 = tier_n - 1
+            if tier_n1 not in tier_to_events:
+                continue
+            for ev_n in tier_to_events[tier_n]:
+                for ev_n1 in tier_to_events[tier_n1]:
+                    if ev_n == ev_n1:
+                        continue
+                    pair = (ev_n, ev_n1)
+                    if pair in tier_pairs_written:
+                        continue
+                    tier_pairs_written.add(pair)
+                    conn.execute(
+                        """
+                        INSERT INTO sim_delivery_event_predecessors
+                            (event_id, predecessor_event_id)
+                        VALUES (%s, %s)
+                        """,
+                        (ev_n, ev_n1),
+                    )
+                    tier_pred_count += 1
+
+        if tier_pred_count:
+            logger.info(f"P-00: Created {tier_pred_count} cross-tier predecessor row(s).")
+
     return new_event_ids

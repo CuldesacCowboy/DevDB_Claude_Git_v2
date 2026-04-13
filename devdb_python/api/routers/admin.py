@@ -53,6 +53,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 sdp.lot_count_projected,
                 sdp.date_dev_projected,
                 sdp.date_dev_actual,
+                sdp.delivery_tier,
                 sdp.updated_at
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
@@ -158,6 +159,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 'lot_count_projected': p['lot_count_projected'],
                 'date_dev_projected':  p['date_dev_projected'].isoformat() if p['date_dev_projected'] else None,
                 'date_dev_actual':     p['date_dev_actual'].isoformat()    if p['date_dev_actual']    else None,
+                'delivery_tier':       p['delivery_tier'],
                 'updated_at':          p['updated_at'].isoformat()         if p['updated_at']         else None,
                 'lot_type_counts':        lc,
                 'product_splits':         prod_map.get(pid, {}),
@@ -176,6 +178,7 @@ class PhasePatchRequest(BaseModel):
     lot_count_projected: Optional[int] = None
     date_dev_projected:  Optional[str] = None
     date_dev_actual:     Optional[str] = None
+    delivery_tier:       Optional[int] = None
 
 
 @router.patch("/phase/{phase_id}")
@@ -196,6 +199,9 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
     if 'date_dev_actual' in provided:
         clauses.append("date_dev_actual = %s::date")
         params.append(body.date_dev_actual)
+    if 'delivery_tier' in provided:
+        clauses.append("delivery_tier = %s")
+        params.append(body.delivery_tier)
 
     params.append(phase_id)
     cur = dict_cursor(conn)
@@ -203,7 +209,7 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
         cur.execute(
             f"UPDATE sim_dev_phases SET {', '.join(clauses)} "
             f"WHERE phase_id = %s "
-            f"RETURNING phase_id, lot_count_projected, date_dev_projected, date_dev_actual",
+            f"RETURNING phase_id, lot_count_projected, date_dev_projected, date_dev_actual, delivery_tier",
             params,
         )
         row = cur.fetchone()
@@ -215,6 +221,7 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
             'lot_count_projected': row['lot_count_projected'],
             'date_dev_projected':  row['date_dev_projected'].isoformat() if row['date_dev_projected'] else None,
             'date_dev_actual':     row['date_dev_actual'].isoformat()    if row['date_dev_actual']    else None,
+            'delivery_tier':       row['delivery_tier'],
         }
     finally:
         cur.close()

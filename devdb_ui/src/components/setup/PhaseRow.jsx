@@ -169,6 +169,25 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
     } finally { setSavingDate(false); setEditingDate(false) }
   }, [phase.phase_id, onRefresh])
 
+  const [deliveryTier, setDeliveryTier] = useState(phase.delivery_tier ?? null)
+  const [editingTier, setEditingTier] = useState(false)
+  const [savingTier, setSavingTier] = useState(false)
+  useEffect(() => { setDeliveryTier(phase.delivery_tier ?? null) }, [phase.delivery_tier])
+
+  const handleSaveTier = useCallback(async (val) => {
+    const parsed = val === '' || val === null ? null : parseInt(val, 10)
+    if (parsed !== null && (isNaN(parsed) || parsed < 1)) { setEditingTier(false); return }
+    setSavingTier(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/phase/${phase.phase_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delivery_tier: parsed }),
+      })
+      if (res.ok) { setDeliveryTier(parsed); onRefresh() }
+    } finally { setSavingTier(false); setEditingTier(false) }
+  }, [phase.phase_id, onRefresh])
+
   const { tick: xTick, value: xVal } = useContext(ExpandAllContext)
   useEffect(() => { if (xTick > 0) setOpen(xVal) }, [xTick]) // eslint-disable-line
   const [addLtId, setAddLtId] = useState('')
@@ -286,6 +305,38 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
               borderBottom: deliveryDate ? '1px dashed #0d9488' : '1px dashed #d1d5db',
             }}>
             {savingDate ? '…' : deliveryDate ? `del. ${deliveryDate}` : 'del. date'}
+          </span>
+        )}
+        {/* Delivery tier */}
+        {editingTier ? (
+          <input
+            type="number"
+            min="1"
+            max="99"
+            defaultValue={deliveryTier ?? ''}
+            autoFocus
+            onClick={e => e.stopPropagation()}
+            onKeyDown={e => {
+              e.stopPropagation()
+              if (e.key === 'Enter') handleSaveTier(e.currentTarget.value)
+              if (e.key === 'Escape') setEditingTier(false)
+            }}
+            onBlur={e => handleSaveTier(e.currentTarget.value)}
+            style={{
+              fontSize: 10, padding: '1px 4px', width: 38,
+              border: '1px solid #6366f1', borderRadius: 3, marginLeft: 6, flexShrink: 0,
+            }}
+          />
+        ) : (
+          <span
+            onClick={e => { e.stopPropagation(); setEditingTier(true) }}
+            title="Set delivery tier (cross-instrument ordering)"
+            style={{
+              fontSize: 10, marginLeft: 6, flexShrink: 0, cursor: 'pointer',
+              color: deliveryTier != null ? '#4f46e5' : '#d1d5db',
+              borderBottom: deliveryTier != null ? '1px dashed #6366f1' : '1px dashed #d1d5db',
+            }}>
+            {savingTier ? '…' : deliveryTier != null ? `T${deliveryTier}` : 'tier'}
           </span>
         )}
         {!open && ltIds.length > 0 && (
