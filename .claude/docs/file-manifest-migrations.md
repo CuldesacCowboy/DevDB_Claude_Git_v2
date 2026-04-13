@@ -218,3 +218,23 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Adds auto-increment sequence to sim_delivery_event_predecessors.id so P-0000 Step 7 can INSERT predecessor rows without supplying explicit IDs; seeds sequence above existing MAX
 - Tables: sim_delivery_event_predecessors (ADD SEQUENCE + SET DEFAULT)
 - Last commit: 2026-04-10
+
+### devdb_python/migrations/039_lot_date_overrides.sql
+- Owns: Planning layer — manager-entered date overrides for production meeting what-if testing; one row per lot per date field; override wins over MARKS in simulation; cleared manually or via batch reconciliation
+- Tables: sim_lot_date_overrides (CREATE TABLE IF NOT EXISTS)
+- Last commit: 2026-04-10
+
+### devdb_python/migrations/040_builder_id_override.sql
+- Owns: Adds builder_id_override INTEGER to sim_lots (tier 1 of three-tier builder priority: override > MARKS builder_id > NULL); ensures pk_dim_builders PK exists via DO block guard; FK references dim_builders
+- Tables: sim_lots (ADD COLUMN builder_id_override), dim_builders (ADD CONSTRAINT pk_dim_builders)
+- Last commit: 2026-04-12
+
+### devdb_python/migrations/041_dim_builders_marks_code.sql
+- Owns: Adds marks_company_code VARCHAR(10) to dim_builders; seeds COMPANYCODE 001→builder_id 188 (JTB Homes) and 050→builder_id 189 (Interra Homes)
+- Tables: dim_builders (ADD COLUMN marks_company_code, UPDATE 2 rows)
+- Last commit: 2026-04-12
+
+### devdb_python/migrations/042_fix_phase_dev_id_assignments.sql
+- Owns: Corrects sim_legal_instruments.dev_id and sim_dev_phases.dev_id for 37 instruments and ~73 phases that were mis-assigned during original seeding; instrument_name is the authoritative anchor for correct dev_id; phase dev_id updated to match its instrument
+- Tables: sim_legal_instruments (UPDATE dev_id, 37 rows), sim_dev_phases (UPDATE dev_id, ~73 rows)
+- Last commit: 2026-04-13

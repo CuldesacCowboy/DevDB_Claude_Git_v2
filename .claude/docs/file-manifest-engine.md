@@ -94,10 +94,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/s0900_builder_assignment.py
-- Owns: S-0900 -- assigns builder_id to sim lots from sim_phase_builder_splits; builder splits passed as parameter
+- Owns: S-0900 -- two functions: builder_assignment() assigns builder_id to sim/temp lots in memory (pure, no DB); assign_real_lot_builders() DB pre-pass assigns builder_id to real/pre lots where COALESCE(builder_id_override, builder_id) IS NULL using same proportional split logic; both share _apply_splits_to_indices() helper; assign_real_lot_builders() called once per coordinator run before iteration loop (idempotent)
 - Imported by: coordinator.py
-- Tables: sim_phase_builder_splits (read parameter; no direct DB query)
-- Last commit: 2026-03-25
+- Tables: sim_lots (SELECT real/pre lots, UPDATE builder_id via execute_values); sim_phase_builder_splits (read parameter)
+- Last commit: 2026-04-12
 
 ### devdb_python/engine/s1000_demand_derived_date_writer.py
 - Owns: S-1000 -- writes MIN(date_str) per phase to sim_dev_phases.date_dev_projected
@@ -270,3 +270,25 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Owns: One module per Pokemon community (pallet_town through mahogany_town); each has install() (idempotent permanent objects), reset(), setup(), assert_results(); 14 scenarios testing various delivery scheduling behaviors
 - Tables: all sim_* tables (via install/reset helpers)
 - Last commit: 2026-04-04
+
+---
+
+#### Scripts (devdb_python/scripts/)
+
+### devdb_python/scripts/import_housemaster_builder.py
+- Owns: One-time import — reads housemaster.csv (MARKS export), joins on DEVELOPMENTCODE+HOUSENUMBER, sets sim_lots.builder_id (MARKS tier); dry-run by default (--apply to write); scoped by --dev flag; MARKS wins on conflict with existing builder_id
+- Imports: psycopg2, csv, argparse
+- Tables: sim_lots (UPDATE builder_id), dim_builders (SELECT marks_company_code)
+- Last commit: 2026-04-12
+
+### devdb_python/scripts/import_phase_delivery_dates.py
+- Owns: One-time import — reads qrxPYM0C_03_Month.csv, finds past months where LotsDeveloped > 0 per development, assigns to sim_dev_phases.date_dev_actual in sequence_number order; skips already-set phases; dry-run by default (--apply to write); --dev flag for single-dev scope; p_pre derives delivery events automatically on next sim run
+- Imports: psycopg2, csv, argparse, collections.defaultdict
+- Tables: sim_dev_phases (UPDATE date_dev_actual), developments (SELECT)
+- Last commit: 2026-04-13
+
+### devdb_python/scripts/import_builder_splits_from_csv.py
+- Owns: Imports builder split percentages from CSV into sim_phase_builder_splits
+- Imports: psycopg2, csv
+- Tables: sim_phase_builder_splits (INSERT/UPDATE)
+- Last commit: 2026-04-10

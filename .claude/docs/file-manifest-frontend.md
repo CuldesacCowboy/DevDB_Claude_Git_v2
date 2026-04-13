@@ -33,11 +33,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/SetupView.jsx
-- Owns: Setup tree page — Community → Development → Instrument → Phase hierarchy; sortable community list; sticky sort header + summary row; D/I/P/L subtotal columns at each level; hover-only add buttons on tree rows; ExpandAllContext + LotRefreshContext providers; CommunityRow, DevRow, InstrumentRow components; delegates phase detail to PhaseRow
+- Owns: Setup tree page — Community → Development → Instrument → Phase hierarchy; sortable community list; sticky sort header + summary row; D/I/P/L subtotal columns at each level; hover-only add buttons on tree rows; ExpandAllContext + LotRefreshContext providers; CommunityRow, DevRow, InstrumentRow components; delegates phase detail to PhaseRow; DeliveryEventsSection removed (delivery events never surfaced to user)
 - Imports: react (useState, useEffect, useContext, useRef, createContext), API_BASE from config, setupShared (all shared atoms), PhaseRow
 - Imported by: App.jsx (via /setup route)
 - Tables: none (API calls via /admin/setup-tree, /phases, /instruments, /developments, /entitlement-groups)
-- Last commit: 2026-04-10
+- Last commit: 2026-04-13
 
 ### devdb_ui/src/components/setup/setupShared.jsx
 - Owns: All shared hooks, utilities, and UI atoms for the Setup tree; exports LotRefreshContext, ExpandAllContext, useLocalOpen, SUB (column widths), SUB_LABELS, phaseTotal, fmtRelative, SubCell, SortHeader, formatLotNum, lotSeqStr, formatLotNumPadded, ChevronIcon, InlineEdit, EditableCount, AddForm, useAddForm, ROW, AddButton
@@ -47,11 +47,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-10
 
 ### devdb_ui/src/components/setup/PhaseRow.jsx
-- Owns: PhaseRow (expandable phase header with Lots/Buildings tab bar) and LotTypeRow (one table row + lot pill detail expand); lot type table: Product/Total/Active/Pending/Sim/Excl columns; inline lot pill expand via LotPillGroup; silent re-fetch on LotRefreshContext tick
-- Imports: react (useState, useEffect, useRef, useContext), API_BASE, setupShared (multiple), LotPillGroup, BuildingsTab
+- Owns: PhaseRow (expandable phase header with Lots/Buildings tab bar) and LotTypeRow (one table row + lot pill detail expand); lot type table: Product/Total/Active/Pending/Sim/Excl columns; inline lot pill expand via LotPillGroup; silent re-fetch on LotRefreshContext tick; inline delivery date badge in phase header (teal 'del. date', click-to-edit date input, blur/Enter saves, PATCH /admin/phase/{id} with date_dev_actual)
+- Imports: react (useState, useEffect, useRef, useContext, useCallback), API_BASE, setupShared (multiple), LotPillGroup, BuildingsTab
 - Imported by: SetupView.jsx
-- Tables: none (API calls via /phases/{id}/lot-type/{ltId}/lots, /phases/{id}/lot-type/{ltId}/projected, DELETE /phases/{id}/lot-type/{ltId})
-- Last commit: 2026-04-10
+- Tables: none (API calls via /phases/{id}/lot-type/{ltId}/lots, /phases/{id}/lot-type/{ltId}/projected, DELETE /phases/{id}/lot-type/{ltId}, PATCH /admin/phase/{id})
+- Last commit: 2026-04-13
 
 ### devdb_ui/src/components/setup/LotPillGroup.jsx
 - Owns: LotPillGroup (pill grid with add-pre-lots panel); MovableLotPill (drag-to-move, exclude/un-exclude actions); AddPreLotsPanel (bulk pre-lot creation inline); exports LOT_PILL, LotPill, LotPillGroup
