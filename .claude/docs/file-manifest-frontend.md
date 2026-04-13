@@ -33,18 +33,18 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/SetupView.jsx
-- Owns: Setup tree page — Community → Development → Instrument → Phase hierarchy; sortable community list; sticky sort header + summary row; D/I/P/L subtotal columns at each level; hover-only add buttons on tree rows; ExpandAllContext + LotRefreshContext providers; CommunityRow, DevRow, InstrumentRow components; delegates phase detail to PhaseRow; DeliveryEventsSection removed (delivery events never surfaced to user)
+- Owns: Setup tree page — Community → Development → Instrument → Phase hierarchy; sortable community list; sticky sort header + summary row; D/I/P/L subtotal columns at each level; hover-only add buttons on tree rows; ExpandAllContext + LotRefreshContext providers; CommunityRow, DevRow, InstrumentRow components; delegates phase detail to PhaseRow; DeliveryEventsSection removed (delivery events never surfaced to user); instrument type badge in InstrumentRow is a click-to-edit select (Plat / Site Condo / Traditional Condo / Metes & Bounds Splits / Other — PATCH /instruments/{id}/type on change); wider container (maxWidth 1020px), indigo left rail on instrument rows (faint indigo background), gray left rail on dev rows, community cards with more internal padding
 - Imports: react (useState, useEffect, useContext, useRef, createContext), API_BASE from config, setupShared (all shared atoms), PhaseRow
 - Imported by: App.jsx (via /setup route)
-- Tables: none (API calls via /admin/setup-tree, /phases, /instruments, /developments, /entitlement-groups)
+- Tables: none (API calls via /admin/setup-tree, /phases, /instruments, /developments, /entitlement-groups, PATCH /instruments/{id}/type)
 - Last commit: 2026-04-13
 
 ### devdb_ui/src/components/setup/setupShared.jsx
-- Owns: All shared hooks, utilities, and UI atoms for the Setup tree; exports LotRefreshContext, ExpandAllContext, useLocalOpen, SUB (column widths), SUB_LABELS, phaseTotal, fmtRelative, SubCell, SortHeader, formatLotNum, lotSeqStr, formatLotNumPadded, ChevronIcon, InlineEdit, EditableCount, AddForm, useAddForm, ROW, AddButton
+- Owns: All shared hooks, utilities, and UI atoms for the Setup tree; exports LotRefreshContext, ExpandAllContext, useLocalOpen, SUB (column widths), SUB_LABELS, phaseTotal, fmtRelative, SubCell, SortHeader, formatLotNum, lotSeqStr, formatLotNumPadded, ChevronIcon, InlineEdit, EditableCount, AddForm, useAddForm, ROW (padding 5px), AddButton; ROW padding increased 3→5px
 - Imports: react (useState, useEffect, useRef, useCallback, createContext, useContext)
 - Imported by: SetupView.jsx, PhaseRow.jsx, LotPillGroup.jsx, BuildingsTab.jsx
 - Tables: none
-- Last commit: 2026-04-10
+- Last commit: 2026-04-13
 
 ### devdb_ui/src/components/setup/PhaseRow.jsx
 - Owns: PhaseRow (expandable phase header with Lots/Buildings tab bar) and LotTypeRow (one table row + lot pill detail expand); lot type table: Product/Total/Active/Pending/Sim/Excl columns; inline lot pill expand via LotPillGroup; silent re-fetch on LotRefreshContext tick; inline delivery date badge in phase header (teal 'del. date', click-to-edit date input, blur/Enter saves, PATCH /admin/phase/{id} with date_dev_actual)

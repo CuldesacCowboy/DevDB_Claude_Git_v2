@@ -61,11 +61,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-03
 
 ### devdb_python/api/routers/instruments.py
-- Owns: POST and PATCH for sim_legal_instruments (create, rename, dev-id reassign, phase-order); INSERT uses RETURNING instrument_id (sequence-backed, no MAX query); PATCH /{id}/dev reassigns instrument to different dev_id; PATCH /{id}/phase-order; POST /{id}/phase-order/auto-sort
+- Owns: POST and PATCH for sim_legal_instruments (create, rename, dev-id reassign, type edit, phase-order); INSERT uses RETURNING instrument_id (sequence-backed, no MAX query); PATCH /{id}/dev reassigns instrument to different dev_id; PATCH /{id}/type updates instrument_type (validates against allowed list: Plat, Site Condo, Traditional Condo, Metes & Bounds Splits, Other); PATCH /{id}/phase-order; POST /{id}/phase-order/auto-sort
 - Imports: api.deps, api.db, pydantic, fastapi, re
 - Imported by: api/main.py
 - Tables: developments, dim_development, sim_legal_instruments, sim_dev_phases
-- Last commit: 2026-04-04
+- Last commit: 2026-04-13
 
 ### devdb_python/api/routers/lots.py
 - Owns: PATCH /{id}/phase, PATCH /{id}/lot-type, DELETE /{id}/phase -- all delegating to lot_assignment_service
