@@ -6,7 +6,8 @@ Reads:   sim_delivery_events, sim_delivery_event_phases, sim_dev_phases,
 Writes:  sim_delivery_events, sim_delivery_event_phases,
          sim_delivery_event_predecessors (DB, DELETE + INSERT)
 Input:   conn: DBConnection, ent_group_id: int
-Rules:   Deletes all placeholder events (date_dev_actual IS NULL) for the ent_group.
+Rules:   Deletes auto-created placeholder events (date_dev_actual IS NULL AND is_auto_created = TRUE).
+         Never deletes user-created events (is_auto_created = FALSE) regardless of date state.
          Inserts new auto-scheduled events per D-139 cross-dev bundling logic.
          After writing events, inserts predecessor rows between consecutive events
          per development (ordered by sequence_number) so P-0200/P-0400 enforce
@@ -167,6 +168,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         FROM sim_delivery_events
         WHERE ent_group_id = %s
           AND date_dev_actual IS NULL
+          AND is_auto_created = TRUE
         """,
         (ent_group_id,),
     )
