@@ -60,7 +60,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
             onBlur={() => setEditingType(false)}
             onClick={e => e.stopPropagation()}
             style={{ fontSize: 10, border: '1px solid #6366f1', borderRadius: 10, padding: '0 4px', outline: 'none', cursor: 'pointer' }}>
-            {['Plat', 'Site Condo', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+            {['Plat', 'Site Condo', 'Traditional Condo', 'Metes & Bounds Splits', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         ) : (
           <span
@@ -207,7 +207,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
                 fields={[
                   { name: 'instrument_name', label: 'Instrument name', required: true },
                   { name: 'instrument_type', label: 'Type', required: true,
-                    options: ['Plat', 'Site Condo', 'Other'], default: 'Plat' },
+                    options: ['Plat', 'Site Condo', 'Traditional Condo', 'Metes & Bounds Splits', 'Other'], default: 'Plat' },
                 ]}
                 onSave={addInstr.handleSave}
                 onCancel={() => addInstr.setOpen(false)}

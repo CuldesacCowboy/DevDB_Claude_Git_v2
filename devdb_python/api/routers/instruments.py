@@ -12,7 +12,7 @@ from api.db import dict_cursor
 
 router = APIRouter(prefix="/instruments", tags=["instruments"])
 
-VALID_INSTRUMENT_TYPES = {"Plat", "Site Condo", "Other"}
+VALID_INSTRUMENT_TYPES = {"Plat", "Site Condo", "Traditional Condo", "Metes & Bounds Splits", "Other"}
 
 
 class InstrumentCreateRequest(BaseModel):
