@@ -9,6 +9,10 @@
 -- COALESCE(builder_id_override, builder_id) = effective builder for display/reporting.
 -- S-0900 writes only to builder_id on sim lots; real lots are never touched by the engine.
 
+-- Ensure dim_builders has a primary key so FK references work.
+ALTER TABLE devdb.dim_builders
+    ADD CONSTRAINT IF NOT EXISTS pk_dim_builders PRIMARY KEY (builder_id);
+
 ALTER TABLE devdb.sim_lots
     ADD COLUMN IF NOT EXISTS builder_id_override INTEGER
         REFERENCES devdb.dim_builders(builder_id);
