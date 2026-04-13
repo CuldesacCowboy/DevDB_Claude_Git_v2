@@ -34,6 +34,10 @@ class InstrumentDevRequest(BaseModel):
     dev_id: int
 
 
+class InstrumentTypeRequest(BaseModel):
+    instrument_type: str
+
+
 @router.get("", response_model=list[dict])
 def list_instruments(conn=Depends(get_db_conn)):
     """Return all instruments. modern_dev_id = developments.dev_id for frontend joins."""
@@ -157,6 +161,38 @@ def update_instrument_dev(
             raise HTTPException(status_code=404, detail=f"Instrument {instrument_id} not found")
         conn.commit()
         return {"instrument_id": instrument_id, "dev_id": body.dev_id}
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+@router.patch("/{instrument_id}/type", response_model=dict)
+def update_instrument_type(
+    instrument_id: int,
+    body: InstrumentTypeRequest,
+    conn=Depends(get_db_conn),
+):
+    """Change the instrument type (Plat / Site Condo / Other)."""
+    if body.instrument_type not in VALID_INSTRUMENT_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"instrument_type must be one of: {', '.join(sorted(VALID_INSTRUMENT_TYPES))}",
+        )
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "UPDATE sim_legal_instruments SET instrument_type = %s WHERE instrument_id = %s",
+            (body.instrument_type, instrument_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=f"Instrument {instrument_id} not found")
+        conn.commit()
+        return {"instrument_id": instrument_id, "instrument_type": body.instrument_type}
     except HTTPException:
         raise
     except Exception:

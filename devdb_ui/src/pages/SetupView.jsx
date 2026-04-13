@@ -15,10 +15,11 @@ import PhaseRow from '../components/setup/PhaseRow'
 
 // ─── Instrument row ───────────────────────────────────────────────────────────
 
-function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onDeleteInstr, onRefresh }) {
+function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onDeleteInstr, onChangeInstrType, onRefresh }) {
   const instrPhases = phases.filter(p => p.instrument_id === instr.instrument_id)
   const [open, setOpen] = useLocalOpen(`setup_open_instr_${instr.instrument_id}`)
   const [hovered, setHovered] = useState(false)
+  const [editingType, setEditingType] = useState(false)
   const addPhase = useAddForm(async (vals) => {
     await onAddPhase(instr.instrument_id, vals.phase_name)
   })
@@ -47,10 +48,29 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
         <span style={{ fontWeight: 500, flex: 1, minWidth: 0 }}>
           <InlineEdit value={instr.instrument_name} onSave={onRenameInstr} />
         </span>
-        <span style={{ fontSize: 10, color: '#9ca3af', background: '#f1f5f9',
-          padding: '0 5px', borderRadius: 10, marginLeft: 4 }}>
-          {instr.instrument_type}
-        </span>
+        {editingType ? (
+          <select
+            autoFocus
+            value={instr.instrument_type || ''}
+            onChange={async e => {
+              const t = e.target.value
+              setEditingType(false)
+              await onChangeInstrType?.(t)
+            }}
+            onBlur={() => setEditingType(false)}
+            onClick={e => e.stopPropagation()}
+            style={{ fontSize: 10, border: '1px solid #6366f1', borderRadius: 10, padding: '0 4px', outline: 'none', cursor: 'pointer' }}>
+            {['Plat', 'Site Condo', 'Other'].map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        ) : (
+          <span
+            onClick={e => { e.stopPropagation(); setEditingType(true) }}
+            title="Click to change type"
+            style={{ fontSize: 10, color: '#9ca3af', background: '#f1f5f9',
+              padding: '0 5px', borderRadius: 10, marginLeft: 4, cursor: 'pointer' }}>
+            {instr.instrument_type || '—'}
+          </span>
+        )}
         <span onClick={e => e.stopPropagation()}
           style={{ opacity: hovered || open ? 1 : 0, pointerEvents: hovered || open ? undefined : 'none', transition: 'opacity 0.1s' }}>
           <AddButton label="phase" onClick={() => { setOpen(true); addPhase.setOpen(true) }} />
@@ -112,7 +132,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
 
 // ─── Development row ──────────────────────────────────────────────────────────
 
-function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onRenamePhase, onDeleteDev, onRefresh }) {
+function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onChangeInstrType, onRenamePhase, onDeleteDev, onRefresh }) {
   const devInstrs = instruments.filter(i => i.modern_dev_id === dev.dev_id)
   const [open, setOpen] = useLocalOpen(`setup_open_dev_${dev.dev_id}`)
   const [hovered, setHovered] = useState(false)
@@ -204,6 +224,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
               lotTypes={lotTypes}
               onAddPhase={onAddPhase}
               onRenameInstr={name => onRenameInstr(instr.instrument_id, name)}
+              onChangeInstrType={type => onChangeInstrType?.(instr.instrument_id, type)}
               onRenamePhase={onRenamePhase}
               onDeleteInstr={onRefresh}
               onRefresh={onRefresh}
@@ -224,7 +245,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
 
 function CommunityRow({ comm, devs, instruments, phases, lotTypes,
   onAddDev, onAddInstrument, onAddPhase,
-  onRenameComm, onRenameDev, onRenameInstr, onRenamePhase,
+  onRenameComm, onRenameDev, onRenameInstr, onChangeInstrType, onRenamePhase,
   onDeleteComm, onDeleteDev, onRefresh }) {
   const [open, setOpen] = useLocalOpen(`setup_open_comm_${comm.ent_group_id}`)
   const [hovered, setHovered] = useState(false)
@@ -337,6 +358,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
               onAddPhase={onAddPhase}
               onRenameDev={name => onRenameDev(dev.dev_id, name)}
               onRenameInstr={onRenameInstr}
+              onChangeInstrType={onChangeInstrType}
               onRenamePhase={onRenamePhase}
               onDeleteDev={onDeleteDev ? () => onDeleteDev(dev.dev_id) : undefined}
               onRefresh={onRefresh}
@@ -454,6 +476,16 @@ export default function SetupView({ showTestCommunities }) {
     })
     if (!res.ok) throw new Error((await res.json()).detail ?? 'Rename failed')
     setInstruments(prev => prev.map(i => i.instrument_id === instrId ? { ...i, instrument_name: name } : i))
+  }
+
+  async function handleChangeInstrType(instrId, type) {
+    const res = await fetch(`${API_BASE}/instruments/${instrId}/type`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instrument_type: type }),
+    })
+    if (!res.ok) throw new Error((await res.json()).detail ?? 'Update failed')
+    setInstruments(prev => prev.map(i => i.instrument_id === instrId ? { ...i, instrument_type: type } : i))
   }
 
   async function handleRenamePhase(phaseId, name) {
@@ -609,6 +641,7 @@ export default function SetupView({ showTestCommunities }) {
           onRenameComm={name => handleRenameComm(comm.ent_group_id, name)}
           onRenameDev={handleRenameDev}
           onRenameInstr={handleRenameInstr}
+          onChangeInstrType={handleChangeInstrType}
           onRenamePhase={handleRenamePhase}
           onDeleteComm={() => handleDeleteComm(comm.ent_group_id)}
           onDeleteDev={handleDeleteDev}
