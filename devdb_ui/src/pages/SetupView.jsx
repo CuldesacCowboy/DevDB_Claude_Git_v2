@@ -406,10 +406,10 @@ export default function SetupView({ showTestCommunities }) {
     setLoadError(null)
     try {
       const [eg, devs, instrs, cfg] = await Promise.all([
-        fetch(`${API_BASE}/entitlement-groups`).then(r => r.json()),
-        fetch(`${API_BASE}/developments`).then(r => r.json()),
-        fetch(`${API_BASE}/instruments`).then(r => r.json()),
-        fetch(`${API_BASE}/admin/phase-config`).then(r => r.json()),
+        fetch(`${API_BASE}/entitlement-groups`).then(r => { if (!r.ok) throw new Error(`entitlement-groups ${r.status}`); return r.json() }),
+        fetch(`${API_BASE}/developments`).then(r => { if (!r.ok) throw new Error(`developments ${r.status}`); return r.json() }),
+        fetch(`${API_BASE}/instruments`).then(r => { if (!r.ok) throw new Error(`instruments ${r.status}`); return r.json() }),
+        fetch(`${API_BASE}/admin/phase-config`).then(r => { if (!r.ok) throw new Error(`phase-config ${r.status}`); return r.json() }),
       ])
       setCommunities(eg)
       setDevelopments(devs)

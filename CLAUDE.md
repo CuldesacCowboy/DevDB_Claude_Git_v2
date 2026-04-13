@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: April 2026 (2026-04-13) | Architecture v20 | Decision Log: D-001 through D-155 | Next ID: D-156*
+*Last updated: April 2026 (2026-04-13) | Architecture v20 | Decision Log: D-001 through D-158 | Next ID: D-159*
 
 ---
 
@@ -22,7 +22,7 @@
 | Pokemon test suite | Complete | 14 Pokemon communities (Scenarios 1–14), all 14/14 passing. Converted from window_start/end to delivery_months arrays (migration 030 compatible). |
 | Test mode UI toggle | Complete | TEST button in nav bar; exclusive filter — test mode shows only is_test communities, normal mode shows only non-test. Persisted to localStorage (devdb_show_test_communities). All three views (LotPhaseView, SitePlanView, SimulationView) respect the toggle. |
 | Delivery month picker UI | Complete | SimulationView DeliveryConfigSection: 1×12 month grid (MonthGrid component), Select All, Clear, Apply Standard Window, Edit Standard Window. Standard window configurable and persisted to localStorage (devdb_delivery_standard_months). |
-| Decision log | Current | D-155 added. Next ID: D-156. |
+| Decision log | Current | D-158 added. Next ID: D-159. |
 | React/FastAPI phase endpoints | Complete | Route ordering fixed — specific sub-routes now registered before catch-all /{phase_id}. DELETE /phases/{id}/lot-type and all phase endpoints visible in OpenAPI spec. |
 | Session tooling | Complete | /start and /end Claude Code skills (.claude/skills/). Start_DevDB_Session.bat opens session windows via devdb_open_session_windows.ps1. Stop_DevDB.bat kills backend (uvicorn + detached python.exe), frontend (Vite), and Chrome DevDB windows. |
 | Postgres migration | Complete | All 35 tables migrated from Databricks to local PostgreSQL 16 (devdb.devdb). migrate_to_postgres.py. 23.5s total. 266,554 schedhousedetail rows. Engine now runs against local Postgres. Run time 0.5s (was 7+ min on Databricks serverless). |
