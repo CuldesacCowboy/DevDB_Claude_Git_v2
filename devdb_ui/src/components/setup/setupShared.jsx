@@ -345,7 +345,7 @@ export function useAddForm(saveFn) {
 
 export const ROW = {
   display: 'flex', alignItems: 'center', gap: 6,
-  padding: '3px 6px', borderRadius: 4, cursor: 'pointer',
+  padding: '5px 8px', borderRadius: 4, cursor: 'pointer',
   fontSize: 13,
 }
 

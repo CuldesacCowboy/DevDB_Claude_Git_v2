@@ -39,7 +39,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
   })
 
   return (
-    <div style={{ paddingLeft: 24 }}>
+    <div style={{ paddingLeft: 36, borderLeft: '3px solid #e0e7ff', marginLeft: 8, marginBottom: 2, background: 'rgba(238,242,255,0.35)', borderRadius: '0 4px 4px 0' }}>
       <div style={{ ...ROW, color: '#4b5563' }}
         onClick={() => { if (!delInstr.confirming) setOpen(o => !o) }}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
@@ -158,7 +158,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
   })
 
   return (
-    <div style={{ paddingLeft: 20 }}>
+    <div style={{ paddingLeft: 28, borderLeft: '3px solid #e5e7eb', marginLeft: 6, marginTop: 3 }}>
       <div style={{ ...ROW, color: '#374151' }}
         onClick={() => { if (!delDev.confirming) setOpen(o => !o) }}
         onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
@@ -289,7 +289,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
   return (
     <div style={{
       border: '1px solid #e5e7eb', borderRadius: 6,
-      marginBottom: 6, overflow: 'hidden',
+      marginBottom: 12, overflow: 'hidden',
     }}>
       <div
         style={{
@@ -332,9 +332,9 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
       )}
 
       {open && (
-        <div style={{ padding: '4px 0 6px 4px' }}>
+        <div style={{ padding: '6px 0 10px 6px' }}>
           {addDev.open && (
-            <div style={{ paddingLeft: 20, paddingTop: 4 }}>
+            <div style={{ paddingLeft: 28, paddingTop: 4 }}>
               <AddForm
                 fields={[
                   { name: 'dev_name', label: 'Development name', required: true, width: 200 },
@@ -551,7 +551,7 @@ export default function SetupView({ showTestCommunities }) {
   return (
     <LotRefreshContext.Provider value={refreshTick}>
     <ExpandAllContext.Provider value={expandCtx}>
-    <div style={{ padding: '24px 32px', maxWidth: 820, boxSizing: 'border-box' }}>
+    <div style={{ padding: '24px 32px', maxWidth: 1020, boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
         <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>Setup</h1>
         <button
