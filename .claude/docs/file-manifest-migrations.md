@@ -239,6 +239,11 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Tables: sim_legal_instruments (UPDATE dev_id, 37 rows), sim_dev_phases (UPDATE dev_id, ~73 rows)
 - Last commit: 2026-04-13
 
+### devdb_python/migrations/045_fix_instrument_dev_ids_phase_derived.sql
+- Owns: Corrects sim_legal_instruments.dev_id which references dim_development.development_id (legacy space), not developments.dev_id (modern space); migration 042 had used wrong ID space for 58 instruments; rederives correct dim_development.development_id from sim_dev_phases.dev_id via developments.marks_code = dim_development.dev_code2 bridge; 0 mismatches remaining
+- Tables: sim_legal_instruments (UPDATE 58)
+- Last commit: 2026-04-13
+
 ### devdb_python/migrations/044_rebuild_ent_group_developments.sql
 - Owns: Rebuilds sim_ent_group_developments from authoritative developments.community_id; deletes all 106 wrong real-community entries (same shifted dev_id bug as migration 042) and re-inserts 105 correct rows; test community rows untouched
 - Tables: sim_ent_group_developments (DELETE 106, INSERT 105)
