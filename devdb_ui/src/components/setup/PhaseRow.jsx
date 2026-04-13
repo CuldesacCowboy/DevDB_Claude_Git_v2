@@ -1,7 +1,7 @@
 // setup/PhaseRow.jsx
 // LotTypeRow (one table row + pill detail) and PhaseRow (expandable lot-type table).
 
-import { useState, useEffect, useRef, useContext } from 'react'
+import { useState, useEffect, useRef, useContext, useCallback } from 'react'
 import { API_BASE } from '../../config'
 import {
   useLocalOpen, ExpandAllContext, LotRefreshContext,
@@ -152,6 +152,23 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
     onDelete?.()
   })
   const [addLtOpen, setAddLtOpen] = useState(false)
+  const [deliveryDate, setDeliveryDate] = useState(phase.date_dev_actual ?? '')
+  const [editingDate, setEditingDate] = useState(false)
+  const [savingDate, setSavingDate] = useState(false)
+  useEffect(() => { setDeliveryDate(phase.date_dev_actual ?? '') }, [phase.date_dev_actual])
+
+  const handleSaveDeliveryDate = useCallback(async (val) => {
+    setSavingDate(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/phase/${phase.phase_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date_dev_actual: val || null }),
+      })
+      if (res.ok) { setDeliveryDate(val); onRefresh() }
+    } finally { setSavingDate(false); setEditingDate(false) }
+  }, [phase.phase_id, onRefresh])
+
   const { tick: xTick, value: xVal } = useContext(ExpandAllContext)
   useEffect(() => { if (xTick > 0) setOpen(xVal) }, [xTick]) // eslint-disable-line
   const [addLtId, setAddLtId] = useState('')
@@ -241,6 +258,36 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
         <span style={{ color: '#374151', flex: 1 }}>
           <InlineEdit value={phase.phase_name} onSave={onRename} />
         </span>
+        {/* Delivery date */}
+        {editingDate ? (
+          <input
+            type="date"
+            defaultValue={deliveryDate}
+            autoFocus
+            onClick={e => e.stopPropagation()}
+            onKeyDown={e => {
+              e.stopPropagation()
+              if (e.key === 'Enter') handleSaveDeliveryDate(e.currentTarget.value)
+              if (e.key === 'Escape') setEditingDate(false)
+            }}
+            onBlur={e => handleSaveDeliveryDate(e.currentTarget.value)}
+            style={{
+              fontSize: 10, padding: '1px 4px', border: '1px solid #0d9488',
+              borderRadius: 3, marginLeft: 8, flexShrink: 0,
+            }}
+          />
+        ) : (
+          <span
+            onClick={e => { e.stopPropagation(); setEditingDate(true) }}
+            title="Set locked delivery date for this phase"
+            style={{
+              fontSize: 10, marginLeft: 8, flexShrink: 0, cursor: 'pointer',
+              color: deliveryDate ? '#0d9488' : '#d1d5db',
+              borderBottom: deliveryDate ? '1px dashed #0d9488' : '1px dashed #d1d5db',
+            }}>
+            {savingDate ? '…' : deliveryDate ? `del. ${deliveryDate}` : 'del. date'}
+          </span>
+        )}
         {!open && ltIds.length > 0 && (
           <span style={{ fontSize: 11, color: '#9ca3af' }}>
             {ltIds.length} type{ltIds.length !== 1 ? 's' : ''}

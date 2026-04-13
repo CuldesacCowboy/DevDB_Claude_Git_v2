@@ -12,7 +12,6 @@ import {
   useDeleteConfirm, DeleteButton, DeleteConfirmBanner,
 } from '../components/setup/setupShared'
 import PhaseRow from '../components/setup/PhaseRow'
-import DeliveryEventsSection from '../components/setup/DeliveryEventsSection'
 
 // ─── Instrument row ───────────────────────────────────────────────────────────
 
@@ -349,10 +348,6 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
             </div>
           )}
 
-          <DeliveryEventsSection
-            entGroupId={comm.ent_group_id}
-            allPhases={commPhases}
-          />
         </div>
       )}
     </div>
