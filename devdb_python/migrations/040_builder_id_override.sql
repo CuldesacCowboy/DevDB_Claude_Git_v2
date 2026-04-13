@@ -10,8 +10,17 @@
 -- S-0900 writes only to builder_id on sim lots; real lots are never touched by the engine.
 
 -- Ensure dim_builders has a primary key so FK references work.
-ALTER TABLE devdb.dim_builders
-    ADD CONSTRAINT IF NOT EXISTS pk_dim_builders PRIMARY KEY (builder_id);
+-- (IF NOT EXISTS is not valid for ADD CONSTRAINT; use DO block to guard.)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'pk_dim_builders' AND conrelid = 'devdb.dim_builders'::regclass
+    ) THEN
+        ALTER TABLE devdb.dim_builders ADD CONSTRAINT pk_dim_builders PRIMARY KEY (builder_id);
+    END IF;
+END
+$$;
 
 ALTER TABLE devdb.sim_lots
     ADD COLUMN IF NOT EXISTS builder_id_override INTEGER
