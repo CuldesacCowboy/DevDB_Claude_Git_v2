@@ -235,17 +235,11 @@ function LedgerGraph({ rows, period }) {
   const legendProps = { wrapperStyle: { fontSize: 11, paddingTop: 8 } }
 
   const descriptions = {
-    pipeline: 'Active construction — unstarted, under construction, completed',
+    pipeline: 'Full supply stack — developed, held, unstarted, under construction, completed',
     backlog:  'End-of-period lots not yet activated — paper & entitled',
     velocity: 'Lot transitions per period across all pipeline stages',
     closings: 'Starts, completions, and closings per period',
   }
-
-  // For the pipeline header stats: use last row (end of simulation horizon)
-  const lastRow = rows[rows.length - 1]
-  const currentD = lastRow?.d_end ?? 0
-  const currentH = lastRow?.h_end ?? 0
-  const maxD = Math.max(...rows.map(r => r.d_end ?? 0))
 
   return (
     <div>
@@ -269,33 +263,20 @@ function LedgerGraph({ rows, period }) {
 
       {/* Active panel */}
       {panel === 'pipeline' && (
-        <div>
-          {/* D and H as stat lines above the chart */}
-          <div style={{ display: 'flex', gap: 20, marginBottom: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: STATUS_COLOR.D }}>
-              {STATUS_CFG.D.shape} <strong>{maxD}</strong>
-              <span style={{ color: '#9ca3af', fontWeight: 400 }}> lots developed (peak supply)</span>
-            </span>
-            {currentH > 0 && (
-              <span style={{ fontSize: 12, color: STATUS_COLOR.H }}>
-                {STATUS_CFG.H.shape} <strong>{currentH}</strong>
-                <span style={{ color: '#9ca3af', fontWeight: 400 }}> on hold</span>
-              </span>
-            )}
-          </div>
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={rows} {...chartProps}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-              <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
-              <YAxis {...axisProps} width={34} />
-              <Tooltip {...tooltipProps} />
-              <Legend {...legendProps} />
-              <Area type="monotone" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name={`${STATUS_CFG.U.shape} U`}  />
-              <Area type="monotone" dataKey="uc_end" stackId="s" stroke={STATUS_COLOR.UC} fill={STATUS_COLOR.UC} fillOpacity={0.85} name={`${STATUS_CFG.UC.shape} UC`} />
-              <Area type="monotone" dataKey="c_end"  stackId="s" stroke={STATUS_COLOR.C}  fill={STATUS_COLOR.C}  fillOpacity={0.85} name={`${STATUS_CFG.C.shape} C`}  />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+        <ResponsiveContainer width="100%" height={280}>
+          <AreaChart data={rows} {...chartProps}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+            <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
+            <YAxis {...axisProps} width={34} />
+            <Tooltip {...tooltipProps} />
+            <Legend {...legendProps} />
+            <Area type="linear" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.75} name={`${STATUS_CFG.D.shape} D`}  />
+            <Area type="linear" dataKey="h_end"  stackId="s" stroke={STATUS_COLOR.H}  fill={STATUS_COLOR.H}  fillOpacity={0.80} name={`${STATUS_CFG.H.shape} H`}  />
+            <Area type="linear" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name={`${STATUS_CFG.U.shape} U`}  />
+            <Area type="linear" dataKey="uc_end" stackId="s" stroke={STATUS_COLOR.UC} fill={STATUS_COLOR.UC} fillOpacity={0.85} name={`${STATUS_CFG.UC.shape} UC`} />
+            <Area type="linear" dataKey="c_end"  stackId="s" stroke={STATUS_COLOR.C}  fill={STATUS_COLOR.C}  fillOpacity={0.85} name={`${STATUS_CFG.C.shape} C`}  />
+          </AreaChart>
+        </ResponsiveContainer>
       )}
 
       {panel === 'backlog' && (
