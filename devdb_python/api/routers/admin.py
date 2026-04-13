@@ -141,6 +141,25 @@ def get_phase_config(conn=Depends(get_db_conn)):
             for r in cur.fetchall():
                 actual_bldr_map.setdefault(r['phase_id'], {})[r['eff_builder_id']] = int(r['cnt'])
 
+        # Scheduling hint: earliest real lot date (date_str or date_td) per phase.
+        # Used in the UI to suggest the latest reasonable delivery date for a phase.
+        hint_map = {}  # phase_id -> ISO date string
+        if phase_ids:
+            cur.execute("""
+                SELECT phase_id, MIN(d) AS hint_date
+                FROM (
+                    SELECT phase_id, date_str AS d FROM sim_lots
+                    WHERE lot_source = 'real' AND phase_id = ANY(%s) AND date_str IS NOT NULL
+                    UNION ALL
+                    SELECT phase_id, date_td AS d FROM sim_lots
+                    WHERE lot_source = 'real' AND phase_id = ANY(%s) AND date_td IS NOT NULL
+                ) t
+                GROUP BY phase_id
+            """, (phase_ids, phase_ids))
+            for r in cur.fetchall():
+                if r['hint_date']:
+                    hint_map[r['phase_id']] = r['hint_date'].isoformat()
+
         rows = []
         for p in phases:
             pid = p['phase_id']
@@ -161,6 +180,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 'date_dev_actual':     p['date_dev_actual'].isoformat()    if p['date_dev_actual']    else None,
                 'delivery_tier':       p['delivery_tier'],
                 'updated_at':          p['updated_at'].isoformat()         if p['updated_at']         else None,
+                'hint_date':           hint_map.get(pid),
                 'lot_type_counts':        lc,
                 'product_splits':         prod_map.get(pid, {}),
                 'builder_splits':         bldr_map.get(pid, {}),

@@ -278,7 +278,7 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
           <InlineEdit value={phase.phase_name} onSave={onRename} />
         </span>
         {/* Delivery date — fixed column */}
-        <div style={{ width: PHASE_COLS.date, flexShrink: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        <div style={{ width: PHASE_COLS.date, flexShrink: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 3 }}>
           {editingDate ? (
             <input
               type="date"
@@ -296,18 +296,34 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
                 borderRadius: 3, width: PHASE_COLS.date - 4,
               }}
             />
-          ) : (
-            <span
-              onClick={e => { e.stopPropagation(); setEditingDate(true) }}
-              title="Set locked delivery date for this phase"
-              style={{
-                fontSize: 10, cursor: 'pointer',
-                color: deliveryDate ? '#0d9488' : '#d1d5db',
-                borderBottom: deliveryDate ? '1px dashed #0d9488' : '1px dashed #d1d5db',
-              }}>
-              {savingDate ? '…' : deliveryDate ? `del. ${deliveryDate}` : 'del. date'}
-            </span>
-          )}
+          ) : (() => {
+            const hint = phase.hint_date ?? null
+            const violated = deliveryDate && hint && deliveryDate > hint
+            const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+            const fmtHint = d => { const [y, m] = d.split('-').map(Number); return `${mo[m-1]} '${String(y).slice(2)}` }
+            return (<>
+              <span
+                onClick={e => { e.stopPropagation(); setEditingDate(true) }}
+                title={hint ? `Set delivery date (before ${hint})` : 'Set locked delivery date for this phase'}
+                style={{
+                  fontSize: 10, cursor: 'pointer',
+                  color: deliveryDate ? (violated ? '#d97706' : '#0d9488') : '#d1d5db',
+                  borderBottom: deliveryDate
+                    ? `1px dashed ${violated ? '#d97706' : '#0d9488'}`
+                    : '1px dashed #d1d5db',
+                }}>
+                {savingDate ? '…' : deliveryDate ? `del. ${deliveryDate}` : 'del. date'}
+              </span>
+              {!deliveryDate && hint && (
+                <span
+                  onClick={e => { e.stopPropagation(); handleSaveDeliveryDate(hint) }}
+                  title={`Click to use latest reasonable date: ${hint}`}
+                  style={{ fontSize: 9, color: '#d1d5db', cursor: 'pointer', borderBottom: '1px dashed #e5e7eb', flexShrink: 0 }}>
+                  ←{fmtHint(hint)}
+                </span>
+              )}
+            </>)
+          })()}
         </div>
         {/* Delivery tier — fixed column */}
         <div style={{ width: PHASE_COLS.tier, flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>

@@ -389,7 +389,41 @@ function UtilizationPanel({ phases }) {
 
 // ─── Settings panel subcomponents ────────────────────────────────────────────
 
-function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled }) {
+// Compact date hint: "← Mar '26" — gray when ok/unset, amber + ⚠ when violated.
+// suggest is the latest acceptable date (ISO string). current is the current input value.
+// onAccept fills the input with suggest.
+function DateSuggest({ suggest, current, label, onAccept }) {
+  if (!suggest) return null
+  const violated = !!current && /^\d{4}-\d{2}-\d{2}$/.test(current) && current > suggest
+  const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const [y, m] = suggest.split('-').map(Number)
+  const display = `${mo[m - 1]} '${String(y).slice(2)}`
+  return (
+    <span
+      onClick={() => onAccept(suggest)}
+      title={`${label}: ${suggest}`}
+      style={{
+        fontSize: 11, cursor: 'pointer', userSelect: 'none',
+        color: violated ? '#d97706' : '#9ca3af',
+        borderBottom: `1px dashed ${violated ? '#d97706' : '#d1d5db'}`,
+      }}>
+      {violated ? '⚠ ' : '← '}{display}
+    </span>
+  )
+}
+
+// Subtract N months from an ISO date string (YYYY-MM-DD). Returns null if input is invalid.
+function subtractMonths(dateStr, n) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null
+  const [y, m, d] = dateStr.split('-').map(Number)
+  let nm = m - 1 - n  // 0-based
+  const ny = y + Math.floor(nm / 12)
+  nm = ((nm % 12) + 12) % 12
+  const lastDay = new Date(ny, nm + 1, 0).getDate()
+  return `${ny}-${String(nm + 1).padStart(2, '0')}-${String(Math.min(d, lastDay)).padStart(2, '0')}`
+}
+
+function LedgerConfigSection({ entGroupId, datePaper, dateEnt, earliestDeliveryDate, onSaved, disabled }) {
   const [paperVal, setPaperVal] = useState(datePaper ?? '')
   const [entVal,   setEntVal]   = useState(dateEnt   ?? '')
   const [saving,   setSaving]   = useState(false)
@@ -425,6 +459,10 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled
     background: isLocked ? '#f3f4f6' : '#fff',
   })
 
+  // Hints: latest reasonable dates given the downstream constraints
+  const suggestPaper = subtractMonths(entVal, 1)          // ≤ ent - 1 month
+  const suggestEnt   = earliestDeliveryDate ?? null        // ≤ earliest delivery
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={rowStyle}>
@@ -435,6 +473,8 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled
           style={inputStyle(datePaper, paperVal)} />
         {!paperVal && <span style={{ fontSize: 11, color: '#dc2626' }}>Required</span>}
         {saving && <span style={{ fontSize: 11, color: '#9ca3af' }}>Saving…</span>}
+        <DateSuggest suggest={suggestPaper} current={paperVal} label="Latest (1 mo before entitlement)"
+          onAccept={v => { setPaperVal(v); saveIfChanged(v, entVal) }} />
       </div>
       <div style={rowStyle}>
         <span style={labelStyle}>Bulk entitlement date</span>
@@ -444,6 +484,8 @@ function LedgerConfigSection({ entGroupId, datePaper, dateEnt, onSaved, disabled
           style={inputStyle(dateEnt, entVal)} />
         {!entVal && <span style={{ fontSize: 11, color: '#9ca3af' }}>Marks all P lots as entitled on this date</span>}
         {entVal && !saving && <span style={{ fontSize: 11, color: '#9ca3af' }}>{fmt(entVal)}</span>}
+        <DateSuggest suggest={suggestEnt} current={entVal} label="Latest (before earliest delivery)"
+          onAccept={v => { setEntVal(v); saveIfChanged(paperVal, v) }} />
       </div>
       {lotsMsg && <span style={{ fontSize: 11, color: '#16a34a' }}>{lotsMsg}</span>}
       {err    && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
@@ -1594,6 +1636,7 @@ const loadLedger = useCallback((id) => {
                   entGroupId={entGroupId}
                   datePaper={ledgerConfig.date_paper}
                   dateEnt={ledgerConfig.date_ent}
+                  earliestDeliveryDate={ledgerConfig.earliest_delivery_date ?? null}
                   onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
                   disabled={isRunning}
                 />

@@ -215,7 +215,9 @@ def put_delivery_config(
 
 @router.get("/{ent_group_id}/ledger-config")
 def get_ledger_config(ent_group_id: int, conn=Depends(get_db_conn)):
-    """Return date_paper (Plan Start Date) and date_ent_actual (Entitlements Date) for the group."""
+    """Return date_paper (Plan Start Date) and date_ent_actual (Entitlements Date) for the group,
+    plus earliest_delivery_date (earliest date_dev_actual across all phases in this community)
+    for use as a scheduling hint."""
     cur = dict_cursor(conn)
     try:
         cur.execute(
@@ -225,10 +227,22 @@ def get_ledger_config(ent_group_id: int, conn=Depends(get_db_conn)):
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Entitlement group not found")
+
+        # Earliest locked delivery date for any phase in this community (via modern dev_id bridge)
+        cur.execute("""
+            SELECT MIN(sdp.date_dev_actual) AS earliest_delivery
+            FROM sim_dev_phases sdp
+            JOIN developments d ON d.dev_id = sdp.dev_id
+            WHERE d.community_id = %s
+              AND sdp.date_dev_actual IS NOT NULL
+        """, (ent_group_id,))
+        delivery_row = cur.fetchone()
+
         return {
-            "ent_group_id": row["ent_group_id"],
-            "date_paper":   row["date_paper"].isoformat()      if row["date_paper"]      else None,
-            "date_ent":     row["date_ent_actual"].isoformat() if row["date_ent_actual"] else None,
+            "ent_group_id":          row["ent_group_id"],
+            "date_paper":            row["date_paper"].isoformat()            if row["date_paper"]            else None,
+            "date_ent":              row["date_ent_actual"].isoformat()       if row["date_ent_actual"]       else None,
+            "earliest_delivery_date": delivery_row["earliest_delivery"].isoformat() if delivery_row and delivery_row["earliest_delivery"] else None,
         }
     finally:
         cur.close()
