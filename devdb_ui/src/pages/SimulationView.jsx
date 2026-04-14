@@ -1066,6 +1066,28 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
 
   const overrideable = l => l.lot_source === 'real'
 
+  // Maps violation_type → the two date fields involved (early, late).
+  // Used to show a warning indicator inline in the affected date cells.
+  const VIOLATION_FIELDS = {
+    ent_after_dev: ['date_ent', 'date_dev'],
+    dev_after_td:  ['date_dev', 'date_td'],
+    td_after_str:  ['date_td',  'date_str'],
+    str_after_cmp: ['date_str', 'date_cmp'],
+    cmp_after_cls: ['date_cmp', 'date_cls'],
+  }
+  const violatedFields = l => {
+    const fields = new Set()
+    for (const vt of (l.violations ?? [])) {
+      for (const f of (VIOLATION_FIELDS[vt] ?? [])) fields.add(f)
+    }
+    return fields
+  }
+  const ViolationDot = ({ title }) => (
+    <span title={title}
+      style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+               background: '#f97316', marginLeft: 4, verticalAlign: 'middle', flexShrink: 0 }} />
+  )
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1119,7 +1141,15 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(l => (
+            {filtered.map(l => {
+              const vf = violatedFields(l)
+              const vTip = l.violations?.length
+                ? l.violations.join(', ')
+                : ''
+              const VDot = ({ field }) => vf.has(field)
+                ? <ViolationDot title={`Date order violation: ${vTip}`} />
+                : null
+              return (
               <tr key={l.lot_id}>
                 {devFilter === 'all' && <td style={tdS('left')}>{l.dev_name}</td>}
                 <td style={tdS('left')}>{l.lot_number ?? '—'}</td>
@@ -1127,8 +1157,18 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
                 <td style={tdS('left')}>{l.phase_name}</td>
                 <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>{l.lot_source}</td>
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
-                <td style={tdS()}>{l.date_ent ? fmt(l.date_ent) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
-                <td style={tdS()}>{l.date_dev ? fmt(l.date_dev) : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+                <td style={tdS()}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    {l.date_ent ? fmt(l.date_ent) : <span style={{ color: '#e5e7eb' }}>—</span>}
+                    <VDot field="date_ent" />
+                  </span>
+                </td>
+                <td style={tdS()}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    {l.date_dev ? fmt(l.date_dev) : <span style={{ color: '#e5e7eb' }}>—</span>}
+                    <VDot field="date_dev" />
+                  </span>
+                </td>
                 <td style={tdS()}>
                   <OverrideDateCell lotId={l.lot_id} dateField="date_td_hold" label="HC"
                     marksValue={l.date_td_hold} projectedValue={null}
@@ -1137,35 +1177,47 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
                     disabled={!overrideable(l)} />
                 </td>
                 <td style={tdS()}>
-                  <OverrideDateCell lotId={l.lot_id} dateField="date_td" label="BLDR"
-                    marksValue={l.date_td} projectedValue={null}
-                    overrideValue={l.ov_date_td}
-                    onApply={onApplyOverride} onClear={onClearOverride}
-                    disabled={!overrideable(l)} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <OverrideDateCell lotId={l.lot_id} dateField="date_td" label="BLDR"
+                      marksValue={l.date_td} projectedValue={null}
+                      overrideValue={l.ov_date_td}
+                      onApply={onApplyOverride} onClear={onClearOverride}
+                      disabled={!overrideable(l)} />
+                    <VDot field="date_td" />
+                  </span>
                 </td>
                 <td style={tdS()}>
-                  <OverrideDateCell lotId={l.lot_id} dateField="date_str" label="DIG"
-                    marksValue={l.date_str} projectedValue={l.date_str_projected}
-                    overrideValue={l.ov_date_str}
-                    onApply={onApplyOverride} onClear={onClearOverride}
-                    disabled={!overrideable(l)} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <OverrideDateCell lotId={l.lot_id} dateField="date_str" label="DIG"
+                      marksValue={l.date_str} projectedValue={l.date_str_projected}
+                      overrideValue={l.ov_date_str}
+                      onApply={onApplyOverride} onClear={onClearOverride}
+                      disabled={!overrideable(l)} />
+                    <VDot field="date_str" />
+                  </span>
                 </td>
                 <td style={tdS()}>
-                  <OverrideDateCell lotId={l.lot_id} dateField="date_cmp" label="CMP"
-                    marksValue={l.date_cmp} projectedValue={l.date_cmp_projected}
-                    overrideValue={l.ov_date_cmp}
-                    onApply={onApplyOverride} onClear={onClearOverride}
-                    disabled={!overrideable(l)} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <OverrideDateCell lotId={l.lot_id} dateField="date_cmp" label="CMP"
+                      marksValue={l.date_cmp} projectedValue={l.date_cmp_projected}
+                      overrideValue={l.ov_date_cmp}
+                      onApply={onApplyOverride} onClear={onClearOverride}
+                      disabled={!overrideable(l)} />
+                    <VDot field="date_cmp" />
+                  </span>
                 </td>
                 <td style={tdS()}>
-                  <OverrideDateCell lotId={l.lot_id} dateField="date_cls" label="CLS"
-                    marksValue={l.date_cls} projectedValue={l.date_cls_projected}
-                    overrideValue={l.ov_date_cls}
-                    onApply={onApplyOverride} onClear={onClearOverride}
-                    disabled={!overrideable(l)} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <OverrideDateCell lotId={l.lot_id} dateField="date_cls" label="CLS"
+                      marksValue={l.date_cls} projectedValue={l.date_cls_projected}
+                      overrideValue={l.ov_date_cls}
+                      onApply={onApplyOverride} onClear={onClearOverride}
+                      disabled={!overrideable(l)} />
+                    <VDot field="date_cls" />
+                  </span>
                 </td>
               </tr>
-            ))}
+            )})}
           </tbody>
         </table>
       </div>

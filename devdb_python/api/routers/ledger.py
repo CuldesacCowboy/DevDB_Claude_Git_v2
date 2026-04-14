@@ -102,6 +102,12 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                     MAX(CASE WHEN date_field = 'date_cls'     THEN override_value END) AS ov_date_cls
                 FROM sim_lot_date_overrides
                 GROUP BY lot_id
+            ),
+            violations AS (
+                SELECT lot_id,
+                    array_agg(violation_type ORDER BY violation_type) AS violation_types
+                FROM sim_lot_date_violations
+                GROUP BY lot_id
             )
             SELECT
                 sl.lot_id,
@@ -129,12 +135,14 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 o.ov_date_str,
                 o.ov_date_frm,
                 o.ov_date_cmp,
-                o.ov_date_cls
+                o.ov_date_cls,
+                v.violation_types
             FROM sim_lots sl
             JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
             JOIN developments d ON d.dev_id = sl.dev_id
             LEFT JOIN ref_lot_types rlt ON rlt.lot_type_id = sl.lot_type_id
             LEFT JOIN overrides o ON o.lot_id = sl.lot_id
+            LEFT JOIN violations v ON v.lot_id = sl.lot_id
             WHERE sl.dev_id IN (
                 SELECT dev_id FROM sim_ent_group_developments
                 WHERE ent_group_id = %s
@@ -175,6 +183,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 "ov_date_frm":         _d(r["ov_date_frm"]),
                 "ov_date_cmp":         _d(r["ov_date_cmp"]),
                 "ov_date_cls":         _d(r["ov_date_cls"]),
+                "violations":          list(r["violation_types"]) if r["violation_types"] else [],
             }
             for r in cur.fetchall()
         ]
