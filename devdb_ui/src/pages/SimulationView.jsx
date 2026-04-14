@@ -310,11 +310,11 @@ function LedgerGraph({ rows, period }) {
             <YAxis {...axisProps} width={34} />
             <Tooltip {...tooltipProps} />
             <Legend {...legendProps} />
-            <Area type="linear" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.75} name={`${STATUS_CFG.D.shape} D`}  />
             <Area type="linear" dataKey="h_end"  stackId="s" stroke={STATUS_COLOR.H}  fill={STATUS_COLOR.H}  fillOpacity={0.80} name={`${STATUS_CFG.H.shape} H`}  />
             <Area type="linear" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name={`${STATUS_CFG.U.shape} U`}  />
             <Area type="linear" dataKey="uc_end" stackId="s" stroke={STATUS_COLOR.UC} fill={STATUS_COLOR.UC} fillOpacity={0.85} name={`${STATUS_CFG.UC.shape} UC`} />
             <Area type="linear" dataKey="c_end"  stackId="s" stroke={STATUS_COLOR.C}  fill={STATUS_COLOR.C}  fillOpacity={0.85} name={`${STATUS_CFG.C.shape} C`}  />
+            <Area type="linear" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.75} name={`${STATUS_CFG.D.shape} D`}  />
           </AreaChart>
         </ResponsiveContainer>
       )}
