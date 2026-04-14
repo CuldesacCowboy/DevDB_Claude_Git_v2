@@ -6,6 +6,10 @@
 -- The 5 legacy devs with no modern match (IDs 69, 111-113, 119) have zero rows
 -- in any sim table, so no data loss occurs.
 --
+-- Two-step update strategy: to avoid PostgreSQL unique-constraint violations
+-- caused by swapping values within the same column (e.g. 82→77 while 87→82),
+-- all remapped rows are first moved to negative temp IDs, then to final values.
+--
 -- After this migration:
 --   - sim_legal_instruments.dev_id → developments.dev_id (FK enforced)
 --   - sim_dev_phases.dev_id        → developments.dev_id (FK enforced)
@@ -38,37 +42,63 @@ JOIN developments d ON LOWER(d.dev_name) = LOWER(dd.development_name)
 WHERE (dd.dev_code2 IS NULL OR dd.dev_code2 = '')
   AND dd.development_id != d.dev_id;
 
--- Remap sim_legal_instruments
+-- ── sim_legal_instruments ─────────────────────────────────────────────────────
+-- Step 1: move to negative temp IDs to avoid mid-statement uniqueness conflicts
+UPDATE sim_legal_instruments sli
+SET dev_id = -(m.legacy_id)
+FROM _dev_id_map m
+WHERE sli.dev_id = m.legacy_id;
+-- Step 2: move from negative temp IDs to final modern IDs
 UPDATE sim_legal_instruments sli
 SET dev_id = m.modern_id
 FROM _dev_id_map m
-WHERE sli.dev_id = m.legacy_id;
+WHERE sli.dev_id = -(m.legacy_id);
 
--- Remap sim_dev_phases
+-- ── sim_dev_phases ────────────────────────────────────────────────────────────
 UPDATE sim_dev_phases sdp
-SET dev_id = m.modern_id
+SET dev_id = -(m.legacy_id)
 FROM _dev_id_map m
 WHERE sdp.dev_id = m.legacy_id;
 
--- Remap sim_lots
-UPDATE sim_lots sl
+UPDATE sim_dev_phases sdp
 SET dev_id = m.modern_id
+FROM _dev_id_map m
+WHERE sdp.dev_id = -(m.legacy_id);
+
+-- ── sim_lots ──────────────────────────────────────────────────────────────────
+UPDATE sim_lots sl
+SET dev_id = -(m.legacy_id)
 FROM _dev_id_map m
 WHERE sl.dev_id = m.legacy_id;
 
--- Remap sim_dev_params
-UPDATE sim_dev_params sdpar
+UPDATE sim_lots sl
 SET dev_id = m.modern_id
+FROM _dev_id_map m
+WHERE sl.dev_id = -(m.legacy_id);
+
+-- ── sim_dev_params ────────────────────────────────────────────────────────────
+UPDATE sim_dev_params sdpar
+SET dev_id = -(m.legacy_id)
 FROM _dev_id_map m
 WHERE sdpar.dev_id = m.legacy_id;
 
--- Remap sim_ent_group_developments
-UPDATE sim_ent_group_developments segd
+UPDATE sim_dev_params sdpar
 SET dev_id = m.modern_id
+FROM _dev_id_map m
+WHERE sdpar.dev_id = -(m.legacy_id);
+
+-- ── sim_ent_group_developments ────────────────────────────────────────────────
+UPDATE sim_ent_group_developments segd
+SET dev_id = -(m.legacy_id)
 FROM _dev_id_map m
 WHERE segd.dev_id = m.legacy_id;
 
--- Add FK constraints (with names so they can be dropped by name if ever needed)
+UPDATE sim_ent_group_developments segd
+SET dev_id = m.modern_id
+FROM _dev_id_map m
+WHERE segd.dev_id = -(m.legacy_id);
+
+-- ── FK constraints ────────────────────────────────────────────────────────────
 ALTER TABLE sim_legal_instruments
     ADD CONSTRAINT fk_sli_dev_id
     FOREIGN KEY (dev_id) REFERENCES developments(dev_id);
