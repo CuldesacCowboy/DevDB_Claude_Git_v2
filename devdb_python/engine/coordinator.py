@@ -650,17 +650,17 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         for iteration in range(1, max_iterations + 1):
             logger.info(f"\n--- Iteration {iteration} ---")
 
-            # Snapshot delivery event projected dates before this iteration
+            # Snapshot delivery event effective dates before this iteration.
+            # Keyed by effective date (not event_id) because P-0000 and p_pre create
+            # new sequence IDs every run — see convergence check below.
             pre_df = conn.read_df(
                 """
-                SELECT delivery_event_id, date_dev_projected
+                SELECT COALESCE(date_dev_actual, date_dev_projected)::text AS effective_date
                 FROM sim_delivery_events
                 WHERE ent_group_id = %s
                 """,
                 (ent_group_id,),
             )
-            pre_iter_dates = {int(r["delivery_event_id"]): r["date_dev_projected"]
-                              for _, r in pre_df.iterrows()}
 
             # Step 1: Run starts pipeline for ALL developments
             for dev_id in dev_ids:
@@ -689,37 +689,34 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
             logger.info(f"  Running supply pipeline for ent_group_id={ent_group_id}...")
             _, affected_devs = run_supply_pipeline(conn, ent_group_id)
 
-            # Step 3: Check if any delivery event projected dates changed
+            # Step 3: Check if the delivery schedule changed.
+            # Compare sorted lists of effective dates rather than event_id-keyed dicts:
+            # P-0000 and p_pre delete+reinsert events with new sequence IDs every run,
+            # so ID-keyed comparison always sees "new" events as changes even when the
+            # schedule is identical.  Convergence = same multiset of effective dates.
             post_df = conn.read_df(
                 """
-                SELECT delivery_event_id, date_dev_projected
+                SELECT COALESCE(date_dev_actual, date_dev_projected)::text AS effective_date
                 FROM sim_delivery_events
                 WHERE ent_group_id = %s
                 """,
                 (ent_group_id,),
             )
-            post_iter_dates = {int(r["delivery_event_id"]): r["date_dev_projected"]
-                               for _, r in post_df.iterrows()}
 
-            def _dates_equal(a, b) -> bool:
-                a_null = pd.isnull(a) if a is not None else True
-                b_null = pd.isnull(b) if b is not None else True
-                if a_null and b_null:
-                    return True
-                if a_null != b_null:
-                    return False
-                return a == b
+            def _date_list(df) -> list[str]:
+                return sorted(
+                    str(r["effective_date"]) if r["effective_date"] is not None else "null"
+                    for _, r in df.iterrows()
+                )
 
-            changed = [
-                eid for eid, post_date in post_iter_dates.items()
-                if not _dates_equal(pre_iter_dates.get(eid), post_date)
-            ]
+            pre_schedule = _date_list(pre_df)
+            post_schedule = _date_list(post_df)
 
-            if not changed:
+            if pre_schedule == post_schedule:
                 logger.info(f"\nConvergence reached after {iteration} iteration(s).")
                 return iteration, missing_params_devs
 
-            logger.info(f"  {len(changed)} delivery event date(s) changed: {changed}. Re-running.")
+            logger.info(f"  Schedule changed ({len(pre_schedule)} → {len(post_schedule)} events). Re-running.")
 
     logger.warning(f"WARNING: Max iterations ({max_iterations}) reached without convergence.")
     return max_iterations, missing_params_devs
