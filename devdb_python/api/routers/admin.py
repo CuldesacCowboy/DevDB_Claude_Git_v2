@@ -140,21 +140,37 @@ def get_phase_config(conn=Depends(get_db_conn)):
             for r in cur.fetchall():
                 actual_bldr_map.setdefault(r['phase_id'], {})[r['eff_builder_id']] = int(r['cnt'])
 
-        # Scheduling hint: earliest real lot date (date_str or date_td) per phase.
-        # Used in the UI to suggest the latest reasonable delivery date for a phase.
+        # Scheduling hint: earliest real lot date per phase.
+        # Primary: MIN(date_str, date_td) — delivery must precede starts.
+        # Fallback: MIN(date_ent, date_td_hold) - 1 month — used when no lots
+        # have started yet (P/E/D/H status) so the hint is still visible.
         hint_map = {}  # phase_id -> ISO date string
         if phase_ids:
             cur.execute("""
-                SELECT phase_id, MIN(d) AS hint_date
+                SELECT phase_id,
+                       COALESCE(
+                           MIN(primary_d),
+                           (MIN(fallback_d) - INTERVAL '1 month')::DATE
+                       ) AS hint_date
                 FROM (
-                    SELECT phase_id, date_str AS d FROM sim_lots
+                    SELECT phase_id, date_str AS primary_d, NULL::DATE AS fallback_d
+                    FROM sim_lots
                     WHERE lot_source = 'real' AND phase_id = ANY(%s) AND date_str IS NOT NULL
                     UNION ALL
-                    SELECT phase_id, date_td AS d FROM sim_lots
+                    SELECT phase_id, date_td, NULL::DATE
+                    FROM sim_lots
                     WHERE lot_source = 'real' AND phase_id = ANY(%s) AND date_td IS NOT NULL
+                    UNION ALL
+                    SELECT phase_id, NULL::DATE, date_ent
+                    FROM sim_lots
+                    WHERE lot_source = 'real' AND phase_id = ANY(%s) AND date_ent IS NOT NULL
+                    UNION ALL
+                    SELECT phase_id, NULL::DATE, date_td_hold
+                    FROM sim_lots
+                    WHERE lot_source = 'real' AND phase_id = ANY(%s) AND date_td_hold IS NOT NULL
                 ) t
                 GROUP BY phase_id
-            """, (phase_ids, phase_ids))
+            """, (phase_ids, phase_ids, phase_ids, phase_ids))
             for r in cur.fetchall():
                 if r['hint_date']:
                     hint_map[r['phase_id']] = r['hint_date'].isoformat()
