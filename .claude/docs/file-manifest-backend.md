@@ -47,9 +47,10 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-14
 
 ### devdb_python/api/routers/eg_validation.py
-- Owns: split-check, param-check, delivery-config GET/PUT (delivery_months integer[] replaces delivery_window_start/end; validates each month 1–12; max_deliveries_per_year, auto_schedule_enabled, default_cmp_lag_days, default_cls_lag_days), ledger-config GET/PUT (propagates date_ent to sim_dev_phases + sim_lots; propagates date_plan_start to sim_dev_phases; date_ent truncated to first-of-month)
+- Owns: split-check, param-check, delivery-config GET/PUT (delivery_months integer[] replaces delivery_window_start/end; validates each month 1–12; max_deliveries_per_year, auto_schedule_enabled, default_cmp_lag_days, default_cls_lag_days, feed_starts_mode), ledger-config GET/PUT (propagates date_ent to sim_dev_phases + sim_lots; propagates date_plan_start to sim_dev_phases; date_ent truncated to first-of-month; earliest_delivery_date from sim_delivery_events COALESCE(actual, projected))
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
+- Last commit: 2026-04-15
 - Tables: sim_dev_phases, sim_legal_instruments, sim_ent_group_developments, sim_phase_product_splits, sim_dev_params, sim_entitlement_delivery_config, sim_entitlement_groups, sim_lots
 - Last commit: 2026-04-14
 

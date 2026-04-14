@@ -19,11 +19,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/SimulationView.jsx
-- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment. Lot ledger: OverrideDateCell on pipeline date columns; OverridesPanel tab showing all active overrides with clear/export; SyncReconciliationModal post-run if MARKS drift detected.
+- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); feed_starts_mode checkbox (amber) — aggressive batching toggle that bypasses tier gate in P-0000; showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers, delivery pin markers, rich tooltips, gridlines. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment. Lot ledger: OverrideDateCell on pipeline date columns; OverridesPanel tab showing all active overrides with clear/export; SyncReconciliationModal post-run if MARKS drift detected.
 - Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge), config (API_BASE), hooks/useOverrides, components/overrides/OverrideDateCell, OverridesPanel, SyncReconciliationModal
 - Imported by: App.jsx
 - Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params, /api/overrides/*)
-- Last commit: 2026-04-14
+- Last commit: 2026-04-15
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker filtered by showTestCommunities prop (is_test exclusive). selectedGroupId lifted to App.jsx.

@@ -14,11 +14,11 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/config_loader.py
-- Owns: load_delivery_config(conn, ent_group_id) — merges community row → global row → hardcoded defaults; returns fully-resolved dict with auto_schedule_enabled, max_deliveries_per_year, min_gap_months, delivery_months, min_d/u/uc/c_count, default_cmp_lag_days, default_cls_lag_days; called by coordinator (for build lag defaults) and by P-0000 and P-0400
+- Owns: load_delivery_config(conn, ent_group_id) — merges community row → global row → hardcoded defaults; returns fully-resolved dict with auto_schedule_enabled, max_deliveries_per_year, min_gap_months, delivery_months, min_d/u/uc/c_count, default_cmp_lag_days, default_cls_lag_days, feed_starts_mode; called by coordinator (for build lag defaults) and by P-0000 and P-0400
 - Imports: pandas, logging
 - Imported by: coordinator.py, p0000_placeholder_rebuilder.py, p0400_delivery_date_assigner.py
 - Tables: sim_global_settings (SELECT id=1), sim_entitlement_delivery_config (SELECT by ent_group_id)
-- Last commit: 2026-04-14
+- Last commit: 2026-04-15
 
 ### devdb_python/engine/coordinator.py
 - Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates (not event_id-keyed dicts, since P-0000 and p_pre create new sequence IDs every run); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params; _apply_lot_date_overrides applies sim_lot_date_overrides between S-02 and S-03; returns (iterations, missing_params_devs)
@@ -77,16 +77,16 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-03
 
 ### devdb_python/engine/s0700_demand_allocator.py
-- Owns: S-0700 -- allocates demand slots to real/sim lots; positional merge; no carry-forward
+- Owns: S-0700 -- allocates demand slots to real/sim lots; positional merge; no carry-forward; empty lot_snapshot (all-sim community) does NOT short-circuit — all demand flows to unmet_demand_series so S-0800 can fill it
 - Imported by: kernel/planning_kernel.py
 - Tables: none (pure DataFrame transform)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-15
 
 ### devdb_python/engine/s0800_temp_lot_generator.py
-- Owns: S-0800 -- generates sim lots for unmet demand; date_str = demand slot month; date_td = date_str per D-137/D-142
+- Owns: S-0800 -- generates sim lots for unmet demand; date_str = demand slot month (or deferred); date_td = date_str per D-137/D-142; deferred-start logic: when demand slot < phase delivery date, spreads lots at 1/month after delivery (phase_deferred_count per phase) instead of creating pre-delivery violations
 - Imported by: kernel/planning_kernel.py
 - Tables: none (builds DataFrame; persistence is in s1100)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-15
 
 ### devdb_python/engine/s0810_building_group_enforcer.py
 - Owns: S-0810 -- enforces MIN(date_str) per building_group_id across sim lots per D-133
@@ -125,10 +125,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-14
 
 ### devdb_python/engine/p0000_placeholder_rebuilder.py
-- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config; uses delivery_months integer[] (frozenset) for window logic — supports arbitrary month sets; Step 7 auto-generates sim_delivery_event_predecessors rows between consecutive events per dev (ordered by sequence_number) so P-0200/P-0400 enforce absolute phase ordering; step 3c uses `date_ent IS NOT NULL` (not `date_dev IS NULL`) to detect real pending lots — survives P-07 multi-iteration write-back; pd.NaT normalized to None at load time
+- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config; uses delivery_months integer[] (frozenset) for window logic — supports arbitrary month sets; Step 7 auto-generates sim_delivery_event_predecessors rows between consecutive events per dev (ordered by sequence_number) so P-0200/P-0400 enforce absolute phase ordering; step 3c uses `date_ent IS NOT NULL` (not `date_dev IS NULL`) to detect real pending lots — survives P-07 multi-iteration write-back; pd.NaT normalized to None at load time; delivery_tier gate in outer loop (tier-N held until all tier-(N-1) scheduled); dev_phases sorted by (tier, seq); tier check in inner co-bundling loop; feed_starts_mode=True bypasses both tier gates while predecessor links still enforce tier ordering
 - Imported by: coordinator.py
 - Tables: sim_delivery_events, sim_delivery_event_phases, sim_delivery_event_predecessors, sim_dev_phases, sim_entitlement_delivery_config (SELECT/INSERT/UPDATE)
-- Last commit: 2026-04-14
+- Last commit: 2026-04-15
 
 ### devdb_python/engine/p0100_actual_date_applicator.py
 - Owns: P-0100 -- applies locked delivery event dates to sim_dev_phases.date_dev_projected per D-112/D-125
@@ -190,11 +190,11 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/kernel/frozen_input_builder.py
-- Owns: Builds FrozenInput from database queries; all DB access for kernel inputs is here
+- Owns: Builds FrozenInput from database queries; all DB access for kernel inputs is here; _load_phase_capacity sorts by (delivery_tier NULLS FIRST, sequence_number, phase_id) so lower-tier phases receive demand slots before higher-tier phases even when phase IDs are out of order
 - Imports: engine.connection, frozen_input
 - Imported by: coordinator.py
 - Tables: sim_lots, sim_dev_phases, sim_phase_product_splits, sim_entitlement_delivery_config (SELECT)
-- Last commit: 2026-03-27
+- Last commit: 2026-04-15
 
 ### devdb_python/kernel/planning_kernel.py
 - Owns: plan() entry point -- wires S-0700 through S-0820 sequentially; pure function (no DB access)

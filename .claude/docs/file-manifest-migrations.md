@@ -298,3 +298,8 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Moves instrument_id=4 ("Waterton Station Site Condo", site_condo) from dev_id=58 (Waterton Condos Village) to dev_id=45 (Waterton Station SF); updates 6 phases and 146 lots in the same move
 - Tables: sim_legal_instruments (UPDATE dev_id), sim_dev_phases (UPDATE dev_id), sim_lots (UPDATE dev_id)
 - Last commit: 2026-04-14
+
+### devdb_python/migrations/055_feed_starts_mode.sql
+- Owns: Adds feed_starts_mode BOOLEAN NOT NULL DEFAULT FALSE to sim_entitlement_delivery_config; when TRUE, P-0000 removes tier gate from scheduling loop so all devs compete by D-balance urgency and inner co-bundling allows higher-tier phases — predecessor links (P-02) still enforce tier ordering
+- Tables: sim_entitlement_delivery_config (ADD COLUMN IF NOT EXISTS)
+- Last commit: 2026-04-15
