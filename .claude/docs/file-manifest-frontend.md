@@ -20,7 +20,7 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 
 ### devdb_ui/src/pages/SimulationView.jsx
 - Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment. Lot ledger: OverrideDateCell on pipeline date columns; OverridesPanel tab showing all active overrides with clear/export; SyncReconciliationModal post-run if MARKS drift detected.
-- Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge), utils/api (API_BASE), hooks/useOverrides, components/overrides/OverrideDateCell, OverridesPanel, SyncReconciliationModal
+- Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge), config (API_BASE), hooks/useOverrides, components/overrides/OverrideDateCell, OverridesPanel, SyncReconciliationModal
 - Imported by: App.jsx
 - Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params, /api/overrides/*)
 - Last commit: 2026-04-14
@@ -72,7 +72,7 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imports: react (useState, useEffect, useRef, useCallback), BulkLotInsertModal
 - Imported by: App.jsx (via /configure route)
 - Tables: none (API calls via /admin/community-config, /admin/dev-config, /admin/phase-config, PATCH /admin/phase/{id}, PUT /admin/product-split, PUT /admin/builder-split, PUT /entitlement-groups/{id}/delivery-config, PUT /entitlement-groups/{id}/ledger-config, PUT /developments/{id}/sim-params, POST /bulk-lots/suggestions, POST /bulk-lots/insert)
-- Last commit: 2026-04-05
+- Last commit: 2026-04-14
 
 ### devdb_ui/src/pages/CommunityDevelopmentsView.jsx
 - Owns: Community-development assignment view; unassigned dev panel; community pills; alphabet slider; drag-to-create-community
@@ -93,7 +93,7 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imports: react (useState, useEffect, useRef, useCallback, useMemo, Component), PdfCanvas, LotBank, splitPolygon (normalizeSharedVertices, mergeAdjacentPolygons)
 - Imported by: App.jsx
 - Tables: none (API calls via /api/site-plans, /api/phase-boundaries, /api/entitlement-groups, /api/lot-positions, /api/building-groups, /api/phases)
-- Last commit: 2026-04-04
+- Last commit: 2026-04-14
 
 ### devdb_ui/src/components/SitePlan/PdfCanvas.jsx
 - Owns: PDF rendering canvas orchestrator; parcel trace mode (traceUndoSignal prop — increment pops last point); parcel edit mode (all vertices including phase boundaries, shared-vertex drag, snap-to-vertex); split mode (bestSplitSnap = vertex snap priority over edge snap; click-to-draw polyline, intersection auto-finalize); pan/zoom (CSS transform); normalized↔screen coordinate conversion (rotation-aware: coords stored in unrotated space, applyRotationToNorm/unapplyRotationFromNorm for CW PDF.js convention); rotation persistence (localStorage per planId); buildSharedGroup (Union-Find, SHARED_VERTEX_TOL=1e-5); findSnapForDrag; performSplit calls splitPolygon then onSplitConfirm; phaseColorMap prop (phase_id→color); boundary stroke always #1e293b, fill by assignment; PDF load error state + loading overlay; building group draw/delete event handlers (delegates rendering to BuildingGroupsLayer); findBgAtPoint uses computeBgEllipse from BuildingGroupsLayer; hit-test lot markers (findLotAtPoint, lot drag state); composes BuildingGroupsLayer, UnitCountsOverlay, LotMarkersLayer as SVG children
@@ -292,17 +292,16 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/config.js
-- Owns: Centralized API base URL via VITE_API_BASE env var with /api fallback (`import.meta.env.VITE_API_BASE ?? '/api'`)
+- Owns: Centralized API base URL via VITE_API_BASE env var with /api fallback (`import.meta.env.VITE_API_BASE ?? '/api'`); single source of truth — utils/api.js deleted and all importers consolidated here
 - Imports: none
-- Imported by: useTdaData.js, useOverrides.js, OverrideEntryPopover.jsx, and other hooks/components
+- Imported by: all hooks and pages that need API_BASE (useTdaData.js, useOverrides.js, OverrideEntryPopover.jsx, SimulationView.jsx, ConfigView.jsx, SitePlanView.jsx, AuditView.jsx, PlanningView.jsx, useBoundaryManager.js, useBuildingGroups.js, useSitePlanState.js, and others)
 - Tables: none
 - Last commit: 2026-03-31
 
 ### devdb_ui/src/utils/api.js
-- Owns: Hardcoded API_BASE = '/api' (no env var); used by SimulationView.jsx; functionally identical to config.js in dev but does NOT support VITE_API_BASE override
-- Note: Duplication with config.js — should consolidate to config.js long-term
-- Imports: none
-- Imported by: SimulationView.jsx
+- Owns: DELETED — consolidated into config.js (2026-04-14)
+- Imports: n/a
+- Imported by: n/a
 - Tables: none
 - Last commit: 2026-04-14
 
@@ -374,6 +373,41 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imports: react (useState)
 - Imported by: SimulationView.jsx
 - Tables: none
+- Last commit: 2026-04-14
+
+### devdb_ui/src/pages/AuditView.jsx
+- Owns: Config audit page — surfaces compliance issues between phase config, builder splits, delivery month constraints, and delivery event coverage
+- Imports: react (useState, useEffect, useMemo), config (API_BASE)
+- Imported by: App.jsx (via /audit route)
+- Tables: none (API calls via /api/*)
+- Last commit: 2026-04-14
+
+### devdb_ui/src/pages/PlanningView.jsx
+- Owns: Production planning workbench — override MARKS dates per lot to test schedule changes before entering into ITK; uses override system
+- Imports: react (useState, useEffect, useCallback), config (API_BASE), useOverrides, OverrideDateCell, OverridesPanel, SyncReconciliationModal
+- Imported by: App.jsx
+- Tables: none (API calls via /api/overrides/*)
+- Last commit: 2026-04-14
+
+### devdb_ui/src/hooks/useBoundaryManager.js
+- Owns: Phase boundary state and topology operations for SitePlanView; manages boundaries, selectedBoundaryId, undoStack; handles split, merge, delete, cleanup, phase assignment, undo
+- Imports: react (useState, useEffect, useRef, useCallback), splitPolygon (normalizeSharedVertices, mergeAdjacentPolygons), config (API_BASE)
+- Imported by: SitePlanView.jsx
+- Tables: none (API calls via /api/phase-boundaries)
+- Last commit: 2026-04-14
+
+### devdb_ui/src/hooks/useBuildingGroups.js
+- Owns: Building group state and operations for SitePlanView; manages buildingGroups, selectedBgIds, pendingBuildingGroup, bgContextMenu, showBuildingGroups
+- Imports: react (useState, useEffect, useCallback), config (API_BASE)
+- Imported by: SitePlanView.jsx
+- Tables: none (API calls via /api/building-groups)
+- Last commit: 2026-04-14
+
+### devdb_ui/src/hooks/useSitePlanState.js
+- Owns: Lot positioning and placement state for SitePlanView; manages allLots, lotPositions, savedPositions, isDirty, placeQueue, placeHistory
+- Imports: react (useState, useEffect, useRef, useCallback, useMemo), config (API_BASE)
+- Imported by: SitePlanView.jsx
+- Tables: none (API calls via /api/lot-positions)
 - Last commit: 2026-04-14
 
 ### devdb_ui/vite.config.js

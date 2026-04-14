@@ -1,5 +1,6 @@
 # DevDB -- Claude Code Reference
 *Last updated: April 2026 (2026-04-14) | Architecture v20 | Decision Log: D-001 through D-158 | Next ID: D-159 | Migrations: 001–054*
+<!-- session 2026-04-14b: marks.py regex fix for numeric dev codes (43 North); API_BASE consolidated to config.js -->
 
 ---
 
