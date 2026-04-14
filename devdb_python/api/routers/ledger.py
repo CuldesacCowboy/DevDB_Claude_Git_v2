@@ -218,11 +218,24 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
                 JOIN developments d               ON d.dev_id = sdp.dev_id
                 WHERE sde.ent_group_id = %s
             ),
-            phase_units AS (
-                SELECT phase_id, COALESCE(SUM(projected_count), 0)::int AS units
-                FROM sim_phase_product_splits
+            excluded_counts AS (
+                SELECT phase_id, COUNT(*)::int AS excluded_count
+                FROM sim_lots
                 WHERE phase_id IN (SELECT phase_id FROM event_phases)
+                  AND excluded IS TRUE
                 GROUP BY phase_id
+            ),
+            phase_units AS (
+                SELECT spps.phase_id,
+                    GREATEST(
+                        COALESCE(SUM(spps.projected_count), 0)::int
+                            - COALESCE(MAX(ec.excluded_count), 0),
+                        0
+                    ) AS units
+                FROM sim_phase_product_splits spps
+                LEFT JOIN excluded_counts ec ON ec.phase_id = spps.phase_id
+                WHERE spps.phase_id IN (SELECT phase_id FROM event_phases)
+                GROUP BY spps.phase_id
             ),
             event_dev AS (
                 SELECT
