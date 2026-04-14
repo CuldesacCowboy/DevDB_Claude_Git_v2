@@ -65,8 +65,16 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
 
     min_date = min_df.iloc[0]["min_date"] if not min_df.empty else None
     if min_date is None or pd.isnull(min_date):
-        logger.info(f"P-04: Event {delivery_event_id} all child phases null demand_derived. Skipping.")
-        return None
+        if is_placeholder and current_projected is not None and not pd.isnull(current_projected):
+            # No demand signal yet (phases have no sim lots or date_str).
+            # Fall back to P-00's lean date so P-06/P-07 can propagate it and
+            # unblock the starts pipeline — without this the scheduling deadlocks.
+            logger.info(f"P-04: Event {delivery_event_id} null demand_derived; "
+                        f"using P-00 lean date {current_projected} to unblock pipeline.")
+            min_date = current_projected.date() if hasattr(current_projected, "date") else current_projected
+        else:
+            logger.info(f"P-04: Event {delivery_event_id} all child phases null demand_derived. Skipping.")
+            return None
 
     # Normalize to Python date
     if hasattr(min_date, 'date'):
