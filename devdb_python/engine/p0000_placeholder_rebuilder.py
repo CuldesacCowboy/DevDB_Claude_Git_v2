@@ -13,6 +13,8 @@ Rules:   Deletes all placeholder events (date_dev_actual IS NULL) for the ent_gr
          absolute intra-dev phase ordering (simultaneous OK; never out of order).
          No-ops if auto_schedule_enabled is False. Never touches locked events.
          No undelivered phases → return empty list.
+         Phases with null demand + no lots are skipped unless they have real entitled lots
+         OR configured product splits (supports all-sim communities on first run).
          Not Own: touching locked events, writing to sim_lots or sim_dev_phases date fields.
 """
 
@@ -296,7 +298,8 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         )
         sim_count = int(sim_count_df.iloc[0]["cnt"]) if not sim_count_df.empty else 0
 
-        # (a) Null demand with no sim lots -- check real entitled lots before skipping.
+        # (a) Null demand with no sim lots -- check real entitled lots, then configured
+        # product splits, before skipping.
         # Use date_ent IS NOT NULL (not date_dev IS NULL) so the check survives
         # across iterations: P-07 writes date_dev to real lots when a placeholder
         # event is created, so date_dev IS NULL would return 0 on the second
@@ -314,9 +317,23 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             )
             real_pending = int(real_pending_df.iloc[0]["cnt"]) if not real_pending_df.empty else 0
             if real_pending == 0:
-                logger.info(f"P-00: Phase {ph_id} skipped -- null demand, no sim lots, no entitled real lots.")
-                continue
-            logger.info(f"P-00: Phase {ph_id} has {real_pending} real entitled lot(s) -- proceeding to schedule.")
+                # Last resort: phase has configured product splits (all-sim community,
+                # first run — no lots exist yet but capacity is planned).
+                splits_df = conn.read_df(
+                    """
+                    SELECT COALESCE(SUM(projected_count), 0) AS total
+                    FROM sim_phase_product_splits
+                    WHERE phase_id = %s
+                    """,
+                    (ph_id,),
+                )
+                configured_capacity = int(splits_df.iloc[0]["total"]) if not splits_df.empty else 0
+                if configured_capacity == 0:
+                    logger.info(f"P-00: Phase {ph_id} skipped -- null demand, no lots, no configured capacity.")
+                    continue
+                logger.info(f"P-00: Phase {ph_id} has {configured_capacity} configured lot(s) in splits -- proceeding to schedule.")
+            else:
+                logger.info(f"P-00: Phase {ph_id} has {real_pending} real entitled lot(s) -- proceeding to schedule.")
 
         # (b) Demand past sellout horizon
         if demand is not None and sellout_date is not None and demand > sellout_date:
