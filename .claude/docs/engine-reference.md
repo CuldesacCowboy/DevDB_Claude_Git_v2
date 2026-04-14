@@ -185,3 +185,30 @@ For each module, before writing any code:
 - persistence_writer uses list of plain dicts, not Row(**kwargs), for createDataFrame -- Row maps alphabetically, dicts map by name
 - TDA fixture: tda_id=9001, lot_ids 9001-9030, Scenario 2 verified
 - Violation resolution paths (Path A / Path B per Scenario 6) not yet implemented in UI
+
+---
+
+## Two Dev_ID Spaces — CRITICAL for Ad-Hoc SQL
+
+There are **two distinct dev_id spaces** in this system. Conflating them produces wrong community assignments.
+
+| Space | Primary table | Example: Waterton SF | Used by |
+|---|---|---|---|
+| **Legacy** | `dim_development.development_id` | 48 | All simulation tables: `sim_ent_group_developments`, `sim_dev_phases`, `sim_dev_params`, `sim_delivery_events`, `sim_lots` |
+| **Modern** | `developments.dev_id` | 45 | API endpoints, React UI, `dim_projection_groups` |
+
+**Collision example:** Legacy ID 45 = Chase Farms. Modern ID 45 = Waterton Station SF. A raw SQL join of `developments.dev_id` directly to `sim_ent_group_developments.dev_id` maps Waterton SF → Chase Farms's simulation data. This is **not a data bug** — it is a query authoring error.
+
+**Correct join pattern (modern → simulation):**
+```sql
+SELECT d.dev_name, segd.ent_group_id, sdp.*
+FROM developments d
+JOIN dim_development dd ON dd.dev_code2 = d.marks_code   -- bridge via marks_code
+JOIN sim_ent_group_developments segd ON segd.dev_id = dd.development_id
+LEFT JOIN sim_dev_params sdp ON sdp.dev_id = dd.development_id
+WHERE d.marks_code = 'WS';  -- or filter by d.dev_name
+```
+
+**Why the Setup page is correct:** The API bridges through `dim_development` (via `dev_code2 = marks_code`) before joining simulation tables. The correct join is already baked into the API layer.
+
+**Migration 050** rebuilt `sim_ent_group_developments` using legacy IDs via this exact bridge. `sim_dev_params` also uses legacy IDs exclusively — confirmed no entries exist under modern IDs for any Waterton development.
