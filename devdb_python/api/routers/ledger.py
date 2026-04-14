@@ -55,7 +55,7 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
             JOIN developments d ON d.marks_code = dd.dev_code2
             JOIN sim_legal_instruments sli ON sdp.instrument_id = sli.instrument_id
             LEFT JOIN phase_splits ps ON ps.phase_id = sdp.phase_id
-            LEFT JOIN sim_lots sl ON sl.phase_id = sdp.phase_id
+            LEFT JOIN sim_lots sl ON sl.phase_id = sdp.phase_id AND sl.excluded IS NOT TRUE
             WHERE segd.ent_group_id = %s
             GROUP BY sdp.phase_id, sdp.phase_name, sdp.dev_id, d.dev_name,
                      sli.instrument_name, sdp.sequence_number, ps.projected_count

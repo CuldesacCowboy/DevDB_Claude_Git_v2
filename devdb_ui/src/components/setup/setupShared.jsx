@@ -35,7 +35,22 @@ export const SUB_LABELS = { D: 'Devs', I: 'Instruments', P: 'Phases', L: 'Lots' 
 export const PHASE_COLS = { date: 92, tier: 38, types: 52, ago: 52 }
 
 export function phaseTotal(p) {
-  return Object.values(p.product_splits ?? {}).reduce((s, v) => s + (v ?? 0), 0)
+  // Active lots only: excluded lots consume capacity but are not in the simulation.
+  // active = marks + pre + max(0, projected - marks - pre - excl)
+  const ltIds = new Set([
+    ...Object.keys(p.product_splits ?? {}),
+    ...Object.keys(p.lot_type_counts ?? {}),
+  ])
+  let total = 0
+  for (const ltId of ltIds) {
+    const proj   = p.product_splits?.[ltId] ?? 0
+    const counts = p.lot_type_counts?.[ltId] ?? {}
+    const marks  = counts.marks ?? 0
+    const pre    = counts.pre   ?? 0
+    const excl   = counts.excl  ?? 0
+    total += marks + pre + Math.max(0, proj - marks - pre - excl)
+  }
+  return total
 }
 
 // A phase is "configured" if it has projected lots OR any real/pre/excluded lots assigned to it.

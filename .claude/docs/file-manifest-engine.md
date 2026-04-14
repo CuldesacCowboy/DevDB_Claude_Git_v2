@@ -34,10 +34,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/s0200_date_actualizer.py
-- Owns: S-0200 -- applies MARKsystems actual milestone dates to real lots via schedhousedetail join; uses resolve_marks_date() priority
+- Owns: S-0200 -- applies MARKsystems actual milestone dates to real lots via schedhousedetail join; uses resolve_marks_date() priority; numeric dev_code2 coercion fixed (VARCHAR cast) so dim_development bridge lookup works for all communities
 - Imported by: coordinator.py
 - Tables: sim_lots (UPDATE date_* fields), schedhousedetail (SELECT)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-14
 
 ### devdb_python/engine/s0300_gap_fill_engine.py
 - Owns: S-0300 -- fills true-gap missing dates (requires anchor on both sides per D-084/D-085)
@@ -112,16 +112,16 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-08
 
 ### devdb_python/engine/s1200_ledger_aggregator.py
-- Owns: S-1200 -- creates/replaces v_sim_ledger_monthly view; COUNT-based pipeline stage counts
+- Owns: S-1200 -- creates/replaces v_sim_ledger_monthly view; COUNT-based pipeline stage counts; sawtooth stacked area shape with D and H layers; WHERE excluded IS NOT TRUE filter
 - Imported by: coordinator.py
 - Tables: v_sim_ledger_monthly (CREATE OR REPLACE VIEW over sim_lots)
-- Last commit: 2026-04-02
+- Last commit: 2026-04-14
 
 ### devdb_python/engine/p0000_placeholder_rebuilder.py
-- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config; uses delivery_months integer[] (frozenset) for window logic — supports arbitrary month sets; Step 7 auto-generates sim_delivery_event_predecessors rows between consecutive events per dev (ordered by sequence_number) so P-0200/P-0400 enforce absolute phase ordering
+- Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config; uses delivery_months integer[] (frozenset) for window logic — supports arbitrary month sets; Step 7 auto-generates sim_delivery_event_predecessors rows between consecutive events per dev (ordered by sequence_number) so P-0200/P-0400 enforce absolute phase ordering; step 3c uses `date_ent IS NOT NULL` (not `date_dev IS NULL`) to detect real pending lots — survives P-07 multi-iteration write-back; pd.NaT normalized to None at load time
 - Imported by: coordinator.py
 - Tables: sim_delivery_events, sim_delivery_event_phases, sim_delivery_event_predecessors, sim_dev_phases, sim_entitlement_delivery_config (SELECT/INSERT/UPDATE)
-- Last commit: 2026-04-10
+- Last commit: 2026-04-14
 
 ### devdb_python/engine/p0100_actual_date_applicator.py
 - Owns: P-0100 -- applies locked delivery event dates to sim_dev_phases.date_dev_projected per D-112/D-125

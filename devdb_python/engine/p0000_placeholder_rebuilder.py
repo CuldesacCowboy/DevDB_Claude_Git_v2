@@ -236,6 +236,14 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         dev_id = int(ph["dev_id"])
         demand = ph["date_dev_demand_derived"]
         demand = demand.date() if hasattr(demand, "date") else demand
+        # Normalize pd.NaT (pandas null for DATE columns) to Python None so
+        # downstream checks like `demand is None` behave correctly.
+        try:
+            import pandas as pd
+            if demand is not None and pd.isnull(demand):
+                demand = None
+        except (TypeError, ValueError):
+            pass
         undelivered.append({
             "phase_id": ph_id,
             "dev_id": dev_id,
@@ -288,10 +296,27 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         )
         sim_count = int(sim_count_df.iloc[0]["cnt"]) if not sim_count_df.empty else 0
 
-        # (a) Null demand with no sim lots -- no delivery needed
+        # (a) Null demand with no sim lots -- check real entitled lots before skipping.
+        # Use date_ent IS NOT NULL (not date_dev IS NULL) so the check survives
+        # across iterations: P-07 writes date_dev to real lots when a placeholder
+        # event is created, so date_dev IS NULL would return 0 on the second
+        # iteration and incorrectly skip the phase after the events are deleted.
         if demand is None and sim_count == 0:
-            logger.info(f"P-00: Phase {ph_id} skipped -- null demand and no sim lots.")
-            continue
+            real_pending_df = conn.read_df(
+                """
+                SELECT COUNT(*) AS cnt FROM sim_lots
+                WHERE phase_id = %s
+                  AND lot_source = 'real'
+                  AND date_ent IS NOT NULL
+                  AND excluded IS NOT TRUE
+                """,
+                (ph_id,),
+            )
+            real_pending = int(real_pending_df.iloc[0]["cnt"]) if not real_pending_df.empty else 0
+            if real_pending == 0:
+                logger.info(f"P-00: Phase {ph_id} skipped -- null demand, no sim lots, no entitled real lots.")
+                continue
+            logger.info(f"P-00: Phase {ph_id} has {real_pending} real entitled lot(s) -- proceeding to schedule.")
 
         # (b) Demand past sellout horizon
         if demand is not None and sellout_date is not None and demand > sellout_date:

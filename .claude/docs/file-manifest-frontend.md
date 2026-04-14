@@ -19,10 +19,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/SimulationView.jsx
-- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx.
+- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment.
 - Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge)
 - Imported by: App.jsx
 - Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params)
+- Last commit: 2026-04-14
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
@@ -44,14 +45,14 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imports: react (useState, useEffect, useRef, useCallback, createContext, useContext)
 - Imported by: SetupView.jsx, PhaseRow.jsx, LotPillGroup.jsx, BuildingsTab.jsx
 - Tables: none
-- Last commit: 2026-04-13
+- Last commit: 2026-04-14
 
 ### devdb_ui/src/components/setup/PhaseRow.jsx
-- Owns: PhaseRow (expandable phase header with Lots/Buildings tab bar) and LotTypeRow (one table row + lot pill detail expand); lot type table: Product/Total/Active/Pending/Sim/Excl columns; inline lot pill expand via LotPillGroup; silent re-fetch on LotRefreshContext tick; inline delivery date badge in phase header (teal 'del. date', click-to-edit date input, blur/Enter saves, PATCH /admin/phase/{id} with date_dev_actual)
+- Owns: PhaseRow (expandable phase header with Lots/Buildings tab bar) and LotTypeRow (one table row + lot pill detail expand); lot type table: Product/Total/Active/Pending/Sim/Excl columns; inline lot pill expand via LotPillGroup; silent re-fetch on LotRefreshContext tick; inline delivery date badge in phase header (teal 'del. date', click-to-edit date input, blur/Enter saves, PATCH /admin/phase/{id} with date_dev_actual); Ranch Condos phases fixed (disappearing phase bug)
 - Imports: react (useState, useEffect, useRef, useContext, useCallback), API_BASE, setupShared (multiple), LotPillGroup, BuildingsTab
 - Imported by: SetupView.jsx
 - Tables: none (API calls via /phases/{id}/lot-type/{ltId}/lots, /phases/{id}/lot-type/{ltId}/projected, DELETE /phases/{id}/lot-type/{ltId}, PATCH /admin/phase/{id})
-- Last commit: 2026-04-13
+- Last commit: 2026-04-14
 
 ### devdb_ui/src/components/setup/LotPillGroup.jsx
 - Owns: LotPillGroup (pill grid with add-pre-lots panel); MovableLotPill (drag-to-move, exclude/un-exclude actions); AddPreLotsPanel (bulk pre-lot creation inline); exports LOT_PILL, LotPill, LotPillGroup

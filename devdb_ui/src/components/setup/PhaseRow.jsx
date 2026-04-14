@@ -90,7 +90,7 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
           {lotTypeName}
         </td>
         <td style={{ padding: '3px 6px', textAlign: 'right' }}>
-          <EditableCount value={projected} onSave={onSaveTotal} min={realMarks + realPre} />
+          <EditableCount value={projected} onSave={onSaveTotal} min={realMarks + realPre + excluded} />
         </td>
         <td style={{ padding: '3px 6px', textAlign: 'right', color: realMarks > 0 ? '#1d4ed8' : '#d1d5db' }}>{realMarks > 0 ? realMarks : '—'}</td>
         <td style={{ padding: '3px 6px', textAlign: 'right', color: realPre > 0 ? '#92400e' : '#d1d5db' }}>{realPre > 0 ? realPre : '—'}</td>
@@ -210,7 +210,7 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
     const realMarks = counts.marks ?? 0
     const realPre   = counts.pre   ?? 0
     const excl      = counts.excl  ?? 0
-    const sim       = Math.max(0, projected - realMarks - realPre)
+    const sim       = Math.max(0, projected - realMarks - realPre - excl)
     return { ltId, projected, realMarks, realPre, sim, excl }
   })
 
@@ -262,7 +262,7 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
     }
   }
 
-  const phaseL = tableRows.reduce((s, r) => s + (r.projected ?? 0), 0)
+  const phaseL = tableRows.reduce((s, r) => s + r.realMarks + r.realPre + r.sim, 0)
   const showMirror = tableRows.length > 1
 
   const lotCount = Object.values(phase.lot_type_counts ?? {}).reduce((s, c) => s + (c.marks ?? 0) + (c.pre ?? 0), 0)

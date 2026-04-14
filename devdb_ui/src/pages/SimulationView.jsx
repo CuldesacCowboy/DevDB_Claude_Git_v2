@@ -29,6 +29,21 @@ const NUMERIC_COLS = [...EVENT_COLS, ...STATUS_COLS]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+function exportToCsv(filename, headers, rows) {
+  const escape = v => {
+    if (v == null) return ''
+    const s = String(v)
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const lines = [headers.map(escape).join(',')]
+  for (const row of rows) lines.push(row.map(escape).join(','))
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = filename; a.click()
+  URL.revokeObjectURL(url)
+}
+
 function fmt(iso) {
   if (!iso) return ''
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
@@ -132,7 +147,31 @@ function LedgerTable({ rows, floors, period }) {
     if (floors?.[fk] != null) floorMap[sk] = floors[fk]
   }
 
+  function handleExport() {
+    const periodCol = period === 'quarterly' ? 'Quarter' : period === 'annual' ? 'Year' : 'Month'
+    const headers = [periodCol, 'ENT','DEV','TD','STR','CMP','CLS','P','E','D','H','U','UC','C','Total','Closed']
+    const csvRows = rows.map(r => {
+      const total = STATUS_COLS.reduce((s, c) => s + (r[c] || 0), 0) + (r.closed_cumulative || 0) || null
+      return [
+        r._periodLabel ?? r.calendar_month,
+        ...EVENT_COLS.map(c => r[c] || 0),
+        ...STATUS_COLS.map(c => r[c] || 0),
+        total ?? '',
+        r.closed_cumulative ?? '',
+      ]
+    })
+    exportToCsv('ledger.csv', headers, csvRows)
+  }
+
   return (
+    <div>
+      <div style={{ marginBottom: 8, textAlign: 'right' }}>
+        <button onClick={handleExport}
+          style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, border: '1px solid #d1d5db',
+                   background: '#f9fafb', color: '#374151', cursor: 'pointer' }}>
+          Export CSV
+        </button>
+      </div>
     <div style={{ overflowX: 'auto' }}>
       <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap', width: '100%' }}>
         <thead>
@@ -202,6 +241,7 @@ function LedgerTable({ rows, floors, period }) {
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   )
 }
@@ -966,6 +1006,21 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
         <span style={{ fontSize: 11, color: '#6b7280' }}>{filtered.length} lots</span>
         <span style={{ fontSize: 11, color: '#93c5fd', fontStyle: 'italic', marginLeft: 6 }}>italic blue = projected</span>
         <span style={{ fontSize: 11, color: '#92400e', marginLeft: 6 }}>amber = override (click to edit)</span>
+        <button onClick={() => {
+          const headers = ['Development','Lot #','Type','Phase','Source','Status','ENT','DEV','HC','BLDR','DIG','CMP','CLS']
+          const csvRows = filtered.map(l => [
+            l.dev_name, l.lot_number ?? '', l.lot_type_short ?? '', l.phase_name,
+            l.lot_source, l.status,
+            l.date_ent ?? '', l.date_dev ?? '', l.date_td_hold ?? '',
+            l.date_td ?? '', l.date_str ?? l.date_str_projected ?? '',
+            l.date_cmp ?? l.date_cmp_projected ?? '', l.date_cls ?? l.date_cls_projected ?? '',
+          ])
+          exportToCsv('lots.csv', headers, csvRows)
+        }}
+          style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, border: '1px solid #d1d5db',
+                   background: '#f9fafb', color: '#374151', cursor: 'pointer', marginLeft: 'auto' }}>
+          Export CSV
+        </button>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
@@ -1372,7 +1427,7 @@ const loadLedger = useCallback((id) => {
       {/* ── View tabs ── */}
       <div style={{ display: 'flex', gap: 2, marginBottom: 12, alignItems: 'center' }}>
         {[
-          ['ledger',      'Monthly Ledger'],
+          ['ledger',      'Ledger'],
           ['lots',        'Lot List'],
           ['delivery',    'Delivery Schedule'],
           ['utilization', 'Phase Utilization'],
@@ -1400,7 +1455,7 @@ const loadLedger = useCallback((id) => {
         })}
       </div>
 
-      {/* ── Monthly Ledger ── */}
+      {/* ── Ledger ── */}
       {view === 'ledger' && (
         <>
           {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}

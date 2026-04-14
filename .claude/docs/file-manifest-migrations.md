@@ -253,3 +253,38 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Restructures Abbey Farms to match 2026-04-13 phasing plan (Nederveld C-205/C-300): renames dev 101 to Ranch Condos, renames instruments 7/5 to SF/GW West, creates GW East and Ranch Condos instruments (both new), reassigns phase_ids 159/161 to GW East, fixes TH seq/names, updates SF projected counts (ph.4→27, ph.5→9, ph.6→15), creates 4 new phases (TH ph.3/4, GW West ph.2, Ranch Condos ph.1); sets date_dev_actual=2027-05-01 on Phase 1 bundle. Total 283 units (SF 136 + TH 52 + GW West 40 + GW East 31 + Ranch Condos 24).
 - Tables: developments (UPDATE dev_name), sim_legal_instruments (UPDATE 2, INSERT 2), sim_dev_phases (UPDATE 9, INSERT 4), sim_phase_product_splits (UPDATE 3, INSERT 4)
 - Last commit: 2026-04-13
+
+### devdb_python/migrations/046_add_delivery_tier.sql
+- Owns: Adds delivery_tier INTEGER NULL to sim_dev_phases (D-156); strict cross-tier ordering enforced by P-0000 Step 7b predecessor rows; NULL = no tier constraint
+- Tables: sim_dev_phases (ADD COLUMN IF NOT EXISTS delivery_tier)
+- Last commit: 2026-04-13
+
+### devdb_python/migrations/047_add_ranch_condos_segd_legacy_row.sql
+- Owns: Adds second sim_ent_group_developments row for Ranch Condos dev_id=106 (legacy dim_development space) alongside existing dev_id=101 (modern space); dual-row pattern per D-158 — each row serves different join paths
+- Tables: sim_ent_group_developments (INSERT 1 row)
+- Last commit: 2026-04-13
+
+### devdb_python/migrations/048_exclude_lots_from_ledger_view.sql
+- Owns: Recreates v_sim_ledger_monthly to filter out excluded=TRUE lots via explicit WHERE clause (not subquery, which Postgres silently drops in view storage)
+- Tables: v_sim_ledger_monthly (CREATE OR REPLACE VIEW)
+- Last commit: 2026-04-14
+
+### devdb_python/migrations/049_fix_valley_point_instrument.sql
+- Owns: Corrects Paw Paw Hazen Street ph.1 and ph.2 (phase_ids 143, 144) from wrong Hawthorne Meadows instrument (id=70069, dev_id=84) to correct Valley Point instrument (id=70114, dev_id=79)
+- Tables: sim_dev_phases (UPDATE instrument_id, dev_id for 2 phases)
+- Last commit: 2026-04-14
+
+### devdb_python/migrations/050_fix_ent_group_developments_id_space.sql
+- Owns: Corrects sim_ent_group_developments.dev_id from modern developments.dev_id space to legacy dim_development.development_id space for all real communities; rederives via developments.marks_code = dim_development.dev_code2 bridge
+- Tables: sim_ent_group_developments (UPDATE dev_id, ~105 rows)
+- Last commit: 2026-04-14
+
+### devdb_python/migrations/051_fix_phase_dev_ids_to_legacy.sql
+- Owns: Corrects sim_dev_phases.dev_id to match sim_legal_instruments.dev_id (legacy space); 74 phases updated; authoritative anchor is the instrument, which already carries correct legacy IDs after migration 045
+- Tables: sim_dev_phases (UPDATE dev_id from sim_legal_instruments, 74 rows)
+- Last commit: 2026-04-14
+
+### devdb_python/migrations/052_fix_orphaned_locked_delivery_events.sql
+- Owns: Removes locked delivery event-phase links where the phase's dev_id (after migration 051) no longer belongs to the event's ent_group's segd; deletes orphaned predecessor rows, then orphaned event-phase links, then locked events with no remaining phase links
+- Tables: sim_delivery_event_predecessors (DELETE), sim_delivery_event_phases (DELETE), sim_delivery_events (DELETE)
+- Last commit: 2026-04-14

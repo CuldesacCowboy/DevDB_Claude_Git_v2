@@ -129,6 +129,7 @@ def ledger_aggregator(conn: DBConnection) -> None:
 
         FROM sim_lots l
         CROSS JOIN month_spine m
+        WHERE l.excluded IS NOT TRUE
         GROUP BY COALESCE(l.builder_id_override, l.builder_id), l.dev_id, m.calendar_month
     """)
 
