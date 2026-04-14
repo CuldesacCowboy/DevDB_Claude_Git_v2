@@ -23,7 +23,9 @@ def demand_allocator(lot_snapshot: pd.DataFrame, demand_df):
     """
     empty_alloc = pd.DataFrame(columns=["lot_id", "assigned_year", "assigned_month"])
 
-    if lot_snapshot.empty or (isinstance(demand_df, pd.DataFrame) and demand_df.empty):
+    if isinstance(demand_df, pd.DataFrame) and demand_df.empty:
+        return empty_alloc, []
+    if isinstance(demand_df, list) and not demand_df:
         return empty_alloc, []
 
     # Back-compat: accept legacy list-of-tuples from callers not yet updated.
