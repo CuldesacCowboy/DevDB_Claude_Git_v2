@@ -770,6 +770,63 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         logger.info(f"P-00: Created {pred_count} intra-dev sequence predecessor row(s).")
 
     # ------------------------------------------------------------------
+    # Step 7c: Locked-anchor predecessors
+    # ------------------------------------------------------------------
+    # When earlier phases in a dev are locked and later phases are
+    # placeholders, Step 7 above creates no predecessor (only new events
+    # are in dev_event_sequence).  This leaves the first placeholder free
+    # to schedule before the locked event — wrong ordering and causes
+    # non-convergence.  Fix: anchor the first placeholder event per dev
+    # to the locked event with the highest phase sequence_number for that dev.
+    if locked_phase_ids and dev_event_sequence:
+        anchor_df = conn.read_df(
+            """
+            SELECT sdp.dev_id, dep.delivery_event_id,
+                   MAX(sdp.sequence_number) AS max_seq
+            FROM sim_delivery_event_phases dep
+            JOIN sim_delivery_events sde
+                 ON sde.delivery_event_id = dep.delivery_event_id
+            JOIN sim_dev_phases sdp ON sdp.phase_id = dep.phase_id
+            WHERE sde.ent_group_id = %s
+              AND sde.date_dev_actual IS NOT NULL
+            GROUP BY sdp.dev_id, dep.delivery_event_id
+            """,
+            (ent_group_id,),
+        )
+
+        # For each dev: locked event with the highest phase sequence_number
+        dev_anchor: dict[int, tuple[int, int]] = {}  # dev_id → (event_id, max_seq)
+        for _, r in anchor_df.iterrows():
+            dev_id = int(r["dev_id"])
+            ev_id = int(r["delivery_event_id"])
+            seq = int(r["max_seq"]) if r["max_seq"] is not None else 0
+            if dev_id not in dev_anchor or seq > dev_anchor[dev_id][1]:
+                dev_anchor[dev_id] = (ev_id, seq)
+
+        anchor_pred_count = 0
+        for dev_id, placeholder_event_ids in dev_event_sequence.items():
+            if dev_id not in dev_anchor or not placeholder_event_ids:
+                continue
+            anchor_ev_id, _ = dev_anchor[dev_id]
+            first_placeholder = placeholder_event_ids[0]
+            conn.execute(
+                """
+                INSERT INTO sim_delivery_event_predecessors
+                    (event_id, predecessor_event_id)
+                VALUES (%s, %s)
+                """,
+                (first_placeholder, anchor_ev_id),
+            )
+            anchor_pred_count += 1
+            logger.info(
+                f"P-00: Dev {dev_id}: anchor predecessor "
+                f"event {first_placeholder} → locked event {anchor_ev_id}."
+            )
+
+        if anchor_pred_count:
+            logger.info(f"P-00: Created {anchor_pred_count} locked-anchor predecessor row(s).")
+
+    # ------------------------------------------------------------------
     # Step 7b: Cross-tier predecessors (strict)
     # ------------------------------------------------------------------
     # A phase with delivery_tier = N cannot be scheduled until ALL phases
