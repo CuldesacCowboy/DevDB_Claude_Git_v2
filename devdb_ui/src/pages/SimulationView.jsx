@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { STATUS_CFG, STATUS_COLOR, StatusBadge } from '../utils/statusConfig'
-import { API_BASE } from '../utils/api'
+import { API_BASE } from '../config'
 import { useOverrides } from '../hooks/useOverrides'
 import OverrideDateCell from '../components/overrides/OverrideDateCell'
 import OverridesPanel from '../components/overrides/OverridesPanel'

@@ -2,7 +2,7 @@
 // Override MARKS dates per lot to test schedule changes before entering into ITK.
 
 import { useState, useEffect, useCallback } from 'react'
-import { API_BASE } from '../utils/api'
+import { API_BASE } from '../config'
 import { useOverrides } from '../hooks/useOverrides'
 import OverrideDateCell from '../components/overrides/OverrideDateCell'
 import OverridesPanel from '../components/overrides/OverridesPanel'

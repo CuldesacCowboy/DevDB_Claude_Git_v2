@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { normalizeSharedVertices, mergeAdjacentPolygons } from '../components/SitePlan/splitPolygon'
-import { API_BASE } from '../utils/api'
+import { API_BASE } from '../config'
 
 export function useBoundaryManager({ planId, setMode, setError }) {
   const [boundaries, setBoundaries]                 = useState([])

@@ -9,7 +9,7 @@ import { useBoundaryManager } from '../hooks/useBoundaryManager'
 import { useSitePlanState } from '../hooks/useSitePlanState'
 import { useBuildingGroups } from '../hooks/useBuildingGroups'
 import { Button } from '../components/Button'
-import { API_BASE } from '../utils/api'
+import { API_BASE } from '../config'
 
 class SitePlanErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null } }

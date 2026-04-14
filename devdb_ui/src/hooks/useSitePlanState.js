@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { pointInPolygon } from '../components/SitePlan/splitPolygon'
-import { API_BASE } from '../utils/api'
+import { API_BASE } from '../config'
 
 export function useSitePlanState({ planId, boundaries, setMode }) {
   const [allLots, setAllLots]             = useState([])

@@ -3,7 +3,7 @@
 // delivery month constraints, and delivery event coverage.
 
 import { useState, useEffect, useMemo } from 'react'
-import { API_BASE } from '../utils/api'
+import { API_BASE } from '../config'
 
 const MONTH_SHORT = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 

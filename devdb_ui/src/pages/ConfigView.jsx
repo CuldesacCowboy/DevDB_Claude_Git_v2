@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { API_BASE } from '../utils/api'
+import { API_BASE } from '../config'
 import BulkLotInsertModal from '../components/BulkLotInsertModal'
 
 // ─── Constants ────────────────────────────────────────────────────────────────

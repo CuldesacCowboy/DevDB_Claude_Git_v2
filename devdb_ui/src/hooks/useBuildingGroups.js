@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { pointInPolygon } from '../components/SitePlan/splitPolygon'
-import { API_BASE } from '../utils/api'
+import { API_BASE } from '../config'
 
 export function useBuildingGroups({ plan, lotPositions, allLots, boundaries, phases, mode, setMode }) {
   const [buildingGroups, setBuildingGroups]             = useState([])
