@@ -78,7 +78,7 @@ def _load_phase_capacity(conn, dev_id: int) -> list:
             GROUP BY phase_id, lot_type_id
         ) real ON sps.phase_id = real.phase_id AND sps.lot_type_id = real.lot_type_id
         WHERE sdp.dev_id = {dev_id}
-        ORDER BY sdp.sequence_number ASC, sdp.phase_id ASC
+        ORDER BY sdp.delivery_tier ASC NULLS FIRST, sdp.sequence_number ASC, sdp.phase_id ASC
     """)
 
     result = []
