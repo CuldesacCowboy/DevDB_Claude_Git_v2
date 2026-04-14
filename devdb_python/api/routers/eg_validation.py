@@ -227,13 +227,11 @@ def get_ledger_config(ent_group_id: int, conn=Depends(get_db_conn)):
         if not row:
             raise HTTPException(status_code=404, detail="Entitlement group not found")
 
-        # Earliest locked delivery date for any phase in this community (via modern dev_id bridge)
+        # Earliest delivery date (locked or projected) across all events for this community
         cur.execute("""
-            SELECT MIN(sdp.date_dev_actual) AS earliest_delivery
-            FROM sim_dev_phases sdp
-            JOIN developments d ON d.dev_id = sdp.dev_id
-            WHERE d.community_id = %s
-              AND sdp.date_dev_actual IS NOT NULL
+            SELECT MIN(COALESCE(sde.date_dev_actual, sde.date_dev_projected)) AS earliest_delivery
+            FROM sim_delivery_events sde
+            WHERE sde.ent_group_id = %s
         """, (ent_group_id,))
         delivery_row = cur.fetchone()
 

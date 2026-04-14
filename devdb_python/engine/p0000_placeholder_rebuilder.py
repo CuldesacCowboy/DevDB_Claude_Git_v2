@@ -572,7 +572,13 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     for phase in undelivered:
         dev_phases[phase["dev_id"]].append(phase)
     for dev_id in dev_phases:
-        dev_phases[dev_id].sort(key=lambda p: p["sequence_number"])
+        # Sort by (tier, sequence_number) so lower-tier phases always pop first,
+        # even when a higher-tier phase has a lower sequence_number (e.g. two
+        # independent product lines within the same dev where seq numbers reset).
+        dev_phases[dev_id].sort(key=lambda p: (
+            p["delivery_tier"] if p["delivery_tier"] is not None else 0,
+            p["sequence_number"],
+        ))
 
     valid_months = valid_months_default
 
