@@ -130,7 +130,7 @@ function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate, utili
 const thS = (align = 'right', extra = {}) => ({
   padding: '4px 8px', textAlign: align, fontWeight: 600,
   borderBottom: '2px solid #e5e7eb', color: '#6b7280', fontSize: 12,
-  whiteSpace: 'nowrap', ...extra,
+  whiteSpace: 'nowrap', background: '#f9fafb', ...extra,
 })
 const tdS = (align = 'right', extra = {}) => ({
   padding: '3px 8px', textAlign: align, borderBottom: '1px solid #f3f4f6',
