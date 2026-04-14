@@ -13,12 +13,19 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Tables: none (connection factory)
 - Last commit: 2026-03-25
 
+### devdb_python/engine/config_loader.py
+- Owns: load_delivery_config(conn, ent_group_id) — merges community row → global row → hardcoded defaults; returns fully-resolved dict with auto_schedule_enabled, max_deliveries_per_year, min_gap_months, delivery_months, min_d/u/uc/c_count, default_cmp_lag_days, default_cls_lag_days; called by coordinator (for build lag defaults) and by P-0000 and P-0400
+- Imports: pandas, logging
+- Imported by: coordinator.py, p0000_placeholder_rebuilder.py, p0400_delivery_date_assigner.py
+- Tables: sim_global_settings (SELECT id=1), sim_entitlement_delivery_config (SELECT by ent_group_id)
+- Last commit: 2026-04-14
+
 ### devdb_python/engine/coordinator.py
-- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params (independent of sim-lot capacity); returns (iterations, missing_params_devs); run_supply_pipeline calls p_pre_locked_event_rebuilder as first step before snapshot and P-0000
-- Imports: engine modules s0100-s1200, p0000-p0800, p_pre_locked_event_rebuilder, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
+- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates (not event_id-keyed dicts, since P-0000 and p_pre create new sequence IDs every run); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params; _apply_lot_date_overrides applies sim_lot_date_overrides between S-02 and S-03; returns (iterations, missing_params_devs)
+- Imports: engine modules s0100-s1200, p0000-p0800, p_pre_locked_event_rebuilder, config_loader, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
 - Imported by: routers/simulations.py, tests/test_coordinator.py
-- Tables: reads/writes via all pipeline modules; sim_lots (projected date columns), sim_dev_params
-- Last commit: 2026-04-05
+- Tables: reads/writes via all pipeline modules; sim_lots (projected date columns), sim_dev_params, sim_lot_date_overrides, sim_lot_date_violations
+- Last commit: 2026-04-14
 
 ### devdb_python/engine/p_pre_locked_event_rebuilder.py
 - Owns: Pre-supply-pipeline module — deletes all delivery events whose date_dev_actual IS NOT NULL and rebuilds them from sim_dev_phases.date_dev_actual; groups phases by date and INSERTs one event per date; returns count of new events created; locked_event_rebuilder(conn, ent_group_id) signature

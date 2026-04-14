@@ -19,12 +19,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/SimulationView.jsx
-- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment.
-- Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge)
+- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment. Lot ledger: OverrideDateCell on pipeline date columns; OverridesPanel tab showing all active overrides with clear/export; SyncReconciliationModal post-run if MARKS drift detected.
+- Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge), utils/api (API_BASE), hooks/useOverrides, components/overrides/OverrideDateCell, OverridesPanel, SyncReconciliationModal
 - Imported by: App.jsx
-- Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params)
+- Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params, /api/overrides/*)
 - Last commit: 2026-04-14
-- Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker filtered by showTestCommunities prop (is_test exclusive). selectedGroupId lifted to App.jsx.
@@ -293,11 +292,19 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/config.js
-- Owns: Centralized API base URL and frontend config constants
+- Owns: Centralized API base URL via VITE_API_BASE env var with /api fallback (`import.meta.env.VITE_API_BASE ?? '/api'`)
 - Imports: none
-- Imported by: useTdaData.js and other hooks/components needing API base URL
+- Imported by: useTdaData.js, useOverrides.js, OverrideEntryPopover.jsx, and other hooks/components
 - Tables: none
 - Last commit: 2026-03-31
+
+### devdb_ui/src/utils/api.js
+- Owns: Hardcoded API_BASE = '/api' (no env var); used by SimulationView.jsx; functionally identical to config.js in dev but does NOT support VITE_API_BASE override
+- Note: Duplication with config.js — should consolidate to config.js long-term
+- Imports: none
+- Imported by: SimulationView.jsx
+- Tables: none
+- Last commit: 2026-04-14
 
 ### devdb_ui/src/utils/computeCols.js
 - Owns: Optimal column-count calculation for instrument band given available width and phase count
@@ -333,6 +340,41 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imported by: n/a
 - Tables: none
 - Last commit: 2026-03-27
+
+### devdb_ui/src/hooks/useOverrides.js
+- Owns: All override CRUD for SimulationView; fetchOverrides, previewOverride (cascade preview without writing), applyOverrides (write + refetch), clearOverride (single field), clearBatch (by override_ids or lot_ids), fetchReconciliation (overrides near MARKS actual), exportOverrides; imports API_BASE from src/config.js
+- Imports: react (useState, useCallback), src/config.js
+- Imported by: SimulationView.jsx
+- Tables: none (API calls via /api/overrides, /api/overrides/preview, /api/overrides/apply, /api/overrides/reconciliation, /api/overrides/export)
+- Last commit: 2026-04-14
+
+### devdb_ui/src/components/overrides/OverrideDateCell.jsx
+- Owns: Pipeline date cell with override indicator (amber = active override); click opens OverrideEntryPopover; displays overrideValue || marksValue, falls back to projectedValue (italic); disabled prop suppresses interaction
+- Imports: react (useState), OverrideEntryPopover
+- Imported by: SimulationView.jsx
+- Tables: none
+- Last commit: 2026-04-14
+
+### devdb_ui/src/components/overrides/OverrideEntryPopover.jsx
+- Owns: Date entry popover for overrides; fetches cascade preview from /api/overrides/preview on date change; shows downstream delta per field (+Nd / -Nd); checkbox selection for cascade inclusion; Apply / Clear buttons; closes on outside click; imports API_BASE from src/config.js
+- Imports: react (useState, useEffect, useRef), src/config.js
+- Imported by: OverrideDateCell.jsx
+- Tables: none (API calls via /api/overrides/preview on input change)
+- Last commit: 2026-04-14
+
+### devdb_ui/src/components/overrides/OverridesPanel.jsx
+- Owns: Full list of active overrides grouped by lot; shows override_value vs current_marks delta (+Nd / -Nd); per-field clear button; Clear All, Export, Check Reconciliation actions; no imports (pure render)
+- Imports: none
+- Imported by: SimulationView.jsx
+- Tables: none
+- Last commit: 2026-04-14
+
+### devdb_ui/src/components/overrides/SyncReconciliationModal.jsx
+- Owns: Post-sync modal when reconciliation finds overrides within n_days of MARKS; checkbox list of reconcilable overrides; Clear Selected / Dismiss; no imports (pure render)
+- Imports: react (useState)
+- Imported by: SimulationView.jsx
+- Tables: none
+- Last commit: 2026-04-14
 
 ### devdb_ui/vite.config.js
 - Owns: Vite build config; React + Tailwind plugins; /api proxy to localhost:8765 with path rewrite stripping /api prefix

@@ -137,6 +137,41 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Tables: sim_dev_phases, sim_legal_instruments, dim_development, sim_lots, ref_lot_types, sim_phase_product_splits, sim_assignment_log
 - Last commit: 2026-04-05
 
+### devdb_python/api/routers/marks.py
+- Owns: MARKS lot sync and import management; GET /marks/summary (per-dev-code totals from marks_lot_registry: total/imported/unimported/promotable); GET /marks/unimported (lots in marks_lot_registry not yet in sim_lots, with schedhousedetail dates); GET /marks/dev-phases (instruments + phases for a dev, used by import panel); POST /marks/sync (update pipeline dates on real lots from schedhousedetail, respects manual overrides); POST /marks/import (import selected MARKS lots as lot_source='real' with resolved dates); GET /marks/promotable (pre lots with matching schedhousedetail rows); POST /marks/promote (promotes lot_source='pre' → 'real', applies MARKS dates — intentional exception to lot_source immutability for pre→real workflow)
+- Imports: api.deps, api.db, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: marks_lot_registry, schedhousedetail, sim_lots, developments, dim_development
+- Last commit: 2026-04-14
+
+### devdb_python/api/routers/overrides.py
+- Owns: Planning layer date overrides; GET /overrides (active overrides for ent_group); POST /overrides/preview (cascade preview — proposed date + downstream deltas without writing); POST /overrides/apply (write override(s) for a lot, cascade optional); DELETE /overrides/{lot_id}/{date_field}; POST /overrides/clear-batch (clear by override_ids or lot_ids); GET /overrides/reconciliation (overrides now within n_days of MARKS actual, suggesting they can be cleared); GET /overrides/export (CSV-ready list for ent_group)
+- Imports: api.deps, api.db, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_lots, sim_lot_date_overrides
+- Last commit: 2026-04-14
+
+### devdb_python/api/routers/global_settings.py
+- Owns: GET /global-settings (sim_global_settings row id=1); PUT /global-settings (update delivery_months, max_deliveries_per_year, default_cmp_lag_days, default_cls_lag_days, min_d/u/uc/c_count); community delivery config overrides these where non-null
+- Imports: api.deps, api.db, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_global_settings
+- Last commit: 2026-04-14
+
+### devdb_python/api/routers/building_groups.py
+- Owns: Building group management for both site-plan and setup contexts; GET /building-groups/plan/{plan_id} (groups + lot positions for a plan); POST /building-groups (create group from lot_ids, site-plan); DELETE /building-groups/{id}; POST /building-groups/bulk-delete; GET /building-groups/phase/{phase_id} (buildings + lots for a phase, no plan required); POST /building-groups/setup (create building with name/type/lot_ids); PATCH /building-groups/{id} (rename/retype); PATCH /building-groups/{id}/lots (replace lot assignments)
+- Imports: api.deps, api.db, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_building_groups, sim_lot_site_positions, sim_lots
+- Last commit: 2026-04-14
+
+### devdb_python/api/routers/delivery_events.py
+- Owns: Delivery event CRUD within an entitlement group; GET /entitlement-groups/{id}/delivery-events (list events with phase_ids, is_auto_created); plus create/patch/delete endpoints for manual event management; shares /entitlement-groups prefix with eg_crud/eg_validation/eg_views — route ordering matters
+- Imports: api.deps, api.db, pydantic, fastapi
+- Imported by: api/main.py
+- Tables: sim_delivery_events, sim_delivery_event_phases
+- Last commit: 2026-04-14
+
 ### devdb_python/api/routers/simulations.py
 - Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms, errors[]; looks up dev names for missing_params_devs via dim_development bridge; on exception prints full traceback to server terminal and returns only str(exc) to client (no traceback leak)
 - Imports: engine.coordinator, fastapi, pydantic, time, traceback, psycopg2.extras
