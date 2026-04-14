@@ -1,10 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(python:*)",
-      "Bash(git push:*)"
+      "Bash(*)",
+      "Edit",
+      "Write",
+      "MultiEdit",
+      "mcp__*"
     ]
   }
 }

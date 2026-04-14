@@ -288,3 +288,13 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Removes locked delivery event-phase links where the phase's dev_id (after migration 051) no longer belongs to the event's ent_group's segd; deletes orphaned predecessor rows, then orphaned event-phase links, then locked events with no remaining phase links
 - Tables: sim_delivery_event_predecessors (DELETE), sim_delivery_event_phases (DELETE), sim_delivery_events (DELETE)
 - Last commit: 2026-04-14
+
+### devdb_python/migrations/053_collapse_to_modern_dev_ids.sql
+- Owns: Eliminates the dual dev_id space — collapses all sim table dev_ids from legacy dim_development.development_id space to modern developments.dev_id space. Builds _dev_id_map via dev_code2=marks_code bridge + name-based fallback (Schuring). Two-step UPDATE via negative temp IDs avoids PostgreSQL PK swap conflicts. Orphan cleanup deletes fixture rows (dev_ids 9001/9002/9003) from sim_dev_phases cascade. Adds FK constraints on 5 sim tables: sim_legal_instruments, sim_dev_phases, sim_lots, sim_dev_params, sim_ent_group_developments → developments(dev_id). dim_development stays as historical reference only.
+- Tables: sim_legal_instruments, sim_dev_phases, sim_lots, sim_dev_params, sim_ent_group_developments (UPDATE dev_ids + ADD FK), sim_phase_product_splits, sim_phase_builder_splits, sim_delivery_event_phases (orphan DELETE)
+- Last commit: 2026-04-14
+
+### devdb_python/migrations/054_move_waterton_site_condo_to_sf.sql
+- Owns: Moves instrument_id=4 ("Waterton Station Site Condo", site_condo) from dev_id=58 (Waterton Condos Village) to dev_id=45 (Waterton Station SF); updates 6 phases and 146 lots in the same move
+- Tables: sim_legal_instruments (UPDATE dev_id), sim_dev_phases (UPDATE dev_id), sim_lots (UPDATE dev_id)
+- Last commit: 2026-04-14
