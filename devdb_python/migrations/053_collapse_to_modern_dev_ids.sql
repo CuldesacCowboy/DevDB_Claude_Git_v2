@@ -21,13 +21,22 @@ BEGIN;
 SET search_path = devdb;
 
 -- Build the mapping: legacy_id → modern_id
+-- Primary: match via dev_code2 = marks_code (standard bridge).
+-- Fallback: match via development_name for rows where dev_code2 is empty/null
+--   (e.g. Schuring: legacy 95 → modern 90).
 CREATE TEMP TABLE _dev_id_map AS
-SELECT
-    dd.development_id AS legacy_id,
-    d.dev_id          AS modern_id
+SELECT dd.development_id AS legacy_id, d.dev_id AS modern_id
 FROM dim_development dd
 JOIN developments d ON d.marks_code = dd.dev_code2
-WHERE dd.development_id != d.dev_id;  -- only rows that actually differ
+WHERE dd.development_id != d.dev_id
+
+UNION
+
+SELECT dd.development_id AS legacy_id, d.dev_id AS modern_id
+FROM dim_development dd
+JOIN developments d ON LOWER(d.dev_name) = LOWER(dd.development_name)
+WHERE (dd.dev_code2 IS NULL OR dd.dev_code2 = '')
+  AND dd.development_id != d.dev_id;
 
 -- Remap sim_legal_instruments
 UPDATE sim_legal_instruments sli
