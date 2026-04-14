@@ -98,6 +98,38 @@ SET dev_id = m.modern_id
 FROM _dev_id_map m
 WHERE segd.dev_id = -(m.legacy_id);
 
+-- ── Orphan cleanup ───────────────────────────────────────────────────────────
+-- Delete sim_dev_phases rows whose dev_id has no match in developments and was
+-- not remapped above. These are leftover test fixture rows (dev_id >= 9001)
+-- from the SCENARIO_TEST_Waterton_Station fixture that was partially deleted.
+-- Cascade to any linked splits, builder splits, and delivery event phases.
+DELETE FROM sim_phase_product_splits
+WHERE phase_id IN (
+    SELECT phase_id FROM sim_dev_phases
+    WHERE dev_id NOT IN (SELECT dev_id FROM developments)
+);
+DELETE FROM sim_phase_builder_splits
+WHERE phase_id IN (
+    SELECT phase_id FROM sim_dev_phases
+    WHERE dev_id NOT IN (SELECT dev_id FROM developments)
+);
+DELETE FROM sim_delivery_event_phases
+WHERE phase_id IN (
+    SELECT phase_id FROM sim_dev_phases
+    WHERE dev_id NOT IN (SELECT dev_id FROM developments)
+);
+DELETE FROM sim_dev_phases
+WHERE dev_id NOT IN (SELECT dev_id FROM developments);
+
+-- Same cleanup for sim_legal_instruments (1 orphan: dev_id=95 Schuring — already
+-- remapped above by the name fallback; this only catches any that slipped through).
+DELETE FROM sim_dev_phases WHERE instrument_id IN (
+    SELECT instrument_id FROM sim_legal_instruments
+    WHERE dev_id NOT IN (SELECT dev_id FROM developments)
+);
+DELETE FROM sim_legal_instruments
+WHERE dev_id NOT IN (SELECT dev_id FROM developments);
+
 -- ── FK constraints ────────────────────────────────────────────────────────────
 ALTER TABLE sim_legal_instruments
     ADD CONSTRAINT fk_sli_dev_id
