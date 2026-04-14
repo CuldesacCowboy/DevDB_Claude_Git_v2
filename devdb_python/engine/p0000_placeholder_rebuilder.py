@@ -569,6 +569,10 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     for dev_id in dev_phases:
         dev_scan_floor[dev_id] = last_locked_per_dev.get(dev_id, today_first - timedelta(days=1))
 
+    # Tracks lot count of the most-recently-scheduled delivery per dev within
+    # this P-00 run — used by the lv_d=None fallback to compute exhaustion date.
+    dev_last_delivery_lots: dict[int, int] = {}
+
     events_to_create = []
 
     for _ in range(200):
@@ -581,10 +585,31 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             lv_d = _dev_lv_from_balance(dev_id, dev_scan_floor[dev_id], valid_months)
             if lv_d is None:
                 first_demand = dev_phases[dev_id][0]["demand_date"]
-                lv_d = (_snap_to_window(first_demand, valid_months) if first_demand
-                        else _next_window_month_from(today_first, valid_months))
-                if lv_d < today_first:
-                    lv_d = _next_window_month_from(today_first, valid_months)
+                if first_demand:
+                    lv_d = _snap_to_window(first_demand, valid_months)
+                    if lv_d < today_first:
+                        lv_d = _next_window_month_from(today_first, valid_months)
+                else:
+                    # No demand signal and no D-balance violation found.
+                    # Permanent D-status lots (no takedown date) can mask the
+                    # violation signal by keeping the balance above 0 forever.
+                    # If a delivery was already scheduled for this dev in this
+                    # run, compute the lean date from the exhaustion formula
+                    # (batch_lots / monthly_pace) instead of defaulting to today.
+                    _last_sched = dev_scan_floor.get(dev_id, today_first)
+                    _last_lots = dev_last_delivery_lots.get(dev_id, 0)
+                    _pace = dev_monthly_pace.get(dev_id, 1.0)
+                    if _last_sched >= today_first and _last_lots > 0 and _pace > 0:
+                        _months_exhaust = math.ceil(_last_lots / _pace)
+                        _exhaust = _add_months(_last_sched, _months_exhaust)
+                        lv_d = _snap_to_window(_add_months(_exhaust, -1), valid_months)
+                        if lv_d < today_first:
+                            lv_d = _next_window_month_from(today_first, valid_months)
+                        logger.info(f"P-00: Dev {dev_id}: exhaustion fallback — "
+                                    f"last_delivery={_last_sched}, lots={_last_lots}, "
+                                    f"pace={_pace:.2f}/mo, exhaust={_exhaust}, lv_d={lv_d}")
+                    else:
+                        lv_d = _next_window_month_from(today_first, valid_months)
             lv_d = _constrain_date(lv_d, valid_months)
             deadlines[dev_id] = lv_d
 
@@ -634,6 +659,9 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + extra_lots
 
             dev_scan_floor[dev_id] = event_date
+            dev_last_delivery_lots[dev_id] = sum(
+                sum(_get_phase_lots(conn, p["phase_id"])) for p in batch
+            )
 
             for p in batch:
                 event_phase_ids.append(p["phase_id"])
