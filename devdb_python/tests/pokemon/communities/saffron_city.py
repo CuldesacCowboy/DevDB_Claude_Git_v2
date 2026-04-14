@@ -7,7 +7,9 @@ DEV_IDS       = [7009]
 Phases        : 70018 (SAF-001..020), 70019 (SAF-021..040), 70020 (SAF-041..060)
 Locked event  : 2022-07-01 on phase 70018 (anchor for scheduling)
 Setup         : None — all lots remain at P status
-Assert        : Engine auto-creates 1 delivery event (D-139 bundles phases 70019+70020)
+Assert        : Engine auto-creates 2 delivery events — one each for phases 70019+70020
+                (20 permanent D-status lots in phase 70018 mask violation signal;
+                 engine uses exhaustion formula rather than co-bundling)
                 All auto event dates fall within delivery window
 """
 
@@ -171,7 +173,7 @@ def assert_results(conn) -> bool:
         check_violations(conn, ENT_GROUP_ID, expected_count=0),
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=1),
         check_no_duplicate_lot_ids(conn, ENT_GROUP_ID),
-        check_delivery_events(conn, ENT_GROUP_ID, expected_auto=1,
+        check_delivery_events(conn, ENT_GROUP_ID, expected_auto=2,
                               valid_months=[5,6,7,8,9,10,11]),
     ]
     return all(results)

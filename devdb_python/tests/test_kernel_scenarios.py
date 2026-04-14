@@ -37,6 +37,7 @@ def _make_frozen_input(
     phase_capacity,
     building_group_memberships=None,
     tda_hold_lot_ids=None,
+    phase_building_config=None,
     sim_run_id=1,
     dev_id=1,
 ):
@@ -46,6 +47,7 @@ def _make_frozen_input(
         phase_capacity=phase_capacity,
         building_group_memberships=building_group_memberships if building_group_memberships is not None else {},
         tda_hold_lot_ids=tda_hold_lot_ids if tda_hold_lot_ids is not None else set(),
+        phase_building_config=phase_building_config if phase_building_config is not None else {},
         sim_run_id=sim_run_id,
         dev_id=dev_id,
     )

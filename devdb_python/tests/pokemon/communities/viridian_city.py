@@ -7,6 +7,9 @@ DEV_IDS       = [7002]
 Phases        : 70003 (SF), 70004 (Condo), 70005 (SF), 70006 (Condo)
 Locked event  : 2022-05-01 on phases 70003+70004
 Setup         : VCN-001..010 started
+Assert        : 2 auto events — exhaustion fallback schedules 70005 then 70006 separately
+                (15 permanent D-status lots in 70003+70004 mask violation signal;
+                 engine uses exhaustion formula instead of co-bundling)
 """
 
 import sys, os
@@ -188,7 +191,7 @@ def assert_results(conn) -> bool:
     results = [
         check_violations(conn, ENT_GROUP_ID, expected_count=0),
         check_sim_lots_exist(conn, ENT_GROUP_ID, min_count=5),
-        check_delivery_events(conn, ENT_GROUP_ID, expected_auto=1,
+        check_delivery_events(conn, ENT_GROUP_ID, expected_auto=2,
                               valid_months=[5,6,7,8,9,10,11]),
     ]
     return all(results)

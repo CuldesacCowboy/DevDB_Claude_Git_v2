@@ -90,6 +90,10 @@ def reset_mutable_state(conn, ent_group_id: int) -> None:
             (ph_ev_ids,),
         )
         conn.execute(
+            "DELETE FROM sim_delivery_event_predecessors WHERE event_id = ANY(%s) OR predecessor_event_id = ANY(%s)",
+            (ph_ev_ids, ph_ev_ids),
+        )
+        conn.execute(
             "DELETE FROM sim_delivery_events WHERE delivery_event_id = ANY(%s)",
             (ph_ev_ids,),
         )
