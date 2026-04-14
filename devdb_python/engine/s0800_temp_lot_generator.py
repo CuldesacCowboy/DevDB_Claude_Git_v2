@@ -71,6 +71,20 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
               f"{len(demand_slots) - n} unmet slots could not be filled. "
               f"Add capacity in sim_phase_product_splits.")
 
+    # Per-phase deferred-slot counter: when a demand slot falls before a phase's
+    # delivery date we cannot discard it (that creates sentinel deliveries) and
+    # cannot use the raw slot date (that creates a start-before-dev violation).
+    # Instead we defer: spread deferred lots at the same 1/month pace starting
+    # the month after delivery.  This produces a pent-up-demand release that is
+    # honest — lots were waiting for the phase to open and start in sequence.
+    phase_deferred_count: dict[int, int] = {}
+
+    def _add_months_local(d: date, n: int) -> date:
+        m = d.month + n
+        y = d.year + (m - 1) // 12
+        m = ((m - 1) % 12) + 1
+        return d.replace(year=y, month=m, day=1)
+
     temp_lots = []
     for i in range(n):
         year, month = demand_slots[i]
@@ -78,8 +92,18 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
 
         lot_type_id = int(slot["lot_type_id"])
         dev_id      = int(slot["dev_id"])
+        phase_id    = int(slot["phase_id"])
 
         date_str = date(year, month, 1)
+
+        # Defer start if demand slot precedes phase delivery date.
+        # Spread deferred lots at 1/month from the month after delivery so the
+        # release matches normal absorption pace and no violation is created.
+        delivery = slot["date_dev"]
+        if delivery is not None and date_str < delivery:
+            n_deferred = phase_deferred_count.get(phase_id, 0)
+            date_str = _add_months_local(delivery, 1 + n_deferred)
+            phase_deferred_count[phase_id] = n_deferred + 1
 
         # date_cmp and date_cls are intentionally absent here.
         # The shell timing expansion stage (coordinator._expand_timing) derives
@@ -87,7 +111,7 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
         temp_lots.append({
             "lot_id":          None,
             "dev_id":          dev_id,
-            "phase_id":        int(slot["phase_id"]),
+            "phase_id":        phase_id,
             "builder_id":      None,
             "lot_source":      "sim",
             "lot_number":      None,
@@ -95,7 +119,7 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
             "lot_type_id":     lot_type_id,
             "building_group_id": None,
             "date_ent":        None,
-            "date_dev":        slot["date_dev"],
+            "date_dev":        delivery,
             "date_td":         date_str,
             "date_td_hold":    None,
             "date_str":        date_str,
