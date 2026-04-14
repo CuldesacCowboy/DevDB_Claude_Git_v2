@@ -1,6 +1,6 @@
 @echo off
 title DevDB Restart
-echo Restarting DevDB...
-echo.
-call "%~dp0Stop_DevDB.bat"
-call "%~dp0Start_DevDB.bat"
+echo Stopping DevDB...
+start /wait "" "%~dp0Stop_DevDB.bat"
+echo Starting DevDB...
+start "" "%~dp0Start_DevDB.bat"
