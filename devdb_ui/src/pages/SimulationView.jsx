@@ -1066,6 +1066,12 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
 
   const overrideable = l => l.lot_source === 'real'
 
+  // Distinct row background tints for consecutive buildings (cycles through 8 colors).
+  const BG_ROW_PALETTE = [
+    '#eff6ff','#f0fdf4','#fefce8','#fff1f2',
+    '#f5f3ff','#fdf4ff','#ecfeff','#fff7ed',
+  ]
+
   // Building group labels: per phase, first-seen building_group_id → B1, B2, …
   const bgLabelMap = (() => {
     const map = {}
@@ -1106,8 +1112,8 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
   )
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ flexShrink: 0, display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <select value={devFilter} onChange={e => setDevFilter(e.target.value)}
           style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}>
           <option value="all">All developments</option>
@@ -1142,7 +1148,7 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
           Export CSV
         </button>
       </div>
-      <div style={{ overflowX: 'auto' }}>
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
             <tr style={{ background: '#f9fafb' }}>
@@ -1173,19 +1179,22 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
                 : null
               const bgKey = l.building_group_id != null ? `${l.phase_name}::${l.building_group_id}` : null
               const bgLabel = bgKey ? bgLabelMap[bgKey] : null
-              const bgIndex = bgLabel ? parseInt(bgLabel.slice(1)) : 0
-              const rowTint = bgLabel ? (bgIndex % 2 === 1 ? '#f0fdfa' : '#f7fef8') : null
+              const bgIndex = bgLabel ? parseInt(bgLabel.slice(1)) - 1 : 0
+              const rowTint = bgLabel ? BG_ROW_PALETTE[bgIndex % BG_ROW_PALETTE.length] : null
               const prevLot = idx > 0 ? filtered[idx - 1] : null
               const isGroupStart = l.building_group_id != null && (
                 !prevLot || prevLot.building_group_id !== l.building_group_id || prevLot.phase_name !== l.phase_name
               )
               return (
-              <tr key={l.lot_id} style={{ background: rowTint ?? '', borderTop: isGroupStart ? '2px solid #99f6e4' : '' }}>
+              <tr key={l.lot_id} style={{ background: rowTint ?? '' }}>
                 {devFilter === 'all' && <td style={tdS('left')}>{l.dev_name}</td>}
                 <td style={tdS('left')}>{l.lot_number ?? '—'}</td>
                 <td style={tdS('left')}>{l.lot_type_short ?? '—'}</td>
                 <td style={tdS('left')}>{l.phase_name}</td>
-                <td style={tdS('center', { color: '#0d9488', fontWeight: 600, fontSize: 11, letterSpacing: '0.02em' })}>{bgLabel ?? ''}</td>
+                <td style={tdS('center', {
+                  color: '#0d9488', fontWeight: 600, fontSize: 11, letterSpacing: '0.02em',
+                  borderTop: isGroupStart ? '2px solid #0d9488' : undefined,
+                })}>{bgLabel ?? ''}</td>
                 <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>{l.lot_source}</td>
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>
@@ -1441,7 +1450,10 @@ const loadLedger = useCallback((id) => {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif', fontSize: 13, maxWidth: 1300 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 45px)', overflow: 'hidden', fontFamily: 'system-ui, sans-serif', fontSize: 13 }}>
+
+      {/* ── Locked header ── */}
+      <div style={{ flexShrink: 0, padding: '16px 24px 0', maxWidth: 1300, boxSizing: 'border-box', background: '#fff' }}>
 
       {/* ── Top bar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -1616,8 +1628,14 @@ const loadLedger = useCallback((id) => {
         })}
       </div>
 
+      </div>{/* end locked header */}
+
+      {/* ── Tab content ── */}
+      <div style={{ flex: 1, overflow: 'hidden', padding: '0 24px', maxWidth: 1300, boxSizing: 'border-box' }}>
+
       {/* ── Ledger ── */}
       {view === 'ledger' && (
+        <div style={{ height: '100%', overflowY: 'auto' }}>
         <>
           {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
           {!loading && !hasData && (
@@ -1706,6 +1724,7 @@ const loadLedger = useCallback((id) => {
             </>
           )}
         </>
+        </div>
       )}
 
       {/* ── Lot List ── */}
@@ -1726,6 +1745,7 @@ const loadLedger = useCallback((id) => {
 
       {/* ── Plan / Overrides ── */}
       {view === 'overrides' && (
+        <div style={{ height: '100%', overflowY: 'auto' }}>
         <OverridesPanel
           overrides={overrides}
           loading={ovLoading}
@@ -1755,17 +1775,22 @@ const loadLedger = useCallback((id) => {
             setShowReconModal(true)
           }}
         />
+        </div>
       )}
 
       {/* ── Delivery Schedule ── */}
-      {view === 'delivery' && <DeliveryScheduleTab rows={deliverySchedule} loading={deliveryScheduleLoading} />}
+      {view === 'delivery' && (
+        <div style={{ height: '100%', overflowY: 'auto' }}>
+          <DeliveryScheduleTab rows={deliverySchedule} loading={deliveryScheduleLoading} />
+        </div>
+      )}
 
       {/* ── Phase Utilization ── */}
       {view === 'utilization' && (
-        <>
+        <div style={{ height: '100%', overflowY: 'auto' }}>
           {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
           {!loading && <UtilizationPanel phases={filteredUtilization} />}
-        </>
+        </div>
       )}
 
       {/* ── Sync reconciliation modal ── */}
@@ -1864,6 +1889,8 @@ const loadLedger = useCallback((id) => {
           </div>
         </div>
       )}
+
+      </div>{/* end tab content */}
     </div>
   )
 }
