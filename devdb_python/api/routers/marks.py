@@ -45,11 +45,10 @@ _PIVOT_CTE = f"""
 """
 
 # Join key from sim_lots.lot_number back to (developmentcode, housenumber).
-# Handles standard letter-prefix lots (LM00000042 → 'LM', 42).
-# Numeric-prefix lots (4300000001) fall through — dev_code = '', housenumber = 4300000001.
+# Reconstructs canonical lot_number as developmentcode || LPAD(housenumber, 8).
+# Works for both letter-prefix (LM00000042) and numeric-prefix (4300000001) dev codes.
 _LOT_JOIN = """
-    REGEXP_REPLACE(sl.lot_number, '[^A-Za-z]', '', 'g') = p.developmentcode
-    AND CAST(REGEXP_REPLACE(sl.lot_number, '[^0-9]', '', 'g') AS BIGINT) = p.housenumber
+    sl.lot_number = p.developmentcode || LPAD(p.housenumber::text, 8, '0')
 """
 
 
@@ -213,8 +212,7 @@ def get_promotable(dev_code: Optional[str] = None, conn=Depends(get_db_conn)):
                    p.date_td, p.date_td_hold, p.date_str, p.date_frm, p.date_cmp, p.date_cls
             FROM devdb.sim_lots sl
             JOIN pivoted p
-              ON REGEXP_REPLACE(sl.lot_number, '[^A-Za-z]', '', 'g') = p.developmentcode
-             AND CAST(REGEXP_REPLACE(sl.lot_number, '[^0-9]', '', 'g') AS BIGINT) = p.housenumber
+              ON sl.lot_number = p.developmentcode || LPAD(p.housenumber::text, 8, '0')
             WHERE sl.lot_source = 'pre'
             {where_dev}
             ORDER BY p.developmentcode, p.housenumber
@@ -256,7 +254,7 @@ def sync_marks_dates(body: SyncRequest, conn=Depends(get_db_conn)):
     """
     cur = dict_cursor(conn)
     try:
-        dev_filter = "AND REGEXP_REPLACE(sl.lot_number, '[^A-Za-z]', '', 'g') = %(dev_code)s" \
+        dev_filter = "AND p.developmentcode = %(dev_code)s" \
                      if body.dev_code else ""
         cur.execute(f"""
             {_PIVOT_CTE}
