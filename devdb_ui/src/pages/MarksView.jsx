@@ -537,71 +537,79 @@ export default function MarksView() {
   if (error)   return <div style={{ padding: 40, color: '#dc2626', fontSize: 13 }}>{error}</div>
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 900, boxSizing: 'border-box' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 45px)', overflow: 'hidden' }}>
 
-      {/* header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-        <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>MARKS Lots</h1>
-        <Btn variant="default" onClick={handleSyncAll} disabled={syncingAll}>
-          {syncingAll ? 'Syncing…' : 'Sync all dates'}
-        </Btn>
-        {syncToast && <span style={{ fontSize: 12, color: '#059669', fontWeight: 500 }}>{syncToast}</span>}
-      </div>
+      {/* ── Locked header ── */}
+      <div style={{ flexShrink: 0, padding: '24px 32px 0', maxWidth: 900, boxSizing: 'border-box', background: '#fff' }}>
 
-      {/* summary bar */}
-      <div style={{ display: 'flex', gap: 20, marginBottom: 16, fontSize: 12, color: '#6b7280' }}>
-        <span><strong style={{ color: '#111827' }}>{totalImported}</strong> imported</span>
-        {totalUnimported > 0 && (
-          <span><strong style={{ color: '#2563eb' }}>{totalUnimported}</strong> new in MARKS</span>
-        )}
-        {totalPromotable > 0 && (
-          <span><strong style={{ color: '#7c3aed' }}>{totalPromotable}</strong> pre lots ready to promote</span>
-        )}
-      </div>
-
-      {/* promotable banner */}
-      {totalPromotable > 0 && <PromotableSection onRefresh={load} />}
-
-      {/* filter tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
-        {[
-          { key: 'all',        label: `All (${(summary || []).length})` },
-          { key: 'new',        label: `New (${totalUnimported})` },
-          { key: 'promotable', label: `Promotable (${totalPromotable})` },
-        ].map(tab => (
-          <button key={tab.key} onClick={() => setFilter(tab.key)} style={{
-            fontSize: 12, padding: '3px 10px', borderRadius: 4, cursor: 'pointer',
-            background: filter === tab.key ? '#2563eb' : '#f1f5f9',
-            color:      filter === tab.key ? '#fff'    : '#374151',
-            border:     filter === tab.key ? '1px solid #1d4ed8' : '1px solid #d1d5db',
-          }}>{tab.label}</button>
-        ))}
-      </div>
-
-      {/* column header row */}
-      {(sorted.length > 0) && (
-        <div style={{
-          display: 'flex', alignItems: 'center', padding: '4px 12px',
-          marginBottom: 2, gap: 8,
-        }}>
-          <SortHdr col="code"     label="Code"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.code} />
-          <SortHdr col="name"     label="Name"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.name} />
-          <SortHdr col="marks"    label="In MARKS"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.marks} />
-          <SortHdr col="imported" label="Imported"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.imported} />
-          <SortHdr col="new"      label="New"       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.newLots} />
-          <div style={COL.syncBtn} />
-          <div style={COL.importBtn} />
+        {/* header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>MARKS Lots</h1>
+          <Btn variant="default" onClick={handleSyncAll} disabled={syncingAll}>
+            {syncingAll ? 'Syncing…' : 'Sync all dates'}
+          </Btn>
+          {syncToast && <span style={{ fontSize: 12, color: '#059669', fontWeight: 500 }}>{syncToast}</span>}
         </div>
-      )}
 
-      {/* dev code rows */}
-      {sorted.length === 0 ? (
-        <div style={{ fontSize: 13, color: '#9ca3af' }}>Nothing to show.</div>
-      ) : (
-        sorted.map(row => (
-          <DevCodeRow key={row.dev_code} row={row} onRefresh={load} />
-        ))
-      )}
+        {/* summary bar */}
+        <div style={{ display: 'flex', gap: 20, marginBottom: 16, fontSize: 12, color: '#6b7280' }}>
+          <span><strong style={{ color: '#111827' }}>{totalImported}</strong> imported</span>
+          {totalUnimported > 0 && (
+            <span><strong style={{ color: '#2563eb' }}>{totalUnimported}</strong> new in MARKS</span>
+          )}
+          {totalPromotable > 0 && (
+            <span><strong style={{ color: '#7c3aed' }}>{totalPromotable}</strong> pre lots ready to promote</span>
+          )}
+        </div>
+
+        {/* promotable banner */}
+        {totalPromotable > 0 && <PromotableSection onRefresh={load} />}
+
+        {/* filter tabs */}
+        <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+          {[
+            { key: 'all',        label: `All (${(summary || []).length})` },
+            { key: 'new',        label: `New (${totalUnimported})` },
+            { key: 'promotable', label: `Promotable (${totalPromotable})` },
+          ].map(tab => (
+            <button key={tab.key} onClick={() => setFilter(tab.key)} style={{
+              fontSize: 12, padding: '3px 10px', borderRadius: 4, cursor: 'pointer',
+              background: filter === tab.key ? '#2563eb' : '#f1f5f9',
+              color:      filter === tab.key ? '#fff'    : '#374151',
+              border:     filter === tab.key ? '1px solid #1d4ed8' : '1px solid #d1d5db',
+            }}>{tab.label}</button>
+          ))}
+        </div>
+
+        {/* column header row */}
+        {(sorted.length > 0) && (
+          <div style={{
+            display: 'flex', alignItems: 'center', padding: '4px 12px',
+            marginBottom: 2, gap: 8,
+          }}>
+            <SortHdr col="code"     label="Code"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.code} />
+            <SortHdr col="name"     label="Name"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.name} />
+            <SortHdr col="marks"    label="In MARKS"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.marks} />
+            <SortHdr col="imported" label="Imported"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.imported} />
+            <SortHdr col="new"      label="New"       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.newLots} />
+            <div style={COL.syncBtn} />
+            <div style={COL.importBtn} />
+          </div>
+        )}
+
+      </div>
+
+      {/* ── Scrollable rows ── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 32px 24px', maxWidth: 900, boxSizing: 'border-box' }}>
+        {sorted.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#9ca3af' }}>Nothing to show.</div>
+        ) : (
+          sorted.map(row => (
+            <DevCodeRow key={row.dev_code} row={row} onRefresh={load} />
+          ))
+        )}
+      </div>
+
     </div>
   )
 }

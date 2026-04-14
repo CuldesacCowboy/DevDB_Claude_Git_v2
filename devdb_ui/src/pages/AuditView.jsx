@@ -529,13 +529,15 @@ export default function AuditView({ showTestCommunities }) {
       </div>
 
       {/* ── Right panel: detail or overview ── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {selectedComm ? (
-          <CommDetail
-            comm={selectedComm}
-            globalMonths={data.global_months}
-            globalMaxPerYear={data.global_max_per_year}
-          />
+          <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+            <CommDetail
+              comm={selectedComm}
+              globalMonths={data.global_months}
+              globalMaxPerYear={data.global_max_per_year}
+            />
+          </div>
         ) : (
           <OverviewTable
             communities={visibleComms}
@@ -603,14 +605,20 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
   }
 
   return (
-    <div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
-        All Communities — Config Overview
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+
+      {/* ── Locked title ── */}
+      <div style={{ flexShrink: 0, padding: '16px 20px 0', background: '#fff' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
+          All Communities — Config Overview
+        </div>
+        <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 8 }}>
+          Click a row to inspect details. Hover chips for tooltips.
+        </div>
       </div>
-      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 14 }}>
-        Click a row to inspect details. Hover chips for tooltips.
-      </div>
-      <div style={{ overflowX: 'auto' }}>
+
+      {/* ── Scrollable table (thead sticks within this container) ── */}
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', padding: '0 20px 16px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>

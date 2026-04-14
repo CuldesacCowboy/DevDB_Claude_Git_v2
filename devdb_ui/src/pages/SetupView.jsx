@@ -472,7 +472,7 @@ export default function SetupView({ showTestCommunities }) {
     const res = await fetch(`${API_BASE}/instruments/${instrId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ instrument_name: name }),
+      body: JSON.stringify({ name }),
     })
     if (!res.ok) throw new Error((await res.json()).detail ?? 'Rename failed')
     setInstruments(prev => prev.map(i => i.instrument_id === instrId ? { ...i, instrument_name: name } : i))
@@ -551,103 +551,110 @@ export default function SetupView({ showTestCommunities }) {
   return (
     <LotRefreshContext.Provider value={refreshTick}>
     <ExpandAllContext.Provider value={expandCtx}>
-    <div style={{ padding: '24px 32px', maxWidth: 1020, boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>Setup</h1>
-        <button
-          onClick={() => addComm.setOpen(o => !o)}
-          style={{
-            fontSize: 12, color: '#2563eb', background: '#eff6ff',
-            border: '1px solid #bfdbfe', borderRadius: 4,
-            padding: '3px 10px', cursor: 'pointer',
-          }}>
-          + New community
-        </button>
-        <span style={{ flex: 1 }} />
-        {[['Expand all', true], ['Collapse all', false]].map(([label, val]) => (
-          <button key={label}
-            onClick={() => setExpandCtx(prev => ({ tick: prev.tick + 1, value: val }))}
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 45px)', overflow: 'hidden' }}>
+
+      {/* ── Locked header ── */}
+      <div style={{ flexShrink: 0, padding: '24px 32px 0', maxWidth: 1020, boxSizing: 'border-box', background: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
+          <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>Setup</h1>
+          <button
+            onClick={() => addComm.setOpen(o => !o)}
             style={{
-              fontSize: 11, color: '#6b7280', background: 'none',
-              border: '1px solid #e5e7eb', borderRadius: 4,
-              padding: '2px 8px', cursor: 'pointer',
+              fontSize: 12, color: '#2563eb', background: '#eff6ff',
+              border: '1px solid #bfdbfe', borderRadius: 4,
+              padding: '3px 10px', cursor: 'pointer',
             }}>
-            {label}
+            + New community
           </button>
-        ))}
+          <span style={{ flex: 1 }} />
+          {[['Expand all', true], ['Collapse all', false]].map(([label, val]) => (
+            <button key={label}
+              onClick={() => setExpandCtx(prev => ({ tick: prev.tick + 1, value: val }))}
+              style={{
+                fontSize: 11, color: '#6b7280', background: 'none',
+                border: '1px solid #e5e7eb', borderRadius: 4,
+                padding: '2px 8px', cursor: 'pointer',
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {addComm.open && (
+          <div style={{ marginBottom: 10 }}>
+            <AddForm
+              fields={[{ name: 'comm_name', label: 'Community name', required: true, width: 240 }]}
+              onSave={addComm.handleSave}
+              onCancel={() => addComm.setOpen(false)}
+              saving={addComm.saving}
+              error={addComm.error}
+            />
+          </div>
+        )}
+
+        {visibleCommunities.length > 0 && (() => {
+          const totals = Object.values(commStats).reduce(
+            (acc, s) => ({ D: acc.D + s.D, I: acc.I + s.I, P: acc.P + s.P, L: acc.L + s.L }),
+            { D: 0, I: 0, P: 0, L: 0 }
+          )
+          return (
+            <div style={{ background: '#fff', marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', paddingRight: 6, borderBottom: '1px solid #e5e7eb', paddingBottom: 4 }}>
+                <SortHeader label="Community" sortKey="name" sort={commSort} onSort={setCommSort}
+                  style={{ flex: 1, textAlign: 'left' }} />
+                {(['D', 'I', 'P', 'L']).map((key, idx) => (
+                  <SortHeader key={key} label={SUB_LABELS[key]} sortKey={key}
+                    sort={commSort} onSort={setCommSort}
+                    style={{
+                      width: SUB[key], flexShrink: 0,
+                      justifyContent: 'flex-end', padding: '0 5px',
+                      ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
+                    }} />
+                ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', paddingRight: 6, paddingTop: 3, paddingBottom: 3, borderBottom: '2px solid #e5e7eb' }}>
+                <span style={{ flex: 1, fontSize: 11, color: '#9ca3af', paddingLeft: 4 }}>Total</span>
+                {(['D', 'I', 'P', 'L']).map((key, idx) => (
+                  <div key={key} style={{
+                    width: SUB[key], flexShrink: 0, textAlign: 'right', padding: '0 5px',
+                    fontSize: 11, fontWeight: 600, color: '#374151',
+                    ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
+                  }}>{totals[key]}</div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
-      {addComm.open && (
-        <div style={{ marginBottom: 10 }}>
-          <AddForm
-            fields={[{ name: 'comm_name', label: 'Community name', required: true, width: 240 }]}
-            onSave={addComm.handleSave}
-            onCancel={() => addComm.setOpen(false)}
-            saving={addComm.saving}
-            error={addComm.error}
+      {/* ── Scrollable community rows ── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 32px 24px', maxWidth: 1020, boxSizing: 'border-box' }}>
+        {visibleCommunities.length === 0 && (
+          <div style={{ fontSize: 13, color: '#9ca3af', paddingTop: 8 }}>No communities yet.</div>
+        )}
+
+        {sortedCommunities.map(comm => (
+          <CommunityRow
+            key={comm.ent_group_id}
+            comm={comm}
+            devs={developments.filter(d => d.community_id === comm.ent_group_id)}
+            instruments={instruments}
+            phases={phases}
+            lotTypes={lotTypes}
+            onAddDev={handleAddDev}
+            onAddInstrument={handleAddInstrument}
+            onAddPhase={handleAddPhase}
+            onRenameComm={name => handleRenameComm(comm.ent_group_id, name)}
+            onRenameDev={handleRenameDev}
+            onRenameInstr={handleRenameInstr}
+            onChangeInstrType={handleChangeInstrType}
+            onRenamePhase={handleRenamePhase}
+            onDeleteComm={() => handleDeleteComm(comm.ent_group_id)}
+            onDeleteDev={handleDeleteDev}
+            onRefresh={() => load(true)}
           />
-        </div>
-      )}
-
-      {visibleCommunities.length === 0 && (
-        <div style={{ fontSize: 13, color: '#9ca3af' }}>No communities yet.</div>
-      )}
-
-      {visibleCommunities.length > 0 && (() => {
-        const totals = Object.values(commStats).reduce(
-          (acc, s) => ({ D: acc.D + s.D, I: acc.I + s.I, P: acc.P + s.P, L: acc.L + s.L }),
-          { D: 0, I: 0, P: 0, L: 0 }
-        )
-        return (
-          <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', marginBottom: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', paddingRight: 6, borderBottom: '1px solid #e5e7eb', paddingBottom: 4 }}>
-              <SortHeader label="Community" sortKey="name" sort={commSort} onSort={setCommSort}
-                style={{ flex: 1, textAlign: 'left' }} />
-              {(['D', 'I', 'P', 'L']).map((key, idx) => (
-                <SortHeader key={key} label={SUB_LABELS[key]} sortKey={key}
-                  sort={commSort} onSort={setCommSort}
-                  style={{
-                    width: SUB[key], flexShrink: 0,
-                    justifyContent: 'flex-end', padding: '0 5px',
-                    ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
-                  }} />
-              ))}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', paddingRight: 6, paddingTop: 3, paddingBottom: 3, borderBottom: '2px solid #e5e7eb' }}>
-              <span style={{ flex: 1, fontSize: 11, color: '#9ca3af', paddingLeft: 4 }}>Total</span>
-              {(['D', 'I', 'P', 'L']).map((key, idx) => (
-                <div key={key} style={{
-                  width: SUB[key], flexShrink: 0, textAlign: 'right', padding: '0 5px',
-                  fontSize: 11, fontWeight: 600, color: '#374151',
-                  ...(idx === 0 ? { borderLeft: '2px solid #e5e7eb' } : {}),
-                }}>{totals[key]}</div>
-              ))}
-            </div>
-          </div>
-        )
-      })()}
-
-      {sortedCommunities.map(comm => (
-        <CommunityRow
-          key={comm.ent_group_id}
-          comm={comm}
-          devs={developments.filter(d => d.community_id === comm.ent_group_id)}
-          instruments={instruments}
-          phases={phases}
-          lotTypes={lotTypes}
-          onAddDev={handleAddDev}
-          onAddInstrument={handleAddInstrument}
-          onAddPhase={handleAddPhase}
-          onRenameComm={name => handleRenameComm(comm.ent_group_id, name)}
-          onRenameDev={handleRenameDev}
-          onRenameInstr={handleRenameInstr}
-          onChangeInstrType={handleChangeInstrType}
-          onRenamePhase={handleRenamePhase}
-          onDeleteComm={() => handleDeleteComm(comm.ent_group_id)}
-          onDeleteDev={handleDeleteDev}
-          onRefresh={() => load(true)}
-        />
-      ))}
+        ))}
+      </div>
 
     </div>
     </ExpandAllContext.Provider>
