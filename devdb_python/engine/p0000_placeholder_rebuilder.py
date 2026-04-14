@@ -154,11 +154,12 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         logger.info(f"P-00: auto_schedule_enabled=False for ent_group_id={ent_group_id}. Skipping.")
         return []
 
-    max_per_year = cfg["max_deliveries_per_year"]
-    min_gap      = cfg["min_gap_months"]
-    raw_months   = cfg["delivery_months"]
+    max_per_year     = cfg["max_deliveries_per_year"]
+    min_gap          = cfg["min_gap_months"]
+    raw_months       = cfg["delivery_months"]
     valid_months_default = frozenset(int(m) for m in raw_months) if raw_months else frozenset([5,6,7,8,9,10,11])
-    min_buffer   = cfg["min_d_count"]
+    min_buffer       = cfg["min_d_count"]
+    feed_starts_mode = cfg["feed_starts_mode"]
 
     # ------------------------------------------------------------------
     # Step 2: Delete existing placeholder events
@@ -603,21 +604,27 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         # Gate by delivery_tier: tier-N phases may not be scheduled until all
         # tier-(N-1) phases (across ALL devs) have been assigned to events.
         # Phases with no tier (None) are always schedulable.
-        _remaining_tiers = {
-            phases[0]["delivery_tier"]
-            for phases in dev_phases.values()
-            if phases and phases[0]["delivery_tier"] is not None
-        }
-        _min_tier = min(_remaining_tiers) if _remaining_tiers else None
+        # feed_starts_mode=True disables this gate so all devs compete by
+        # D-balance urgency. Tier ordering is still enforced through predecessor
+        # links (Step 7b) so no actual tier violation occurs.
+        if feed_starts_mode:
+            active = {d: phases for d, phases in dev_phases.items() if phases}
+        else:
+            _remaining_tiers = {
+                phases[0]["delivery_tier"]
+                for phases in dev_phases.values()
+                if phases and phases[0]["delivery_tier"] is not None
+            }
+            _min_tier = min(_remaining_tiers) if _remaining_tiers else None
 
-        active = {
-            d: phases for d, phases in dev_phases.items()
-            if phases and (
-                phases[0]["delivery_tier"] is None
-                or _min_tier is None
-                or phases[0]["delivery_tier"] <= _min_tier
-            )
-        }
+            active = {
+                d: phases for d, phases in dev_phases.items()
+                if phases and (
+                    phases[0]["delivery_tier"] is None
+                    or _min_tier is None
+                    or phases[0]["delivery_tier"] <= _min_tier
+                )
+            }
         if not active:
             break
 
@@ -695,8 +702,10 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                     break
                 # Never co-bundle a higher-tier phase into this event — tier
                 # ordering must be preserved across events, not just within a dev.
+                # feed_starts_mode disables this check: aggressive batching allows
+                # higher-tier phases into the same event when inventory demands it.
                 _next_tier = dev_phases[dev_id][0]["delivery_tier"]
-                if _batch_tier is not None and _next_tier is not None and _next_tier > _batch_tier:
+                if not feed_starts_mode and _batch_tier is not None and _next_tier is not None and _next_tier > _batch_tier:
                     break
                 extra = dev_phases[dev_id].pop(0)
                 batch.append(extra)

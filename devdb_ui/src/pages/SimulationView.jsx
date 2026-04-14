@@ -720,6 +720,9 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettings, onS
     const asVal = valFor('auto_schedule_enabled')
     if (asVal !== '') body.auto_schedule_enabled = asVal === true || asVal === 'true'
 
+    const fsVal = valFor('feed_starts_mode')
+    if (fsVal !== '') body.feed_starts_mode = fsVal === true || fsVal === 'true'
+
     try {
       const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/delivery-config`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -764,6 +767,14 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettings, onS
             onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
             style={{ width: 14, height: 14, accentColor: '#2563eb' }} />
           <span style={{ color: '#6b7280' }}>Schedule deliveries automatically</span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12,
+                        cursor: isLocked ? 'default' : 'pointer', marginTop: 6 }}>
+          <input type="checkbox" disabled={isLocked}
+            checked={valFor('feed_starts_mode') === true || valFor('feed_starts_mode') === 'true'}
+            onChange={e => setVal('feed_starts_mode', e.target.checked)}
+            style={{ width: 14, height: 14, accentColor: '#d97706' }} />
+          <span style={{ color: '#6b7280' }}>Aggressive batching (feed starts mode)</span>
         </label>
       </div>
 
