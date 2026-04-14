@@ -76,17 +76,23 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Tables: sim_dev_phases, sim_phase_product_splits, sim_lots (SELECT)
 - Last commit: 2026-04-03
 
+### devdb_python/engine/s0205_building_group_sync.py
+- Owns: S-0205 -- propagates MIN(date_str, date_cmp, date_td) within building groups for real/pre lots; runs between S-0200 and S-0300; returns early if no lots have building_group_id set
+- Imported by: coordinator.py
+- Tables: none (pure DataFrame transform)
+- Last commit: 2026-04-14
+
 ### devdb_python/engine/s0700_demand_allocator.py
-- Owns: S-0700 -- allocates demand slots to real/sim lots; positional merge; no carry-forward; empty lot_snapshot (all-sim community) does NOT short-circuit — all demand flows to unmet_demand_series so S-0800 can fill it
+- Owns: S-0700 -- allocates demand slots to real/sim lots; building-group-aware: groups are atomic units (all lots in a group consume N demand slots and share the first slot's month); positional merge; no carry-forward; empty lot_snapshot does NOT short-circuit
 - Imported by: kernel/planning_kernel.py
 - Tables: none (pure DataFrame transform)
-- Last commit: 2026-04-15
+- Last commit: 2026-04-14
 
 ### devdb_python/engine/s0800_temp_lot_generator.py
-- Owns: S-0800 -- generates sim lots for unmet demand; date_str = demand slot month (or deferred); date_td = date_str per D-137/D-142; deferred-start logic: when demand slot < phase delivery date, spreads lots at 1/month after delivery (phase_deferred_count per phase) instead of creating pre-delivery violations
+- Owns: S-0800 -- generates sim lots for unmet demand; date_str = demand slot month (or deferred); date_td = date_str per D-137/D-142; deferred-start logic; building group generation: when phase_building_config is provided, generates lots in groups using bg_templates; synthetic negative building_group_id values assigned (no DB FK); all units in a building share first slot's date_str
 - Imported by: kernel/planning_kernel.py
-- Tables: none (builds DataFrame; persistence is in s1100)
-- Last commit: 2026-04-15
+- Tables: none (builds list; persistence is in s1100)
+- Last commit: 2026-04-14
 
 ### devdb_python/engine/s0810_building_group_enforcer.py
 - Owns: S-0810 -- enforces MIN(date_str) per building_group_id across sim lots per D-133
@@ -183,25 +189,25 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 #### Kernel (devdb_python/kernel/)
 
 ### devdb_python/kernel/frozen_input.py
-- Owns: FrozenInput dataclass -- immutable snapshot of all data the planning kernel needs; assembled by coordinator before plan() call
+- Owns: FrozenInput dataclass -- immutable snapshot of all data the planning kernel needs; includes phase_building_config: dict {phase_id: [(building_count, units_per_building)]} for multi-family phases
 - Imports: dataclasses, pandas
 - Imported by: coordinator.py, kernel/planning_kernel.py, kernel/frozen_input_builder.py
 - Tables: none (pure dataclass)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-14
 
 ### devdb_python/kernel/frozen_input_builder.py
-- Owns: Builds FrozenInput from database queries; all DB access for kernel inputs is here; _load_phase_capacity sorts by (delivery_tier NULLS FIRST, sequence_number, phase_id) so lower-tier phases receive demand slots before higher-tier phases even when phase IDs are out of order
+- Owns: Builds FrozenInput from database queries; _load_phase_capacity sorts by (tier NULLS FIRST, seq, phase_id); _load_phase_building_config loads sim_phase_building_config rows → {phase_id: [(building_count, units_per_building)]}
 - Imports: engine.connection, frozen_input
 - Imported by: coordinator.py
-- Tables: sim_lots, sim_dev_phases, sim_phase_product_splits, sim_entitlement_delivery_config (SELECT)
-- Last commit: 2026-04-15
+- Tables: sim_lots, sim_dev_phases, sim_phase_product_splits, sim_phase_building_config (SELECT)
+- Last commit: 2026-04-14
 
 ### devdb_python/kernel/planning_kernel.py
-- Owns: plan() entry point -- wires S-0700 through S-0820 sequentially; pure function (no DB access)
-- Imports: frozen_input, proposal, proposal_validator, s0700, s0800, s0810, s0820
+- Owns: plan() entry point -- wires S-0700 → S-0800 → S-0810 sequentially; passes phase_building_config from FrozenInput to S-0800; pure function (no DB access)
+- Imports: frozen_input, proposal, proposal_validator, s0700, s0800, s0810
 - Imported by: coordinator.py
 - Tables: none (pure transform)
-- Last commit: 2026-03-26
+- Last commit: 2026-04-14
 
 ### devdb_python/kernel/proposal.py
 - Owns: Proposal dataclass -- output of plan(); holds generated sim lots DataFrame and warnings
@@ -258,25 +264,25 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/tests/test_kernel_scenarios.py
-- Owns: Scenario-pack tests for planning kernel (FrozenInput fixtures, Scenario 1-10 truth cases)
-- Imports: kernel.planning_kernel, kernel.frozen_input, pytest
+- Owns: Scenario-pack tests for planning kernel (FrozenInput fixtures, 6 truth cases); _make_frozen_input helper includes phase_building_config param; 6/6 pass
+- Imports: kernel.planning_kernel, kernel.frozen_input, engine.s0810, engine.s1100, pytest
 - Tables: none (pure DataFrame fixtures)
-- Last commit: 2026-03-26
+- Last commit: 2026-04-14
 
 ### devdb_python/tests/pokemon/db.py
-- Owns: Shared Pokemon test helpers: make_lots(), reset_mutable_state(), check_violations(), check_sim_lots_exist(), check_delivery_events() (valid_months list), check_no_duplicate_lot_ids(), _pass()
+- Owns: Shared Pokemon test helpers: make_lots(), reset_mutable_state() (deletes from sim_delivery_event_predecessors before sim_delivery_events to avoid FK violation), check_violations(), check_sim_lots_exist(), check_delivery_events(), check_no_duplicate_lot_ids(), _pass()
 - Imports: engine modules, psycopg2
-- Tables: sim_lots, sim_lot_date_violations, sim_delivery_events (via reset/check queries)
-- Last commit: 2026-04-04
+- Tables: sim_lots, sim_lot_date_violations, sim_delivery_events, sim_delivery_event_predecessors (via reset/check queries)
+- Last commit: 2026-04-14
 
 ### devdb_python/tests/pokemon/constants.py
 - Owns: Shared Pokemon test constants (ENT_GROUP_IDs, DEV_IDs range table)
 - Last commit: 2026-04-04
 
 ### devdb_python/tests/pokemon/communities/ (14 scenario modules)
-- Owns: One module per Pokemon community (pallet_town through mahogany_town); each has install() (idempotent permanent objects), reset(), setup(), assert_results(); 14 scenarios testing various delivery scheduling behaviors
+- Owns: One module per Pokemon community (pallet_town through mahogany_town); each has install() (idempotent permanent objects), reset(), setup(), assert_results(); 14 scenarios testing various delivery scheduling behaviors; viridian_city and saffron_city updated to expected_auto=2 (exhaustion fallback schedules one event per undelivered phase when permanent D-status lots mask co-bundling signal)
 - Tables: all sim_* tables (via install/reset helpers)
-- Last commit: 2026-04-04
+- Last commit: 2026-04-14
 
 ---
 

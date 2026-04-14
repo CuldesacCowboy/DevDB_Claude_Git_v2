@@ -181,10 +181,10 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-14
 
 ### devdb_python/api/routers/ledger.py
-- Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates); GET /ledger/{id}/delivery-schedule (one row per event+dev: date, source, phases, units, D/U/UC inventory at delivery month); scheduling date hints on ledger dates and delivery phase date
+- Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates + building_group_id; ORDER BY real-before-sim then building_group_id ASC NULLS LAST so building groups are contiguous); GET /ledger/{id}/delivery-schedule (one row per event+dev: date, source, phases, units, D/U/UC inventory at delivery month)
 - Imports: api.deps, psycopg2.extras, fastapi
 - Imported by: api/main.py
-- Tables: v_sim_ledger_monthly, sim_ent_group_developments, dim_development, developments, sim_dev_phases, sim_delivery_events, sim_delivery_event_phases, sim_lots, sim_legal_instruments, sim_phase_product_splits, ref_lot_types
+- Tables: v_sim_ledger_monthly, sim_ent_group_developments, developments, sim_dev_phases, sim_delivery_events, sim_delivery_event_phases, sim_lots, sim_legal_instruments, sim_phase_product_splits, ref_lot_types
 - Last commit: 2026-04-14
 
 ### devdb_python/api/db.py

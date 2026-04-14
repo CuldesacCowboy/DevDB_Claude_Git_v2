@@ -303,3 +303,8 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Adds feed_starts_mode BOOLEAN NOT NULL DEFAULT FALSE to sim_entitlement_delivery_config; when TRUE, P-0000 removes tier gate from scheduling loop so all devs compete by D-balance urgency and inner co-bundling allows higher-tier phases — predecessor links (P-02) still enforce tier ordering
 - Tables: sim_entitlement_delivery_config (ADD COLUMN IF NOT EXISTS)
 - Last commit: 2026-04-15
+
+### devdb_python/migrations/056_phase_building_config.sql
+- Owns: Creates sim_phase_building_config table (id SERIAL PK, phase_id INT FK → sim_dev_phases, building_count INT, units_per_building INT); stores multi-family building configuration per phase for S-0800 grouped lot generation; UI exposed via BuildingsTab "Sim building config" section
+- Tables: sim_phase_building_config (CREATE TABLE)
+- Last commit: 2026-04-14

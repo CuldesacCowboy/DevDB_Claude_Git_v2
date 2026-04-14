@@ -1,64 +1,352 @@
 Development,Lot #,Type,Phase,Source,Status,ENT,DEV,HC,BLDR,DIG,CMP,CLS
-Kettle Preserve,KP00000001,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-04-03,2025-04-02,2025-08-22,2026-04-08
-Kettle Preserve,KP00000002,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-04-22,2026-06-04,2026-10-20,2026-10-23
-Kettle Preserve,KP00000003,SF,Kettle Preserve ph. 1,real,D,2024-04-01,2024-10-01,,,2026-04-01,2026-09-26,2026-10-22
-Kettle Preserve,KP00000004,SF,Kettle Preserve ph. 1,real,D,2024-04-01,2024-10-01,,,2026-05-01,2026-10-08,2026-10-12
-Kettle Preserve,KP00000005,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-03-25,2025-03-31,2025-08-27,2026-04-10
-Kettle Preserve,KP00000006,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-02-07,2025-01-13,2025-06-12,2026-02-20
-Kettle Preserve,KP00000007,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-01-05,2025-11-26,2026-04-16,2026-04-21
-Kettle Preserve,KP00000008,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-04-29,2025-04-28,2025-09-19,2026-01-09
-Kettle Preserve,KP00000009,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-08-20,2025-08-12,2026-01-28,2026-05-01
-Kettle Preserve,KP00000010,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-03-18,2026-03-24,2026-08-07,2026-08-12
-Kettle Preserve,KP00000011,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-04-22,2026-06-03,2026-10-01,2026-10-06
-Kettle Preserve,KP00000012,SF,Kettle Preserve ph. 1,real,D,2024-04-01,2024-10-01,,,2026-06-01,2026-12-04,2027-02-07
-Kettle Preserve,KP00000013,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-02-24,2026-02-16,2026-07-14,2026-07-17
-Kettle Preserve,KP00000014,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-10-21,2025-10-15,2026-03-30,2026-04-03
-Kettle Preserve,KP00000015,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-04-29,2025-04-30,2025-09-26,2025-11-07
-Kettle Preserve,KP00000016,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-01-05,2025-12-16,2026-06-09,2026-06-12
-Kettle Preserve,KP00000017,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-04-07,2026-04-20,2026-09-04,2026-09-10
-Kettle Preserve,KP00000018,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-11-12,2025-11-07,2026-04-09,2026-04-14
-Kettle Preserve,KP00000019,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-07-25,2025-07-14,2026-01-19,2026-05-01
-Kettle Preserve,KP00000020,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-05-07,2026-05-05,2026-09-03,2026-09-09
-Kettle Preserve,KP00000021,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-01-26,2026-01-13,2026-06-18,2026-06-23
-Kettle Preserve,KP00000022,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-02-23,2026-02-26,2026-07-10,2026-07-15
-Kettle Preserve,KP00000023,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-01-28,2026-02-13,2026-07-14,2026-07-17
-Kettle Preserve,KP00000024,SF,Kettle Preserve ph. 1,real,D,2024-04-01,2024-10-01,,,2026-07-01,2026-12-12,2027-02-04
-Kettle Preserve,KP00000025,SF,Kettle Preserve ph. 1,real,D,2024-04-01,2024-10-01,,,2026-08-01,2026-12-16,2027-01-24
-Kettle Preserve,KP00000026,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2026-04-15,2026-04-16,2026-08-17,2026-08-20
-Kettle Preserve,KP00000027,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-06-17,2025-06-09,2025-10-27,2026-03-05
-Kettle Preserve,KP00000028,SF,Kettle Preserve ph. 1,real,OUT,2024-04-01,2024-10-01,,2025-03-20,2025-04-01,2025-08-18,2026-02-26
-Kettle Preserve,KP00000029,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2026-09-01,2027-01-23,2027-03-31
-Kettle Preserve,KP00000030,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2026-10-01,2027-03-24,2027-04-08
-Kettle Preserve,KP00000031,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2026-11-01,2027-05-08,2027-05-25
-Kettle Preserve,KP00000032,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2026-12-01,2027-04-17,2027-04-29
-Kettle Preserve,KP00000033,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-01-01,2027-05-28,2027-08-13
-Kettle Preserve,KP00000034,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-02-01,2027-07-09,2027-07-12
-Kettle Preserve,KP00000035,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-03-01,2027-09-13,2027-09-21
-Kettle Preserve,KP00000036,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-04-01,2027-09-11,2027-09-19
-Kettle Preserve,KP00000037,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-05-01,2027-10-27,2027-10-28
-Kettle Preserve,KP00000038,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-06-01,2027-11-13,2028-01-02
-Kettle Preserve,KP00000039,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-07-01,2027-12-19,2028-01-19
-Kettle Preserve,KP00000040,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-08-01,2028-01-22,2028-02-03
-Kettle Preserve,KP00000041,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-09-01,2028-03-09,2028-04-08
-Kettle Preserve,KP00000042,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-10-01,2028-03-28,2028-04-09
-Kettle Preserve,KP00000043,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-11-01,2028-05-16,2028-06-29
-Kettle Preserve,KP00000044,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2027-12-01,2028-06-14,2028-07-05
-Kettle Preserve,KP00000045,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2028-01-01,2028-07-06,2028-07-20
-Kettle Preserve,KP00000046,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2028-02-01,2028-07-12,2028-09-12
-Kettle Preserve,KP00000047,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2028-03-01,2028-08-14,2028-10-12
-Kettle Preserve,KP00000048,SF,Kettle Preserve ph. 2,real,E,2024-04-01,,,,2028-04-01,2028-10-15,2029-01-03
-Kettle Preserve,KP00000049,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2028-05-01,2028-10-20,2028-10-29
-Kettle Preserve,KP00000050,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2028-06-01,2028-11-11,2029-01-23
-Kettle Preserve,KP00000051,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2028-07-01,2028-12-16,2029-01-14
-Kettle Preserve,KP00000052,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2028-08-01,2029-01-06,2029-03-02
-Kettle Preserve,KP00000053,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2028-09-01,2029-03-27,2029-04-04
-Kettle Preserve,KP00000054,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2028-10-01,2029-03-21,2029-07-19
-Kettle Preserve,KP00000055,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2028-11-01,2029-04-15,2029-08-25
-Kettle Preserve,KP00000056,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2028-12-01,2029-04-25,2029-05-12
-Kettle Preserve,KP00000057,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2029-01-01,2029-07-20,2029-11-28
-Kettle Preserve,KP00000058,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2029-02-01,2029-07-12,2029-07-20
-Kettle Preserve,KP00000059,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2029-03-01,2029-08-11,2029-11-07
-Kettle Preserve,KP00000060,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2029-04-01,2029-09-08,2029-11-12
-Kettle Preserve,KP00000061,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2029-05-01,2029-10-26,2030-01-17
-Kettle Preserve,KP00000062,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2029-06-01,2029-11-04,2029-11-27
-Kettle Preserve,KP00000063,SF,Kettle Preserve ph. 3,real,E,2024-04-01,,,,2029-07-01,2029-11-17,2029-11-21
+Waterton Condos (Pointe),WT00000001,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-28,2022-12-13,2023-05-22,2024-03-11
+Waterton Condos (Pointe),WT00000002,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-28,2022-12-13,2023-06-14,2024-05-01
+Waterton Condos (Pointe),WT00000003,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-07-31,2022-12-13,2023-06-14,2024-10-11
+Waterton Condos (Pointe),WT00000004,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-09,2023-08-08,2024-03-08,2024-09-06
+Waterton Condos (Pointe),WT00000005,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-09,2023-08-08,2024-02-23,2024-09-03
+Waterton Condos (Pointe),WT00000006,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-09,2023-08-08,2024-02-23,2024-07-30
+Waterton Condos (Pointe),WT00000007,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-12-19,2024-01-30,2024-08-09,2024-10-08
+Waterton Condos (Pointe),WT00000008,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-12-19,2024-01-30,2024-07-31,2024-11-27
+Waterton Condos (Pointe),WT00000009,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-12-19,2024-01-30,2024-07-31,2025-02-21
+Waterton Condos (Pointe),WT00000010,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-05-20,2024-05-02,2024-10-17,2025-04-01
+Waterton Condos (Pointe),WT00000011,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-05-20,2024-05-02,2024-10-01,2024-10-31
+Waterton Condos (Pointe),WT00000012,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-07-31,2023-04-20,2023-10-09,2024-06-14
+Waterton Condos (Pointe),WT00000013,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-07-31,2023-04-20,2023-09-29,2024-06-18
+Waterton Condos (Pointe),WT00000014,CD,Waterton Pointe ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-07-31,2023-04-20,2023-10-09,2024-03-11
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-09-01,2027-09-01,2028-02-12,2028-06-02
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2026-12-01,2026-12-01,2027-05-17,2027-05-22
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-11-01,2027-11-01,2028-05-05,2028-10-24
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-03-01,2027-03-01,2027-09-05,2027-10-12
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-01-01,2027-01-01,2027-07-03,2027-09-14
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-03-01,2027-03-01,2027-09-05,2027-12-06
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-07-01,2027-07-01,2027-12-24,2028-03-31
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-01-01,2027-01-01,2027-07-03,2027-08-15
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-01-01,2028-01-01,2028-06-21,2028-09-16
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-01-01,2028-01-01,2028-06-21,2028-10-13
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-01-01,2028-01-01,2028-06-21,2028-09-07
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-09-01,2027-09-01,2028-02-12,2028-03-13
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2026-11-01,2026-11-01,2027-04-20,2027-12-12
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-07-01,2027-07-01,2027-12-24,2028-05-18
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-11-01,2027-11-01,2028-05-05,2028-07-05
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-05-01,2027-05-01,2027-11-06,2028-05-28
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-05-01,2027-05-01,2027-11-06,2027-12-20
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-08-01,2028-08-01,2028-12-27,2029-09-24
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-04-01,2029-04-01,2029-09-30,2029-10-20
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-12-01,2028-12-01,2029-06-08,2029-07-20
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-12-01,2029-12-01,2030-05-22,2030-08-08
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-04-01,2028-04-01,2028-09-23,2028-09-24
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-12-01,2029-12-01,2030-05-22,2030-07-25
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-02-01,2029-02-01,2029-06-20,2029-07-26
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-10-01,2028-10-01,2029-02-23,2029-02-24
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-06-01,2028-06-01,2028-12-11,2029-03-15
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-10-01,2028-10-01,2029-02-23,2029-03-14
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-06-01,2028-06-01,2028-12-11,2029-01-16
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-08-01,2029-08-01,2030-01-02,2030-07-02
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-08-01,2028-08-01,2028-12-27,2029-03-06
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-06-01,2029-06-01,2029-10-16,2030-04-20
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-10-01,2029-10-01,2030-02-21,2030-08-07
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-06-01,2029-06-01,2029-10-16,2030-02-08
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-08-01,2029-08-01,2030-01-02,2030-01-09
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-12-01,2028-12-01,2029-06-08,2029-09-20
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-04-01,2029-04-01,2029-09-30,2029-10-01
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-02-01,2029-02-01,2029-06-20,2029-07-15
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-10-01,2029-10-01,2030-02-21,2030-07-02
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-05-01,2028-05-01,2028-10-06,2028-12-05
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-07-01,2030-07-01,2030-12-04,2031-07-09
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-04-01,2031-04-01,2031-08-24,2031-11-12
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-02-01,2030-02-01,2030-07-16,2031-04-11
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-08-01,2030-08-01,2031-01-05,2031-09-25
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-12-01,2030-12-01,2031-05-20,2031-08-05
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-03-01,2030-03-01,2030-08-03,2030-09-08
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-04-01,2030-04-01,2030-08-25,2030-11-10
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-10-01,2030-10-01,2031-03-03,2031-05-11
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-02-01,2031-02-01,2031-08-04,2031-08-23
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-02-01,2031-02-01,2031-08-04,2031-08-29
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-04-01,2031-04-01,2031-08-24,2032-01-02
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-09-01,2030-09-01,2031-01-25,2031-04-12
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-12-01,2030-12-01,2031-05-20,2031-09-10
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-05-01,2030-05-01,2030-10-13,2031-03-13
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-06-01,2030-06-01,2030-12-04,2031-07-17
+Waterton Condos (Pointe),,CD,Waterton Pointe ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-11-01,2030-11-01,2031-03-21,2031-05-29
+Waterton Condos (Village),WV00000001,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2025-01-16,2024-12-26,2025-05-15,2025-05-29
+Waterton Condos (Village),WV00000002,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2025-01-16,2024-12-26,2025-05-20,2025-05-30
+Waterton Condos (Village),WV00000003,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-12-11,2023-12-05,2024-05-29,2024-09-10
+Waterton Condos (Village),WV00000004,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-12-11,2023-12-05,2024-05-31,2024-06-14
+Waterton Condos (Village),WV00000005,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-15,2023-05-23,2023-10-06,2024-01-03
+Waterton Condos (Village),WV00000006,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-15,2023-05-24,2023-10-10,2024-01-31
+Waterton Condos (Village),WV00000007,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-15,2023-08-04,2024-01-04,2024-07-11
+Waterton Condos (Village),WV00000008,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-15,2023-08-04,2024-01-04,2024-02-16
+Waterton Condos (Village),WV00000009,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-05-07,2024-04-11,2024-09-12,2024-12-13
+Waterton Condos (Village),WV00000010,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-05-07,2024-04-11,2024-09-06,2024-11-15
+Waterton Condos (Village),WV00000011,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-05-07,2024-04-11,2024-09-13,2025-01-03
+Waterton Condos (Village),WV00000012,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-02-07,2024-02-01,2024-07-29,2024-07-31
+Waterton Condos (Village),WV00000013,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-02-07,2024-02-01,2024-07-30,2024-11-05
+Waterton Condos (Village),WV00000014,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-02-07,2024-02-01,2024-08-08,2025-01-09
+Waterton Condos (Village),WV00000015,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2025-04-16,2025-04-15,2025-09-04,2025-10-02
+Waterton Condos (Village),WV00000016,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2025-04-16,2025-04-15,2025-08-25,2025-08-29
+Waterton Condos (Village),WV00000017,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2025-02-26,2025-02-25,2025-07-18,2025-10-10
+Waterton Condos (Village),WV00000018,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2025-02-26,2025-02-25,2025-07-17,2025-07-28
+Waterton Condos (Village),WV00000019,CD,Waterton Village ph. 1,real,OUT,2020-09-01,2022-05-30,,2025-02-26,2025-02-25,2025-07-17,2025-07-29
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-04-01,2027-04-01,2027-09-29,2027-10-06
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-10-01,2027-10-01,2028-02-23,2028-10-22
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-04-01,2027-04-01,2027-09-29,2028-01-05
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-01-01,2028-01-01,2028-07-11,2028-08-15
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-07-01,2027-07-01,2028-01-06,2028-07-09
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-04-01,2027-04-01,2027-09-29,2028-05-17
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-01-01,2028-01-01,2028-07-11,2028-09-25
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-04-01,2028-04-01,2028-09-28,2028-12-30
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-01-01,2027-01-01,2027-05-19,2027-06-18
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-07-01,2027-07-01,2028-01-06,2028-01-14
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2026-11-01,2026-11-01,2027-04-12,2028-01-07
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-07-01,2027-07-01,2028-01-06,2028-02-06
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-04-01,2028-04-01,2028-09-28,2028-11-12
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-04-01,2028-04-01,2028-09-28,2028-12-02
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-01-01,2027-01-01,2027-05-19,2027-11-24
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-10-01,2027-10-01,2028-02-23,2028-04-20
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-01-01,2027-01-01,2027-05-19,2028-02-25
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-10-01,2027-10-01,2028-02-23,2028-11-19
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-01-01,2028-01-01,2028-07-11,2028-07-17
+Waterton Condos (Village),,CD,Waterton Village ph. 2,sim,OUT,2020-09-01,2026-10-15,,2026-11-01,2026-11-01,2027-04-12,2027-10-25
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-11-01,2029-11-01,2030-03-25,2030-03-26
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-07-01,2028-07-01,2029-01-13,2029-01-31
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-07-01,2028-07-01,2029-01-13,2029-08-16
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2030-02-01,2030-02-01,2030-07-08,2030-10-02
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-01-01,2029-01-01,2029-06-28,2029-11-11
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-08-01,2029-08-01,2029-12-29,2030-10-22
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-11-01,2028-11-01,2029-05-14,2030-01-21
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-05-01,2029-05-01,2029-10-15,2030-01-12
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-09-01,2028-09-01,2029-03-05,2029-04-07
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-05-01,2029-05-01,2029-10-15,2030-07-25
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-03-01,2029-03-01,2029-07-21,2029-10-29
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-11-01,2028-11-01,2029-05-14,2029-09-09
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-05-01,2029-05-01,2029-10-15,2029-12-24
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2030-02-01,2030-02-01,2030-07-08,2030-07-26
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-03-01,2029-03-01,2029-07-21,2030-05-25
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2030-05-01,2030-05-01,2030-11-08,2030-11-27
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-08-01,2029-08-01,2029-12-29,2030-01-14
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-11-01,2029-11-01,2030-03-25,2030-12-21
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-01-01,2029-01-01,2029-06-28,2029-08-17
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2030-02-01,2030-02-01,2030-07-08,2030-08-06
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-08-01,2029-08-01,2029-12-29,2030-10-02
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2030-05-01,2030-05-01,2030-11-08,2031-04-25
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2030-05-01,2030-05-01,2030-11-08,2031-02-10
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2029-11-01,2029-11-01,2030-03-25,2030-05-13
+Waterton Condos (Village),,CD,Waterton Village ph. 3,sim,OUT,2020-09-01,2027-10-01,,2028-09-01,2028-09-01,2029-03-05,2029-05-12
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-10-01,2031-10-01,2032-04-14,2032-11-06
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2032-01-01,2032-01-01,2032-06-27,2032-08-07
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2032-04-01,2032-04-01,2032-08-18,2032-11-30
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-07-01,2031-07-01,2031-11-17,2032-01-30
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-07-01,2031-07-01,2031-11-17,2032-02-13
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-10-01,2030-10-01,2031-04-03,2032-01-12
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-12-01,2030-12-01,2031-04-30,2032-03-01
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2032-04-01,2032-04-01,2032-08-18,2032-12-01
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2032-01-01,2032-01-01,2032-06-27,2032-08-24
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-02-01,2031-02-01,2031-07-30,2031-08-10
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-07-01,2031-07-01,2031-11-17,2031-12-06
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-04-01,2031-04-01,2031-09-30,2031-11-18
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-10-01,2030-10-01,2031-04-03,2031-07-20
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-04-01,2031-04-01,2031-09-30,2031-12-29
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-08-01,2030-08-01,2030-12-26,2031-05-31
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-04-01,2031-04-01,2031-09-30,2031-11-23
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-08-01,2030-08-01,2030-12-26,2030-12-27
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2030-12-01,2030-12-01,2031-04-30,2032-02-05
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-10-01,2031-10-01,2032-04-14,2032-07-07
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-10-01,2031-10-01,2032-04-14,2033-01-29
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2031-02-01,2031-02-01,2031-07-30,2031-09-27
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2032-01-01,2032-01-01,2032-06-27,2033-04-18
+Waterton Condos (Village),,CD,Waterton Village ph. 4,sim,OUT,2020-09-01,2029-07-01,,2032-04-01,2032-04-01,2032-08-18,2033-06-19
+Waterton Station (SF),WS00000001,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-13,2022-10-31,2023-04-28,2023-06-16
+Waterton Station (SF),WS00000002,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-26,2022-11-16,2023-05-17,2023-08-23
+Waterton Station (SF),WS00000003,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-26,2023-05-23,2023-10-26,2024-04-18
+Waterton Station (SF),WS00000004,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-07-18,2023-06-16,2023-11-30,2024-02-01
+Waterton Station (SF),WS00000005,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-06,2022-10-31,2023-05-08,2023-06-14
+Waterton Station (SF),WS00000006,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-11-14,2023-11-07,2024-05-24,2024-05-31
+Waterton Station (SF),WS00000007,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-26,2023-04-17,2023-09-28,2023-09-29
+Waterton Station (SF),WS00000008,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-13,2023-01-24,2023-07-25,2023-07-26
+Waterton Station (SF),WS00000009,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-10-27,2023-10-20,2024-03-29,2024-05-15
+Waterton Station (SF),WS00000010,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-07-18,2023-07-14,2023-12-04,2023-12-21
+Waterton Station (SF),WS00000011,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-29,2023-08-03,2024-01-05,2024-05-06
+Waterton Station (SF),WS00000012,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-01-26,2024-01-24,2024-06-10,2024-06-28
+Waterton Station (SF),WS00000013,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2024-02-28,2024-02-12,2024-07-11,2024-07-17
+Waterton Station (SF),WS00000014,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-04,2023-06-15,2023-11-22,2023-11-28
+Waterton Station (SF),WS00000015,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-10-27,2023-11-02,2024-04-12,2024-07-26
+Waterton Station (SF),WS00000016,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-09-11,2023-08-22,2024-02-22,2024-06-26
+Waterton Station (SF),WS00000017,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-11-15,2023-11-15,2024-05-31,2024-09-06
+Waterton Station (SF),WS00000018,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-30,2023-08-01,2023-12-22,2024-01-16
+Waterton Station (SF),WS00000019,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-12-05,2023-12-06,2024-06-06,2024-06-18
+Waterton Station (SF),WS00000020,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-07-18,2023-06-14,2023-12-12,2024-01-23
+Waterton Station (SF),WS00000021,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-07-24,2023-07-20,2023-12-08,2024-03-14
+Waterton Station (SF),WS00000022,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-30,2023-08-23,2024-02-09,2024-02-16
+Waterton Station (SF),WS00000023,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-08-04,2023-06-12,2023-11-09,2023-11-17
+Waterton Station (SF),WS00000024,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-26,2023-03-21,2023-08-17,2023-10-26
+Waterton Station (SF),WS00000025,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-13,2023-01-09,2023-07-26,2023-07-28
+Waterton Station (SF),WS00000026,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-07-18,2023-05-02,2023-09-20,2023-09-29
+Waterton Station (SF),WS00000027,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-06,2022-11-17,2023-05-23,2023-06-16
+Waterton Station (SF),WS00000028,SF,Waterton Station SF ph. 1,real,OUT,2020-09-01,2022-05-30,,2023-06-06,2022-10-28,2023-05-15,2023-06-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2026-11-01,2026-11-01,2027-04-20,2027-04-24
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-01-01,2027-01-01,2027-06-01,2027-08-13
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-02-01,2027-02-01,2027-07-18,2027-07-29
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2026-12-01,2026-12-01,2027-05-07,2027-06-21
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-07-01,2027-07-01,2027-12-18,2028-01-26
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-04-01,2027-04-01,2027-08-20,2027-09-17
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-06-01,2027-06-01,2027-10-24,2027-12-30
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2026-12-01,2026-12-01,2027-06-12,2027-09-30
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-03-01,2027-03-01,2027-07-18,2027-07-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-05-01,2027-05-01,2027-10-08,2027-11-15
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-07-01,2027-07-01,2027-11-27,2028-02-06
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-04-01,2027-04-01,2027-09-27,2027-09-28
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2026-11-01,2026-11-01,2027-04-14,2027-07-13
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-08-01,2027-08-01,2028-01-15,2028-01-19
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-03-01,2027-03-01,2027-07-24,2027-09-16
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-06-01,2027-06-01,2027-10-24,2027-11-12
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 1,sim,OUT,2020-09-01,2026-10-15,,2027-05-01,2027-05-01,2027-10-10,2027-11-06
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-06-01,2028-06-01,2028-10-25,2028-11-06
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-09-01,2027-09-01,2028-03-21,2028-03-29
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-05-01,2028-05-01,2028-10-22,2028-11-03
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-07-01,2028-07-01,2028-12-15,2028-12-16
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-02-01,2028-02-01,2028-06-17,2028-08-31
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-03-01,2028-03-01,2028-07-16,2028-07-17
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-08-01,2027-08-01,2028-01-04,2028-03-24
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-03-01,2028-03-01,2028-08-24,2028-10-19
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-06-01,2028-06-01,2028-12-24,2029-01-24
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-12-01,2027-12-01,2028-05-25,2028-07-24
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-11-01,2027-11-01,2028-03-30,2028-04-20
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-10-01,2027-10-01,2028-02-23,2028-03-10
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-07-01,2028-07-01,2028-11-21,2028-12-29
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-04-01,2028-04-01,2028-10-01,2029-01-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-10-01,2028-10-01,2029-04-13,2029-07-31
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-07-01,2029-07-01,2029-12-19,2030-01-12
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-06-01,2029-06-01,2029-10-17,2029-10-29
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-09-01,2029-09-01,2030-03-06,2030-03-31
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-01-01,2029-01-01,2029-07-03,2029-07-08
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-09-01,2028-09-01,2029-03-03,2029-03-06
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-08-01,2029-08-01,2030-02-03,2030-02-22
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-09-01,2028-09-01,2029-02-08,2029-03-04
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-03-01,2029-03-01,2029-08-20,2029-09-16
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-09-01,2029-09-01,2030-02-11,2030-02-14
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-08-01,2029-08-01,2030-02-22,2030-05-02
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-08-01,2028-08-01,2029-01-10,2029-03-14
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-03-01,2029-03-01,2029-07-29,2029-07-30
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-04-01,2029-04-01,2029-10-05,2030-01-17
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-10-01,2028-10-01,2029-03-16,2029-03-29
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-08-01,2028-08-01,2029-02-08,2029-02-12
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-05-01,2029-05-01,2029-09-20,2029-12-15
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-04-01,2029-04-01,2029-10-14,2029-11-04
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-12-01,2028-12-01,2029-06-21,2029-07-31
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-06-01,2029-06-01,2029-10-27,2030-02-14
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-02-01,2029-02-01,2029-08-02,2029-09-22
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-12-01,2028-12-01,2029-06-14,2029-07-22
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-11-01,2028-11-01,2029-04-02,2029-05-13
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-07-01,2029-07-01,2029-12-01,2029-12-17
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2029-05-01,2029-05-01,2029-10-27,2030-02-18
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 2,sim,OUT,2020-09-01,2028-05-01,,2028-11-01,2028-11-01,2029-04-15,2029-06-11
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-05-01,2028-05-01,2028-09-15,2028-09-21
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-10-01,2027-10-01,2028-04-17,2028-06-12
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-12-01,2027-12-01,2028-05-24,2028-07-16
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-04-01,2028-04-01,2028-10-10,2028-11-09
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-09-01,2027-09-01,2028-03-26,2028-08-08
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2028-01-01,2028-01-01,2028-07-15,2028-10-16
+Waterton Station (SF),,SF,Waterton Station SF ph. 2,sim,OUT,2020-09-01,2026-10-15,,2027-11-01,2027-11-01,2028-05-12,2028-06-18
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-06-01,2030-06-01,2030-12-14,2031-03-25
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2029-12-01,2029-12-01,2030-06-05,2030-06-25
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-03-01,2030-03-01,2030-07-29,2030-09-12
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-06-01,2030-06-01,2030-12-04,2031-02-19
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2029-12-01,2029-12-01,2030-05-16,2030-06-05
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-04-01,2030-04-01,2030-09-16,2030-09-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-07-01,2030-07-01,2030-12-02,2031-03-08
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-11-01,2030-11-01,2031-03-21,2031-07-22
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-10-01,2030-10-01,2031-03-09,2031-03-13
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-08-01,2030-08-01,2030-12-24,2031-04-13
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-08-01,2030-08-01,2030-12-17,2031-02-20
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-05-01,2030-05-01,2030-09-15,2030-09-27
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-10-01,2030-10-01,2031-02-20,2031-03-19
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2029-10-01,2029-10-01,2030-02-23,2030-03-21
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-02-01,2030-02-01,2030-08-12,2030-09-11
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-09-01,2030-09-01,2031-02-23,2031-03-05
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-09-01,2030-09-01,2031-02-26,2031-05-21
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2029-11-01,2029-11-01,2030-03-24,2030-04-21
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-07-01,2030-07-01,2030-11-18,2030-11-25
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-01-01,2030-01-01,2030-05-22,2030-07-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-03-01,2030-03-01,2030-09-02,2030-10-17
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-04-01,2030-04-01,2030-09-22,2030-09-29
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-11-01,2030-11-01,2031-03-23,2031-04-26
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2030-05-01,2030-05-01,2030-11-03,2031-02-24
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2029-11-01,2029-11-01,2030-04-17,2030-05-04
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 3,sim,OUT,2020-09-01,2029-07-01,,2029-10-01,2029-10-01,2030-03-24,2030-04-22
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-07-01,2031-07-01,2031-12-26,2032-01-15
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-12-01,2031-12-01,2032-05-10,2032-07-05
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-11-01,2031-11-01,2032-04-10,2032-05-10
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-04-01,2031-04-01,2031-09-08,2031-09-10
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-07-01,2031-07-01,2031-11-17,2032-01-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2032-01-01,2032-01-01,2032-06-18,2032-06-28
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-09-01,2031-09-01,2032-02-03,2032-06-19
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-10-01,2031-10-01,2032-04-08,2032-04-24
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-12-01,2031-12-01,2032-05-12,2032-08-09
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-10-01,2031-10-01,2032-04-20,2032-07-12
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-01-01,2031-01-01,2031-06-20,2031-06-25
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-02-01,2031-02-01,2031-07-06,2031-08-25
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-11-01,2031-11-01,2032-04-19,2032-04-26
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2030-12-01,2030-12-01,2031-06-01,2031-08-03
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-06-01,2031-06-01,2031-12-04,2032-01-07
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2030-12-01,2030-12-01,2031-05-10,2031-06-28
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-03-01,2031-03-01,2031-07-21,2031-10-30
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-08-01,2031-08-01,2032-02-03,2032-03-31
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-05-01,2031-05-01,2031-10-22,2031-11-10
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-03-01,2031-03-01,2031-07-20,2031-09-10
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-06-01,2031-06-01,2031-11-16,2031-12-06
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-05-01,2031-05-01,2031-10-12,2031-12-20
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2032-02-01,2032-02-01,2032-08-25,2032-08-26
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-09-01,2031-09-01,2032-02-12,2032-03-12
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-04-01,2031-04-01,2031-09-23,2031-10-18
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 4,sim,OUT,2020-09-01,2030-09-01,,2031-08-01,2031-08-01,2032-01-13,2032-03-07
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-10-01,2032-10-01,2033-03-05,2033-04-05
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-08-01,2032-08-01,2033-01-18,2033-01-24
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-11-01,2032-11-01,2033-04-23,2033-06-18
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2033-01-01,2033-01-01,2033-06-25,2033-07-15
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-04-01,2032-04-01,2032-08-16,2032-09-27
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-10-01,2032-10-01,2033-04-04,2033-04-30
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-08-01,2032-08-01,2033-01-05,2033-01-09
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-12-01,2032-12-01,2033-04-27,2033-06-17
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-09-01,2032-09-01,2033-02-16,2033-05-15
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-05-01,2032-05-01,2032-10-29,2033-01-05
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-03-01,2032-03-01,2032-08-27,2032-08-29
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-03-01,2032-03-01,2032-08-17,2032-12-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-06-01,2032-06-01,2032-12-12,2033-02-10
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-05-01,2032-05-01,2032-10-22,2032-11-14
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2033-03-01,2033-03-01,2033-08-12,2033-08-30
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2033-03-01,2033-03-01,2033-09-21,2033-10-06
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2033-04-01,2033-04-01,2033-10-02,2033-10-04
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-06-01,2032-06-01,2032-12-17,2033-01-05
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-07-01,2032-07-01,2032-12-21,2033-02-05
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2033-02-01,2033-02-01,2033-07-30,2033-08-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-09-01,2032-09-01,2033-02-26,2033-03-29
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-12-01,2032-12-01,2033-05-28,2033-06-06
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-07-01,2032-07-01,2032-11-28,2033-01-21
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-11-01,2032-11-01,2033-05-15,2033-06-04
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2033-04-01,2033-04-01,2033-10-05,2034-01-19
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 5,sim,OUT,2020-09-01,2031-11-01,,2032-04-01,2032-04-01,2032-10-10,2032-11-14
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-07-01,2033-07-01,2033-12-22,2034-01-17
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-05-01,2033-05-01,2033-11-23,2033-12-02
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2034-03-01,2034-03-01,2034-08-19,2034-12-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-09-01,2033-09-01,2034-02-02,2034-03-06
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2034-04-01,2034-04-01,2034-09-21,2034-10-13
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-10-01,2033-10-01,2034-02-19,2034-04-06
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2034-05-01,2034-05-01,2034-11-04,2034-11-06
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-06-01,2033-06-01,2033-11-28,2034-03-06
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-08-01,2033-08-01,2034-01-19,2034-03-17
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2034-01-01,2034-01-01,2034-07-17,2034-07-23
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-05-01,2033-05-01,2033-09-29,2034-01-22
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2034-04-01,2034-04-01,2034-09-17,2034-12-07
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-08-01,2033-08-01,2034-01-14,2034-03-15
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-06-01,2033-06-01,2033-12-02,2033-12-14
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-11-01,2033-11-01,2034-05-09,2034-08-15
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-10-01,2033-10-01,2034-03-30,2034-06-01
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2034-02-01,2034-02-01,2034-08-06,2034-08-18
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-12-01,2033-12-01,2034-06-01,2034-06-07
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-11-01,2033-11-01,2034-04-29,2034-08-22
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2034-03-01,2034-03-01,2034-07-30,2034-08-20
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-09-01,2033-09-01,2034-01-28,2034-05-13
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-07-01,2033-07-01,2033-12-19,2034-01-17
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2033-12-01,2033-12-01,2034-06-05,2034-10-17
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2034-05-01,2034-05-01,2034-10-31,2034-12-21
+Waterton Station (SF),,SF,Waterton Station Site Condo ph. 6,sim,OUT,2020-09-01,2032-11-01,,2034-06-01,2034-06-01,2034-12-26,2035-03-20
