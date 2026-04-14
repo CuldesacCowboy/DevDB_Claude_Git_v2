@@ -22,10 +22,9 @@ def _get_phase_dev(cur, phase_id: int) -> dict:
     """Return {dev_id, dev_code} for a phase, or raise 404."""
     cur.execute(
         """
-        SELECT sdp.dev_id, dd.dev_code2 AS dev_code
+        SELECT sdp.dev_id, d.marks_code AS dev_code
         FROM sim_dev_phases sdp
-        JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
-        JOIN dim_development dd ON dd.development_id = sdp.dev_id
+        JOIN developments d ON d.dev_id = sdp.dev_id
         WHERE sdp.phase_id = %s
         """,
         (phase_id,),

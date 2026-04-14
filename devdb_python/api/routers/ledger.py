@@ -51,8 +51,7 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
                 END AS utilization_pct
             FROM sim_dev_phases sdp
             JOIN sim_ent_group_developments segd ON sdp.dev_id = segd.dev_id
-            JOIN dim_development dd ON dd.development_id = sdp.dev_id
-            JOIN developments d ON d.marks_code = dd.dev_code2
+            JOIN developments d ON d.dev_id = sdp.dev_id
             JOIN sim_legal_instruments sli ON sdp.instrument_id = sli.instrument_id
             LEFT JOIN phase_splits ps ON ps.phase_id = sdp.phase_id
             LEFT JOIN sim_lots sl ON sl.phase_id = sdp.phase_id AND sl.excluded IS NOT TRUE
@@ -133,8 +132,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 o.ov_date_cls
             FROM sim_lots sl
             JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
-            JOIN dim_development dd ON dd.development_id = sl.dev_id
-            JOIN developments d ON d.marks_code = dd.dev_code2
+            JOIN developments d ON d.dev_id = sl.dev_id
             LEFT JOIN ref_lot_types rlt ON rlt.lot_type_id = sl.lot_type_id
             LEFT JOIN overrides o ON o.lot_id = sl.lot_id
             WHERE sl.dev_id IN (
@@ -208,8 +206,7 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
                 FROM sim_delivery_events sde
                 JOIN sim_delivery_event_phases dep ON dep.delivery_event_id = sde.delivery_event_id
                 JOIN sim_dev_phases sdp            ON sdp.phase_id = dep.phase_id
-                JOIN dim_development dd            ON dd.development_id = sdp.dev_id
-                JOIN developments d               ON d.marks_code = dd.dev_code2
+                JOIN developments d               ON d.dev_id = sdp.dev_id
                 WHERE sde.ent_group_id = %s
             ),
             phase_units AS (

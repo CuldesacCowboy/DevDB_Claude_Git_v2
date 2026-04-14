@@ -215,14 +215,14 @@ async def get_lots_for_lot_type(
         cur.execute(
             """
             SELECT sl.lot_id, sl.lot_number, sl.lot_source, sl.excluded,
-                dd.dev_code2 AS dev_code,
+                d.marks_code AS dev_code,
                 EXISTS (
                     SELECT 1 FROM devdb.marks_lot_registry mlr
                     WHERE mlr.lot_number = sl.lot_number
                 ) AS in_registry
             FROM sim_lots sl
             JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
-            JOIN dim_development dd ON dd.development_id = sdp.dev_id
+            JOIN developments d ON d.dev_id = sdp.dev_id
             WHERE sl.phase_id = %s AND sl.lot_type_id = %s
             ORDER BY
                 sl.excluded,

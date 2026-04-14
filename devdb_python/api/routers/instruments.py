@@ -45,11 +45,8 @@ def list_instruments(conn=Depends(get_db_conn)):
     try:
         cur.execute("""
             SELECT sli.instrument_id, sli.instrument_name, sli.instrument_type,
-                   sli.dev_id AS legacy_dev_id,
-                   d.dev_id   AS modern_dev_id
+                   sli.dev_id
             FROM sim_legal_instruments sli
-            JOIN dim_development dd ON dd.development_id = sli.dev_id
-            JOIN developments d    ON d.marks_code = dd.dev_code2
             ORDER BY sli.instrument_name
         """)
         return [dict(r) for r in cur.fetchall()]
@@ -71,32 +68,19 @@ def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
 
     cur = dict_cursor(conn)
     try:
-        # Resolve modern developments.dev_id → legacy dim_development.development_id.
-        # create_development always ensures a dim_development row exists (real or synthetic code).
-        cur.execute(
-            """
-            SELECT dd.development_id AS legacy_dev_id
-            FROM developments d
-            JOIN dim_development dd ON dd.dev_code2 = d.marks_code
-            WHERE d.dev_id = %s
-            """,
-            (body.dev_id,),
-        )
-        row = cur.fetchone()
-        if row is None:
+        cur.execute("SELECT dev_id FROM developments WHERE dev_id = %s", (body.dev_id,))
+        if cur.fetchone() is None:
             raise HTTPException(
                 status_code=422,
-                detail=f"Development {body.dev_id} has no dim_development bridge row. "
-                       f"Re-save the development to auto-create one.",
+                detail=f"Development {body.dev_id} not found.",
             )
-        legacy_dev_id = int(row["legacy_dev_id"])
 
         cur.execute(
             """
             INSERT INTO sim_legal_instruments (instrument_name, instrument_type, dev_id)
             VALUES (%s, %s, %s) RETURNING instrument_id
             """,
-            (name, body.instrument_type, legacy_dev_id),
+            (name, body.instrument_type, body.dev_id),
         )
         new_id = int(cur.fetchone()["instrument_id"])
         conn.commit()
@@ -104,7 +88,7 @@ def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
             "instrument_id": new_id,
             "instrument_name": name,
             "instrument_type": body.instrument_type,
-            "dev_id": legacy_dev_id,
+            "dev_id": body.dev_id,
         }
     except Exception:
         conn.rollback()

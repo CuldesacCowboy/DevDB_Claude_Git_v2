@@ -315,8 +315,7 @@ def list_overrides(
             FROM devdb.sim_lot_date_overrides o
             JOIN devdb.sim_lots sl ON sl.lot_id = o.lot_id
             LEFT JOIN devdb.sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
-            LEFT JOIN devdb.dim_development dd ON dd.development_id = sl.dev_id
-            LEFT JOIN devdb.developments d ON d.marks_code = dd.dev_code2
+            LEFT JOIN devdb.developments d ON d.dev_id = sl.dev_id
             {where_sql}
             ORDER BY d.dev_name, sl.lot_number, o.date_field
         """, params)
@@ -392,8 +391,7 @@ def reconciliation(
             FROM devdb.sim_lot_date_overrides o
             JOIN devdb.sim_lots sl ON sl.lot_id = o.lot_id
             LEFT JOIN devdb.sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
-            LEFT JOIN devdb.dim_development dd ON dd.development_id = sl.dev_id
-            LEFT JOIN devdb.developments d ON d.marks_code = dd.dev_code2
+            LEFT JOIN devdb.developments d ON d.dev_id = sl.dev_id
             WHERE sl.dev_id IN (
                 SELECT dev_id FROM devdb.sim_ent_group_developments
                 WHERE ent_group_id = %s
@@ -472,8 +470,7 @@ def export_overrides(ent_group_id: int = Query(...), conn=Depends(get_db_conn)):
             FROM devdb.sim_lot_date_overrides o
             JOIN devdb.sim_lots sl ON sl.lot_id = o.lot_id
             LEFT JOIN devdb.sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
-            LEFT JOIN devdb.dim_development dd ON dd.development_id = sl.dev_id
-            LEFT JOIN devdb.developments d ON d.marks_code = dd.dev_code2
+            LEFT JOIN devdb.developments d ON d.dev_id = sl.dev_id
             WHERE sl.dev_id IN (
                 SELECT dev_id FROM devdb.sim_ent_group_developments
                 WHERE ent_group_id = %s

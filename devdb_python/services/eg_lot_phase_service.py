@@ -57,8 +57,7 @@ def query_lot_phase_view(ent_group_id: int, conn) -> EntGroupLotPhaseViewRespons
             """
             SELECT segd.dev_id, d.dev_name
             FROM sim_ent_group_developments segd
-            JOIN dim_development dd ON dd.development_id = segd.dev_id
-            JOIN developments d ON d.marks_code = dd.dev_code2
+            JOIN developments d ON d.dev_id = segd.dev_id
             WHERE segd.ent_group_id = %s
             """,
             (ent_group_id,),

@@ -191,10 +191,10 @@ def get_buildings_for_phase(phase_id: int, conn=Depends(get_db_conn)):
         cur.execute("""
             SELECT bg.building_group_id, bg.building_name, bg.building_type,
                    sl.lot_id, sl.lot_number, sl.lot_source, sl.dev_id,
-                   dd.dev_code2
+                   d.marks_code AS dev_code2
             FROM sim_building_groups bg
             JOIN sim_lots sl ON sl.building_group_id = bg.building_group_id
-            LEFT JOIN dim_development dd ON dd.development_id = sl.dev_id
+            LEFT JOIN developments d ON d.dev_id = sl.dev_id
             WHERE sl.phase_id = %s AND sl.lot_source != 'sim'
             ORDER BY bg.building_name, sl.lot_number
         """, (phase_id,))
@@ -203,9 +203,9 @@ def get_buildings_for_phase(phase_id: int, conn=Depends(get_db_conn)):
         # Unassigned lots in this phase
         cur.execute("""
             SELECT sl.lot_id, sl.lot_number, sl.lot_source, sl.dev_id,
-                   dd.dev_code2
+                   d.marks_code AS dev_code2
             FROM sim_lots sl
-            LEFT JOIN dim_development dd ON dd.development_id = sl.dev_id
+            LEFT JOIN developments d ON d.dev_id = sl.dev_id
             WHERE sl.phase_id = %s
               AND sl.lot_source != 'sim'
               AND sl.building_group_id IS NULL

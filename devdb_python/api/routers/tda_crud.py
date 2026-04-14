@@ -35,10 +35,8 @@ def get_tda_unassigned_lots(ent_group_id: int, conn=Depends(get_db_conn)):
             SELECT DISTINCT l.lot_id, l.lot_number, l.building_group_id
             FROM devdb.sim_lots l
             JOIN devdb.sim_dev_phases p ON p.phase_id = l.phase_id
-            JOIN devdb.dim_development dd ON dd.development_id = p.dev_id
-            JOIN devdb.developments d ON d.marks_code = dd.dev_code2
+            JOIN devdb.developments d ON d.dev_id = p.dev_id
             WHERE d.community_id = %s
-              AND d.marks_code IS NOT NULL
               AND l.lot_source = 'real'
               AND l.lot_id NOT IN (
                   SELECT tal.lot_id
@@ -288,10 +286,8 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
                 SELECT DISTINCT l.lot_id, l.lot_number, l.building_group_id
                 FROM devdb.sim_lots l
                 JOIN devdb.sim_dev_phases p ON p.phase_id = l.phase_id
-                JOIN devdb.dim_development dd ON dd.development_id = p.dev_id
-                JOIN devdb.developments d ON d.marks_code = dd.dev_code2
+                JOIN devdb.developments d ON d.dev_id = p.dev_id
                 WHERE d.community_id = %s
-                  AND d.marks_code IS NOT NULL
                   AND l.lot_source = 'real'
                   AND l.lot_id NOT IN (
                       SELECT tal.lot_id

@@ -57,10 +57,9 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 sdp.updated_at
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
-            JOIN sim_legal_instruments sli       ON sli.dev_id = segd.dev_id
+            JOIN developments d                  ON d.dev_id = segd.dev_id
+            JOIN sim_legal_instruments sli       ON sli.dev_id = d.dev_id
             JOIN sim_dev_phases sdp              ON sdp.instrument_id = sli.instrument_id
-            JOIN dim_development dd              ON dd.development_id = segd.dev_id
-            JOIN developments d                  ON d.marks_code = dd.dev_code2
             ORDER BY seg.ent_group_name, d.dev_name, sli.instrument_name, sdp.sequence_number
         """)
         phases = cur.fetchall()
@@ -374,8 +373,7 @@ def get_dev_config(conn=Depends(get_db_conn)):
 
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
-            JOIN dim_development dd ON dd.development_id = segd.dev_id
-            JOIN developments d ON d.marks_code = dd.dev_code2
+            JOIN developments d ON d.dev_id = segd.dev_id
             LEFT JOIN sim_dev_params sdp ON sdp.dev_id = segd.dev_id
 
             LEFT JOIN (
@@ -481,10 +479,9 @@ def get_audit_data(conn=Depends(get_db_conn)):
                 sdp.sequence_number
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
-            JOIN sim_legal_instruments sli        ON sli.dev_id = segd.dev_id
+            JOIN developments d                  ON d.dev_id = segd.dev_id
+            JOIN sim_legal_instruments sli        ON sli.dev_id = d.dev_id
             JOIN sim_dev_phases sdp               ON sdp.instrument_id = sli.instrument_id
-            JOIN dim_development dd               ON dd.development_id = segd.dev_id
-            JOIN developments d                   ON d.marks_code = dd.dev_code2
             ORDER BY seg.ent_group_name, d.dev_name, sli.instrument_name, sdp.sequence_number
         """)
         phases     = cur.fetchall()

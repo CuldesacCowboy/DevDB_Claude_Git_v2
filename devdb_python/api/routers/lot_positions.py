@@ -57,8 +57,7 @@ def _fetch_lots(cur, plan_id: int, ent_group_id: int) -> list[dict]:
             SELECT sl.lot_id
             FROM devdb.sim_lots sl
             JOIN devdb.sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
-            JOIN devdb.dim_development dd  ON dd.development_id = sdp.dev_id
-            JOIN devdb.developments d      ON d.marks_code = dd.dev_code2
+            JOIN devdb.developments d     ON d.dev_id = sdp.dev_id
             WHERE sl.lot_source = 'real'
               AND d.community_id = %s
             UNION

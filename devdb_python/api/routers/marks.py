@@ -67,37 +67,21 @@ def get_dev_phases(dev_code: str, conn=Depends(get_db_conn)):
     """
     cur = dict_cursor(conn)
     try:
-        # Resolve dev_id via marks_code → dim_development bridge
-        cur.execute("""
-            SELECT d.dev_id
-            FROM devdb.developments d
-            WHERE d.marks_code = %s
-            LIMIT 1
-        """, (dev_code,))
+        cur.execute(
+            "SELECT dev_id FROM devdb.developments WHERE marks_code = %s LIMIT 1",
+            (dev_code,),
+        )
         dev_row = cur.fetchone()
         if not dev_row:
             return {"instruments": [], "phases": []}
-        dev_id_modern = dev_row["dev_id"]
-
-        # dim_development.development_id (legacy) needed for instrument FK
-        cur.execute("""
-            SELECT dd.development_id
-            FROM devdb.dim_development dd
-            JOIN devdb.developments d ON d.marks_code = dd.dev_code2
-            WHERE d.dev_id = %s
-            LIMIT 1
-        """, (dev_id_modern,))
-        dd_row = cur.fetchone()
-        if not dd_row:
-            return {"instruments": [], "phases": []}
-        legacy_dev_id = dd_row["development_id"]
+        dev_id = dev_row["dev_id"]
 
         cur.execute("""
             SELECT instrument_id, instrument_name, instrument_type
             FROM devdb.sim_legal_instruments
             WHERE dev_id = %s
             ORDER BY instrument_name
-        """, (legacy_dev_id,))
+        """, (dev_id,))
         instruments = [dict(r) for r in cur.fetchall()]
 
         instrument_ids = [i["instrument_id"] for i in instruments]
@@ -320,7 +304,7 @@ class ImportRequest(BaseModel):
     lots: list[ImportLot]
     lot_type_id: int
     phase_id: Optional[int] = None
-    dev_id: Optional[int] = None    # legacy dim_development.development_id
+    dev_id: Optional[int] = None    # developments.dev_id
 
 
 @router.post("/import", status_code=201)
@@ -354,16 +338,16 @@ def import_marks_lots(body: ImportRequest, conn=Depends(get_db_conn)):
         for r in cur.fetchall():
             dates_by_key[(r["developmentcode"], r["housenumber"])] = r
 
-        # Resolve dev_id: look up from lot's dev_code if not provided
+        # Resolve dev_id: use provided value or look up from lot's dev_code
         def get_dev_id(dev_code):
             if body.dev_id:
                 return body.dev_id
             cur.execute(
-                "SELECT development_id FROM devdb.dim_development WHERE dev_code2 = %s",
+                "SELECT dev_id FROM devdb.developments WHERE marks_code = %s",
                 (dev_code,)
             )
             row = cur.fetchone()
-            return int(row["development_id"]) if row else None
+            return int(row["dev_id"]) if row else None
 
         inserted = 0
         for lot in body.lots:

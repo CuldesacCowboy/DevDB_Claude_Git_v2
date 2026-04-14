@@ -57,13 +57,7 @@ def run_simulation(req: SimulationRunRequest, conn=Depends(get_db_conn)):
             try:
                 ids = list(missing_params_devs)
                 cur.execute(
-                    """
-                    SELECT dd.development_id, d.dev_name
-                    FROM dim_development dd
-                    JOIN developments d ON d.marks_code = dd.dev_code2
-                    WHERE dd.development_id = ANY(%s)
-                    ORDER BY d.dev_name
-                    """,
+                    "SELECT dev_id, dev_name FROM developments WHERE dev_id = ANY(%s) ORDER BY dev_name",
                     (ids,),
                 )
                 for r in cur.fetchall():

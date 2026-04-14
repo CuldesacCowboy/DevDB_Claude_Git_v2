@@ -156,7 +156,7 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
                 """INSERT INTO sim_ent_group_developments (id, ent_group_id, dev_id)
                    VALUES (%s, %s, %s)
                    ON CONFLICT DO NOTHING""",
-                (next_link_id, body.community_id, legacy_id),
+                (next_link_id, body.community_id, new_id),
             )
 
         conn.commit()
@@ -184,14 +184,11 @@ def delete_development(dev_id: int, conn=Depends(get_db_conn)):
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail=f"Development {dev_id} not found")
 
-        # Find all instruments for this dev via the dim_development bridge
-        cur.execute("""
-            SELECT sli.instrument_id
-            FROM sim_legal_instruments sli
-            JOIN dim_development dd ON dd.development_id = sli.dev_id
-            JOIN developments d ON d.marks_code = dd.dev_code2
-            WHERE d.dev_id = %s
-        """, (dev_id,))
+        # Find all instruments for this dev
+        cur.execute(
+            "SELECT instrument_id FROM sim_legal_instruments WHERE dev_id = %s",
+            (dev_id,),
+        )
         instr_ids = [r["instrument_id"] for r in cur.fetchall()]
 
         for instr_id in instr_ids:
@@ -205,15 +202,11 @@ def delete_development(dev_id: int, conn=Depends(get_db_conn)):
             cur.execute("DELETE FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))
         cur.execute("DELETE FROM sim_legal_instruments WHERE instrument_id = ANY(%s)", (instr_ids or [-1],))
 
-        # Remove from ent group dev mapping and sim_dev_params (keyed on dim_development.development_id)
-        cur.execute("""
-            DELETE FROM sim_ent_group_developments
-            WHERE dev_id IN (
-                SELECT dd.development_id FROM dim_development dd
-                JOIN developments d ON d.marks_code = dd.dev_code2
-                WHERE d.dev_id = %s
-            )
-        """, (dev_id,))
+        # Remove from ent group dev mapping and sim_dev_params
+        cur.execute(
+            "DELETE FROM sim_ent_group_developments WHERE dev_id = %s",
+            (dev_id,),
+        )
 
         cur.execute("DELETE FROM developments WHERE dev_id = %s", (dev_id,))
         conn.commit()
@@ -286,65 +279,15 @@ def patch_development(dev_id: int, body: DevelopmentPatchRequest, conn=Depends(g
             conn.rollback()
             raise HTTPException(status_code=404, detail=f"Development {dev_id} not found.")
 
-        # If marks_code changed, sync dim_development.dev_code2 so the legacy bridge stays valid.
-        if "marks_code" in updatable or "dev_name" in updatable:
+        # Keep dim_development name in sync if dev_name changed (reference table only — not operational).
+        if "dev_name" in updatable:
             cur.execute("SELECT dev_name, marks_code FROM developments WHERE dev_id = %s", (dev_id,))
             dev_row = cur.fetchone()
-            new_marks = dev_row["marks_code"]
-            new_name  = dev_row["dev_name"]
-
-            if new_marks:
-                # Find the dim_development row that was previously bridged to this dev.
-                # It may be under an old synthetic or real code — locate via instruments or
-                # the old marks_code stored in dim_development joined back through this dev's
-                # old bridge (not yet committed, so read the current dim_development state).
-                # Simplest: find any dim_development row linked to this dev via instruments.
+            if dev_row and dev_row["marks_code"]:
                 cur.execute(
-                    """
-                    SELECT DISTINCT dd.development_id, dd.dev_code2
-                    FROM dim_development dd
-                    JOIN sim_legal_instruments sli ON sli.dev_id = dd.development_id
-                    WHERE dd.dev_code2 != %s
-                    AND EXISTS (
-                        SELECT 1 FROM developments d2
-                        JOIN dim_development dd2 ON dd2.dev_code2 = d2.marks_code
-                        WHERE d2.dev_id = %s AND dd2.development_id = dd.development_id
-                    )
-                    """,
-                    (new_marks, dev_id),
+                    "UPDATE dim_development SET development_name = %s WHERE dev_code2 = %s",
+                    (dev_row["dev_name"], dev_row["marks_code"]),
                 )
-                linked = cur.fetchone()
-
-                if linked:
-                    # Update the existing row's code and name.
-                    cur.execute(
-                        "UPDATE dim_development SET dev_code2 = %s, development_name = %s "
-                        "WHERE development_id = %s",
-                        (new_marks, new_name, linked["development_id"]),
-                    )
-                else:
-                    # Check whether dim_development already has this new code (real MARKs import).
-                    cur.execute("SELECT development_id FROM dim_development WHERE dev_code2 = %s", (new_marks,))
-                    if not cur.fetchone():
-                        # No existing row — create one.
-                        cur.execute("SELECT COALESCE(MAX(development_id), 0) + 1 FROM dim_development")
-                        legacy_id = int(cur.fetchone()[0])
-                        cur.execute(
-                            "INSERT INTO dim_development (development_id, development_name, dev_code2, active) "
-                            "VALUES (%s, %s, %s, true)",
-                            (legacy_id, new_name, new_marks),
-                        )
-            else:
-                # marks_code cleared — update the dim_development name if dev_name changed.
-                if "dev_name" in updatable:
-                    cur.execute(
-                        """
-                        UPDATE dim_development dd SET development_name = %s
-                        FROM developments d
-                        WHERE dd.dev_code2 = d.marks_code AND d.dev_id = %s
-                        """,
-                        (new_name, dev_id),
-                    )
 
         conn.commit()
         cur.execute(_SELECT_SQL + " WHERE d.dev_id = %s", (dev_id,))
@@ -372,10 +315,8 @@ class SimParamsPutRequest(BaseModel):
 def upsert_sim_params(dev_id: int, body: SimParamsPutRequest, conn=Depends(get_db_conn)):
     cur = dict_cursor(conn)
     try:
-        # dev_id here is dim_development.development_id (same space used by
-        # sim_ent_group_developments and sim_dev_phases), NOT developments.dev_id.
         cur.execute(
-            "SELECT development_id FROM dim_development WHERE development_id = %s", (dev_id,)
+            "SELECT dev_id FROM developments WHERE dev_id = %s", (dev_id,)
         )
         if cur.fetchone() is None:
             raise HTTPException(status_code=404, detail=f"Development {dev_id} not found.")

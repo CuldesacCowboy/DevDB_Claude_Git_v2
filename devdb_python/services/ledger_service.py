@@ -60,8 +60,7 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
                 v.u_end, v.uc_end, v.c_end,
                 v.closed_cumulative
             FROM v_sim_ledger_monthly v
-            JOIN dim_development dd ON dd.development_id = v.dev_id
-            JOIN developments d ON d.marks_code = dd.dev_code2
+            JOIN developments d ON d.dev_id = v.dev_id
             WHERE v.dev_id IN (
                 SELECT dev_id FROM sim_ent_group_developments
                 WHERE ent_group_id = %s
@@ -88,8 +87,7 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
                    COUNT(sl.lot_id)::int AS total_lots
             FROM sim_entitlement_groups eg
             JOIN sim_ent_group_developments egd ON egd.ent_group_id = eg.ent_group_id
-            JOIN dim_development dd ON dd.development_id = egd.dev_id
-            JOIN developments d ON d.marks_code = dd.dev_code2
+            JOIN developments d ON d.dev_id = egd.dev_id
             LEFT JOIN sim_lots sl ON sl.dev_id = egd.dev_id AND sl.excluded IS NOT TRUE
             WHERE eg.ent_group_id = %s
               AND eg.date_paper IS NOT NULL

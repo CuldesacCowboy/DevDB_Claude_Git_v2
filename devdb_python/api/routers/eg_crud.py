@@ -24,8 +24,7 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
     cur = dict_cursor(conn)
     try:
         # r/p/t rollup per community using developments.community_id as source of truth.
-        # Join path: developments → dim_development (bridge for legacy dev_id) →
-        #   sim_legal_instruments → sim_dev_phases → sim_lots / sim_phase_product_splits.
+        # Join path: developments → sim_legal_instruments → sim_dev_phases → sim_lots / sim_phase_product_splits.
         # total = SUM of GREATEST(real_count, projected_count) per phase.
         cur.execute(
             """
@@ -46,15 +45,13 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
                     COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'real') AS real_count,
                     COALESCE(SUM(spps.projected_count), 0)                   AS projected_count
                 FROM developments d
-                JOIN dim_development dd ON dd.dev_code2 = d.marks_code
-                JOIN sim_legal_instruments li ON li.dev_id = dd.development_id
+                JOIN sim_legal_instruments li ON li.dev_id = d.dev_id
                 JOIN sim_dev_phases sdp ON sdp.instrument_id = li.instrument_id
                 LEFT JOIN sim_lots sl
                        ON sl.phase_id = sdp.phase_id AND sl.lot_source = 'real'
                       AND sl.excluded IS NOT TRUE
                 LEFT JOIN sim_phase_product_splits spps ON spps.phase_id = sdp.phase_id
                 WHERE d.community_id IS NOT NULL
-                  AND d.marks_code IS NOT NULL
                 GROUP BY d.community_id, sdp.phase_id
             ) pt ON pt.community_id = eg.ent_group_id
             GROUP BY eg.ent_group_id, eg.ent_group_name
@@ -118,13 +115,10 @@ def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
         dev_ids = [r["dev_id"] for r in cur.fetchall()]
 
         for dev_id in dev_ids:
-            cur.execute("""
-                SELECT sli.instrument_id
-                FROM sim_legal_instruments sli
-                JOIN dim_development dd ON dd.development_id = sli.dev_id
-                JOIN developments d ON d.marks_code = dd.dev_code2
-                WHERE d.dev_id = %s
-            """, (dev_id,))
+            cur.execute(
+                "SELECT instrument_id FROM sim_legal_instruments WHERE dev_id = %s",
+                (dev_id,),
+            )
             instr_ids = [r["instrument_id"] for r in cur.fetchall()]
             for instr_id in instr_ids:
                 cur.execute("SELECT phase_id FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))
