@@ -1066,6 +1066,23 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
 
   const overrideable = l => l.lot_source === 'real'
 
+  // Building group labels: per phase, first-seen building_group_id → B1, B2, …
+  const bgLabelMap = (() => {
+    const map = {}
+    const counters = {}
+    for (const l of filtered) {
+      if (l.building_group_id != null) {
+        const key = `${l.phase_name}::${l.building_group_id}`
+        if (!(key in map)) {
+          const n = (counters[l.phase_name] ?? 0) + 1
+          counters[l.phase_name] = n
+          map[key] = `B${n}`
+        }
+      }
+    }
+    return map
+  })()
+
   // Maps violation_type → the two date fields involved (early, late).
   // Used to show a warning indicator inline in the affected date cells.
   const VIOLATION_FIELDS = {
@@ -1106,14 +1123,18 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
         <span style={{ fontSize: 11, color: '#93c5fd', fontStyle: 'italic', marginLeft: 6 }}>italic blue = projected</span>
         <span style={{ fontSize: 11, color: '#92400e', marginLeft: 6 }}>amber = override (click to edit)</span>
         <button onClick={() => {
-          const headers = ['Development','Lot #','Type','Phase','Source','Status','ENT','DEV','HC','BLDR','DIG','CMP','CLS']
-          const csvRows = filtered.map(l => [
-            l.dev_name, l.lot_number ?? '', l.lot_type_short ?? '', l.phase_name,
-            l.lot_source, l.status,
-            l.date_ent ?? '', l.date_dev ?? '', l.date_td_hold ?? '',
-            l.date_td ?? '', l.date_str ?? l.date_str_projected ?? '',
-            l.date_cmp ?? l.date_cmp_projected ?? '', l.date_cls ?? l.date_cls_projected ?? '',
-          ])
+          const headers = ['Development','Lot #','Type','Phase','Bldg','Source','Status','ENT','DEV','HC','BLDR','DIG','CMP','CLS']
+          const csvRows = filtered.map(l => {
+            const bgKey = l.building_group_id != null ? `${l.phase_name}::${l.building_group_id}` : null
+            const bgLabel = bgKey ? bgLabelMap[bgKey] : ''
+            return [
+              l.dev_name, l.lot_number ?? '', l.lot_type_short ?? '', l.phase_name, bgLabel,
+              l.lot_source, l.status,
+              l.date_ent ?? '', l.date_dev ?? '', l.date_td_hold ?? '',
+              l.date_td ?? '', l.date_str ?? l.date_str_projected ?? '',
+              l.date_cmp ?? l.date_cmp_projected ?? '', l.date_cls ?? l.date_cls_projected ?? '',
+            ]
+          })
           exportToCsv('lots.csv', headers, csvRows)
         }}
           style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, border: '1px solid #d1d5db',
@@ -1129,6 +1150,7 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
               <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Lot #</th>
               <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Type</th>
               <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Phase</th>
+              <th style={{ ...thS('center'), position: 'sticky', top: 0, zIndex: 2, color: '#0d9488' }}>Bldg</th>
               <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Src</th>
               <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Status</th>
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>ENT</th>
@@ -1141,7 +1163,7 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(l => {
+            {filtered.map((l, idx) => {
               const vf = violatedFields(l)
               const vTip = l.violations?.length
                 ? l.violations.join(', ')
@@ -1149,12 +1171,21 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
               const VDot = ({ field }) => vf.has(field)
                 ? <ViolationDot title={`Date order violation: ${vTip}`} />
                 : null
+              const bgKey = l.building_group_id != null ? `${l.phase_name}::${l.building_group_id}` : null
+              const bgLabel = bgKey ? bgLabelMap[bgKey] : null
+              const bgIndex = bgLabel ? parseInt(bgLabel.slice(1)) : 0
+              const rowTint = bgLabel ? (bgIndex % 2 === 1 ? '#f0fdfa' : '#f7fef8') : null
+              const prevLot = idx > 0 ? filtered[idx - 1] : null
+              const isGroupStart = l.building_group_id != null && (
+                !prevLot || prevLot.building_group_id !== l.building_group_id || prevLot.phase_name !== l.phase_name
+              )
               return (
-              <tr key={l.lot_id}>
+              <tr key={l.lot_id} style={{ background: rowTint ?? '', borderTop: isGroupStart ? '2px solid #99f6e4' : '' }}>
                 {devFilter === 'all' && <td style={tdS('left')}>{l.dev_name}</td>}
                 <td style={tdS('left')}>{l.lot_number ?? '—'}</td>
                 <td style={tdS('left')}>{l.lot_type_short ?? '—'}</td>
                 <td style={tdS('left')}>{l.phase_name}</td>
+                <td style={tdS('center', { color: '#0d9488', fontWeight: 600, fontSize: 11, letterSpacing: '0.02em' })}>{bgLabel ?? ''}</td>
                 <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>{l.lot_source}</td>
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>

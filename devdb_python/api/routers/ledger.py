@@ -118,6 +118,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 sdp.phase_name,
                 sl.dev_id,
                 d.dev_name,
+                sl.building_group_id,
                 {_STATUS_SQL}           AS status,
                 sl.date_ent,
                 sl.date_dev,
@@ -148,7 +149,8 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 WHERE ent_group_id = %s
             )
               AND sl.excluded IS NOT TRUE
-            ORDER BY d.dev_name, sdp.sequence_number, sl.lot_number NULLS LAST
+            ORDER BY d.dev_name, sdp.sequence_number, sl.lot_source ASC,
+                     sl.lot_number NULLS LAST, sl.building_group_id ASC NULLS LAST
             """,
             (ent_group_id,),
         )
@@ -165,6 +167,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 "phase_name":          r["phase_name"],
                 "dev_id":              r["dev_id"],
                 "dev_name":            r["dev_name"],
+                "building_group_id":   r["building_group_id"],
                 "status":              r["status"],
                 "date_ent":            _d(r["date_ent"]),
                 "date_dev":            _d(r["date_dev"]),
