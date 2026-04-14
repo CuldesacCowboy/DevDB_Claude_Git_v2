@@ -683,6 +683,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                         f"lots={first_lots}, drain_delay={_delay}mo, "
                         f"demand_consumed->{demand_consumed[dev_id]}")
 
+            _batch_tier = batch[0]["delivery_tier"]
             while True:
                 next_v = _find_violation_month(dev_id, event_date)
                 if next_v is None:
@@ -691,6 +692,11 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 if next_lv >= next_allowed:
                     break
                 if not dev_phases[dev_id]:
+                    break
+                # Never co-bundle a higher-tier phase into this event — tier
+                # ordering must be preserved across events, not just within a dev.
+                _next_tier = dev_phases[dev_id][0]["delivery_tier"]
+                if _batch_tier is not None and _next_tier is not None and _next_tier > _batch_tier:
                     break
                 extra = dev_phases[dev_id].pop(0)
                 batch.append(extra)
