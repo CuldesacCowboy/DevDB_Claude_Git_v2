@@ -203,7 +203,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     all_phases_df = conn.read_df(
         """
         SELECT sdp.phase_id, sdp.dev_id, sdp.date_dev_demand_derived,
-               sdp.sequence_number
+               sdp.sequence_number, sdp.delivery_tier
         FROM sim_dev_phases sdp
         JOIN sim_ent_group_developments egd
              ON egd.dev_id = sdp.dev_id
@@ -251,6 +251,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             "dev_id": dev_id,
             "demand_date": demand,
             "sequence_number": int(ph["sequence_number"]) if ph["sequence_number"] is not None else 9999,
+            "delivery_tier": int(ph["delivery_tier"]) if ph["delivery_tier"] is not None else None,
         })
 
     if not undelivered:
@@ -593,7 +594,24 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     events_to_create = []
 
     for _ in range(200):
-        active = {d: phases for d, phases in dev_phases.items() if phases}
+        # Gate by delivery_tier: tier-N phases may not be scheduled until all
+        # tier-(N-1) phases (across ALL devs) have been assigned to events.
+        # Phases with no tier (None) are always schedulable.
+        _remaining_tiers = {
+            phases[0]["delivery_tier"]
+            for phases in dev_phases.values()
+            if phases and phases[0]["delivery_tier"] is not None
+        }
+        _min_tier = min(_remaining_tiers) if _remaining_tiers else None
+
+        active = {
+            d: phases for d, phases in dev_phases.items()
+            if phases and (
+                phases[0]["delivery_tier"] is None
+                or _min_tier is None
+                or phases[0]["delivery_tier"] <= _min_tier
+            )
+        }
         if not active:
             break
 
