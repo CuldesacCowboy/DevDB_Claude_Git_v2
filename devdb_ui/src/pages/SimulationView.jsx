@@ -250,6 +250,48 @@ function LedgerTable({ rows, floors, period }) {
 
 const GRAPH_TOOLTIP_STYLE = { fontSize: 11, border: '1px solid #e5e7eb', background: '#fff', borderRadius: 4 }
 
+function PipelineTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+  const rowData = payload[0]?.payload
+  const deliveries = rowData?._deliveries
+  const seriesPayload = payload.filter(p => p.dataKey !== '_pinY')
+  return (
+    <div style={{ fontSize: 11, border: '1px solid #e5e7eb', background: '#fff',
+                  borderRadius: 4, padding: '6px 10px', maxWidth: 300 }}>
+      <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4 }}>{label}</div>
+      {seriesPayload.map(p => (
+        <div key={p.dataKey} style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+          <span style={{ color: p.color }}>{p.name}</span>
+          <span style={{ fontWeight: 600, color: '#374151' }}>{p.value > 0 ? p.value : '—'}</span>
+        </div>
+      ))}
+      {deliveries?.length > 0 && (
+        <div style={{ borderTop: '1px solid #e5e7eb', marginTop: 6, paddingTop: 6 }}>
+          <div style={{ fontWeight: 600, color: '#b45309', marginBottom: 4 }}>Phase deliveries:</div>
+          {deliveries.map((d, i) => (
+            <div key={i} style={{ marginTop: i > 0 ? 4 : 0 }}>
+              <div style={{ color: '#374151', fontWeight: 500 }}>{d.devName}</div>
+              <div style={{ color: '#6b7280' }}>{d.phases}</div>
+              <div style={{ color: '#b45309', fontWeight: 600 }}>{d.units} units delivered</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function renderPinDot(props) {
+  const { cx, cy, payload } = props
+  if (!payload?._deliveries?.length) return null
+  const color = '#b45309'
+  return (
+    <g key={`pin-${cx}-${cy}`}>
+      <line x1={cx} y1={cy} x2={cx} y2={cy - 12} stroke={color} strokeWidth={1.5} />
+      <circle cx={cx} cy={cy - 16} r={4} fill={color} stroke="#fff" strokeWidth={1.5} />
+    </g>
+  )
+}
 
 const CHART_PANELS = [
   { key: 'pipeline', label: 'Pipeline' },
@@ -258,8 +300,30 @@ const CHART_PANELS = [
   { key: 'closings', label: 'Closings' },
 ]
 
-function LedgerGraph({ rows, period }) {
+function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevIds }) {
   const [panel, setPanel] = useState('pipeline')
+
+  const enrichedRows = useMemo(() => {
+    if (!deliverySchedule.length) return rows
+    const filtered = selectedDevIds
+      ? deliverySchedule.filter(d => selectedDevIds.includes(d.dev_id))
+      : deliverySchedule
+    const map = new Map()
+    for (const d of filtered) {
+      if (!d.delivery_date) continue
+      const monthFirst = d.delivery_date.slice(0, 7) + '-01'
+      const pk = periodKey(monthFirst, period)
+      if (!map.has(pk)) map.set(pk, [])
+      map.get(pk).push({ phases: d.phases, units: d.units_delivered, devName: d.dev_name })
+    }
+    if (!map.size) return rows
+    return rows.map(r => {
+      const delivs = map.get(r.calendar_month)
+      if (!delivs?.length) return r
+      const stackTop = (r.h_end||0) + (r.u_end||0) + (r.uc_end||0) + (r.c_end||0) + (r.d_end||0)
+      return { ...r, _deliveries: delivs, _pinY: stackTop }
+    })
+  }, [rows, deliverySchedule, selectedDevIds, period])
 
   if (!rows.length) return null
 
@@ -304,17 +368,19 @@ function LedgerGraph({ rows, period }) {
       {/* Active panel */}
       {panel === 'pipeline' && (
         <ResponsiveContainer width="100%" height={280}>
-          <AreaChart data={rows} {...chartProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
+          <AreaChart data={enrichedRows} {...chartProps}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
             <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
             <YAxis {...axisProps} width={34} />
-            <Tooltip {...tooltipProps} />
+            <Tooltip content={<PipelineTooltip />} />
             <Legend {...legendProps} />
             <Area type="linear" dataKey="h_end"  stackId="s" stroke={STATUS_COLOR.H}  fill={STATUS_COLOR.H}  fillOpacity={0.80} name={`${STATUS_CFG.H.shape} H`}  />
             <Area type="linear" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name={`${STATUS_CFG.U.shape} U`}  />
             <Area type="linear" dataKey="uc_end" stackId="s" stroke={STATUS_COLOR.UC} fill={STATUS_COLOR.UC} fillOpacity={0.85} name={`${STATUS_CFG.UC.shape} UC`} />
             <Area type="linear" dataKey="c_end"  stackId="s" stroke={STATUS_COLOR.C}  fill={STATUS_COLOR.C}  fillOpacity={0.85} name={`${STATUS_CFG.C.shape} C`}  />
             <Area type="linear" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.75} name={`${STATUS_CFG.D.shape} D`}  />
+            <Line dataKey="_pinY" stroke="none" strokeWidth={0} dot={renderPinDot} activeDot={false}
+                  isAnimationActive={false} legendType="none" connectNulls={false} />
           </AreaChart>
         </ResponsiveContainer>
       )}
@@ -1227,9 +1293,10 @@ const loadLedger = useCallback((id) => {
     loadConfig(entGroupId)
     loadGlobalSettings()
     fetchOverrides()
+    loadDeliverySchedule(entGroupId)
     setRunErrors([])
     setSelectedDevIds(null)
-  }, [entGroupId, checkSplits, loadLedger, loadConfig, fetchOverrides])
+  }, [entGroupId, checkSplits, loadLedger, loadConfig, fetchOverrides, loadDeliverySchedule])
 
   async function handleRun() {
     if (!entGroupId) return
@@ -1246,8 +1313,8 @@ const loadLedger = useCallback((id) => {
       setLastRunAt(new Date())
       setLoadError(null)
       loadLedger(entGroupId)
-      if (view === 'lots')     loadLots(entGroupId)
-      if (view === 'delivery') loadDeliverySchedule(entGroupId)
+      if (view === 'lots') loadLots(entGroupId)
+      loadDeliverySchedule(entGroupId)
       checkSplits(entGroupId)
     } catch (e) { setRunStatus({ ok: false, error: e.message }); setLastRunAt(new Date()) }
   }
@@ -1551,7 +1618,7 @@ const loadLedger = useCallback((id) => {
 
               {ledgerSubView === 'table'
                 ? <LedgerTable rows={ledgerRows} floors={deliveryConfig} period={period} />
-                : <LedgerGraph rows={ledgerRows} period={period} />
+                : <LedgerGraph rows={ledgerRows} period={period} deliverySchedule={deliverySchedule} selectedDevIds={selectedDevIds} />
               }
             </>
           )}
