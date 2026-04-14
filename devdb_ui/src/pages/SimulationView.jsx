@@ -141,10 +141,79 @@ function cell(v) { return v > 0 ? v : <span style={{ color: '#e5e7eb' }}>—</sp
 
 // ─── LedgerTable ─────────────────────────────────────────────────────────────
 
-function LedgerTable({ rows, floors, period }) {
+function LedgerTable({ rows, floors, period, lots = [], deliverySchedule = [] }) {
   const floorMap = {}
   for (const [fk, sk] of Object.entries(FLOOR_STATUS)) {
     if (floors?.[fk] != null) floorMap[sk] = floors[fk]
+  }
+
+  // ── Tooltip ──────────────────────────────────────────────────────────────
+  const [tip, setTip] = useState(null)   // { data, x, y }
+
+  const EVENT_FIELD_MAP = {
+    ent_plan: 'date_ent', dev_plan: 'date_dev', td_plan: 'date_td',
+    str_plan: 'date_str', cmp_plan: 'date_cmp', cls_plan: 'date_cls',
+  }
+
+  // lot-level lookup: YYYY-MM → date_field → [lot, …]
+  const lotsByYM = useMemo(() => {
+    const map = {}
+    for (const lot of lots) {
+      for (const field of Object.values(EVENT_FIELD_MAP)) {
+        const d = lot[field]
+        if (!d) continue
+        const ym = d.slice(0, 7)
+        if (!map[ym]) map[ym] = {}
+        if (!map[ym][field]) map[ym][field] = []
+        map[ym][field].push(lot)
+      }
+    }
+    return map
+  }, [lots])
+
+  // delivery schedule lookup: YYYY-MM → [event, …]
+  const deliveryByYM = useMemo(() => {
+    const map = {}
+    for (const d of deliverySchedule) {
+      if (!d.delivery_date) continue
+      const ym = d.delivery_date.slice(0, 7)
+      if (!map[ym]) map[ym] = []
+      map[ym].push(d)
+    }
+    return map
+  }, [deliverySchedule])
+
+  function rowMonths(row) {
+    const k = row.calendar_month
+    if (period === 'monthly') return [k]
+    if (period === 'quarterly') {
+      const [y, q] = k.split('-Q')
+      const s = (parseInt(q) - 1) * 3 + 1
+      return [s, s + 1, s + 2].map(m => `${y}-${String(m).padStart(2, '0')}`)
+    }
+    return Array.from({ length: 12 }, (_, i) => `${k}-${String(i + 1).padStart(2, '0')}`)
+  }
+
+  function makeTipData(row, col) {
+    const field = EVENT_FIELD_MAP[col]
+    const months = rowMonths(row)
+    const matchLots = months.flatMap(ym => (lotsByYM[ym]?.[field] ?? []))
+    const matchDel  = col === 'dev_plan'
+      ? months.flatMap(ym => (deliveryByYM[ym] ?? []))
+      : []
+    if (!matchLots.length && !matchDel.length) return null
+    return { col, field, label: PLAN_LABELS[col], lots: matchLots, deliveries: matchDel }
+  }
+
+  function fmtFull(iso) {
+    if (!iso) return '—'
+    return new Date(iso + 'T00:00:00').toLocaleDateString('en-US',
+      { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+
+  function onCellEnter(e, data) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    setTip({ data, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top) })
   }
 
   function handleExport() {
@@ -215,11 +284,22 @@ function LedgerTable({ rows, floors, period }) {
               <td style={tdS('left', { color: '#374151', fontWeight: 500 })}>
                 {r._periodLabel ?? fmt(r.calendar_month)}
               </td>
-              {EVENT_COLS.map((c, idx) => (
-                <td key={c} style={tdS('right', idx === 5 ? { borderRight: '2px solid #d1d5db' } : {})}>
-                  {cell(r[c])}
-                </td>
-              ))}
+              {EVENT_COLS.map((c, idx) => {
+                const count = r[c]
+                const tipData = count > 0 ? makeTipData(r, c) : null
+                return (
+                  <td key={c}
+                    style={tdS('right', {
+                      ...(idx === 5 ? { borderRight: '2px solid #d1d5db' } : {}),
+                      ...(tipData ? { cursor: 'help' } : {}),
+                    })}
+                    onMouseEnter={tipData ? (e) => onCellEnter(e, tipData) : undefined}
+                    onMouseLeave={tipData ? () => setTip(null) : undefined}
+                  >
+                    {cell(count)}
+                  </td>
+                )
+              })}
               {STATUS_COLS.map((c, idx) => {
                 const below = floorMap[c] != null && r[c] > 0 && r[c] < floorMap[c]
                 return (
@@ -243,6 +323,57 @@ function LedgerTable({ rows, floors, period }) {
       </table>
     </div>
     </div>
+
+    {tip && (
+      <div style={{
+        position: 'fixed',
+        left: tip.x,
+        top: tip.y < 180 ? tip.y + 34 : tip.y - 10,
+        transform: tip.y < 180 ? 'translateX(-50%)' : 'translate(-50%, -100%)',
+        background: '#1e293b',
+        color: '#f1f5f9',
+        borderRadius: 6,
+        padding: '8px 12px',
+        fontSize: 11,
+        lineHeight: 1.55,
+        zIndex: 9999,
+        minWidth: 180,
+        maxWidth: 340,
+        boxShadow: '0 4px 16px rgba(0,0,0,0.45)',
+        pointerEvents: 'none',
+      }}>
+        <div style={{ fontWeight: 700, marginBottom: 5, borderBottom: '1px solid #334155', paddingBottom: 4 }}>
+          {tip.data.label} — {tip.data.lots.length} lot{tip.data.lots.length !== 1 ? 's' : ''}
+        </div>
+
+        {tip.data.deliveries.length > 0 && (
+          <div style={{ marginBottom: 6 }}>
+            <div style={{ color: '#fbbf24', fontWeight: 600, fontSize: 10, textTransform: 'uppercase',
+                          letterSpacing: '0.04em', marginBottom: 4 }}>Phase deliveries</div>
+            {tip.data.deliveries.map((d, i) => (
+              <div key={i} style={{ marginBottom: 3 }}>
+                <div style={{ color: '#94a3b8' }}>{d.dev_name}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <span style={{ color: '#cbd5e1' }}>{d.phases}</span>
+                  <span style={{ color: '#fbbf24', fontWeight: 600, flexShrink: 0 }}>{d.units_delivered} units</span>
+                </div>
+              </div>
+            ))}
+            {tip.data.lots.length > 0 && <div style={{ borderTop: '1px solid #334155', margin: '6px 0' }} />}
+          </div>
+        )}
+
+        {tip.data.lots.slice(0, 12).map((lot, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 2 }}>
+            <span style={{ color: '#cbd5e1' }}>{lot.lot_number ?? '— sim —'}</span>
+            <span style={{ color: '#94a3b8', flexShrink: 0 }}>{fmtFull(lot[tip.data.field])}</span>
+          </div>
+        ))}
+        {tip.data.lots.length > 12 && (
+          <div style={{ color: '#64748b', marginTop: 4 }}>+{tip.data.lots.length - 12} more</div>
+        )}
+      </div>
+    )}
   )
 }
 
@@ -1386,6 +1517,7 @@ const loadLedger = useCallback((id) => {
     loadGlobalSettings()
     fetchOverrides()
     loadDeliverySchedule(entGroupId)
+    loadLots(entGroupId)
     setRunErrors([])
     setSelectedDevIds(null)
   }, [entGroupId, checkSplits, loadLedger, loadConfig, fetchOverrides, loadDeliverySchedule])
@@ -1405,7 +1537,7 @@ const loadLedger = useCallback((id) => {
       setLastRunAt(new Date())
       setLoadError(null)
       loadLedger(entGroupId)
-      if (view === 'lots') loadLots(entGroupId)
+      loadLots(entGroupId)
       loadDeliverySchedule(entGroupId)
       checkSplits(entGroupId)
     } catch (e) { setRunStatus({ ok: false, error: e.message }); setLastRunAt(new Date()) }
@@ -1718,7 +1850,7 @@ const loadLedger = useCallback((id) => {
               </div>
 
               {ledgerSubView === 'table'
-                ? <LedgerTable rows={ledgerRows} floors={deliveryConfig} period={period} />
+                ? <LedgerTable rows={ledgerRows} floors={deliveryConfig} period={period} lots={lots} deliverySchedule={deliverySchedule} />
                 : <LedgerGraph rows={ledgerRows} period={period} deliverySchedule={deliverySchedule} selectedDevIds={selectedDevIds} />
               }
             </>
