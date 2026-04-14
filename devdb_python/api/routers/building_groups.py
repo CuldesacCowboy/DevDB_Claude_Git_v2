@@ -1,16 +1,21 @@
 # routers/building_groups.py
 # Building group management.
 #
-# Site-plan endpoints (existing):
+# building_type is derived at query time from COUNT(lots in group):
+#   1 → villa, 2 → duplex, 3 → triplex, 4 → quad, N → N-plex
+# unit_count is derived at query time from COUNT(lots in group).
+# Neither is stored on sim_building_groups (migration 056 dropped both columns).
+#
+# Site-plan endpoints:
 # GET  /building-groups/plan/{plan_id}       → list groups with lot positions for a plan
 # POST /building-groups                      → create group from lot_ids (site-plan, auto-name)
 # DELETE /building-groups/{id}              → remove a single group
 # POST /building-groups/bulk-delete         → remove multiple groups
 #
-# Setup-view endpoints (new):
+# Setup-view endpoints:
 # GET  /building-groups/phase/{phase_id}    → buildings + lots for a phase (no plan required)
-# POST /building-groups/setup               → create building with name, type, lot_ids
-# PATCH /building-groups/{id}              → rename / retype
+# POST /building-groups/setup               → create building with name and lot_ids
+# PATCH /building-groups/{id}              → rename
 # PATCH /building-groups/{id}/lots         → replace lot assignments
 
 from typing import List, Optional
@@ -24,6 +29,14 @@ from api.db import dict_cursor
 router = APIRouter(prefix="/building-groups", tags=["building-groups"])
 
 
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def _unit_type_label(unit_count: int) -> str:
+    """Derive building type label from number of units."""
+    labels = {1: "villa", 2: "duplex", 3: "triplex", 4: "quad"}
+    return labels.get(unit_count, f"{unit_count}-plex") if unit_count > 0 else "—"
+
+
 # ─── Pydantic models ─────────────────────────────────────────────────────────
 
 class CreateBuildingGroupRequest(BaseModel):
@@ -35,13 +48,11 @@ class CreateBuildingGroupRequest(BaseModel):
 class SetupCreateRequest(BaseModel):
     phase_id: int
     building_name: str
-    building_type: Optional[str] = None
     lot_ids: List[int] = []
 
 
 class PatchBuildingGroupRequest(BaseModel):
     building_name: Optional[str] = None
-    building_type: Optional[str] = None
 
 
 class PatchLotsRequest(BaseModel):
@@ -50,29 +61,6 @@ class PatchLotsRequest(BaseModel):
 
 class BulkDeleteRequest(BaseModel):
     building_group_ids: List[int]
-
-
-# ─── Helpers ─────────────────────────────────────────────────────────────────
-
-def _format_group(rows: list) -> dict:
-    """Collapse per-lot rows for a single building group into one dict."""
-    if not rows:
-        return {}
-    first = rows[0]
-    return {
-        "building_group_id": first["building_group_id"],
-        "dev_id":            first["dev_id"],
-        "building_name":     first["building_name"],
-        "lots": [
-            {
-                "lot_id":     r["lot_id"],
-                "lot_number": r["lot_number"],
-                "x":          float(r["x"]),
-                "y":          float(r["y"]),
-            }
-            for r in rows
-        ],
-    }
 
 
 # ─── Endpoints ───────────────────────────────────────────────────────────────
@@ -105,13 +93,29 @@ def get_building_groups_for_plan(plan_id: int, conn=Depends(get_db_conn)):
         )
         rows = cur.fetchall()
 
-    # Group rows by building_group_id
     groups: dict[int, list] = {}
     for r in rows:
         gid = r["building_group_id"]
         groups.setdefault(gid, []).append(r)
 
-    return [_format_group(g) for g in groups.values()]
+    result = []
+    for gid, g_rows in groups.items():
+        first = g_rows[0]
+        result.append({
+            "building_group_id": first["building_group_id"],
+            "dev_id":            first["dev_id"],
+            "building_name":     first["building_name"],
+            "lots": [
+                {
+                    "lot_id":     r["lot_id"],
+                    "lot_number": r["lot_number"],
+                    "x":          float(r["x"]),
+                    "y":          float(r["y"]),
+                }
+                for r in g_rows
+            ],
+        })
+    return result
 
 
 @router.post("")
@@ -125,7 +129,6 @@ def create_building_group(body: CreateBuildingGroupRequest, conn=Depends(get_db_
         raise HTTPException(status_code=422, detail="lot_ids cannot be empty")
 
     with dict_cursor(conn) as cur:
-        # Auto-generate a name
         cur.execute(
             "SELECT COUNT(*) AS cnt FROM sim_building_groups WHERE dev_id = %s",
             (body.dev_id,),
@@ -133,18 +136,16 @@ def create_building_group(body: CreateBuildingGroupRequest, conn=Depends(get_db_
         count = cur.fetchone()["cnt"]
         building_name = f"Building {count + 1}"
 
-        # Insert the new group
         cur.execute(
             """
-            INSERT INTO sim_building_groups (dev_id, building_name, unit_count, created_at)
-            VALUES (%s, %s, %s, NOW())
+            INSERT INTO sim_building_groups (dev_id, building_name, created_at)
+            VALUES (%s, %s, NOW())
             RETURNING building_group_id
             """,
-            (body.dev_id, building_name, len(body.lot_ids)),
+            (body.dev_id, building_name),
         )
         new_id = cur.fetchone()["building_group_id"]
 
-        # Assign lots to this group
         cur.execute(
             "UPDATE sim_lots SET building_group_id = %s WHERE lot_id = ANY(%s)",
             (new_id, body.lot_ids),
@@ -152,7 +153,6 @@ def create_building_group(body: CreateBuildingGroupRequest, conn=Depends(get_db_
 
         conn.commit()
 
-        # Return the new group with lot positions on the given plan
         cur.execute(
             """
             SELECT sl.lot_id, sl.lot_number, lsp.x, lsp.y
@@ -166,10 +166,13 @@ def create_building_group(body: CreateBuildingGroupRequest, conn=Depends(get_db_
         )
         lots = cur.fetchall()
 
+    unit_count = len(body.lot_ids)
     return {
         "building_group_id": new_id,
         "dev_id":            body.dev_id,
         "building_name":     building_name,
+        "unit_count":        unit_count,
+        "building_type":     _unit_type_label(unit_count),
         "lots": [
             {"lot_id": r["lot_id"], "lot_number": r["lot_number"],
              "x": float(r["x"]), "y": float(r["y"])}
@@ -184,12 +187,12 @@ def create_building_group(body: CreateBuildingGroupRequest, conn=Depends(get_db_
 def get_buildings_for_phase(phase_id: int, conn=Depends(get_db_conn)):
     """
     Return all building groups that have at least one lot in this phase,
-    plus all unassigned lots in this phase. No plan_id required.
+    plus all unassigned lots in this phase.
+    unit_count and building_type are derived from lot count (not stored).
     """
     with dict_cursor(conn) as cur:
-        # Buildings with their lots
         cur.execute("""
-            SELECT bg.building_group_id, bg.building_name, bg.building_type,
+            SELECT bg.building_group_id, bg.building_name,
                    sl.lot_id, sl.lot_number, sl.lot_source, sl.dev_id,
                    d.marks_code AS dev_code2
             FROM sim_building_groups bg
@@ -200,7 +203,6 @@ def get_buildings_for_phase(phase_id: int, conn=Depends(get_db_conn)):
         """, (phase_id,))
         rows = cur.fetchall()
 
-        # Unassigned lots in this phase
         cur.execute("""
             SELECT sl.lot_id, sl.lot_number, sl.lot_source, sl.dev_id,
                    d.marks_code AS dev_code2
@@ -213,7 +215,6 @@ def get_buildings_for_phase(phase_id: int, conn=Depends(get_db_conn)):
         """, (phase_id,))
         unassigned = [dict(r) for r in cur.fetchall()]
 
-    # Collapse per-lot rows into per-building dicts
     buildings: dict[int, dict] = {}
     for r in rows:
         gid = r["building_group_id"]
@@ -221,8 +222,7 @@ def get_buildings_for_phase(phase_id: int, conn=Depends(get_db_conn)):
             buildings[gid] = {
                 "building_group_id": gid,
                 "building_name":     r["building_name"],
-                "building_type":     r["building_type"],
-                "lots": [],
+                "lots":              [],
             }
         buildings[gid]["lots"].append({
             "lot_id":     r["lot_id"],
@@ -230,6 +230,12 @@ def get_buildings_for_phase(phase_id: int, conn=Depends(get_db_conn)):
             "lot_source": r["lot_source"],
             "dev_code":   r["dev_code2"],
         })
+
+    # Derive unit_count and building_type from lot count
+    for b in buildings.values():
+        uc = len(b["lots"])
+        b["unit_count"]    = uc
+        b["building_type"] = _unit_type_label(uc)
 
     return {
         "buildings":  list(buildings.values()),
@@ -240,15 +246,14 @@ def get_buildings_for_phase(phase_id: int, conn=Depends(get_db_conn)):
 @router.post("/setup", status_code=201)
 def create_building_setup(body: SetupCreateRequest, conn=Depends(get_db_conn)):
     """
-    Create a building group with an explicit name and type, optionally assigning lots.
-    Used by the Setup view — no plan_id needed.
+    Create a building group with an explicit name, optionally assigning lots.
+    building_type and unit_count are derived from lot assignments, not stored.
     """
     name = (body.building_name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="building_name is required")
 
     with dict_cursor(conn) as cur:
-        # Resolve dev_id from the phase (use first assigned lot, or phase.dev_id)
         cur.execute("""
             SELECT COALESCE(
                 (SELECT sl.dev_id FROM sim_lots sl
@@ -263,10 +268,10 @@ def create_building_setup(body: SetupCreateRequest, conn=Depends(get_db_conn)):
         dev_id = row["dev_id"]
 
         cur.execute("""
-            INSERT INTO sim_building_groups (dev_id, building_name, building_type, unit_count, created_at)
-            VALUES (%s, %s, %s, %s, NOW())
+            INSERT INTO sim_building_groups (dev_id, building_name, created_at)
+            VALUES (%s, %s, NOW())
             RETURNING building_group_id
-        """, (dev_id, name, body.building_type, len(body.lot_ids) or None))
+        """, (dev_id, name))
         new_id = cur.fetchone()["building_group_id"]
 
         if body.lot_ids:
@@ -277,31 +282,30 @@ def create_building_setup(body: SetupCreateRequest, conn=Depends(get_db_conn)):
 
         conn.commit()
 
-    return {"building_group_id": new_id, "building_name": name,
-            "building_type": body.building_type, "lot_ids": body.lot_ids}
+    unit_count = len(body.lot_ids)
+    return {
+        "building_group_id": new_id,
+        "building_name":     name,
+        "unit_count":        unit_count,
+        "building_type":     _unit_type_label(unit_count),
+        "lot_ids":           body.lot_ids,
+    }
 
 
 @router.patch("/{building_group_id}")
 def patch_building_group(building_group_id: int, body: PatchBuildingGroupRequest,
                          conn=Depends(get_db_conn)):
-    """Rename and/or retype a building group."""
-    if body.building_name is None and body.building_type is None:
-        raise HTTPException(status_code=422, detail="Nothing to update")
+    """Rename a building group."""
+    if body.building_name is None:
+        raise HTTPException(status_code=422, detail="building_name required")
+    name = body.building_name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="building_name cannot be empty")
 
-    sets, params = [], []
-    if body.building_name is not None:
-        name = body.building_name.strip()
-        if not name:
-            raise HTTPException(status_code=422, detail="building_name cannot be empty")
-        sets.append("building_name = %s"); params.append(name)
-    if body.building_type is not None:
-        sets.append("building_type = %s"); params.append(body.building_type)
-
-    params.append(building_group_id)
     with dict_cursor(conn) as cur:
         cur.execute(
-            f"UPDATE sim_building_groups SET {', '.join(sets)} WHERE building_group_id = %s",
-            params,
+            "UPDATE sim_building_groups SET building_name = %s WHERE building_group_id = %s",
+            (name, building_group_id),
         )
         if cur.rowcount == 0:
             raise HTTPException(status_code=404, detail="Building group not found")
@@ -315,10 +319,9 @@ def patch_building_lots(building_group_id: int, body: PatchLotsRequest,
     """
     Replace the lot assignments for a building group.
     Lots currently in the group but not in lot_ids are unassigned.
-    Lots in lot_ids are assigned (removed from any prior group first).
+    unit_count is derived from the resulting lot count (not stored).
     """
     with dict_cursor(conn) as cur:
-        # Unassign any lots currently in this group
         cur.execute(
             "UPDATE sim_lots SET building_group_id = NULL WHERE building_group_id = %s",
             (building_group_id,),
@@ -327,10 +330,6 @@ def patch_building_lots(building_group_id: int, body: PatchLotsRequest,
             cur.execute(
                 "UPDATE sim_lots SET building_group_id = %s WHERE lot_id = ANY(%s)",
                 (building_group_id, body.lot_ids),
-            )
-            cur.execute(
-                "UPDATE sim_building_groups SET unit_count = %s WHERE building_group_id = %s",
-                (len(body.lot_ids), building_group_id),
             )
         conn.commit()
     return {"building_group_id": building_group_id, "lot_ids": body.lot_ids}

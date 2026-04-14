@@ -43,12 +43,15 @@ def build_frozen_input(
         ]
     )
 
+    phase_building_config = _load_phase_building_config(conn, dev_id)
+
     return FrozenInput(
         lot_snapshot=lot_snapshot,
         demand_series=demand_series,
         phase_capacity=phase_capacity,
         building_group_memberships=building_group_memberships,
         tda_hold_lot_ids=tda_hold_lot_ids,
+        phase_building_config=phase_building_config,
         sim_run_id=sim_run_id,
         dev_id=dev_id,
     )
@@ -96,3 +99,25 @@ def _load_phase_capacity(conn, dev_id: int) -> list:
                 "date_dev":        d,
             })
     return result
+
+
+def _load_phase_building_config(conn, dev_id: int) -> dict:
+    """
+    Load sim_phase_building_config for all phases belonging to this development.
+    Returns {phase_id: [(building_count, units_per_building), ...]} for phases with config.
+    Phases with no rows in sim_phase_building_config are omitted (SF / unconfigured).
+    """
+    df = conn.read_df(f"""
+        SELECT spbc.phase_id, spbc.building_count, spbc.units_per_building
+        FROM sim_phase_building_config spbc
+        JOIN sim_dev_phases sdp ON sdp.phase_id = spbc.phase_id
+        WHERE sdp.dev_id = {dev_id}
+        ORDER BY spbc.phase_id, spbc.id
+    """)
+    config: dict = {}
+    for _, row in df.iterrows():
+        pid = int(row["phase_id"])
+        config.setdefault(pid, []).append(
+            (int(row["building_count"]), int(row["units_per_building"]))
+        )
+    return config

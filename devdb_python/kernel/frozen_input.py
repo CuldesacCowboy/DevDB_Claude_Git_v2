@@ -16,5 +16,6 @@ class FrozenInput:
     phase_capacity: list         # list of dicts from _load_phase_capacity()
     building_group_memberships: dict  # {lot_id: building_group_id} for lots with a group
     tda_hold_lot_ids: set        # lot_ids where date_td_hold is set and date_td is null (H status)
+    phase_building_config: dict  # {phase_id: [(building_count, units_per_building)]} for multi-family phases
     sim_run_id: int
     dev_id: int

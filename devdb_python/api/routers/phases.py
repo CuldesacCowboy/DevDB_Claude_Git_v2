@@ -1,7 +1,10 @@
 # routers/phases.py
 # Phase management endpoints.
 
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel
 
 from api.deps import get_db_conn
 from api.db import dict_cursor
@@ -520,3 +523,95 @@ async def update_phase(
 
     conn.commit()
     return {"success": True, "projected_count": new_total}
+
+
+# ─── Building config endpoints ────────────────────────────────────────────────
+
+class BuildingConfigRow(BaseModel):
+    building_count: int
+    units_per_building: int
+
+
+@router.get("/{phase_id}/building-config")
+def get_building_config(phase_id: int, conn=Depends(get_db_conn)):
+    """
+    Return building config rows for a phase.
+    Empty list means SF (no building grouping configured).
+    """
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            """
+            SELECT id, building_count, units_per_building
+            FROM sim_phase_building_config
+            WHERE phase_id = %s
+            ORDER BY id
+            """,
+            (phase_id,),
+        )
+        rows = cur.fetchall()
+        total = sum(r["building_count"] * r["units_per_building"] for r in rows)
+        return {
+            "phase_id": phase_id,
+            "rows": [
+                {
+                    "id": r["id"],
+                    "building_count": r["building_count"],
+                    "units_per_building": r["units_per_building"],
+                }
+                for r in rows
+            ],
+            "total_units": total,
+        }
+    finally:
+        cur.close()
+
+
+@router.put("/{phase_id}/building-config")
+def put_building_config(phase_id: int, body: List[BuildingConfigRow],
+                        conn=Depends(get_db_conn)):
+    """
+    Replace building config for a phase (full replacement).
+    Automatically updates projected_count in sim_phase_product_splits to
+    SUM(building_count * units_per_building).
+    An empty list clears the config (SF / manually-set projected_count).
+    """
+    cur = dict_cursor(conn)
+    try:
+        # Verify phase exists
+        cur.execute("SELECT phase_id FROM sim_dev_phases WHERE phase_id = %s", (phase_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Phase not found")
+
+        # Replace all config rows
+        cur.execute(
+            "DELETE FROM sim_phase_building_config WHERE phase_id = %s", (phase_id,)
+        )
+        total_units = 0
+        for row in body:
+            if row.building_count <= 0 or row.units_per_building <= 0:
+                raise HTTPException(status_code=422, detail="building_count and units_per_building must be > 0")
+            cur.execute(
+                """
+                INSERT INTO sim_phase_building_config (phase_id, building_count, units_per_building)
+                VALUES (%s, %s, %s)
+                """,
+                (phase_id, row.building_count, row.units_per_building),
+            )
+            total_units += row.building_count * row.units_per_building
+
+        # Auto-update projected_count on all product splits for this phase
+        if total_units > 0:
+            cur.execute(
+                """
+                UPDATE sim_phase_product_splits
+                SET projected_count = %s
+                WHERE phase_id = %s
+                """,
+                (total_units, phase_id),
+            )
+
+        conn.commit()
+        return {"phase_id": phase_id, "total_units": total_units, "rows": len(body)}
+    finally:
+        cur.close()

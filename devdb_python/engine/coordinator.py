@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 from .connection import PGConnection as DBConnection
 from .s0100_lot_loader import lot_loader
 from .s0200_date_actualizer import date_actualizer
+from .s0205_building_group_sync import building_group_sync
 from .s0300_gap_fill_engine import gap_fill_engine
 from .s0400_chronology_validator import chronology_validator
 from .s0500_takedown_engine import takedown_engine
@@ -434,6 +435,10 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
 
     # S-02
     snapshot = date_actualizer(conn, snapshot)
+
+    # S-0205: propagate dates within building groups (real/pre lots only).
+    # Ensures all units in a building share date_str/date_cmp/date_td from MARKS.
+    snapshot = building_group_sync(conn, snapshot)
 
     # Override application: manager-entered planning dates win over MARKS actuals.
     # Applied after S-02 so MARKS is still written back to sim_lots (ground truth),

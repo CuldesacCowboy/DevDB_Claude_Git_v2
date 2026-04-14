@@ -3,13 +3,17 @@ S-0800 temp_lot_generator — Create simulated temp lots to fill unmet demand sl
 
 Reads:   nothing — pure computation
 Writes:  nothing — returns temp lot records list (not yet persisted)
-Input:   unmet_demand_series: list, phase_capacity: list, sim_run_id: int
+Input:   unmet_demand_series: list, phase_capacity: list, sim_run_id: int,
+         phase_building_config: dict (optional) {phase_id: [(building_count, units_per_building)]}
 Rules:   date_str = demand slot month always, independent of date_dev (D-137).
          date_td = date_str for all sim lots (D-142). Hard stop at phase capacity (D-068).
          date_cmp and date_cls are NOT set here — the shell timing expansion stage
          (coordinator._expand_timing) derives them after plan() returns using empirical
          build lag curves. This is the kernel boundary: the kernel owns assignment
          decisions; the shell owns timing derivation.
+         Building groups: when phase_building_config is provided for a phase, lots are
+         generated in groups (all units in a building share date_str). Synthetic
+         building_group_ids are assigned using negative integers (no DB FK required).
          Not Own: assigning builder_id (S-0900), writing to sim_lots (S-1100),
          writing demand_derived dates (S-1000), modifying real lots,
          computing date_cmp or date_cls.
@@ -30,7 +34,8 @@ _DEFAULT_LAG_CLS_FROM_CMP = 45
 
 
 def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
-                       sim_run_id: int) -> list:
+                       sim_run_id: int,
+                       phase_building_config: dict | None = None) -> list:
     """
     Generate temp lot records for each unmet demand slot.
 
@@ -38,6 +43,10 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
     date_str = date(year, month, 1) from the demand slot. Always.
     date_dev = phase delivery date for the assigned phase. Always.
     These fields are fully independent.
+
+    When phase_building_config is provided for a phase, lots are grouped into buildings.
+    All units in a building share the same date_str (first demand slot in the group).
+    Synthetic building_group_id values are negative integers (no FK constraint needed).
 
     Total temp lots written == total unmet demand slots. No exceptions.
     """
@@ -58,25 +67,38 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
             demand_slots.append((int(year), int(month)))
 
     # Step 2: Flatten phase capacity into ordered list, one entry per available slot.
-    # Fill phase to capacity before moving to next phase.
     phase_slots = []
     for phase in phase_capacity:
         for _ in range(int(phase["available_slots"])):
             phase_slots.append(phase)
 
-    # Step 3: Zip demand slots against phase slots. One temp lot per demand slot.
     n = min(len(demand_slots), len(phase_slots))
     if n < len(demand_slots):
         print(f"WARNING: Phase capacity exhausted. "
               f"{len(demand_slots) - n} unmet slots could not be filled. "
               f"Add capacity in sim_phase_product_splits.")
 
-    # Per-phase deferred-slot counter: when a demand slot falls before a phase's
-    # delivery date we cannot discard it (that creates sentinel deliveries) and
-    # cannot use the raw slot date (that creates a start-before-dev violation).
-    # Instead we defer: spread deferred lots at the same 1/month pace starting
-    # the month after delivery.  This produces a pent-up-demand release that is
-    # honest — lots were waiting for the phase to open and start in sequence.
+    # Step 3: Build per-phase building template from config.
+    # Template is an ordered list of group sizes for each building in the phase.
+    # E.g., 6 duplexes + 2 quads → [2, 2, 2, 2, 2, 2, 4, 4]
+    bg_templates: dict[int, list[int]] = {}
+    if phase_building_config:
+        for phase_id, rows in phase_building_config.items():
+            template = []
+            for building_count, units_per_building in rows:
+                for _ in range(int(building_count)):
+                    template.append(int(units_per_building))
+            if template:
+                bg_templates[int(phase_id)] = template
+
+    # Per-phase state for building group progression.
+    bg_state: dict[int, dict] = {}  # phase_id → {template_idx, slots_in_building}
+    bg_first_date: dict[tuple, date] = {}  # (phase_id, building_idx) → shared date_str
+    next_bg_id = -1  # Negative counters for synthetic group IDs (no DB FK needed)
+    bg_id_map: dict[tuple, int] = {}  # (phase_id, building_idx) → synthetic bg_id
+
+    # Per-phase deferred-slot counter: when a demand slot < phase delivery date,
+    # defer start to 1/month after delivery at pace of 1 per slot.
     phase_deferred_count: dict[int, int] = {}
 
     def _add_months_local(d: date, n: int) -> date:
@@ -97,36 +119,57 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
         date_str = date(year, month, 1)
 
         # Defer start if demand slot precedes phase delivery date.
-        # Spread deferred lots at 1/month from the month after delivery so the
-        # release matches normal absorption pace and no violation is created.
         delivery = slot["date_dev"]
         if delivery is not None and date_str < delivery:
             n_deferred = phase_deferred_count.get(phase_id, 0)
             date_str = _add_months_local(delivery, 1 + n_deferred)
             phase_deferred_count[phase_id] = n_deferred + 1
 
-        # date_cmp and date_cls are intentionally absent here.
-        # The shell timing expansion stage (coordinator._expand_timing) derives
-        # them after plan() returns. Kernel boundary: assignment decisions only.
+        # Resolve building group for this lot.
+        bg_id = None
+        if phase_id in bg_templates:
+            template = bg_templates[phase_id]
+            if phase_id not in bg_state:
+                bg_state[phase_id] = {"template_idx": 0, "slots_in_building": 0}
+            state = bg_state[phase_id]
+
+            if state["template_idx"] < len(template):
+                building_idx = state["template_idx"]
+                building_key = (phase_id, building_idx)
+
+                if building_key not in bg_id_map:
+                    bg_id_map[building_key] = next_bg_id
+                    next_bg_id -= 1
+                    bg_first_date[building_key] = date_str  # First slot sets the shared date
+
+                # All lots in this building share the first slot's date_str
+                date_str = bg_first_date[building_key]
+                bg_id = bg_id_map[building_key]
+
+                state["slots_in_building"] += 1
+                if state["slots_in_building"] >= template[building_idx]:
+                    state["template_idx"] += 1
+                    state["slots_in_building"] = 0
+
         temp_lots.append({
-            "lot_id":          None,
-            "dev_id":          dev_id,
-            "phase_id":        phase_id,
-            "builder_id":      None,
-            "lot_source":      "sim",
-            "lot_number":      None,
-            "sim_run_id":      sim_run_id,
-            "lot_type_id":     lot_type_id,
-            "building_group_id": None,
-            "date_ent":        None,
-            "date_dev":        delivery,
-            "date_td":         date_str,
-            "date_td_hold":    None,
-            "date_str":        date_str,
-            "date_str_source": "engine_filled",
-            "date_frm":        None,
-            "created_at":      None,
-            "updated_at":      None,
+            "lot_id":            None,
+            "dev_id":            dev_id,
+            "phase_id":          phase_id,
+            "builder_id":        None,
+            "lot_source":        "sim",
+            "lot_number":        None,
+            "sim_run_id":        sim_run_id,
+            "lot_type_id":       lot_type_id,
+            "building_group_id": bg_id,
+            "date_ent":          None,
+            "date_dev":          delivery,
+            "date_td":           date_str,
+            "date_td_hold":      None,
+            "date_str":          date_str,
+            "date_str_source":   "engine_filled",
+            "date_frm":          None,
+            "created_at":        None,
+            "updated_at":        None,
         })
 
     return temp_lots

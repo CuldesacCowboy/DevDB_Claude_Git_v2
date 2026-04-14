@@ -8,6 +8,8 @@ Rules:   Matches real lots in U/H/D status to monthly demand slots in order.
          Returns (allocated_df, unmet_demand_series).
          allocated_df: DataFrame {lot_id, assigned_year, assigned_month}.
          unmet_demand_series: list of (year, month, unmet_count).
+         Building groups are treated as atomic units: when any lot in a group
+         is allocated, all mates receive the same assigned month.
          Vectorized merge — no carry-forward, no fractional slots.
          Not Own: creating temp lots (S-0800), assigning builder (S-0900).
 """
@@ -18,6 +20,7 @@ import pandas as pd
 def demand_allocator(lot_snapshot: pd.DataFrame, demand_df):
     """
     Assign real lots to demand slots via positional merge.
+    Building groups are atomic: all mates are allocated to the same demand month.
     demand_df: DataFrame [year, month, slots] from S-06.
     Returns (allocated_df, unmet_demand_series).
     """
@@ -54,21 +57,73 @@ def demand_allocator(lot_snapshot: pd.DataFrame, demand_df):
         lot_snapshot[h_mask].sort_values("date_td_hold"),
         lot_snapshot[d_mask].sort_values("date_dev"),
     ], ignore_index=True)
-    lot_ids = available["lot_id"].tolist()
 
-    # Step 2: Flatten demand into one row per slot.
-    flat = demand_df.loc[demand_df.index.repeat(demand_df["slots"])][["year", "month"]].reset_index(drop=True)
+    if available.empty:
+        # No real lots to allocate; all demand is unmet.
+        flat = demand_df.loc[demand_df.index.repeat(demand_df["slots"])][["year", "month"]].reset_index(drop=True)
+        unmet_counts = flat.groupby(["year", "month"], sort=False).size().reset_index(name="count")
+        unmet = [(int(r["year"]), int(r["month"]), int(r["count"]))
+                 for _, r in unmet_counts.iterrows()]
+        return empty_alloc, unmet
 
-    # Step 3: Positional zip -- lot_ids against flat assignment list.
-    n_fill = min(len(lot_ids), len(flat))
-    allocated_df = flat.iloc[:n_fill].copy()
-    allocated_df.insert(0, "lot_id", lot_ids[:n_fill])
-    allocated_df.columns = ["lot_id", "assigned_year", "assigned_month"]
+    # Step 2: Build ordered allocation units respecting building groups.
+    # A unit is a list of lot_ids that must share the same assigned month.
+    # Singletons (no building_group_id) → unit of size 1.
+    # Groups → all available mates collected the first time the group is seen.
+    seen_bg_ids: set = set()
+    allocation_units: list[list[int]] = []
 
-    # Step 4: Unmet -- real only when lot_ids exhausted before flat list.
-    unmet = []
-    if len(lot_ids) < len(flat):
-        leftover = flat.iloc[n_fill:].copy()
+    has_bg_col = "building_group_id" in available.columns
+
+    for _, row in available.iterrows():
+        bg_id = row.get("building_group_id") if has_bg_col else None
+        if pd.isna(bg_id) or bg_id is None:
+            allocation_units.append([int(row["lot_id"])])
+        else:
+            bg_id = int(bg_id)
+            if bg_id in seen_bg_ids:
+                continue
+            seen_bg_ids.add(bg_id)
+            group_ids = (
+                available[available["building_group_id"] == bg_id]["lot_id"]
+                .astype(int)
+                .tolist()
+            )
+            allocation_units.append(group_ids)
+
+    # Step 3: Flatten demand into one row per slot.
+    flat = (
+        demand_df
+        .loc[demand_df.index.repeat(demand_df["slots"])][["year", "month"]]
+        .reset_index(drop=True)
+    )
+
+    # Step 4: Zip allocation units against demand slots.
+    # Each unit of size N consumes N slots and all lots get the first slot's month.
+    result_rows: list[dict] = []
+    offset = 0
+
+    for unit in allocation_units:
+        if offset >= len(flat):
+            break
+        n = len(unit)
+        first = flat.iloc[offset]
+        year, month = int(first["year"]), int(first["month"])
+        for lot_id in unit:
+            result_rows.append({"lot_id": lot_id, "assigned_year": year, "assigned_month": month})
+        # Consume slots up to the group size (may be fewer if demand is exhausted)
+        offset += n
+
+    allocated_df = (
+        pd.DataFrame(result_rows)
+        if result_rows
+        else empty_alloc
+    )
+
+    # Step 5: Unmet -- demand slots remaining after all allocation units placed.
+    unmet: list[tuple] = []
+    if offset < len(flat):
+        leftover = flat.iloc[offset:].copy()
         unmet_counts = leftover.groupby(["year", "month"], sort=False).size().reset_index(name="count")
         unmet = [(int(r["year"]), int(r["month"]), int(r["count"]))
                  for _, r in unmet_counts.iterrows()]

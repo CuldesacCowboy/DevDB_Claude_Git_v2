@@ -41,6 +41,7 @@ def plan(frozen_input: FrozenInput) -> Proposal:
         unmet_demand_series,
         frozen_input.phase_capacity,
         frozen_input.sim_run_id,
+        phase_building_config=frozen_input.phase_building_config,
     )
 
     # S-0810: enforce building group date_str coupling (date_cmp/date_cls not set here)

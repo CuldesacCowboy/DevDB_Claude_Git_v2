@@ -101,10 +101,10 @@ def install(conn) -> None:
         conn.execute(
             """
             INSERT INTO sim_building_groups (building_group_id, dev_id, building_name,
-                building_type, unit_count, created_at)
-            VALUES (%s, %s, %s, %s, %s, now())
+                created_at)
+            VALUES (%s, %s, %s, now())
             """,
-            (bg_id, 7008, bg_name, "sf", 4),
+            (bg_id, 7008, bg_name),
         )
 
     # Legal instrument
