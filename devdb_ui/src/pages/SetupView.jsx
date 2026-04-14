@@ -133,7 +133,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
 // ─── Development row ──────────────────────────────────────────────────────────
 
 function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onChangeInstrType, onRenamePhase, onDeleteDev, onRefresh }) {
-  const devInstrs = instruments.filter(i => i.modern_dev_id === dev.dev_id)
+  const devInstrs = instruments.filter(i => i.dev_id === dev.dev_id)
   const [open, setOpen] = useLocalOpen(`setup_open_dev_${dev.dev_id}`)
   const [hovered, setHovered] = useState(false)
   const addInstr = useAddForm(async (vals) => {
@@ -256,7 +256,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
   useEffect(() => { if (xTick > 0) setOpen(xVal) }, [xTick]) // eslint-disable-line
 
   const commInstrIds = new Set(
-    instruments.filter(i => devs.some(d => d.dev_id === i.modern_dev_id)).map(i => i.instrument_id)
+    instruments.filter(i => devs.some(d => d.dev_id === i.dev_id)).map(i => i.instrument_id)
   )
   const commPhases = phases.filter(p => commInstrIds.has(p.instrument_id))
   const commD = devs.length
@@ -445,7 +445,7 @@ export default function SetupView({ showTestCommunities }) {
     })
     if (!res.ok) throw new Error((await res.json()).detail ?? 'Create failed')
     const data = await res.json()
-    setInstruments(prev => [...prev, { ...data, modern_dev_id: devId }])
+    setInstruments(prev => [...prev, { ...data }])
   }
 
   async function handleRenameComm(commId, name) {
@@ -525,7 +525,7 @@ export default function SetupView({ showTestCommunities }) {
   const commStats = {}
   for (const comm of visibleCommunities) {
     const cDevs = developments.filter(d => d.community_id === comm.ent_group_id)
-    const cIIds = new Set(instruments.filter(i => cDevs.some(d => d.dev_id === i.modern_dev_id)).map(i => i.instrument_id))
+    const cIIds = new Set(instruments.filter(i => cDevs.some(d => d.dev_id === i.dev_id)).map(i => i.instrument_id))
     const cPhases = phases.filter(p => cIIds.has(p.instrument_id))
     commStats[comm.ent_group_id] = {
       D: cDevs.length, I: cIIds.size, P: cPhases.length,
