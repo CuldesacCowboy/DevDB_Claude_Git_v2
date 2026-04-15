@@ -322,7 +322,6 @@ function LedgerTable({ rows, floors, period, lots = [], deliverySchedule = [] })
         </tbody>
       </table>
     </div>
-    </div>
 
     {tip && (
       <div style={{
@@ -374,6 +373,7 @@ function LedgerTable({ rows, floors, period, lots = [], deliverySchedule = [] })
         )}
       </div>
     )}
+    </div>
   )
 }
 
