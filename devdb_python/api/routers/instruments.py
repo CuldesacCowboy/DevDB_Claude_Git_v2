@@ -283,7 +283,7 @@ def get_spec_rate_hints(instrument_id: int, conn=Depends(get_db_conn)):
             JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
             JOIN devdb_ext.housemaster hm
                 ON  hm.developmentcode = REGEXP_REPLACE(sl.lot_number, '[0-9]+$', '')
-                AND hm.housenumber     = CAST(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', '') AS INT)
+                AND hm.housenumber     = CAST(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', '') AS BIGINT)
             WHERE sdp.instrument_id = %s
               AND sl.lot_source IN ('real', 'pre')
               AND sl.excluded IS NOT TRUE
@@ -327,9 +327,9 @@ def get_spec_rate_hints(instrument_id: int, conn=Depends(get_db_conn)):
                     cur.execute(
                         """
                         SELECT
-                            COUNT(DISTINCT (hm.developmentcode, hm.housenumber))::float AS total_lots,
+                            COUNT(DISTINCT hm.developmentcode || ':' || hm.housenumber::text)::float AS total_lots,
                             COUNT(DISTINCT CASE WHEN ct.conumber IS NOT NULL
-                                               THEN (hm.developmentcode, hm.housenumber) END)::float AS spec_lots
+                                               THEN hm.developmentcode || ':' || hm.housenumber::text END)::float AS spec_lots
                         FROM devdb_ext.housemaster hm
                         LEFT JOIN devdb_ext.codetail ct
                             ON  ct.companycode     = hm.companycode
@@ -337,7 +337,7 @@ def get_spec_rate_hints(instrument_id: int, conn=Depends(get_db_conn)):
                             AND ct.housenumber     = hm.housenumber
                             AND ct.conumber        = '000'
                         WHERE hm.companycode = %s
-                          AND hm.currentjobstart >= NOW() - (%s || ' months')::INTERVAL
+                          AND hm.conststart_date >= NOW() - (%s || ' months')::INTERVAL
                         """,
                         (cc, months),
                     )
@@ -345,14 +345,14 @@ def get_spec_rate_hints(instrument_id: int, conn=Depends(get_db_conn)):
                     cur.execute(
                         """
                         SELECT
-                            COUNT(DISTINCT (hm.developmentcode, hm.housenumber))::float AS total_lots,
+                            COUNT(DISTINCT hm.developmentcode || ':' || hm.housenumber::text)::float AS total_lots,
                             COUNT(DISTINCT CASE WHEN ct.conumber IS NOT NULL
-                                               THEN (hm.developmentcode, hm.housenumber) END)::float AS spec_lots
+                                               THEN hm.developmentcode || ':' || hm.housenumber::text END)::float AS spec_lots
                         FROM sim_lots sl_ref
                         JOIN sim_dev_phases sdp_ref ON sdp_ref.phase_id = sl_ref.phase_id
                         JOIN devdb_ext.housemaster hm
                             ON  hm.developmentcode = REGEXP_REPLACE(sl_ref.lot_number, '[0-9]+$', '')
-                            AND hm.housenumber     = CAST(REGEXP_REPLACE(sl_ref.lot_number, '^[A-Za-z]+', '') AS INT)
+                            AND hm.housenumber     = CAST(REGEXP_REPLACE(sl_ref.lot_number, '^[A-Za-z]+', '') AS BIGINT)
                         LEFT JOIN devdb_ext.codetail ct
                             ON  ct.companycode     = hm.companycode
                             AND ct.developmentcode = hm.developmentcode
@@ -360,7 +360,8 @@ def get_spec_rate_hints(instrument_id: int, conn=Depends(get_db_conn)):
                             AND ct.conumber        = '000'
                         WHERE hm.companycode = %s
                           AND sl_ref.lot_type_id = %s
-                          AND hm.currentjobstart >= NOW() - (%s || ' months')::INTERVAL
+                          AND sl_ref.lot_number ~ '^[A-Za-z]+[0-9]+$'
+                          AND hm.conststart_date >= NOW() - (%s || ' months')::INTERVAL
                         """,
                         (cc, lt, months),
                     )
