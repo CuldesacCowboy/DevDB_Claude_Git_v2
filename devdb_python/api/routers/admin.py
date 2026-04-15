@@ -110,16 +110,18 @@ def get_phase_config(conn=Depends(get_db_conn)):
             for r in cur.fetchall():
                 prod_map.setdefault(r['phase_id'], {})[r['lot_type_id']] = r['projected_count']
 
-        # Builder splits (configured): phase_id -> {builder_id: share}
-        bldr_map = {}
-        if phase_ids:
+        # Builder splits (configured): instrument_id -> {builder_id: share}
+        # Expanded to phase rows via instrument_id on each phase.
+        instrument_ids = list({r['instrument_id'] for r in phases})
+        bldr_map = {}  # instrument_id -> {builder_id: share}
+        if instrument_ids:
             cur.execute("""
-                SELECT phase_id, builder_id, share
-                FROM sim_phase_builder_splits
-                WHERE phase_id = ANY(%s)
-            """, (phase_ids,))
+                SELECT instrument_id, builder_id, share
+                FROM sim_instrument_builder_splits
+                WHERE instrument_id = ANY(%s)
+            """, (instrument_ids,))
             for r in cur.fetchall():
-                bldr_map.setdefault(r['phase_id'], {})[r['builder_id']] = (
+                bldr_map.setdefault(r['instrument_id'], {})[r['builder_id']] = (
                     float(r['share']) if r['share'] is not None else None
                 )
 
@@ -200,7 +202,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 'hint_date':           hint_map.get(pid),
                 'lot_type_counts':        lc,
                 'product_splits':         prod_map.get(pid, {}),
-                'builder_splits':         bldr_map.get(pid, {}),
+                'builder_splits':         bldr_map.get(p['instrument_id'], {}),
                 'actual_builder_counts':  actual_bldr_map.get(pid, {}),  # {builder_id: count, None: count_unassigned}
             })
 
@@ -295,12 +297,12 @@ def upsert_product_split(
 # ─── Builder splits ───────────────────────────────────────────────────────────
 
 class BuilderSplitRequest(BaseModel):
-    share: Optional[float]   # 0–100; null = clear this builder from the phase
+    share: Optional[float]   # 0–100; null = clear this builder from the instrument
 
 
-@router.put("/builder-split/{phase_id}/{builder_id}")
+@router.put("/builder-split/{instrument_id}/{builder_id}")
 def upsert_builder_split(
-    phase_id: int, builder_id: int, body: BuilderSplitRequest, conn=Depends(get_db_conn)
+    instrument_id: int, builder_id: int, body: BuilderSplitRequest, conn=Depends(get_db_conn)
 ):
     if body.share is not None and not (0 <= body.share <= 100):
         raise HTTPException(status_code=422, detail='share must be 0–100')
@@ -308,20 +310,20 @@ def upsert_builder_split(
     try:
         if body.share is None:
             cur.execute(
-                'DELETE FROM sim_phase_builder_splits WHERE phase_id = %s AND builder_id = %s',
-                (phase_id, builder_id),
+                'DELETE FROM sim_instrument_builder_splits WHERE instrument_id = %s AND builder_id = %s',
+                (instrument_id, builder_id),
             )
         else:
             cur.execute(
                 """
-                INSERT INTO sim_phase_builder_splits (phase_id, builder_id, share)
+                INSERT INTO sim_instrument_builder_splits (instrument_id, builder_id, share)
                 VALUES (%s, %s, %s)
-                ON CONFLICT (phase_id, builder_id) DO UPDATE SET share = EXCLUDED.share
+                ON CONFLICT (instrument_id, builder_id) DO UPDATE SET share = EXCLUDED.share
                 """,
-                (phase_id, builder_id, body.share),
+                (instrument_id, builder_id, body.share),
             )
         conn.commit()
-        return {'phase_id': phase_id, 'builder_id': builder_id, 'share': body.share}
+        return {'instrument_id': instrument_id, 'builder_id': builder_id, 'share': body.share}
     finally:
         cur.close()
 
@@ -530,16 +532,17 @@ def get_audit_data(conn=Depends(get_db_conn)):
             for r in cur.fetchall():
                 prod_total_map[r['phase_id']] = int(r['total']) if r['total'] else 0
 
-        # Builder splits per phase
-        bldr_map = {}
-        if phase_ids:
+        # Builder splits per instrument (expanded to phases via instrument_id)
+        instrument_ids_cc = list({r['instrument_id'] for r in phases})
+        bldr_map = {}  # instrument_id -> {builder_id: share}
+        if instrument_ids_cc:
             cur.execute("""
-                SELECT phase_id, builder_id, share
-                FROM sim_phase_builder_splits
-                WHERE phase_id = ANY(%s)
-            """, (phase_ids,))
+                SELECT instrument_id, builder_id, share
+                FROM sim_instrument_builder_splits
+                WHERE instrument_id = ANY(%s)
+            """, (instrument_ids_cc,))
             for r in cur.fetchall():
-                bldr_map.setdefault(r['phase_id'], {})[r['builder_id']] = (
+                bldr_map.setdefault(r['instrument_id'], {})[r['builder_id']] = (
                     float(r['share']) if r['share'] is not None else None
                 )
 
@@ -581,7 +584,7 @@ def get_audit_data(conn=Depends(get_db_conn)):
             egid = p['ent_group_id']
             if egid not in comm_map:
                 continue
-            bs     = bldr_map.get(pid, {})
+            bs     = bldr_map.get(p['instrument_id'], {})
             bs_sum = round(sum(v for v in bs.values() if v is not None) * 100, 1) if bs else None
             comm_map[egid]['phases'].append({
                 'phase_id':            pid,

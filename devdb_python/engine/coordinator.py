@@ -299,11 +299,13 @@ def curves_for(curves: dict, lag_type: str, lot_type_id) -> dict | None:
 
 def _load_builder_splits(conn: DBConnection) -> dict:
     """
-    Load sim_phase_builder_splits as {phase_id: [{builder_id, share}, ...]}.
+    Load sim_instrument_builder_splits and expand to {phase_id: [{builder_id, share}, ...]}
+    by joining to sim_dev_phases. All phases in an instrument share the same splits.
     """
     df = conn.read_df("""
-        SELECT phase_id, builder_id, share
-        FROM sim_phase_builder_splits
+        SELECT sdp.phase_id, sibs.builder_id, sibs.share
+        FROM sim_instrument_builder_splits sibs
+        JOIN sim_dev_phases sdp ON sdp.instrument_id = sibs.instrument_id
     """)
     splits = {}
     for _, r in df.iterrows():

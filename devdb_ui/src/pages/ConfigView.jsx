@@ -893,7 +893,9 @@ function SpecRateCell({ instrumentId, value, onSave }) {
 
 // ─── Instrument tab ───────────────────────────────────────────────────────────
 
-function InstrumentTab({ phaseRows, showTest, onSaveSpecRate }) {
+function InstrumentTab({ phaseRows, showTest, builders, onSaveSpecRate, onSaveBuilderSplit }) {
+  const [localInstSplits, setLocalInstSplits] = useState({}) // { instrument_id: { builder_id: share } }
+
   // Derive instrument summary from phase data
   const filtered = phaseRows.filter(r => showTest ? r.is_test : !r.is_test)
   const instMap = new Map()
@@ -905,10 +907,28 @@ function InstrumentTab({ phaseRows, showTest, onSaveSpecRate }) {
         dev_id: r.dev_id, dev_name: r.dev_name,
         instrument_id: k, instrument_name: r.instrument_name,
         spec_rate: r.spec_rate ?? null,
+        builder_splits: r.builder_splits ?? {},
         phases: [],
       })
     }
     instMap.get(k).phases.push(r)
+  }
+
+  async function handleBuilderSplit(instrumentId, builderId, pctValue) {
+    const share = pctValue != null ? Math.min(1, Math.max(0, Math.round(pctValue) / 100)) : null
+    // Complement: for a 2-builder setup, auto-set the other builder
+    const complement = builders.length === 2 ? builders.find(b => b.builder_id !== builderId) : null
+    const compShare  = (complement && share != null) ? Math.round((1 - share) * 100) / 100 : null
+    // Optimistic update
+    setLocalInstSplits(prev => {
+      const base = { ...(instMap.get(instrumentId)?.builder_splits ?? {}), ...(prev[instrumentId] ?? {}) }
+      base[builderId] = share
+      if (complement && compShare != null) base[complement.builder_id] = compShare
+      return { ...prev, [instrumentId]: base }
+    })
+    const saves = [onSaveBuilderSplit(instrumentId, builderId, share)]
+    if (complement) saves.push(onSaveBuilderSplit(instrumentId, complement.builder_id, compShare))
+    await Promise.all(saves)
   }
   const rows = [...instMap.values()].sort((a, b) =>
     a.ent_group_name.localeCompare(b.ent_group_name) ||
@@ -942,11 +962,18 @@ function InstrumentTab({ phaseRows, showTest, onSaveSpecRate }) {
             <th style={{ ...thR,  width: 44 }}>Sim</th>
             <th style={{ ...thR,  width: 44 }}>Excl</th>
             <th style={{ ...thG,  width: 160 }} title="Spec rate applies to undetermined lots (is_spec IS NULL) via S-0950">Spec Rate</th>
+            {builders.map((b, i) => (
+              <th key={b.builder_id} style={{ ...thR, width: 74,
+                ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }}
+                title={`${b.builder_name} — instrument builder split %`}>
+                {b.builder_name.split(' ')[0]}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={10} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+            <tr><td colSpan={10 + builders.length} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
               No instruments.
             </td></tr>
           )}
@@ -1009,6 +1036,39 @@ function InstrumentTab({ phaseRows, showTest, onSaveSpecRate }) {
                     onSave={v => onSaveSpecRate(row.instrument_id, v)}
                   />
                 </td>
+                {builders.map((b, idx) => {
+                  const splits    = { ...row.builder_splits, ...(localInstSplits[row.instrument_id] ?? {}) }
+                  const rawShare  = splits[b.builder_id] ?? null
+                  const pctDisplay = rawShare != null ? Math.round(rawShare * 100) : null
+                  // Actual committed lots: sum across all phases of this instrument
+                  const totalReal = row.phases.reduce((s, p) => {
+                    const ltc = p.lot_type_counts ?? {}
+                    return s + Object.values(ltc).reduce((a, v) => a + (v.marks ?? 0) + (v.pre ?? 0), 0)
+                  }, 0)
+                  const actualCnt = row.phases.reduce((s, p) => {
+                    const abc = p.actual_builder_counts ?? {}
+                    return s + (abc[b.builder_id] ?? 0)
+                  }, 0)
+                  return (
+                    <td key={b.builder_id} style={{
+                      ...td({ textAlign: 'right', verticalAlign: 'top', paddingBottom: 5 }),
+                      ...(idx === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}),
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+                        <EditableCell value={pctDisplay} width={46} placeholder="—" min={0}
+                          onSave={v => handleBuilderSplit(row.instrument_id, b.builder_id, v)} />
+                        {pctDisplay != null && <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 1 }}>%</span>}
+                      </div>
+                      {totalReal > 0 && (
+                        <div style={{ fontSize: 10, color: actualCnt > 0 ? '#60a5fa' : '#d1d5db',
+                                      textAlign: 'right', marginTop: 2, paddingRight: 2 }}
+                          title={`${actualCnt} of ${totalReal} committed lots assigned to ${b.builder_name}`}>
+                          {actualCnt}&thinsp;/&thinsp;{totalReal} act
+                        </div>
+                      )}
+                    </td>
+                  )
+                })}
               </tr>
             )
           })}
@@ -1020,29 +1080,11 @@ function InstrumentTab({ phaseRows, showTest, onSaveSpecRate }) {
 
 // ─── Phase tab ────────────────────────────────────────────────────────────────
 
-function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSaveBuilderSplit, onToggleLock, onLotsAdded }) {
+function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onToggleLock, onLotsAdded }) {
   const [filterComm,    setFilterComm]    = useState(null)
   const [filterDev,     setFilterDev]     = useState(null)
   const [showSplits,    setShowSplits]    = useState(true)
   const [bulkInsertPhase, setBulkInsertPhase] = useState(null) // row object or null
-
-  // Builder split grouping state
-  const [independentPhases, setIndependentPhases] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem('devdb_phase_solo') || '[]')) }
-    catch { return new Set() }
-  })
-  const [localSplits, setLocalSplits] = useState({}) // optimistic overrides: { phase_id: { builder_id: value } }
-
-  function toggleIndependent(phaseId) {
-    setIndependentPhases(prev => {
-      const next = new Set(prev)
-      if (next.has(phaseId)) next.delete(phaseId)
-      else next.add(phaseId)
-      localStorage.setItem('devdb_phase_solo', JSON.stringify([...next]))
-      return next
-    })
-    setLocalSplits(prev => { const next = { ...prev }; delete next[phaseId]; return next })
-  }
 
   const allRows  = phaseData?.rows ?? []
   const testRows = allRows.filter(r => showTest ? r.is_test : !r.is_test)
@@ -1065,52 +1107,6 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
   })
 
   const bi = bandIdx(rows, r => r.ent_group_id)
-
-  // Per-instrument phase count (across all rows, not just filtered, so toggle is stable)
-  const instrPhaseCounts = {}
-  for (const r of testRows) {
-    instrPhaseCounts[r.instrument_id] = (instrPhaseCounts[r.instrument_id] ?? 0) + 1
-  }
-
-  // Builder split save — accepts pct (0–100 whole number), propagates to linked peers,
-  // and auto-fills the complement builder when exactly 2 builders are active.
-  async function handleBuilderSplit(phaseId, builderId, pctValue) {
-    const share = pctValue != null ? Math.min(1, Math.max(0, Math.round(pctValue) / 100)) : null
-
-    // Complement: for a 2-builder setup, auto-set the other builder
-    const complement = builders.length === 2 ? builders.find(b => b.builder_id !== builderId) : null
-    const compShare  = (complement && share != null) ? Math.round((1 - share) * 100) / 100 : null
-
-    const row = testRows.find(r => r.phase_id === phaseId)
-
-    // Determine which phases to update (group vs solo)
-    const isIndependent = independentPhases.has(phaseId) || !row
-    const peers = (!isIndependent && instrPhaseCounts[row?.instrument_id] > 1)
-      ? testRows.filter(r => r.instrument_id === row.instrument_id && !independentPhases.has(r.phase_id))
-      : [row].filter(Boolean)
-
-    if (peers.length === 0) { await onSaveBuilderSplit(phaseId, builderId, share); return }
-
-    // Optimistic update — primary builder + complement across all peers
-    setLocalSplits(prev => {
-      const next = { ...prev }
-      for (const p of peers) {
-        const base = { ...(p.builder_splits ?? {}), ...(next[p.phase_id] ?? {}) }
-        base[builderId] = share
-        if (complement && compShare != null) base[complement.builder_id] = compShare
-        next[p.phase_id] = base
-      }
-      return next
-    })
-
-    // Persist
-    const saves = peers.flatMap(p => {
-      const ops = [onSaveBuilderSplit(p.phase_id, builderId, share)]
-      if (complement) ops.push(onSaveBuilderSplit(p.phase_id, complement.builder_id, compShare))
-      return ops
-    })
-    await Promise.all(saves)
-  }
 
   // Precompute subtotals at each hierarchy level
   const commSubs = {}, devSubs = {}, instSubs = {}
@@ -1219,13 +1215,6 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                 {lt.lot_type_short}
               </th>
             ))}
-            {builders.map((b, i) => (
-              <th key={b.builder_id} rowSpan={2} style={{ ...thR({ width: 74 }),
-                ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }}
-                title={`${b.builder_name} — projected split % (enter 0–100)`}>
-                {b.builder_name.split(' ')[0]}
-              </th>
-            ))}
             <th colSpan={5} style={{ ...thBase, textAlign: 'center',
               borderLeft: '3px solid #c7d2e2', fontSize: 10, color: '#9ca3af',
               letterSpacing: '0.09em', textTransform: 'uppercase', fontWeight: 700,
@@ -1291,23 +1280,6 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                 <td style={tdS(LEFT.phase, PHASE_SHADOW)}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <span style={{ fontSize: 12, color: '#374151', flex: 1 }}>{row.phase_name}</span>
-                    {instrPhaseCounts[row.instrument_id] > 1 && (() => {
-                      const solo = independentPhases.has(row.phase_id)
-                      return (
-                        <button
-                          onClick={() => toggleIndependent(row.phase_id)}
-                          title={solo
-                            ? 'Solo — builder split edits apply only to this phase. Click to re-link.'
-                            : 'Grouped — builder split edits apply to all linked phases in this instrument. Click for solo.'}
-                          style={{
-                            flexShrink: 0, fontSize: 9, padding: '1px 4px', borderRadius: 3, cursor: 'pointer',
-                            border: solo ? '1px solid #d97706' : '1px solid #d1d5db',
-                            background: solo ? '#fef9c3' : 'transparent',
-                            color: solo ? '#92400e' : '#9ca3af',
-                          }}
-                        >{solo ? 'solo' : 'grp'}</button>
-                      )
-                    })()}
                     <button
                       onClick={() => setBulkInsertPhase(row)}
                       title="Add lots"
@@ -1357,51 +1329,6 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onSav
                         <span style={{ fontSize: 10, color: s > 0 ? '#9ca3af' : '#e5e7eb' }} title="Sim">S:{s}</span>
                         {x > 0 && <span style={{ fontSize: 10, color: '#9ca3af' }} title="Excluded">X:{x}</span>}
                       </div>
-                    </td>
-                  )
-                })}
-                {builders.map((b, idx) => {
-                  const rawShare   = localSplits[row.phase_id]?.[b.builder_id] ?? row.builder_splits[b.builder_id] ?? null
-                  const pctDisplay = rawShare != null ? Math.round(rawShare * 100) : null
-
-                  // Actual committed lots from DB (MARKS-seeded + overrides)
-                  const abc        = row.actual_builder_counts ?? {}
-                  const totalReal  = marksTotal + preTotal
-                  const actualCnt  = abc[b.builder_id] ?? 0
-                  const unassigned = abc[null] ?? abc['null'] ?? 0  // null key from JSON
-
-                  // Future sim lots this builder will receive based on configured split
-                  // (total projected minus already-committed real/pre lots)
-                  const simFuture  = Math.max(0, projTotal - totalReal)
-                  const futureAlloc = (rawShare != null && simFuture > 0) ? Math.round(rawShare * simFuture) : null
-
-                  // Overall projected: actual committed (known) + future allocated
-                  const overallAlloc = actualCnt + (futureAlloc ?? 0)
-                  const overallTotal = totalReal + simFuture
-
-                  return (
-                    <td key={b.builder_id} style={{
-                      ...tdB({ textAlign: 'right', verticalAlign: 'top', paddingBottom: 5 }),
-                      ...(idx === 0 ? { borderLeft: '2px solid #ebebeb' } : {}),
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
-                        <EditableCell value={pctDisplay} width={46} placeholder="—" min={0}
-                          onSave={v => handleBuilderSplit(row.phase_id, b.builder_id, v)} />
-                        {pctDisplay != null && <span style={{ fontSize: 11, color: '#6b7280', marginLeft: 1 }}>%</span>}
-                      </div>
-                      {totalReal > 0 && (
-                        <div style={{ fontSize: 10, color: actualCnt > 0 ? '#60a5fa' : '#d1d5db',
-                                      textAlign: 'right', marginTop: 2, paddingRight: 2 }}
-                          title={`${actualCnt} of ${totalReal} committed (real/pre) lots assigned to ${b.builder_name}${unassigned > 0 ? ` — ${unassigned} lot(s) unassigned` : ''}`}>
-                          {actualCnt}&thinsp;/&thinsp;{totalReal} act
-                        </div>
-                      )}
-                      {overallTotal > 0 && (
-                        <div style={{ fontSize: 10, color: '#9ca3af', textAlign: 'right', marginTop: 1, paddingRight: 2 }}
-                          title={`Overall projected: ${actualCnt} actual + ~${futureAlloc ?? 0} future = ${overallAlloc} of ${overallTotal} total lots`}>
-                          ~{overallAlloc}&thinsp;/&thinsp;{overallTotal} tot
-                        </div>
-                      )}
                     </td>
                   )
                 })}
@@ -1616,16 +1543,19 @@ export default function ConfigView({ showTestCommunities }) {
     patchPhaseRow(phaseId, { product_splits: { ...(row?.product_splits ?? {}), [lotTypeId]: count ?? 0 } })
   }
 
-  async function saveBuilderSplit(phaseId, builderId, share) {
-    const res = await fetch(`${API_BASE}/admin/builder-split/${phaseId}/${builderId}`, {
+  async function saveBuilderSplit(instrumentId, builderId, share) {
+    const res = await fetch(`${API_BASE}/admin/builder-split/${instrumentId}/${builderId}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ share }),
     })
     if (!res.ok) throw new Error(await res.text())
-    const row = phaseData?.rows.find(r => r.phase_id === phaseId)
-    const newSplits = { ...(row?.builder_splits ?? {}) }
-    if (share == null) delete newSplits[builderId]; else newSplits[builderId] = share
-    patchPhaseRow(phaseId, { builder_splits: newSplits })
+    // Patch all phase rows belonging to this instrument
+    const affectedRows = phaseData?.rows.filter(r => r.instrument_id === instrumentId) ?? []
+    for (const row of affectedRows) {
+      const newSplits = { ...(row?.builder_splits ?? {}) }
+      if (share == null) delete newSplits[builderId]; else newSplits[builderId] = share
+      patchPhaseRow(row.phase_id, { builder_splits: newSplits })
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1653,13 +1583,15 @@ export default function ConfigView({ showTestCommunities }) {
         <DevTab rows={devData} showTest={showTestCommunities} onPatchDev={patchDev} />
       )}
       {tab === 'instrument' && phaseData && (
-        <InstrumentTab phaseRows={phaseData.rows} showTest={showTestCommunities} onSaveSpecRate={saveSpecRate} />
+        <InstrumentTab phaseRows={phaseData.rows} showTest={showTestCommunities}
+          builders={phaseData.builders ?? []}
+          onSaveSpecRate={saveSpecRate} onSaveBuilderSplit={saveBuilderSplit} />
       )}
       {tab === 'phase'      && phaseData && (
         <PhaseTab
           phaseData={phaseData} showTest={showTestCommunities}
           onPatchPhase={patchPhase} onSaveProductSplit={saveProductSplit}
-          onSaveBuilderSplit={saveBuilderSplit} onToggleLock={toggleLock}
+          onToggleLock={toggleLock}
           onLotsAdded={load}
         />
       )}
