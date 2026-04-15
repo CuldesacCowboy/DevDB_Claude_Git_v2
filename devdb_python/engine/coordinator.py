@@ -641,6 +641,13 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         build_lag_curves["_default_cmp"] = _cfg["default_cmp_lag_days"]
         build_lag_curves["_default_cls"] = _cfg["default_cls_lag_days"]
 
+        # Apply scheduling horizon floor to run_start_date.
+        # No projected start dates will land before today + horizon_days.
+        _horizon_days = _cfg["scheduling_horizon_days"]
+        _horizon_first = (date.today() + timedelta(days=_horizon_days)).replace(day=1)
+        if run_start_date < _horizon_first:
+            run_start_date = _horizon_first
+
         # S-0900 pre-pass: assign builder_id to real/pre lots with no committed builder.
         # Runs once per engine run (idempotent — already-assigned lots are skipped).
         assign_real_lot_builders(conn, ent_group_id, builder_splits)

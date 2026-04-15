@@ -20,9 +20,10 @@ _DEFAULTS = {
     "min_u_count":              0,
     "min_uc_count":             0,
     "min_c_count":              0,
-    "default_cmp_lag_days":     270,
-    "default_cls_lag_days":     45,
-    "feed_starts_mode":         False,
+    "default_cmp_lag_days":        270,
+    "default_cls_lag_days":        45,
+    "feed_starts_mode":            False,
+    "scheduling_horizon_days":     14,
 }
 
 
@@ -40,7 +41,8 @@ def load_delivery_config(conn, ent_group_id: int) -> dict:
                COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count,
                min_u_count, min_uc_count, min_c_count,
                default_cmp_lag_days, default_cls_lag_days,
-               feed_starts_mode
+               feed_starts_mode,
+               scheduling_horizon_days
         FROM sim_entitlement_delivery_config
         WHERE ent_group_id = %s
         """,
@@ -79,7 +81,8 @@ def load_delivery_config(conn, ent_group_id: int) -> dict:
         "min_u_count":             int(merge("min_u_count")),
         "min_uc_count":            int(merge("min_uc_count")),
         "min_c_count":             int(merge("min_c_count")),
-        "default_cmp_lag_days":    int(merge("default_cmp_lag_days")),
-        "default_cls_lag_days":    int(merge("default_cls_lag_days")),
-        "feed_starts_mode":        bool(merge("feed_starts_mode") or False),
+        "default_cmp_lag_days":        int(merge("default_cmp_lag_days")),
+        "default_cls_lag_days":        int(merge("default_cls_lag_days")),
+        "feed_starts_mode":            bool(merge("feed_starts_mode") or False),
+        "scheduling_horizon_days":     int(merge("scheduling_horizon_days")),
     }

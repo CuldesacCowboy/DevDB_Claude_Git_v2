@@ -866,6 +866,9 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettings, onS
   const [edits, setEdits] = useState({})
   const [saving, setSaving] = useState(false)
   const [err, setErr]       = useState(null)
+  const [editingGlobalHorizon, setEditingGlobalHorizon] = useState(false)
+  const [globalHorizonDraft, setGlobalHorizonDraft]     = useState('')
+  const [savingGlobal, setSavingGlobal]                 = useState(false)
 
   const isDirty  = Object.keys(edits).length > 0
   const isLocked = disabled || saving
@@ -888,12 +891,33 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettings, onS
     ? edits.max_deliveries_per_year !== null
     : communityMaxDel !== null && communityMaxDel !== undefined
 
+  // Community override for scheduling_horizon_days
+  const communityHorizon = deliveryConfig?.scheduling_horizon_days
+  const globalHorizon    = globalSettings?.scheduling_horizon_days ?? 14
+  const hasHorizonOverride = edits.scheduling_horizon_days !== undefined
+    ? edits.scheduling_horizon_days !== null
+    : communityHorizon !== null && communityHorizon !== undefined
+
   function valFor(key) { return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '') }
   function setVal(key, v) { setEdits(p => ({ ...p, [key]: v })) }
 
   const globalMonthsLabel = globalMonths.length
     ? globalMonths.map(m => MONTH_LABELS[m - 1]).join(', ')
     : 'none'
+
+  async function saveGlobalHorizon() {
+    const v = parseInt(globalHorizonDraft, 10)
+    if (isNaN(v) || v < 0) return
+    setSavingGlobal(true)
+    try {
+      await fetch(`${API_BASE}/global-settings`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduling_horizon_days: v }),
+      })
+      setEditingGlobalHorizon(false)
+      onSaved()
+    } finally { setSavingGlobal(false) }
+  }
 
   async function save() {
     setSaving(true); setErr(null)
@@ -919,6 +943,12 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettings, onS
 
     const fsVal = valFor('feed_starts_mode')
     if (fsVal !== '') body.feed_starts_mode = fsVal === true || fsVal === 'true'
+
+    // scheduling_horizon_days: null clears community override (inherit global)
+    if (edits.scheduling_horizon_days !== undefined) {
+      body.scheduling_horizon_days = edits.scheduling_horizon_days === null ? null
+        : parseInt(edits.scheduling_horizon_days, 10)
+    }
 
     try {
       const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/delivery-config`, {
@@ -1016,6 +1046,47 @@ function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettings, onS
             {textLink('Revert to global', () => setEdits(p => ({ ...p, max_deliveries_per_year: null })), '#dc2626')}
           </div>
         )}
+      </div>
+
+      {/* Scheduling horizon */}
+      <div>
+        {sectionHead('Scheduling horizon')}
+        {!hasHorizonOverride ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>
+              Using global ({globalHorizon} days from today)
+            </span>
+            {textLink('Set override', () => setEdits(p => ({ ...p, scheduling_horizon_days: String(communityHorizon ?? globalHorizon) })))}
+            <span style={{ color: '#e5e7eb' }}>·</span>
+            {!editingGlobalHorizon
+              ? textLink('Edit global', () => { setGlobalHorizonDraft(String(globalHorizon)); setEditingGlobalHorizon(true) }, '#6b7280')
+              : (
+                <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input type="number" min="0" value={globalHorizonDraft}
+                    onChange={e => setGlobalHorizonDraft(e.target.value)}
+                    style={{ width: 52, padding: '2px 5px', fontSize: 12, borderRadius: 4,
+                             border: '1px solid #2563eb', textAlign: 'right' }} />
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>days</span>
+                  <button onClick={saveGlobalHorizon} disabled={savingGlobal}
+                    style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: 'none',
+                             background: '#2563eb', color: '#fff', cursor: 'pointer' }}>
+                    {savingGlobal ? '…' : 'Save global'}
+                  </button>
+                  {textLink('Cancel', () => setEditingGlobalHorizon(false), '#6b7280')}
+                </span>
+              )
+            }
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {numInput('scheduling_horizon_days', 52, String(globalHorizon))}
+            <span style={{ fontSize: 12, color: '#6b7280' }}>days from today</span>
+            {textLink('Revert to global', () => setEdits(p => ({ ...p, scheduling_horizon_days: null })), '#dc2626')}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+          No dates will be projected prior to today + this many days.
+        </div>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

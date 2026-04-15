@@ -15,7 +15,7 @@ Rules:   Computes MIN(date_dev_demand_derived) across child phases; adjusts for 
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 from .connection import DBConnection
 
@@ -96,11 +96,13 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
                            f"pulled to first permissible window month {projected}.")
 
     # Floor rule: projected must be >= the earliest permissible date, which is
-    # the greater of (a) today's first-of-month and (b) the first eligible
-    # window month of the year AFTER the last locked delivery event in this
-    # entitlement group.  Rule (b) prevents a placeholder from landing in the
-    # same calendar year as any locked event.
-    today_first = date.today().replace(day=1)
+    # the greater of (a) the first-of-month containing today + horizon_days and
+    # (b) the first eligible window month of the year AFTER the last locked
+    # delivery event.  Rule (b) prevents a placeholder from landing in the same
+    # calendar year as any locked event.
+    horizon_days = cfg.get("scheduling_horizon_days", 14)
+    horizon_date = date.today() + timedelta(days=horizon_days)
+    today_first  = horizon_date.replace(day=1)
 
     locked_df = conn.read_df(
         """
