@@ -1142,9 +1142,19 @@ function DeliveryScheduleTab({ rows, loading }) {
             <th style={stickyTh('left')}>Development</th>
             <th style={stickyTh('left', { whiteSpace: 'normal' })}>Phases Delivered</th>
             <th style={stickyTh()}>Units</th>
-            <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db' }}>D</th>
-            <th style={stickyTh()}>H</th>
-            <th style={stickyTh()}>U</th>
+            <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db', color: '#6b7280', fontSize: 10 }} colSpan={3}>Prior to delivery</th>
+            <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db', color: '#6b7280', fontSize: 10 }}>After</th>
+          </tr>
+          <tr style={{ background: '#f9fafb' }}>
+            <th style={{ ...stickyTh('left'), top: 24 }} />
+            <th style={{ ...stickyTh('left'), top: 24 }} />
+            <th style={{ ...stickyTh('left'), top: 24 }} />
+            <th style={{ ...stickyTh('left', { whiteSpace: 'normal' }), top: 24 }} />
+            <th style={{ ...stickyTh(), top: 24 }} />
+            <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db', top: 24 }}>D</th>
+            <th style={{ ...stickyTh(), top: 24 }}>H</th>
+            <th style={{ ...stickyTh(), top: 24 }}>U</th>
+            <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db', top: 24 }}>D</th>
           </tr>
         </thead>
         <tbody>
@@ -1165,16 +1175,19 @@ function DeliveryScheduleTab({ rows, loading }) {
               <td style={tdS('left', { whiteSpace: 'normal', maxWidth: 340, color: '#374151' })}>{r.phases}</td>
               <td style={tdS()}>{r.units_delivered > 0 ? r.units_delivered : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
               <td style={tdS('right', { borderLeft: '2px solid #d1d5db' })}>
-                {r.d_end != null ? r.d_end : <span style={{ color: '#e5e7eb' }}>—</span>}
+                {r.d_pre != null ? r.d_pre : <span style={{ color: '#e5e7eb' }}>—</span>}
               </td>
-              <td style={tdS()}>{r.u_end != null ? r.u_end : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
-              <td style={tdS()}>{r.uc_end != null ? r.uc_end : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+              <td style={tdS()}>{r.h_pre != null ? r.h_pre : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+              <td style={tdS()}>{r.u_pre != null ? r.u_pre : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+              <td style={tdS('right', { borderLeft: '2px solid #d1d5db' })}>
+                {r.d_post != null ? r.d_post : <span style={{ color: '#e5e7eb' }}>—</span>}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
       <div style={{ marginTop: 8, fontSize: 11, color: '#9ca3af' }}>
-        D/U/UC counts are end-of-month values for the delivery month.
+        D/H/U prior = end of month before delivery. D after = end of delivery month.
       </div>
     </div>
   )

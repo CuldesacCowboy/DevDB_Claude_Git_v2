@@ -258,8 +258,8 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
             inventory AS (
                 SELECT dev_id, calendar_month,
                        SUM(d_end)::int   AS d_end,
-                       SUM(u_end)::int   AS u_end,
-                       SUM(uc_end)::int  AS uc_end
+                       SUM(h_end)::int   AS h_end,
+                       SUM(u_end)::int   AS u_end
                 FROM v_sim_ledger_monthly
                 WHERE dev_id IN (
                     SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s
@@ -275,13 +275,17 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
                 ed.dev_name,
                 ed.phases,
                 ed.units_delivered,
-                inv.d_end,
-                inv.u_end,
-                inv.uc_end
+                pre.d_end  AS d_pre,
+                pre.h_end  AS h_pre,
+                pre.u_end  AS u_pre,
+                post.d_end AS d_post
             FROM event_dev ed
-            LEFT JOIN inventory inv
-                ON  inv.dev_id = ed.dev_id
-                AND inv.calendar_month = DATE_TRUNC('month', ed.delivery_date)::date
+            LEFT JOIN inventory pre
+                ON  pre.dev_id = ed.dev_id
+                AND pre.calendar_month = (DATE_TRUNC('month', ed.delivery_date) - INTERVAL '1 month')::date
+            LEFT JOIN inventory post
+                ON  post.dev_id = ed.dev_id
+                AND post.calendar_month = DATE_TRUNC('month', ed.delivery_date)::date
             ORDER BY ed.delivery_date NULLS LAST, ed.delivery_event_id, ed.dev_name
             """,
             (ent_group_id, ent_group_id),
@@ -300,9 +304,10 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
                 "dev_name":          r["dev_name"],
                 "phases":            r["phases"],
                 "units_delivered":   r["units_delivered"],
-                "d_end":             r["d_end"],
-                "u_end":             r["u_end"],
-                "uc_end":            r["uc_end"],
+                "d_pre":             r["d_pre"],
+                "h_pre":             r["h_pre"],
+                "u_pre":             r["u_pre"],
+                "d_post":            r["d_post"],
             }
             for r in cur.fetchall()
         ]
