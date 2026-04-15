@@ -276,7 +276,12 @@ export default function LotPill({
         }}
       >
         <span style={{ fontSize: 11, color: isSelected ? '#1d4ed8' : codeColor, flexShrink: 0 }}>{code}</span>
-        <span style={{ fontSize: 12, fontWeight: 500, color: '#2C2C2A' }}>{seq}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+          {assignment.is_spec === true && (
+            <span style={{ fontSize: 8, fontWeight: 700, lineHeight: 1, color: '#0d9488', letterSpacing: '0.02em' }}>S</span>
+          )}
+          <span style={{ fontSize: 12, fontWeight: 500, color: '#2C2C2A', lineHeight: 1 }}>{seq}</span>
+        </div>
       </div>
     )
   }

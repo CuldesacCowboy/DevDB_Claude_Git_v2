@@ -43,6 +43,9 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
                 COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'sim')::int   AS sim_count,
                 COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'real')::int  AS real_count,
                 COUNT(sl.lot_id)::int                                         AS total_count,
+                COUNT(sl.lot_id) FILTER (WHERE sl.is_spec = TRUE)::int       AS spec_count,
+                COUNT(sl.lot_id) FILTER (WHERE sl.is_spec = FALSE)::int      AS build_count,
+                COUNT(sl.lot_id) FILTER (WHERE sl.is_spec IS NULL AND sl.lot_id IS NOT NULL)::int AS undet_count,
                 CASE
                     WHEN COALESCE(ps.projected_count, 0) = 0 THEN NULL
                     ELSE ROUND(
@@ -73,6 +76,9 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
                 "sim_count":       r["sim_count"],
                 "real_count":      r["real_count"],
                 "total_count":     r["total_count"],
+                "spec_count":      r["spec_count"],
+                "build_count":     r["build_count"],
+                "undet_count":     r["undet_count"],
                 "utilization_pct": float(r["utilization_pct"]) if r["utilization_pct"] is not None else None,
             }
             for r in cur.fetchall()
@@ -128,6 +134,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 sl.date_frm,
                 sl.date_cmp,
                 sl.date_cls,
+                sl.is_spec,
                 sl.date_str_projected,
                 sl.date_cmp_projected,
                 sl.date_cls_projected,
@@ -169,6 +176,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 "dev_name":            r["dev_name"],
                 "building_group_id":   r["building_group_id"],
                 "status":              r["status"],
+                "is_spec":             r["is_spec"],   # True=spec, False=build, None=undetermined
                 "date_ent":            _d(r["date_ent"]),
                 "date_dev":            _d(r["date_dev"]),
                 "date_td_hold":        _d(r["date_td_hold"]),

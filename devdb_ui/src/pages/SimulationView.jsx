@@ -16,6 +16,7 @@ const EVENT_COLS   = ['ent_plan','dev_plan','td_plan','str_plan','cmp_plan','cls
 const PLAN_LABELS  = { ent_plan:'ENT', dev_plan:'DEV', td_plan:'TD', str_plan:'STR', cmp_plan:'CMP', cls_plan:'CLS' }
 const STATUS_COLS  = ['p_end','e_end','d_end','h_end','u_end','uc_end','c_end']
 const STATUS_LABELS = { p_end:'P', e_end:'E', d_end:'D', h_end:'H', u_end:'U', uc_end:'UC', c_end:'C' }
+const SPEC_SPLIT_COLS = ['str_plan_spec', 'str_plan_build']
 const FLOOR_KEYS   = ['min_p_count','min_e_count','min_d_count','min_u_count','min_uc_count','min_c_count']
 const FLOOR_STATUS = { min_p_count:'p_end', min_e_count:'e_end', min_d_count:'d_end',
                         min_u_count:'u_end', min_uc_count:'uc_end', min_c_count:'c_end' }
@@ -24,7 +25,7 @@ const FLOOR_LABELS = { min_p_count:'P', min_e_count:'E', min_d_count:'D',
 // Only the active-pipeline states are useful as alert thresholds
 const ACTIVE_FLOOR_KEYS   = ['min_d_count','min_u_count','min_uc_count','min_c_count']
 const ACTIVE_FLOOR_LABELS = { min_d_count:'Developed', min_u_count:'Unstarted', min_uc_count:'Under const.', min_c_count:'Completed' }
-const NUMERIC_COLS = [...EVENT_COLS, ...STATUS_COLS]
+const NUMERIC_COLS = [...EVENT_COLS, ...STATUS_COLS, ...SPEC_SPLIT_COLS]
 
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -538,12 +539,14 @@ function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevIds }) {
             <YAxis {...axisProps} width={34} />
             <Tooltip {...tooltipProps} />
             <Legend {...legendProps} />
-            <Line type="monotone" dataKey="ent_plan" stroke="#f59e0b"         strokeWidth={1.5} dot={false} name="ENT" />
-            <Line type="monotone" dataKey="dev_plan" stroke="#a8a29e"         strokeWidth={1.5} dot={false} name="DEV" />
-            <Line type="monotone" dataKey="td_plan"  stroke="#818cf8"         strokeWidth={1.5} dot={false} name="TD"  />
-            <Line type="monotone" dataKey="str_plan" stroke={STATUS_COLOR.U}  strokeWidth={1.5} dot={false} name="STR" />
-            <Line type="monotone" dataKey="cmp_plan" stroke={STATUS_COLOR.C}  strokeWidth={1.5} dot={false} name="CMP" />
-            <Line type="monotone" dataKey="cls_plan" stroke={STATUS_COLOR.OUT} strokeWidth={2}  dot={false} name="CLS" />
+            <Line type="monotone" dataKey="ent_plan"       stroke="#f59e0b"         strokeWidth={1.5} dot={false} name="ENT" />
+            <Line type="monotone" dataKey="dev_plan"       stroke="#a8a29e"         strokeWidth={1.5} dot={false} name="DEV" />
+            <Line type="monotone" dataKey="td_plan"        stroke="#818cf8"         strokeWidth={1.5} dot={false} name="TD"  />
+            <Line type="monotone" dataKey="str_plan"       stroke={STATUS_COLOR.U}  strokeWidth={1.5} dot={false} name="STR" />
+            <Line type="monotone" dataKey="str_plan_spec"  stroke="#0d9488"         strokeWidth={1.5} dot={false} name="STR(S)" strokeDasharray="4 2" />
+            <Line type="monotone" dataKey="str_plan_build" stroke="#6b7280"         strokeWidth={1.5} dot={false} name="STR(B)" strokeDasharray="4 2" />
+            <Line type="monotone" dataKey="cmp_plan"       stroke={STATUS_COLOR.C}  strokeWidth={1.5} dot={false} name="CMP" />
+            <Line type="monotone" dataKey="cls_plan"       stroke={STATUS_COLOR.OUT} strokeWidth={2}  dot={false} name="CLS" />
           </LineChart>
         </ResponsiveContainer>
       )}
@@ -556,9 +559,10 @@ function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevIds }) {
             <YAxis {...axisProps} width={34} />
             <Tooltip {...tooltipProps} />
             <Legend {...legendProps} />
-            <Bar dataKey="str_plan" fill={STATUS_COLOR.U}    name="STR" radius={[2,2,0,0]} />
-            <Bar dataKey="cmp_plan" fill={STATUS_COLOR.C}    name="CMP" radius={[2,2,0,0]} />
-            <Bar dataKey="cls_plan" fill={STATUS_COLOR.OUT}  name="CLS" radius={[2,2,0,0]} />
+            <Bar dataKey="str_plan_spec"  stackId="str" fill="#0d9488"         name="STR(S)" radius={[0,0,0,0]} />
+            <Bar dataKey="str_plan_build" stackId="str" fill={STATUS_COLOR.U}  name="STR(B)" radius={[2,2,0,0]} />
+            <Bar dataKey="cmp_plan"                     fill={STATUS_COLOR.C}  name="CMP"    radius={[2,2,0,0]} />
+            <Bar dataKey="cls_plan"                     fill={STATUS_COLOR.OUT} name="CLS"   radius={[2,2,0,0]} />
           </BarChart>
         </ResponsiveContainer>
       )}
@@ -582,6 +586,7 @@ function UtilizationPanel({ phases }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       {phases.map(p => {
         const { bar, text, label } = color(p.utilization_pct)
+        const hasSpec = (p.spec_count || 0) + (p.build_count || 0) + (p.undet_count || 0) > 0
         return (
           <div key={p.phase_id} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ width: 260, fontSize: 11, color: '#374151', overflow: 'hidden',
@@ -598,6 +603,13 @@ function UtilizationPanel({ phases }) {
             <div style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0 }}>
               {p.real_count}r+{p.sim_count}s/{p.projected_count}p
             </div>
+            {hasSpec && (
+              <div style={{ fontSize: 10, flexShrink: 0, display: 'flex', gap: 4 }}>
+                {p.spec_count  > 0 && <span style={{ color: '#0d9488', fontWeight: 600 }}>{p.spec_count}S</span>}
+                {p.build_count > 0 && <span style={{ color: '#6b7280' }}>{p.build_count}B</span>}
+                {p.undet_count > 0 && <span style={{ color: '#d1d5db' }}>{p.undet_count}?</span>}
+              </div>
+            )}
           </div>
         )
       })}
@@ -1267,16 +1279,21 @@ function DeliveryScheduleTab({ rows, loading }) {
 // ─── LotLedger ───────────────────────────────────────────────────────────────
 
 function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
-  const [devFilter, setDevFilter] = useState('all')
-  const [srcFilter, setSrcFilter] = useState('all')
+  const [devFilter,  setDevFilter]  = useState('all')
+  const [srcFilter,  setSrcFilter]  = useState('all')
+  const [specFilter, setSpecFilter] = useState('all')
 
   if (loading) return <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>
   if (!lots.length) return <div style={{ color: '#9ca3af', fontSize: 12 }}>No lots. Run a simulation first.</div>
 
   const devNames = [...new Set(lots.map(l => l.dev_name))].sort()
   const filtered = lots.filter(l =>
-    (devFilter === 'all' || l.dev_name === devFilter) &&
-    (srcFilter === 'all' || l.lot_source === srcFilter)
+    (devFilter  === 'all' || l.dev_name   === devFilter) &&
+    (srcFilter  === 'all' || l.lot_source === srcFilter) &&
+    (specFilter === 'all' ||
+     (specFilter === 'spec'  && l.is_spec === true)  ||
+     (specFilter === 'build' && l.is_spec === false) ||
+     (specFilter === 'undet' && l.is_spec == null))
   )
 
   const overrideable = l => l.lot_source === 'real'
@@ -1349,17 +1366,25 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
           <option value="real">Real</option>
           <option value="sim">Sim</option>
         </select>
+        <select value={specFilter} onChange={e => setSpecFilter(e.target.value)}
+          style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}>
+          <option value="all">Spec + Build</option>
+          <option value="spec">Spec only</option>
+          <option value="build">Build only</option>
+          <option value="undet">Undetermined</option>
+        </select>
         <span style={{ fontSize: 11, color: '#6b7280' }}>{filtered.length} lots</span>
         <span style={{ fontSize: 11, color: '#93c5fd', fontStyle: 'italic', marginLeft: 6 }}>italic blue = projected</span>
         <span style={{ fontSize: 11, color: '#92400e', marginLeft: 6 }}>amber = override (click to edit)</span>
         <button onClick={() => {
-          const headers = ['Development','Lot #','Type','Phase','Bldg','Source','Status','ENT','DEV','HC','BLDR','DIG','CMP','CLS']
+          const headers = ['Development','Lot #','Type','Phase','Bldg','Source','Spec','Status','ENT','DEV','HC','BLDR','DIG','CMP','CLS']
           const csvRows = filtered.map(l => {
             const bgKey = l.building_group_id != null ? `${l.phase_name}::${l.building_group_id}` : null
             const bgLabel = bgKey ? bgLabelMap[bgKey] : ''
+            const specLabel = l.is_spec === true ? 'Spec' : l.is_spec === false ? 'Build' : ''
             return [
               l.dev_name, l.lot_number ?? '', l.lot_type_short ?? '', l.phase_name, bgLabel,
-              l.lot_source, l.status,
+              l.lot_source, specLabel, l.status,
               l.date_ent ?? '', l.date_dev ?? '', l.date_td_hold ?? '',
               l.date_td ?? '', l.date_str ?? l.date_str_projected ?? '',
               l.date_cmp ?? l.date_cmp_projected ?? '', l.date_cls ?? l.date_cls_projected ?? '',
@@ -1382,6 +1407,7 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
               <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Phase</th>
               <th style={{ ...thS('center'), position: 'sticky', top: 0, zIndex: 2, color: '#0d9488' }}>Bldg</th>
               <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Src</th>
+              <th style={{ ...thS('center'), position: 'sticky', top: 0, zIndex: 2, color: '#0d9488' }}>Spec</th>
               <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Status</th>
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>ENT</th>
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>DEV</th>
@@ -1418,6 +1444,11 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
                   borderTop: isGroupStart ? '2px solid #0d9488' : undefined,
                 })}>{bgLabel ?? ''}</td>
                 <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>{l.lot_source}</td>
+                <td style={tdS('center')}>
+                  {l.is_spec === true  && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4' }}>S</span>}
+                  {l.is_spec === false && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: '#f9fafb', color: '#6b7280', border: '1px solid #e5e7eb' }}>B</span>}
+                  {l.is_spec == null  && <span style={{ fontSize: 10, color: '#d1d5db' }}>—</span>}
+                </td>
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>
                   <span style={{ display: 'inline-flex', alignItems: 'center' }}>

@@ -217,7 +217,7 @@ async def get_lots_for_lot_type(
     try:
         cur.execute(
             """
-            SELECT sl.lot_id, sl.lot_number, sl.lot_source, sl.excluded,
+            SELECT sl.lot_id, sl.lot_number, sl.lot_source, sl.excluded, sl.is_spec,
                 d.marks_code AS dev_code,
                 EXISTS (
                     SELECT 1 FROM devdb.marks_lot_registry mlr
@@ -239,6 +239,7 @@ async def get_lots_for_lot_type(
                 "lot_id": r["lot_id"],
                 "lot_number": r["lot_number"],
                 "lot_source": r["lot_source"],
+                "is_spec": r["is_spec"],
                 "in_registry": bool(r["in_registry"]),
                 "excluded": bool(r["excluded"]),
                 "dev_code": r["dev_code"] or "",
