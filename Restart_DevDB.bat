@@ -23,6 +23,10 @@ REM Wait for ports to clear
 echo Waiting for ports to clear...
 timeout /t 3 /nobreak >nul
 
+REM ---- 3b. Close existing DevDB Chrome tab/window (leave all other Chrome windows alone) ----
+echo [3b] Closing Chrome DevDB window...
+powershell -NoProfile -Command "Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*devdb_ui*' -or $_.MainWindowTitle -like '*localhost:5173*' } | ForEach-Object { $_.CloseMainWindow() | Out-Null }"
+
 REM ---- 4. Start backend and frontend in new windows ----
 echo [4/5] Starting backend and frontend...
 start "DevDB Backend" cmd /k "cd /d "%~dp0devdb_python" && python -m uvicorn api.main:app --reload --port 8765"

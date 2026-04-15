@@ -22,9 +22,9 @@ for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":5173 " 2^>nul') do (
     if not "%%a"=="0" taskkill /F /PID %%a >nul 2>&1
 )
 
-REM ---- 4. Close Chrome windows showing DevDB ----
+REM ---- 4. Close Chrome tabs/windows showing DevDB (leave all other Chrome windows alone) ----
 echo [4/4] Closing Chrome DevDB windows...
-powershell -NoProfile -Command "Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*devdb_ui*' } | Stop-Process -Force -ErrorAction SilentlyContinue"
+powershell -NoProfile -Command "Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*devdb_ui*' -or $_.MainWindowTitle -like '*localhost:5173*' } | ForEach-Object { $_.CloseMainWindow() | Out-Null }"
 
 REM ---- 5. Wait until port 8765 is confirmed free (max 15s) ----
 echo Waiting for port 8765 to be released...
