@@ -47,6 +47,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 d.dev_name,
                 sli.instrument_id,
                 sli.instrument_name,
+                sli.spec_rate,
                 sdp.phase_id,
                 sdp.phase_name,
                 sdp.sequence_number,

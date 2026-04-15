@@ -30,6 +30,7 @@ from .s0600_demand_generator import demand_generator
 from .s0820_post_generation_chronology_guard import post_generation_chronology_guard
 from .s0050_marks_builder_sync import marks_builder_sync
 from .s0900_builder_assignment import builder_assignment, assign_real_lot_builders
+from .s0950_spec_assignment import spec_assignment
 from kernel import plan, FrozenInput
 from kernel.frozen_input_builder import build_frozen_input
 from .s1000_demand_derived_date_writer import demand_derived_date_writer
@@ -658,6 +659,11 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         # committed builder (not in MARKS or MARKS had no company code match).
         # Runs once per engine run (idempotent — already-assigned lots are skipped).
         assign_real_lot_builders(conn, ent_group_id, builder_splits)
+
+        # S-0950: assign is_spec to undetermined lots (is_spec IS NULL) using
+        # instrument spec_rate. Runs after S-0050 (which sets is_spec for MARKS-known
+        # lots) and after S-0900 (which may generate sim lots that also need assignment).
+        spec_assignment(conn, ent_group_id)
 
         # Seeded RNG: date-based by default (YYYYMMDD), giving reproducibility
         # within a day. Pass rng_seed explicitly for test-time control.

@@ -38,6 +38,10 @@ class InstrumentTypeRequest(BaseModel):
     instrument_type: str
 
 
+class SpecRateRequest(BaseModel):
+    spec_rate: float | None  # NULL clears the rate
+
+
 @router.get("", response_model=list[dict])
 def list_instruments(conn=Depends(get_db_conn)):
     """Return all instruments. modern_dev_id = developments.dev_id for frontend joins."""
@@ -45,7 +49,7 @@ def list_instruments(conn=Depends(get_db_conn)):
     try:
         cur.execute("""
             SELECT sli.instrument_id, sli.instrument_name, sli.instrument_type,
-                   sli.dev_id
+                   sli.dev_id, sli.spec_rate
             FROM sim_legal_instruments sli
             ORDER BY sli.instrument_name
         """)
@@ -206,6 +210,184 @@ def update_phase_order(
     except Exception:
         conn.rollback()
         raise
+    finally:
+        cur.close()
+
+
+@router.patch("/{instrument_id}/spec-rate", response_model=dict)
+def update_spec_rate(
+    instrument_id: int,
+    body: SpecRateRequest,
+    conn=Depends(get_db_conn),
+):
+    """Set or clear the spec_rate for an instrument (0.0–1.0, or null to clear)."""
+    rate = body.spec_rate
+    if rate is not None and not (0.0 <= rate <= 1.0):
+        raise HTTPException(status_code=422, detail="spec_rate must be between 0.0 and 1.0")
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "UPDATE sim_legal_instruments SET spec_rate = %s WHERE instrument_id = %s",
+            (rate, instrument_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            raise HTTPException(status_code=404, detail=f"Instrument {instrument_id} not found")
+        conn.commit()
+        return {"instrument_id": instrument_id, "spec_rate": rate}
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+@router.get("/{instrument_id}/spec-rate-hints", response_model=dict)
+def get_spec_rate_hints(instrument_id: int, conn=Depends(get_db_conn)):
+    """
+    Return 4 spec-rate hint values for this instrument, derived from MARKS
+    external data (devdb_ext tables) — no simulation dependency.
+
+    Algorithm:
+      1. Find the (companycode, lot_type_id) distribution within this instrument's phases.
+         Each (companycode, lot_type_id) pair is weighted as a fraction of total
+         instrument lots.
+      2. For each pair, compute the company-wide spec rate over the last 6 months
+         and last 2 years using codetail (conumber='000' = spec) vs. housemaster
+         (all lots = denominator), scoped to that (companycode, lot_type_id).
+      3. Weighted-average over pairs to produce hint_6mo and hint_2yr.
+      4. Repeat steps 2-3 using only companycode (ignoring lot_type_id) to produce
+         hint_builder_6mo and hint_builder_2yr.
+
+    Returns:
+      {
+        hint_6mo: float | null,
+        hint_2yr: float | null,
+        hint_builder_6mo: float | null,
+        hint_builder_2yr: float | null,
+        instrument_lot_count: int,
+        data_note: str
+      }
+    """
+    cur = dict_cursor(conn)
+    try:
+        # ── Step 1: instrument's (companycode, lot_type_id) weights ──────────────
+        cur.execute(
+            """
+            SELECT hm.companycode,
+                   sl.lot_type_id,
+                   COUNT(*)::float AS cnt
+            FROM sim_lots sl
+            JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
+            JOIN devdb_ext.housemaster hm
+                ON  hm.developmentcode = REGEXP_REPLACE(sl.lot_number, '[0-9]+$', '')
+                AND hm.housenumber     = CAST(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', '') AS INT)
+            WHERE sdp.instrument_id = %s
+              AND sl.lot_source IN ('real', 'pre')
+              AND sl.excluded IS NOT TRUE
+              AND sl.lot_number ~ '^[A-Za-z]+[0-9]+$'
+            GROUP BY hm.companycode, sl.lot_type_id
+            """,
+            (instrument_id,),
+        )
+        weight_rows = cur.fetchall()
+
+        if not weight_rows:
+            return {
+                "hint_6mo": None,
+                "hint_2yr": None,
+                "hint_builder_6mo": None,
+                "hint_builder_2yr": None,
+                "instrument_lot_count": 0,
+                "data_note": "No MARKS-matched lots found for this instrument.",
+            }
+
+        total_lots = sum(r["cnt"] for r in weight_rows)
+        weights = [
+            {
+                "companycode": r["companycode"],
+                "lot_type_id": r["lot_type_id"],
+                "weight": r["cnt"] / total_lots,
+            }
+            for r in weight_rows
+        ]
+
+        # ── Step 2+3: 6mo and 2yr hints weighted by (companycode, lot_type_id) ──
+        def weighted_hint(months: int, by_builder_only: bool) -> float | None:
+            total_w = 0.0
+            weighted_rate_sum = 0.0
+            for w in weights:
+                cc = w["companycode"]
+                lt = w["lot_type_id"]
+                weight = w["weight"]
+
+                if by_builder_only:
+                    cur.execute(
+                        """
+                        SELECT
+                            COUNT(DISTINCT (hm.developmentcode, hm.housenumber))::float AS total_lots,
+                            COUNT(DISTINCT CASE WHEN ct.conumber IS NOT NULL
+                                               THEN (hm.developmentcode, hm.housenumber) END)::float AS spec_lots
+                        FROM devdb_ext.housemaster hm
+                        LEFT JOIN devdb_ext.codetail ct
+                            ON  ct.companycode     = hm.companycode
+                            AND ct.developmentcode = hm.developmentcode
+                            AND ct.housenumber     = hm.housenumber
+                            AND ct.conumber        = '000'
+                        WHERE hm.companycode = %s
+                          AND hm.currentjobstart >= NOW() - (%s || ' months')::INTERVAL
+                        """,
+                        (cc, months),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        SELECT
+                            COUNT(DISTINCT (hm.developmentcode, hm.housenumber))::float AS total_lots,
+                            COUNT(DISTINCT CASE WHEN ct.conumber IS NOT NULL
+                                               THEN (hm.developmentcode, hm.housenumber) END)::float AS spec_lots
+                        FROM sim_lots sl_ref
+                        JOIN sim_dev_phases sdp_ref ON sdp_ref.phase_id = sl_ref.phase_id
+                        JOIN devdb_ext.housemaster hm
+                            ON  hm.developmentcode = REGEXP_REPLACE(sl_ref.lot_number, '[0-9]+$', '')
+                            AND hm.housenumber     = CAST(REGEXP_REPLACE(sl_ref.lot_number, '^[A-Za-z]+', '') AS INT)
+                        LEFT JOIN devdb_ext.codetail ct
+                            ON  ct.companycode     = hm.companycode
+                            AND ct.developmentcode = hm.developmentcode
+                            AND ct.housenumber     = hm.housenumber
+                            AND ct.conumber        = '000'
+                        WHERE hm.companycode = %s
+                          AND sl_ref.lot_type_id = %s
+                          AND hm.currentjobstart >= NOW() - (%s || ' months')::INTERVAL
+                        """,
+                        (cc, lt, months),
+                    )
+
+                row = cur.fetchone()
+                denom = row["total_lots"] if row else 0.0
+                if not denom:
+                    continue
+                rate = (row["spec_lots"] or 0.0) / denom
+                weighted_rate_sum += rate * weight
+                total_w += weight
+
+            return round(weighted_rate_sum / total_w, 4) if total_w > 0 else None
+
+        hint_6mo          = weighted_hint(6,  by_builder_only=False)
+        hint_2yr          = weighted_hint(24, by_builder_only=False)
+        hint_builder_6mo  = weighted_hint(6,  by_builder_only=True)
+        hint_builder_2yr  = weighted_hint(24, by_builder_only=True)
+
+        return {
+            "hint_6mo":          hint_6mo,
+            "hint_2yr":          hint_2yr,
+            "hint_builder_6mo":  hint_builder_6mo,
+            "hint_builder_2yr":  hint_builder_2yr,
+            "instrument_lot_count": int(total_lots),
+            "data_note": None,
+        }
     finally:
         cur.close()
 

@@ -763,9 +763,137 @@ function DevTab({ rows, showTest, onPatchDev }) {
   )
 }
 
+// ─── SpecRateCell ─────────────────────────────────────────────────────────────
+// Editable spec rate (percentage) for an instrument, with 4 hint buttons.
+
+function SpecRateCell({ instrumentId, value, onSave }) {
+  const [editing,      setEditing]      = useState(false)
+  const [draft,        setDraft]        = useState('')
+  const [saving,       setSaving]       = useState(false)
+  const [error,        setError]        = useState(null)
+  const [hints,        setHints]        = useState(null)   // {hint_6mo, hint_2yr, hint_builder_6mo, hint_builder_2yr}
+  const [hintsLoading, setHintsLoading] = useState(false)
+  const inputRef = useRef()
+
+  useEffect(() => {
+    if (editing) { inputRef.current?.focus(); inputRef.current?.select() }
+  }, [editing])
+
+  function startEdit() {
+    if (saving) return
+    setDraft(value != null ? String(Math.round(value * 1000) / 10) : '')
+    setEditing(true)
+  }
+
+  async function commit() {
+    setEditing(false)
+    const raw = draft.trim()
+    if (raw === '') {
+      // clear
+      if (value == null) return
+      setSaving(true); setError(null)
+      try { await onSave(null) } catch (e) { setError(String(e).slice(0, 40)) } finally { setSaving(false) }
+      return
+    }
+    const pct = parseFloat(raw)
+    if (isNaN(pct) || pct < 0 || pct > 100) { setError('0–100'); return }
+    const frac = Math.round(pct * 10) / 1000   // percent → fraction, 4dp
+    if (frac === value) return
+    setSaving(true); setError(null)
+    try { await onSave(frac) } catch (e) { setError(String(e).slice(0, 40)) } finally { setSaving(false) }
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Escape') { e.stopPropagation(); setEditing(false) }
+    if (e.key === 'Enter')  { e.stopPropagation(); commit() }
+  }
+
+  async function loadHints() {
+    if (hintsLoading || hints) return
+    setHintsLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/instruments/${instrumentId}/spec-rate-hints`)
+      if (res.ok) setHints(await res.json())
+    } catch (_) {}
+    finally { setHintsLoading(false) }
+  }
+
+  function applyHint(frac) {
+    if (frac == null) return
+    onSave(frac)
+  }
+
+  const pctLabel = v => v != null ? `${Math.round(v * 1000) / 10}%` : null
+
+  const hintBtn = (label, v, title) => (
+    <button
+      key={label}
+      onClick={() => applyHint(v)}
+      disabled={v == null}
+      title={title}
+      style={{
+        fontSize: 10, padding: '1px 5px', borderRadius: 3, cursor: v != null ? 'pointer' : 'default',
+        border: '1px solid #d1fae5', background: '#f0fdfa', color: v != null ? '#0d9488' : '#d1d5db',
+        fontWeight: 600, whiteSpace: 'nowrap',
+      }}
+    >
+      {label}{v != null ? `: ${pctLabel(v)}` : ''}
+    </button>
+  )
+
+  return (
+    <div style={{ minWidth: 120 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+        <div onClick={startEdit} title={error ?? undefined} style={{ cursor: 'text' }}>
+          {editing ? (
+            <input ref={inputRef} type="number" min={0} max={100} step={0.1}
+              value={draft} onChange={e => setDraft(e.target.value)}
+              onBlur={commit} onKeyDown={onKeyDown}
+              placeholder="%"
+              style={{ width: 60, padding: '1px 4px', fontSize: 12, textAlign: 'right',
+                       border: '1px solid #2563eb', borderRadius: 3, background: '#fff', outline: 'none' }} />
+          ) : (
+            <span style={{
+              display: 'inline-block', padding: '1px 4px', fontSize: 12, borderRadius: 3,
+              background: error ? '#fef2f2' : saving ? '#fef3c7' : 'transparent',
+              border: error ? '1px solid #fca5a5' : '1px solid transparent',
+              color: value != null ? (error ? '#dc2626' : '#0d9488') : '#d1d5db',
+              fontWeight: value != null ? 600 : 400,
+            }}>
+              {error ? `⚠ ${error}` : (value != null ? pctLabel(value) : '—')}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={loadHints}
+          title="Load spec rate hints from MARKS history"
+          style={{
+            fontSize: 10, padding: '1px 5px', borderRadius: 3, cursor: 'pointer',
+            border: '1px solid #e5e7eb', background: hints ? '#f3f4f6' : '#fff',
+            color: '#6b7280', lineHeight: 1.4,
+          }}
+        >
+          {hintsLoading ? '…' : hints ? '✓' : 'hints'}
+        </button>
+      </div>
+      {hints && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 4, justifyContent: 'flex-end' }}>
+          {hintBtn('Dev×LT 6mo', hints.hint_6mo,          'Weighted by builder+lot type distribution in this instrument × company-wide spec rate (last 6 months)')}
+          {hintBtn('Dev×LT 2yr', hints.hint_2yr,          'Weighted by builder+lot type distribution in this instrument × company-wide spec rate (last 2 years)')}
+          {hintBtn('Builder 6mo', hints.hint_builder_6mo, 'Weighted by builder distribution in this instrument × company-wide builder spec rate (last 6 months)')}
+          {hintBtn('Builder 2yr', hints.hint_builder_2yr, 'Weighted by builder distribution in this instrument × company-wide builder spec rate (last 2 years)')}
+          {hints.data_note && (
+            <span style={{ fontSize: 10, color: '#9ca3af', width: '100%', textAlign: 'right' }}>{hints.data_note}</span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Instrument tab ───────────────────────────────────────────────────────────
 
-function InstrumentTab({ phaseRows, showTest }) {
+function InstrumentTab({ phaseRows, showTest, onSaveSpecRate }) {
   // Derive instrument summary from phase data
   const filtered = phaseRows.filter(r => showTest ? r.is_test : !r.is_test)
   const instMap = new Map()
@@ -776,6 +904,7 @@ function InstrumentTab({ phaseRows, showTest }) {
         ent_group_id: r.ent_group_id, ent_group_name: r.ent_group_name,
         dev_id: r.dev_id, dev_name: r.dev_name,
         instrument_id: k, instrument_name: r.instrument_name,
+        spec_rate: r.spec_rate ?? null,
         phases: [],
       })
     }
@@ -799,9 +928,6 @@ function InstrumentTab({ phaseRows, showTest }) {
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: '#9ca3af', marginBottom: 10 }}>
-        Instrument-level configuration is not yet available. Showing summary.
-      </div>
       <TableShell>
         <thead>
           <tr>
@@ -815,11 +941,12 @@ function InstrumentTab({ phaseRows, showTest }) {
             <th style={{ ...thR,  width: 60 }} title="Pre-MARKS">Pre-MARKS</th>
             <th style={{ ...thR,  width: 44 }}>Sim</th>
             <th style={{ ...thR,  width: 44 }}>Excl</th>
+            <th style={{ ...thG,  width: 160 }} title="Spec rate applies to undetermined lots (is_spec IS NULL) via S-0950">Spec Rate</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={9} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+            <tr><td colSpan={10} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
               No instruments.
             </td></tr>
           )}
@@ -831,7 +958,7 @@ function InstrumentTab({ phaseRows, showTest }) {
             const topBorder = isFirstComm ? '2px solid #e5e7eb' : isFirstDev ? '1px solid #e9e9e9' : '1px solid #f3f4f6'
 
             const td  = (extra = {}) => ({ padding: '5px 8px', background: bg, borderTop: topBorder,
-                                           verticalAlign: 'middle', ...extra })
+                                           verticalAlign: 'top', ...extra })
             const tdG = (extra = {}) => ({ ...td(extra), borderLeft: '2px solid #ebebeb' })
 
             const phaseCount = row.phases.length
@@ -865,15 +992,22 @@ function InstrumentTab({ phaseRows, showTest }) {
                 <td style={td()}>
                   <span style={{ fontSize: 12, color: '#111827' }}>{row.instrument_name ?? '—'}</span>
                 </td>
-                <td style={tdG({ textAlign: 'right' })}>{num(phaseCount)}</td>
-                <td style={td({ textAlign: 'right' })}>{num(projTotal)}</td>
-                <td style={td({ textAlign: 'right' })}>{num(marksTotal)}</td>
-                <td style={td({ textAlign: 'right' })}>{num(preTotal)}</td>
-                <td style={td({ textAlign: 'right' })}>{num(simTotal)}</td>
-                <td style={td({ textAlign: 'right' })}>
+                <td style={tdG({ textAlign: 'right', verticalAlign: 'middle' })}>{num(phaseCount)}</td>
+                <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(projTotal)}</td>
+                <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(marksTotal)}</td>
+                <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(preTotal)}</td>
+                <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>{num(simTotal)}</td>
+                <td style={td({ textAlign: 'right', verticalAlign: 'middle' })}>
                   {exclTotal > 0
                     ? <span style={{ fontSize: 11, color: '#9ca3af' }}>{exclTotal}</span>
                     : <span style={{ color: '#d1d5db' }}>—</span>}
+                </td>
+                <td style={tdG({ verticalAlign: 'top', paddingTop: 6 })}>
+                  <SpecRateCell
+                    instrumentId={row.instrument_id}
+                    value={row.spec_rate}
+                    onSave={v => onSaveSpecRate(row.instrument_id, v)}
+                  />
                 </td>
               </tr>
             )
@@ -1432,6 +1566,21 @@ export default function ConfigView({ showTestCommunities }) {
       : r))
   }
 
+  // ── Instrument spec_rate save ──────────────────────────────────────────────
+
+  async function saveSpecRate(instrumentId, rate) {
+    const res = await fetch(`${API_BASE}/instruments/${instrumentId}/spec-rate`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec_rate: rate }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    // Update spec_rate in all phaseRows for this instrument
+    setPhaseData(prev => ({
+      ...prev,
+      rows: prev.rows.map(r => r.instrument_id === instrumentId ? { ...r, spec_rate: rate } : r),
+    }))
+  }
+
   // ── Phase save helpers ─────────────────────────────────────────────────────
 
   function patchPhaseRow(phaseId, patch) {
@@ -1504,7 +1653,7 @@ export default function ConfigView({ showTestCommunities }) {
         <DevTab rows={devData} showTest={showTestCommunities} onPatchDev={patchDev} />
       )}
       {tab === 'instrument' && phaseData && (
-        <InstrumentTab phaseRows={phaseData.rows} showTest={showTestCommunities} />
+        <InstrumentTab phaseRows={phaseData.rows} showTest={showTestCommunities} onSaveSpecRate={saveSpecRate} />
       )}
       {tab === 'phase'      && phaseData && (
         <PhaseTab
