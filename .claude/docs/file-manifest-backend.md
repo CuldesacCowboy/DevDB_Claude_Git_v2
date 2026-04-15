@@ -62,11 +62,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-03
 
 ### devdb_python/api/routers/instruments.py
-- Owns: POST and PATCH for sim_legal_instruments (create, rename, dev-id reassign, type edit, phase-order); INSERT uses RETURNING instrument_id (sequence-backed, no MAX query); PATCH /{id}/dev reassigns instrument to different dev_id; PATCH /{id}/type updates instrument_type (validates against allowed list: Plat, Site Condo, Traditional Condo, Metes & Bounds Splits, Other); PATCH /{id}/phase-order; POST /{id}/phase-order/auto-sort; validates dev_id against developments directly (no dim_development bridge)
+- Owns: POST and PATCH for sim_legal_instruments (create, rename, dev-id reassign, type edit, phase-order); INSERT uses RETURNING instrument_id (sequence-backed, no MAX query); PATCH /{id}/dev reassigns instrument to different dev_id; PATCH /{id}/type updates instrument_type (validates against allowed list: Plat, Site Condo, Traditional Condo, Metes & Bounds Splits, Other); PATCH /{id}/phase-order; POST /{id}/phase-order/auto-sort; validates dev_id against developments directly (no dim_development bridge); PATCH /{id}/spec-rate (saves spec_rate 0.0–1.0 to sim_legal_instruments); GET /{id}/spec-rate-hints (4 hints: 6mo spec/build, 2yr spec/build using conststart_date + companycode/lot_type_id weighting from codetail+housemaster)
 - Imports: api.deps, api.db, pydantic, fastapi, re
 - Imported by: api/main.py
-- Tables: developments, sim_legal_instruments, sim_dev_phases
-- Last commit: 2026-04-14
+- Tables: developments, sim_legal_instruments, sim_dev_phases, devdb_ext.housemaster, devdb_ext.codetail
+- Last commit: 2026-04-15
 
 ### devdb_python/api/routers/lots.py
 - Owns: PATCH /{id}/phase, PATCH /{id}/lot-type, DELETE /{id}/phase -- all delegating to lot_assignment_service
@@ -97,11 +97,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/phases.py
-- Owns: Phase CRUD, lot-type split management; GET /lot-types (all ref_lot_types for picker); POST /{phase_id}/lot-type/{lot_type_id} (add split with p=0, 409 if exists); DELETE /{phase_id}/lot-type/{lot_type_id} (requires p=0 AND r=0); PATCH /{phase_id}/lot-type/{lot_type_id}/projected; DELETE and PATCH routes registered BEFORE generic /{phase_id} (route ordering intentional); phase INSERT and split INSERT both use RETURNING (sequence-backed via migration 027, no MAX query); dev_code returned from developments.marks_code (no dim_development bridge)
+- Owns: Phase CRUD, lot-type split management; GET /lot-types (all ref_lot_types for picker); POST /{phase_id}/lot-type/{lot_type_id} (add split with p=0, 409 if exists); DELETE /{phase_id}/lot-type/{lot_type_id} (requires p=0 AND r=0); PATCH /{phase_id}/lot-type/{lot_type_id}/projected; DELETE and PATCH routes registered BEFORE generic /{phase_id} (route ordering intentional); phase INSERT and split INSERT both use RETURNING (sequence-backed via migration 027, no MAX query); dev_code returned from developments.marks_code (no dim_development bridge); GET /{phase_id}/lots/{lot_type_id} includes is_spec field
 - Imports: api.deps, api.models.phase_models, services.phase_assignment_service, psycopg2.extras
 - Imported by: api/main.py
-- Tables: sim_dev_phases, sim_legal_instruments, ref_lot_types, sim_phase_product_splits, sim_phase_builder_splits, sim_delivery_event_phases, sim_lots, developments
-- Last commit: 2026-04-14
+- Tables: sim_dev_phases, sim_legal_instruments, ref_lot_types, sim_phase_product_splits, sim_delivery_event_phases, sim_lots, developments
+- Last commit: 2026-04-15
 
 ### devdb_python/api/routers/site_plans.py
 - Owns: Site plan CRUD; POST /site-plans (upload PDF); GET /site-plans/ent-group/{id}; GET /{plan_id}/file; PATCH /{plan_id}/parcel (saves parcel polygon, auto-seeds first boundary if none exists)
@@ -125,11 +125,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-14
 
 ### devdb_python/api/routers/admin.py
-- Owns: GET /admin/phase-config (full phase hierarchy with lot counts, product splits, builder splits for the phase config spreadsheet); PATCH /admin/phase/{phase_id} (lot_count_projected, date_dev_projected, date_dev_actual); PUT /admin/product-split/{phase_id}/{lot_type_id}; PUT /admin/builder-split/{phase_id}/{builder_id}; GET /admin/community-config (ledger dates + delivery scheduling config per ent_group); GET /admin/dev-config (dev sim params + historical pace: starts_ytd/last_year/2yr_ago, unstarted_real, total_projected); GET /admin/setup-tree (full community → dev → instrument → phase tree with D/I/P/L subtotals and updated_at per phase); all segd joins use developments.dev_id directly (no dim_development bridge)
+- Owns: GET /admin/phase-config (full phase hierarchy with lot counts, product splits, builder splits derived from instrument level for the phase config spreadsheet); PATCH /admin/phase/{phase_id} (lot_count_projected, date_dev_projected, date_dev_actual); PUT /admin/product-split/{phase_id}/{lot_type_id}; PUT /admin/builder-split/{instrument_id}/{builder_id} (upserts sim_instrument_builder_splits — instrument-level, not phase-level); GET /admin/community-config (ledger dates + delivery scheduling config per ent_group, builder splits derived from instrument level); GET /admin/dev-config (dev sim params + historical pace: starts_ytd/last_year/2yr_ago, unstarted_real, total_projected); GET /admin/setup-tree (full community → dev → instrument → phase tree with D/I/P/L subtotals and updated_at per phase); all segd joins use developments.dev_id directly (no dim_development bridge)
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
-- Tables: sim_entitlement_groups, sim_ent_group_developments, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, sim_phase_builder_splits, ref_lot_types, dim_builders, sim_entitlement_delivery_config, sim_dev_params, developments
-- Last commit: 2026-04-14
+- Tables: sim_entitlement_groups, sim_ent_group_developments, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, sim_instrument_builder_splits, ref_lot_types, dim_builders, sim_entitlement_delivery_config, sim_dev_params, developments
+- Last commit: 2026-04-15
 
 ### devdb_python/api/routers/bulk_lots.py
 - Owns: POST /bulk-lots/suggestions (infers dev lot-number prefix + max seq from existing lots, returns flat suggestion list for given phase + lot type counts); POST /bulk-lots/insert (inserts pre-MARKS lots as lot_source='pre', sequence-backed lot_id, validates no duplicate lot_numbers, maintains product splits, audit logs each insertion); dev_code from developments.marks_code (no dim_development bridge)
@@ -181,11 +181,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-14
 
 ### devdb_python/api/routers/ledger.py
-- Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates + building_group_id; ORDER BY real-before-sim then building_group_id ASC NULLS LAST so building groups are contiguous); GET /ledger/{id}/delivery-schedule (one row per event+dev: date, source, phases, units, D/U/UC inventory at delivery month)
+- Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars + spec_count/build_count/undet_count per phase); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates + building_group_id + is_spec; ORDER BY real-before-sim then building_group_id ASC NULLS LAST so building groups are contiguous); GET /ledger/{id}/delivery-schedule (one row per event+dev: date, source, phases, units, D/U/UC inventory at delivery month)
 - Imports: api.deps, psycopg2.extras, fastapi
 - Imported by: api/main.py
 - Tables: v_sim_ledger_monthly, sim_ent_group_developments, developments, sim_dev_phases, sim_delivery_events, sim_delivery_event_phases, sim_lots, sim_legal_instruments, sim_phase_product_splits, ref_lot_types
-- Last commit: 2026-04-14
+- Last commit: 2026-04-15
 
 ### devdb_python/api/db.py
 - Owns: Database utility helpers shared across routers; dict_cursor(conn) replaces repeated conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) boilerplate
@@ -216,11 +216,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-05
 
 ### devdb_python/services/ledger_service.py
-- Owns: Ledger query logic extracted from routers/ledger.py; query_ledger_by_dev(conn, ent_group_id) — bounded date range, synthetic start-date rows; _ledger_row() dict serializer. Entitlement event overlay removed (sim_entitlement_events dropped in migration 025). All joins use developments.dev_id directly (no dim_development bridge).
+- Owns: Ledger query logic extracted from routers/ledger.py; query_ledger_by_dev(conn, ent_group_id) — bounded date range, synthetic start-date rows; _ledger_row() dict serializer includes str_plan_spec and str_plan_build. Entitlement event overlay removed (sim_entitlement_events dropped in migration 025). All joins use developments.dev_id directly (no dim_development bridge).
 - Imports: api.db.dict_cursor
 - Imported by: routers/ledger.py
 - Tables: v_sim_ledger_monthly, sim_entitlement_groups, sim_ent_group_developments, sim_lots, developments
-- Last commit: 2026-04-14
+- Last commit: 2026-04-15
 
 ### devdb_python/services/phase_assignment_service.py
 - Owns: Phase-to-instrument reassignment with entitlement group validation and audit logging

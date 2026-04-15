@@ -19,11 +19,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/SimulationView.jsx
-- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); feed_starts_mode checkbox (amber) — aggressive batching toggle that bypasses tier gate in P-0000; showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers, delivery pin markers, rich tooltips, gridlines. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment. Lot ledger (LotLedger component): OverrideDateCell on pipeline date columns; OverridesPanel tab; SyncReconciliationModal post-run; building group visualization — Bldg column (B1/B2/… teal labels), alternating teal/green row tint per group, 2px teal top separator between groups; bgLabelMap computed per phase from building_group_id; CSV export includes Bldg column.
+- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); feed_starts_mode checkbox (amber) — aggressive batching toggle that bypasses tier gate in P-0000; showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers, delivery pin markers, rich tooltips, gridlines. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment. Lot ledger (LotLedger component): OverrideDateCell on pipeline date columns; OverridesPanel tab; SyncReconciliationModal post-run; building group visualization — Bldg column (B1/B2/… teal labels), alternating teal/green row tint per group, 2px teal top separator between groups; bgLabelMap computed per phase from building_group_id; CSV export includes Bldg column. Spec/build: specFilter dropdown ('all'|'spec'|'build'|'undet') on lot ledger; Spec column header (teal) with S/B/— cell rendering; STR(S) teal dashed line and STR(B) gray dashed line on velocity panel; stacked STR(S)+STR(B) bars on closings panel; utilization panel shows "12S 28B 5?" breakdown when any spec lots exist.
 - Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge), config (API_BASE), hooks/useOverrides, components/overrides/OverrideDateCell, OverridesPanel, SyncReconciliationModal
 - Imported by: App.jsx
 - Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params, /api/overrides/*)
-- Last commit: 2026-04-14
+- Last commit: 2026-04-15
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker filtered by showTestCommunities prop (is_test exclusive). selectedGroupId lifted to App.jsx.
@@ -68,11 +68,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-10
 
 ### devdb_ui/src/pages/ConfigView.jsx
-- Owns: 4-tab configuration view (Community / Development / Instrument / Phase); Community tab — editable ledger dates (date_paper, date_ent), auto_schedule_enabled checkbox, MonthCell (12-button inline delivery month picker, All/None, "using global" when null), del/year; Development tab — historical pace context (starts YTD/last yr/2yr ago, unstarted lots, total projected, 2yr avg pace), StartsCell (editable annual_starts_target + reactive supply label: ≈ X.x yrs green/≈ N mo amber/exhausted red), editable max_starts_per_month; Instrument tab — read-only summary; Phase tab — phase config spreadsheet with '+' button per row opening BulkLotInsertModal; data loaded via parallel Promise.all on mount from /admin/community-config, /admin/dev-config, /admin/phase-config
+- Owns: 4-tab configuration view (Community / Development / Instrument / Phase); Community tab — editable ledger dates (date_paper, date_ent), auto_schedule_enabled checkbox, MonthCell (12-button inline delivery month picker, All/None, "using global" when null), del/year; Development tab — historical pace context (starts YTD/last yr/2yr ago, unstarted lots, total projected, 2yr avg pace), StartsCell (editable annual_starts_target + reactive supply label: ≈ X.x yrs green/≈ N mo amber/exhausted red), editable max_starts_per_month; Instrument tab — editable spec_rate (SpecRateCell with 4 hint buttons, 6mo/2yr weighted average from codetail) + editable builder split % per builder (instrument-level, not phase-level; 2-builder auto-complement; actual committed lot counts displayed); Phase tab — phase config spreadsheet with '+' button per row opening BulkLotInsertModal (builder split columns removed — moved to Instrument tab); data loaded via parallel Promise.all on mount from /admin/community-config, /admin/dev-config, /admin/phase-config
 - Imports: react (useState, useEffect, useRef, useCallback), BulkLotInsertModal
 - Imported by: App.jsx (via /configure route)
-- Tables: none (API calls via /admin/community-config, /admin/dev-config, /admin/phase-config, PATCH /admin/phase/{id}, PUT /admin/product-split, PUT /admin/builder-split, PUT /entitlement-groups/{id}/delivery-config, PUT /entitlement-groups/{id}/ledger-config, PUT /developments/{id}/sim-params, POST /bulk-lots/suggestions, POST /bulk-lots/insert)
-- Last commit: 2026-04-14
+- Tables: none (API calls via /admin/community-config, /admin/dev-config, /admin/phase-config, PATCH /admin/phase/{id}, PUT /admin/product-split, PUT /admin/builder-split/{instrument_id}/{builder_id}, PATCH /instruments/{id}/spec-rate, GET /instruments/{id}/spec-rate-hints, PUT /entitlement-groups/{id}/delivery-config, PUT /entitlement-groups/{id}/ledger-config, PUT /developments/{id}/sim-params, POST /bulk-lots/suggestions, POST /bulk-lots/insert)
+- Last commit: 2026-04-15
 
 ### devdb_ui/src/pages/CommunityDevelopmentsView.jsx
 - Owns: Community-development assignment view; unassigned dev panel; community pills; alphabet slider; drag-to-create-community
@@ -215,11 +215,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/components/LotPill.jsx
-- Owns: Assigned lot pill (expanded + condensed modes); PlaceholderPill (expanded + condensed); StitchConnector; LockIcon; LockBtn; ProjectedDateField; isSelected highlight; onContextMenu passthrough
+- Owns: Assigned lot pill (expanded + condensed modes); PlaceholderPill (expanded + condensed); StitchConnector; LockIcon; LockBtn; ProjectedDateField; isSelected highlight; onContextMenu passthrough; condensed view: 8px teal "S" badge above seq number when assignment.is_spec === true
 - Imports: dnd-kit (useDraggable), react, tdaUtils (fmt, shortLot, parseLot)
 - Imported by: CheckpointBand.jsx
 - Tables: none
-- Last commit: 2026-04-01
+- Last commit: 2026-04-15
 
 ### devdb_ui/src/components/TdaCard.jsx
 - Owns: TDA card shell; EditableTdaName (green dashed inline editor, PATCH on save); PoolSection (inline In Agreement droppable with pool lot pills, landing zone highlight); add-checkpoint form

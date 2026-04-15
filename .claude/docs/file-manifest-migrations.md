@@ -291,7 +291,7 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 
 ### devdb_python/migrations/053_collapse_to_modern_dev_ids.sql
 - Owns: Eliminates the dual dev_id space — collapses all sim table dev_ids from legacy dim_development.development_id space to modern developments.dev_id space. Builds _dev_id_map via dev_code2=marks_code bridge + name-based fallback (Schuring). Two-step UPDATE via negative temp IDs avoids PostgreSQL PK swap conflicts. Orphan cleanup deletes fixture rows (dev_ids 9001/9002/9003) from sim_dev_phases cascade. Adds FK constraints on 5 sim tables: sim_legal_instruments, sim_dev_phases, sim_lots, sim_dev_params, sim_ent_group_developments → developments(dev_id). dim_development stays as historical reference only.
-- Tables: sim_legal_instruments, sim_dev_phases, sim_lots, sim_dev_params, sim_ent_group_developments (UPDATE dev_ids + ADD FK), sim_phase_product_splits, sim_phase_builder_splits, sim_delivery_event_phases (orphan DELETE)
+- Tables: sim_legal_instruments, sim_dev_phases, sim_lots, sim_dev_params, sim_ent_group_developments (UPDATE dev_ids + ADD FK), sim_phase_product_splits, sim_delivery_event_phases (orphan DELETE)
 - Last commit: 2026-04-14
 
 ### devdb_python/migrations/054_move_waterton_site_condo_to_sf.sql
@@ -308,3 +308,43 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Creates sim_phase_building_config table (id SERIAL PK, phase_id INT FK → sim_dev_phases, building_count INT, units_per_building INT); stores multi-family building configuration per phase for S-0800 grouped lot generation; UI exposed via BuildingsTab "Sim building config" section
 - Tables: sim_phase_building_config (CREATE TABLE)
 - Last commit: 2026-04-14
+
+### devdb_python/migrations/057_scheduling_horizon.sql
+- Owns: Adds scheduling_horizon_months INT NULL to sim_entitlement_delivery_config; controls how far forward P-0000 looks for demand when scheduling deliveries
+- Tables: sim_entitlement_delivery_config (ADD COLUMN IF NOT EXISTS)
+- Last commit: 2026-04-15
+
+### devdb_python/migrations/058_devdb_ext_housemaster.sql
+- Owns: Creates devdb_ext schema and devdb_ext.housemaster table as exact replica of MARKS housemaster export; no surrogate PKs, no added columns
+- Tables: devdb_ext.housemaster (CREATE TABLE)
+- Last commit: 2026-04-15
+
+### devdb_python/migrations/059_devdb_ext_company_tables.sql
+- Owns: Creates devdb_ext company tables (codetail, optionlotmaster, etc.) as exact replicas of MARKS exports; initially empty, loaded by load scripts
+- Tables: devdb_ext.* (CREATE TABLE)
+- Last commit: 2026-04-15
+
+### devdb_python/migrations/060_ext_codetail.sql
+- Owns: Creates devdb_ext.codetail table (renamed from 059 to fix duplicate migration number); exact MARKS codetail replica
+- Tables: devdb_ext.codetail (CREATE TABLE)
+- Last commit: 2026-04-15
+
+### devdb_python/migrations/061_rebuild_devdb_ext_tables.sql
+- Owns: Full rebuild of all 10 devdb_ext tables with correct column names, types, and PKs matching source CSV exports exactly; drops and recreates each table for full fidelity
+- Tables: devdb_ext.housemaster, devdb_ext.codetail, and 8 other devdb_ext tables (DROP + CREATE)
+- Last commit: 2026-04-15
+
+### devdb_python/migrations/062_spec_rate_and_is_spec.sql
+- Owns: Adds is_spec BOOLEAN to sim_lots (TRUE=spec build, FALSE=confirmed build, NULL=undetermined) and spec_rate NUMERIC(5,4) to sim_legal_instruments (fraction of undetermined lots to assign as spec via S-0950)
+- Tables: sim_lots (ADD COLUMN is_spec), sim_legal_instruments (ADD COLUMN spec_rate)
+- Last commit: 2026-04-15
+
+### devdb_python/migrations/063_ledger_view_spec_str_split.sql
+- Owns: Drops and recreates v_sim_ledger_monthly to add str_plan_spec (starts where is_spec=TRUE) and str_plan_build (starts where is_spec=FALSE) columns; uses DROP+CREATE (not CREATE OR REPLACE) because PostgreSQL cannot insert columns mid-list with CREATE OR REPLACE
+- Tables: v_sim_ledger_monthly (DROP + CREATE VIEW)
+- Last commit: 2026-04-15
+
+### devdb_python/migrations/064_instrument_builder_splits.sql
+- Owns: Moves builder splits from phase level to instrument level; creates sim_instrument_builder_splits (split_id PK, instrument_id FK → sim_legal_instruments, builder_id, share); migrates existing data from sim_phase_builder_splits via DISTINCT ON (instrument_id, builder_id); drops sim_phase_builder_splits
+- Tables: sim_instrument_builder_splits (CREATE TABLE + PK + UNIQUE + FK + SEQUENCE), sim_phase_builder_splits (DROP TABLE)
+- Last commit: 2026-04-15

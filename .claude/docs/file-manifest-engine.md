@@ -21,11 +21,11 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-15
 
 ### devdb_python/engine/coordinator.py
-- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates (not event_id-keyed dicts, since P-0000 and p_pre create new sequence IDs every run); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params; _apply_lot_date_overrides applies sim_lot_date_overrides between S-02 and S-03; returns (iterations, missing_params_devs)
+- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates (not event_id-keyed dicts, since P-0000 and p_pre create new sequence IDs every run); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params; _apply_lot_date_overrides applies sim_lot_date_overrides between S-02 and S-03; _load_builder_splits loads sim_instrument_builder_splits and expands to {phase_id: [...]} via join to sim_dev_phases; returns (iterations, missing_params_devs)
 - Imports: engine modules s0100-s1200, p0000-p0800, p_pre_locked_event_rebuilder, config_loader, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
 - Imported by: routers/simulations.py, tests/test_coordinator.py
-- Tables: reads/writes via all pipeline modules; sim_lots (projected date columns), sim_dev_params, sim_lot_date_overrides, sim_lot_date_violations
-- Last commit: 2026-04-14
+- Tables: reads/writes via all pipeline modules; sim_lots (projected date columns), sim_dev_params, sim_lot_date_overrides, sim_lot_date_violations, sim_instrument_builder_splits
+- Last commit: 2026-04-15
 
 ### devdb_python/engine/p_pre_locked_event_rebuilder.py
 - Owns: Pre-supply-pipeline module — deletes all delivery events whose date_dev_actual IS NOT NULL and rebuilds them from sim_dev_phases.date_dev_actual; groups phases by date and INSERTs one event per date; returns count of new events created; locked_event_rebuilder(conn, ent_group_id) signature
@@ -107,10 +107,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/s0900_builder_assignment.py
-- Owns: S-0900 -- two functions: builder_assignment() assigns builder_id to sim/temp lots in memory (pure, no DB); assign_real_lot_builders() DB pre-pass assigns builder_id to real/pre lots where COALESCE(builder_id_override, builder_id) IS NULL using same proportional split logic; both share _apply_splits_to_indices() helper; assign_real_lot_builders() called once per coordinator run before iteration loop (idempotent)
+- Owns: S-0900 -- two functions: builder_assignment() assigns builder_id to sim/temp lots in memory (pure, no DB); assign_real_lot_builders() DB pre-pass assigns builder_id to real/pre lots where COALESCE(builder_id_override, builder_id) IS NULL using same proportional split logic; both share _apply_splits_to_indices() helper; assign_real_lot_builders() called once per coordinator run before iteration loop (idempotent); input builder_splits dict is {phase_id: [...]} loaded by coordinator via sim_instrument_builder_splits join
 - Imported by: coordinator.py
-- Tables: sim_lots (SELECT real/pre lots, UPDATE builder_id via execute_values); sim_phase_builder_splits (read parameter)
-- Last commit: 2026-04-12
+- Tables: sim_lots (SELECT real/pre lots, UPDATE builder_id via execute_values)
+- Last commit: 2026-04-15
 
 ### devdb_python/engine/s1000_demand_derived_date_writer.py
 - Owns: S-1000 -- writes MIN(date_str) per phase to sim_dev_phases.date_dev_projected
