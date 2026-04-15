@@ -6,7 +6,8 @@
 --
 -- NULL is_spec lots are counted only in str_plan (not spec or build).
 
-CREATE OR REPLACE VIEW devdb.v_sim_ledger_monthly AS
+DROP VIEW IF EXISTS devdb.v_sim_ledger_monthly;
+CREATE VIEW devdb.v_sim_ledger_monthly AS
 SELECT
     l.dev_id,
     COALESCE(l.builder_id_override, l.builder_id) AS builder_id,
