@@ -1133,7 +1133,7 @@ function DeliveryScheduleTab({ rows, loading }) {
   })
 
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
       <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap', width: '100%' }}>
         <thead>
           <tr style={{ background: '#f9fafb' }}>
@@ -1142,9 +1142,9 @@ function DeliveryScheduleTab({ rows, loading }) {
             <th style={stickyTh('left')}>Development</th>
             <th style={stickyTh('left', { whiteSpace: 'normal' })}>Phases Delivered</th>
             <th style={stickyTh()}>Units</th>
-            <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db' }}>D at Delivery</th>
-            <th style={stickyTh()}>U at Delivery</th>
-            <th style={stickyTh()}>UC at Delivery</th>
+            <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db' }}>D</th>
+            <th style={stickyTh()}>H</th>
+            <th style={stickyTh()}>U</th>
           </tr>
         </thead>
         <tbody>
