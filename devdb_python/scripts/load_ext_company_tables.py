@@ -10,7 +10,7 @@ Usage:
   python load_ext_company_tables.py --table gltrans
   python load_ext_company_tables.py --all --dry-run
 
-Tables (housemaster is handled by load_ext_housemaster.py):
+Tables (housemaster handled by load_ext_housemaster.py, codetail by load_ext_codetail.py):
   categorymaster, companymaster, costcodemaster, gltrans,
   housecostdetail, housecostsummary, housestatuses, optionlotmaster
 """
@@ -30,16 +30,16 @@ DB = dict(dbname="devdb", user="postgres", password="postgres", host="localhost"
 CHUNK = 10_000
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Type parsers ──────────────────────────────────────────────────────────────
 
-def s(v):
-    """Empty string → None, else stripped string."""
+def _s(v):
+    """String: empty → None."""
     v = v.strip() if v else ""
     return v or None
 
 
-def d(v):
-    """Parse date string (M/D/YYYY or M/D/YYYY H:MM:SS). Empty → None."""
+def _d(v):
+    """Date: M/D/YYYY or M/D/YYYY H:MM:SS. Empty → None."""
     v = v.strip() if v else ""
     if not v:
         return None
@@ -51,8 +51,8 @@ def d(v):
     return None
 
 
-def n(v):
-    """Parse numeric string. Empty → None."""
+def _n(v):
+    """Numeric: empty → None."""
     v = v.strip() if v else ""
     if not v:
         return None
@@ -60,6 +60,11 @@ def n(v):
         return Decimal(v)
     except InvalidOperation:
         return None
+
+
+def _pk(v):
+    """PK string field: strip only, keep empty string (never None)."""
+    return (v or "").strip()
 
 
 def csv_path(name):
@@ -85,78 +90,65 @@ def load_categorymaster(cur, dry_run):
     rows = []
     with open(csv_path("categorymaster"), encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
-            cc = s(r["companycode"])
-            cat = s(r["categorycode"])
+            cc  = _pk(r["companycode"])
+            cat = _pk(r["categorycode"])
             if not cc or not cat:
                 continue
-            rows.append((cc, cat, s(r["description"])))
-
+            rows.append((cc, cat, _s(r["description"])))
     print(f"  categorymaster: {len(rows):,} rows parsed")
     if dry_run:
         return
-
     cur.execute("TRUNCATE devdb_ext.categorymaster")
     insert_chunks(cur,
-        "INSERT INTO devdb_ext.categorymaster (companycode,categorycode,description,imported_at) VALUES %s",
-        [(cc, cat, desc, "NOW()") for cc, cat, desc in rows],
-        "categorymaster",
-    )
+        "INSERT INTO devdb_ext.categorymaster (companycode, categorycode, description) VALUES %s",
+        rows, "categorymaster")
 
 
 def load_companymaster(cur, dry_run):
     cols = [
-        "companycode","company_name","regioncode","address1","address2",
-        "phonenumber","faxnumber","abbreviation","legaldesc","idnumber",
-        "liabilitystart","equitystart","revenuestart","expensestart","retainedearnings",
-        "currfiscalyear","currentperiod","fystartperiod",
-        "accountspayable","discountstaken","apcash","apduetofrom",
-        "acctsreceivable","arprogress","altcompanycode","landcompanycode","altsalescompcode",
+        "companycode", "company_name", "regioncode", "address1", "address2",
+        "phonenumber", "faxnumber", "abbreviation", "legaldesc", "idnumber",
+        "liabilitystart", "equitystart", "revenuestart", "expensestart", "retainedearnings",
+        "currfiscalyear", "currentperiod", "fystartperiod",
+        "accountspayable", "discountstaken", "apcash", "apduetofrom",
+        "acctsreceivable", "arprogress", "altcompanycode", "landcompanycode", "altsalescompcode",
     ]
     rows = []
     with open(csv_path("companymaster"), encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
-            cc = s(r.get("companycode", ""))
+            cc = _pk(r.get("companycode", ""))
             if not cc:
                 continue
-            rows.append(tuple(s(r.get(c, "")) for c in cols))
-
+            # companycode is PK (keep as-is); all others are _s
+            row = (_pk(r.get("companycode", "")),) + tuple(_s(r.get(c, "")) for c in cols[1:])
+            rows.append(row)
     print(f"  companymaster: {len(rows):,} rows parsed")
     if dry_run:
         return
-
     cur.execute("TRUNCATE devdb_ext.companymaster")
-    placeholders = ",".join(["%s"] * len(cols))
-    col_list = ",".join(cols)
+    col_list = ", ".join(cols)
+    placeholders = ", ".join(["%s"] * len(cols))
     for row in rows:
-        cur.execute(
-            f"INSERT INTO devdb_ext.companymaster ({col_list},imported_at) VALUES ({placeholders},NOW())",
-            row,
-        )
+        cur.execute(f"INSERT INTO devdb_ext.companymaster ({col_list}) VALUES ({placeholders})", row)
 
 
 def load_costcodemaster(cur, dry_run):
     rows = []
     with open(csv_path("costcodemaster"), encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
-            cc = s(r["companycode"])
-            cat = s(r["categorycode"])
-            cost = s(r["costcode"])
+            cc   = _pk(r["companycode"])
+            cat  = _pk(r["categorycode"])
+            cost = _pk(r["costcode"])
             if not cc or not cat or not cost:
                 continue
-            rows.append((cc, cat, cost, s(r["description"]), s(r["inactive"]), s(r["stagecode"])))
-
+            rows.append((cc, cat, cost, _s(r["description"]), _s(r["inactive"]), _s(r["stagecode"])))
     print(f"  costcodemaster: {len(rows):,} rows parsed")
     if dry_run:
         return
-
     cur.execute("TRUNCATE devdb_ext.costcodemaster")
     insert_chunks(cur,
-        """INSERT INTO devdb_ext.costcodemaster
-           (companycode,categorycode,costcode,description,inactive,stagecode,imported_at)
-           VALUES %s""",
-        [(cc, cat, cost, desc, inact, stage, "NOW()") for cc, cat, cost, desc, inact, stage in rows],
-        "costcodemaster",
-    )
+        "INSERT INTO devdb_ext.costcodemaster (companycode, categorycode, costcode, description, inactive, stagecode) VALUES %s",
+        rows, "costcodemaster")
 
 
 def load_gltrans(cur, dry_run):
@@ -164,37 +156,39 @@ def load_gltrans(cur, dry_run):
     skipped = 0
     with open(csv_path("gltrans"), encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
-            try:
-                rows.append((
-                    s(r["fiscal_year"]), s(r["companycode"]), s(r["glaccount"]),
-                    d(r["transaction_date"]), s(r["transactioncode"]), s(r["sequencenumber"]),
-                    d(r["trans2_date"]), s(r["drcrcode"]), s(r["cashflag"]),
-                    n(r["amount"]), s(r["remarkcode"]), s(r["transremark"]),
-                    s(r["batchnum"]), s(r["distributioncomp"]), s(r["journalnumber"]),
-                    s(r["invoicenumber"]), s(r["vendornumber"]), s(r["bankcode"]),
-                    s(r["checknumber"]), s(r["developmentcode"]), s(r["housenumber"]),
-                    s(r["categorycode"]), s(r["costcode"]), s(r["variancecode"]),
-                    s(r["optioncode"]), s(r["loannumber"]), s(r["drawtype"]),
-                ))
-            except (KeyError, Exception):
+            fy   = _pk(r["fiscal_year"])
+            cc   = _pk(r["companycode"])
+            acct = _pk(r["glaccount"])
+            tdt  = _d(r["transaction_date"])
+            tc   = _pk(r["transactioncode"])
+            seq  = _pk(r["sequencenumber"])
+            if not all([fy, cc, acct, tdt, tc, seq]):
                 skipped += 1
-
+                continue
+            rows.append((
+                fy, cc, acct, tdt, tc, seq,
+                _d(r["trans2_date"]),
+                _s(r["drcrcode"]), _s(r["cashflag"]), _n(r["amount"]),
+                _s(r["remarkcode"]), _s(r["transremark"]), _s(r["batchnum"]),
+                _s(r["distributioncomp"]), _s(r["journalnumber"]), _s(r["invoicenumber"]),
+                _s(r["vendornumber"]), _s(r["bankcode"]), _s(r["checknumber"]),
+                _s(r["developmentcode"]), _s(r["housenumber"]),
+                _s(r["categorycode"]), _s(r["costcode"]), _s(r["variancecode"]),
+                _s(r["optioncode"]), _s(r["loannumber"]), _s(r["drawtype"]),
+            ))
     print(f"  gltrans: {len(rows):,} rows parsed" + (f", {skipped} skipped" if skipped else ""))
     if dry_run:
         return
-
-    cur.execute("TRUNCATE devdb_ext.gltrans RESTART IDENTITY")
+    cur.execute("TRUNCATE devdb_ext.gltrans")
     insert_chunks(cur,
         """INSERT INTO devdb_ext.gltrans
-           (fiscal_year,companycode,glaccount,transaction_date,transactioncode,sequencenumber,
-            trans2_date,drcrcode,cashflag,amount,remarkcode,transremark,batchnum,
-            distributioncomp,journalnumber,invoicenumber,vendornumber,bankcode,checknumber,
-            developmentcode,housenumber,categorycode,costcode,variancecode,optioncode,
-            loannumber,drawtype,imported_at)
+           (fiscal_year, companycode, glaccount, transaction_date, transactioncode, sequencenumber,
+            trans2_date, drcrcode, cashflag, amount, remarkcode, transremark, batchnum,
+            distributioncomp, journalnumber, invoicenumber, vendornumber, bankcode, checknumber,
+            developmentcode, housenumber, categorycode, costcode, variancecode, optioncode,
+            loannumber, drawtype)
            VALUES %s""",
-        [r + ("NOW()",) for r in rows],
-        "gltrans",
-    )
+        rows, "gltrans")
 
 
 def load_housecostdetail(cur, dry_run):
@@ -202,36 +196,32 @@ def load_housecostdetail(cur, dry_run):
     skipped = 0
     with open(csv_path("housecostdetail"), encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
-            cc = s(r["companycode"])
-            dev = s(r["developmentcode"])
-            house = s(r["housenumber"])
-            cat = s(r["categorycode"])
-            cost = s(r["costcode"])
-            seq = s(r["sequencenumber"])
-            if not all([cc, dev, house, cat, cost, seq]):
+            cc   = _pk(r["companycode"])
+            dev  = _pk(r["developmentcode"])
+            hn   = _pk(r["housenumber"])
+            cat  = _pk(r["categorycode"])
+            cost = _pk(r["costcode"])
+            tdt  = _d(r["transaction_date"])
+            seq  = _pk(r["sequencenumber"])
+            if not all([cc, dev, hn, cat, cost, tdt, seq]):
                 skipped += 1
                 continue
             rows.append((
-                cc, dev, house, cat, cost, seq,
-                d(r["transaction_date"]), s(r["sourcecode"]), s(r["remarks"]),
-                s(r["optioncode"]), s(r["variancecode"]), s(r["memo"]),
-                s(r["batchnum"]), n(r["amount"]),
+                cc, dev, hn, cat, cost, tdt, seq,
+                _s(r["sourcecode"]), _s(r["remarks"]), _s(r["optioncode"]),
+                _s(r["variancecode"]), _s(r["memo"]), _s(r["batchnum"]), _n(r["amount"]),
             ))
-
     print(f"  housecostdetail: {len(rows):,} rows parsed" + (f", {skipped} skipped" if skipped else ""))
     if dry_run:
         return
-
     cur.execute("TRUNCATE devdb_ext.housecostdetail")
     insert_chunks(cur,
         """INSERT INTO devdb_ext.housecostdetail
-           (companycode,developmentcode,housenumber,categorycode,costcode,sequencenumber,
-            transaction_date,sourcecode,remarks,optioncode,variancecode,memo,
-            batchnum,amount,imported_at)
-           VALUES %s""",
-        [r + ("NOW()",) for r in rows],
-        "housecostdetail",
-    )
+           (companycode, developmentcode, housenumber, categorycode, costcode,
+            transaction_date, sequencenumber, sourcecode, remarks, optioncode,
+            variancecode, memo, batchnum, amount)
+           VALUES %s ON CONFLICT DO NOTHING""",
+        rows, "housecostdetail")
 
 
 def load_housecostsummary(cur, dry_run):
@@ -239,65 +229,53 @@ def load_housecostsummary(cur, dry_run):
     skipped = 0
     with open(csv_path("housecostsummary"), encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
-            cc = s(r["companycode"])
-            dev = s(r["developmentcode"])
-            house = s(r["housenumber"])
-            cat = s(r["categorycode"])
-            cost = s(r["costcode"])
-            if not all([cc, dev, house, cat, cost]):
+            cc   = _pk(r["companycode"])
+            dev  = _pk(r["developmentcode"])
+            hn   = _pk(r["housenumber"])
+            cat  = _pk(r["categorycode"])
+            cost = _pk(r["costcode"])
+            if not all([cc, dev, hn, cat, cost]):
                 skipped += 1
                 continue
-            rows.append((cc, dev, house, cat, cost, n(r["budgetamount"]), n(r["actual"]), n(r["originalbudget"])))
-
+            rows.append((cc, dev, hn, cat, cost,
+                         _n(r["budgetamount"]), _n(r["actual"]), _n(r["originalbudget"])))
     print(f"  housecostsummary: {len(rows):,} rows parsed" + (f", {skipped} skipped" if skipped else ""))
     if dry_run:
         return
-
     cur.execute("TRUNCATE devdb_ext.housecostsummary")
     insert_chunks(cur,
         """INSERT INTO devdb_ext.housecostsummary
-           (companycode,developmentcode,housenumber,categorycode,costcode,
-            budgetamount,actual,originalbudget,imported_at)
+           (companycode, developmentcode, housenumber, categorycode, costcode,
+            budgetamount, actual, originalbudget)
            VALUES %s""",
-        [r + ("NOW()",) for r in rows],
-        "housecostsummary",
-    )
+        rows, "housecostsummary")
 
 
 def load_housestatuses(cur, dry_run):
     rows = []
-    skipped = 0
     with open(csv_path("housestatuses"), encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
-            # Skip blank summary rows (no company or dev code)
-            if not s(r.get("companycode")) and not s(r.get("developmentcode")):
-                skipped += 1
-                continue
             rows.append((
-                s(r["companycode"]), s(r["developmentcode"]), s(r["unpackedhousenum"]),
-                s(r["companyname"]), s(r["developmentname"]),
-                s(r["blocknumber"]), s(r["lotnumber"]), s(r["buyername"]),
-                s(r["salespersoncode"]), s(r["modelcode"]), s(r["elevationcode"]),
-                d(r["aosdate"]), d(r["ratifieddate"]), d(r["settlementdate"]),
-                s(r["lendercode"]), s(r["loantype"]),
-                s(r["category"]), s(r["categorydesc"]), n(r["salesamount"]),
+                _s(r["companycode"]), _s(r["developmentcode"]), _s(r["unpackedhousenum"]),
+                _s(r["companyname"]), _s(r["developmentname"]),
+                _s(r["blocknumber"]), _s(r["lotnumber"]), _s(r["buyername"]),
+                _s(r["salespersoncode"]), _s(r["modelcode"]), _s(r["elevationcode"]),
+                _d(r["aosdate"]), _d(r["ratifieddate"]), _d(r["settlementdate"]),
+                _s(r["lendercode"]), _s(r["loantype"]),
+                _s(r["category"]), _s(r["categorydesc"]), _n(r["salesamount"]),
             ))
-
-    print(f"  housestatuses: {len(rows):,} rows parsed" + (f", {skipped} blank rows skipped" if skipped else ""))
+    print(f"  housestatuses: {len(rows):,} rows parsed")
     if dry_run:
         return
-
     cur.execute("TRUNCATE devdb_ext.housestatuses")
     insert_chunks(cur,
         """INSERT INTO devdb_ext.housestatuses
-           (companycode,developmentcode,unpackedhousenum,companyname,developmentname,
-            blocknumber,lotnumber,buyername,salespersoncode,modelcode,elevationcode,
-            aosdate,ratifieddate,settlementdate,lendercode,loantype,
-            category,categorydesc,salesamount,imported_at)
+           (companycode, developmentcode, unpackedhousenum, companyname, developmentname,
+            blocknumber, lotnumber, buyername, salespersoncode, modelcode, elevationcode,
+            aosdate, ratifieddate, settlementdate, lendercode, loantype,
+            category, categorydesc, salesamount)
            VALUES %s""",
-        [r + ("NOW()",) for r in rows],
-        "housestatuses",
-    )
+        rows, "housestatuses")
 
 
 def load_optionlotmaster(cur, dry_run):
@@ -305,54 +283,50 @@ def load_optionlotmaster(cur, dry_run):
     skipped = 0
     with open(csv_path("optionlotmaster"), encoding="utf-8-sig", newline="") as f:
         for r in csv.DictReader(f):
-            cc = s(r["companycode"])
-            dev = s(r["developmentcode"])
-            lot = s(r["lotnumber"])
+            cc  = _pk(r["companycode"])
+            dev = _pk(r["developmentcode"])
+            lot = _pk(r["lotnumber"])
             if not all([cc, dev, lot]):
                 skipped += 1
                 continue
             rows.append((
                 cc, dev, lot,
-                s(r["taxblock"]), s(r["taxlot"]),
-                s(r["address1"]), s(r["address2"]), s(r["address3"]),
-                d(r["lotcontractdate"]), d(r["lotconverdate"]), d(r["releasesalesdate"]),
-                s(r["lotcomments"]), s(r["sellername"]),
-                s(r["selleraddress1"]), s(r["selleraddress2"]),
-                s(r["sellercity"]), s(r["sellerstate"]), s(r["sellerzip"]),
-                s(r["sellercountry"]), s(r["sellerphone"]), s(r["selleremail"]),
-                d(r["optionexpdate"]), s(r["orientation"]),
-                n(r["lotpremium"]), s(r["misc1_field"]), s(r["misc2_field"]),
+                _s(r["taxblock"]), _s(r["taxlot"]),
+                _s(r["address1"]), _s(r["address2"]), _s(r["address3"]),
+                _d(r["lotcontractdate"]), _d(r["lotconverdate"]), _d(r["releasesalesdate"]),
+                _s(r["lotcomments"]), _s(r["sellername"]),
+                _s(r["selleraddress1"]), _s(r["selleraddress2"]),
+                _s(r["sellercity"]), _s(r["sellerstate"]), _s(r["sellerzip"]),
+                _s(r["sellercountry"]), _s(r["sellerphone"]), _s(r["selleremail"]),
+                _d(r["optionexpdate"]), _s(r["orientation"]),
+                _n(r["lotpremium"]), _s(r["misc1_field"]), _s(r["misc2_field"]),
             ))
-
     print(f"  optionlotmaster: {len(rows):,} rows parsed" + (f", {skipped} skipped" if skipped else ""))
     if dry_run:
         return
-
     cur.execute("TRUNCATE devdb_ext.optionlotmaster")
     insert_chunks(cur,
         """INSERT INTO devdb_ext.optionlotmaster
-           (companycode,developmentcode,lotnumber,taxblock,taxlot,
-            address1,address2,address3,lotcontractdate,lotconverdate,releasesalesdate,
-            lotcomments,sellername,selleraddress1,selleraddress2,
-            sellercity,sellerstate,sellerzip,sellercountry,sellerphone,selleremail,
-            optionexpdate,orientation,lotpremium,misc1_field,misc2_field,imported_at)
+           (companycode, developmentcode, lotnumber, taxblock, taxlot,
+            address1, address2, address3, lotcontractdate, lotconverdate, releasesalesdate,
+            lotcomments, sellername, selleraddress1, selleraddress2,
+            sellercity, sellerstate, sellerzip, sellercountry, sellerphone, selleremail,
+            optionexpdate, orientation, lotpremium, misc1_field, misc2_field)
            VALUES %s""",
-        [r + ("NOW()",) for r in rows],
-        "optionlotmaster",
-    )
+        rows, "optionlotmaster")
 
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 LOADERS = {
-    "categorymaster":  load_categorymaster,
-    "companymaster":   load_companymaster,
-    "costcodemaster":  load_costcodemaster,
-    "gltrans":         load_gltrans,
-    "housecostdetail": load_housecostdetail,
-    "housecostsummary":load_housecostsummary,
-    "housestatuses":   load_housestatuses,
-    "optionlotmaster": load_optionlotmaster,
+    "categorymaster":   load_categorymaster,
+    "companymaster":    load_companymaster,
+    "costcodemaster":   load_costcodemaster,
+    "gltrans":          load_gltrans,
+    "housecostdetail":  load_housecostdetail,
+    "housecostsummary": load_housecostsummary,
+    "housestatuses":    load_housestatuses,
+    "optionlotmaster":  load_optionlotmaster,
 }
 
 
@@ -366,7 +340,6 @@ def main():
     if not args.all and not args.table:
         parser.print_help()
         sys.exit(1)
-
     if args.table and args.table not in LOADERS:
         print(f"Unknown table '{args.table}'. Valid: {', '.join(LOADERS)}")
         sys.exit(1)

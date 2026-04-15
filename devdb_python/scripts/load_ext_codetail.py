@@ -4,6 +4,9 @@ Load codetail.csv into devdb_ext.codetail (truncate + reload).
 
 Source: ReferenceFiles/csv exports/codetail.csv  (MARKS option/cost detail per lot)
 Target: devdb_ext.codetail
+PK: (companycode, developmentcode, housenumber, conumber, adddeleteflag, optioncode)
+
+Note: adddeleteflag is always empty string in source data; stored as '' not NULL.
 
 Usage:
   python load_ext_codetail.py [--csv PATH] [--dry-run]
@@ -12,6 +15,7 @@ Usage:
 import argparse
 import csv
 import os
+from decimal import Decimal, InvalidOperation
 
 import psycopg2
 import psycopg2.extras
@@ -20,22 +24,35 @@ DEFAULT_CSV = os.path.join(
     os.path.dirname(__file__), "..", "..", "ReferenceFiles", "csv exports", "codetail.csv"
 )
 DB = dict(dbname="devdb", user="postgres", password="postgres", host="localhost", port=5432)
+CHUNK = 5_000
 
 
-def _num(val):
-    """Return Decimal-safe numeric or None."""
-    v = (val or "").strip()
+def _s(v):
+    """String: empty → None."""
+    v = (v or "").strip()
+    return v or None
+
+
+def _pk(v):
+    """PK string: strip only, keep empty string (never None)."""
+    return (v or "").strip()
+
+
+def _i(v):
+    v = (v or "").strip()
     try:
-        return float(v) if v else None
+        return int(v)
     except ValueError:
         return None
 
 
-def _int(val):
-    v = (val or "").strip()
+def _n(v):
+    v = (v or "").strip()
+    if not v:
+        return None
     try:
-        return int(v)
-    except ValueError:
+        return Decimal(v)
+    except InvalidOperation:
         return None
 
 
@@ -43,28 +60,27 @@ def load_csv(csv_path):
     rows = []
     skipped = 0
     with open(csv_path, encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            dev = row.get("developmentcode", "").strip()
-            num = _int(row.get("housenumber", ""))
-            if not dev or num is None:
+        for r in csv.DictReader(f):
+            cc  = _pk(r.get("companycode", ""))
+            dev = _pk(r.get("developmentcode", ""))
+            num = _i(r.get("housenumber", ""))
+            cno = _pk(r.get("conumber", ""))
+            adf = _pk(r.get("adddeleteflag", ""))   # always '' in source; stored as ''
+            opc = _pk(r.get("optioncode", ""))
+            # All PK fields must be non-null (housenumber is int, others are strings incl. '')
+            if not cc or not dev or num is None or not cno or not opc:
                 skipped += 1
                 continue
             rows.append((
-                row.get("companycode", "").strip() or None,
-                dev,
-                num,
-                row.get("conumber", "").strip() or None,
-                row.get("adddeleteflag", "").strip() or None,
-                row.get("optioncode", "").strip() or None,
-                row.get("optioncategory", "").strip() or None,
-                row.get("location", "").strip() or None,
-                _num(row.get("quantity")),
-                row.get("description", "").strip() or None,
-                _num(row.get("salesprice")),
+                cc, dev, num, cno, adf, opc,
+                _s(r.get("optioncategory", "")),
+                _s(r.get("location", "")),
+                _n(r.get("quantity", "")),
+                _s(r.get("description", "")),
+                _n(r.get("salesprice", "")),
             ))
     if skipped:
-        print(f"  Skipped {skipped} rows (missing dev code or house number)")
+        print(f"  Skipped {skipped} rows (missing required PK fields)")
     return rows
 
 
@@ -88,19 +104,18 @@ def main():
     cur.execute("TRUNCATE devdb_ext.codetail")
     print("  Truncated devdb_ext.codetail")
 
-    psycopg2.extras.execute_values(
-        cur,
-        """
-        INSERT INTO devdb_ext.codetail
-            (company_code, development_code, house_number, co_number,
-             add_delete_flag, option_code, option_category, location,
-             quantity, description, sales_price, imported_at)
-        VALUES %s
-        """,
-        rows,
-        template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())",
-        page_size=2000,
-    )
+    for i in range(0, len(rows), CHUNK):
+        chunk = rows[i:i + CHUNK]
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO devdb_ext.codetail
+               (companycode, developmentcode, housenumber, conumber, adddeleteflag, optioncode,
+                optioncategory, location, quantity, description, salesprice)
+               VALUES %s""",
+            chunk,
+        )
+        print(f"  {min(i + CHUNK, len(rows)):,}/{len(rows):,} inserted...", end="\r")
+    print()
 
     conn.commit()
     cur.close()

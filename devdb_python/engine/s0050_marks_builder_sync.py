@@ -26,7 +26,7 @@ def marks_builder_sync(conn, ent_group_id: int) -> int:
     """
     Apply MARKS builder_id to real/pre lots in this entitlement group.
 
-    Joins devdb_ext.housemaster to sim_lots via development_code + house_number
+    Joins devdb_ext.housemaster to sim_lots via developmentcode + housenumber
     (extracted from lot_number), then through dim_builders on marks_company_code
     to resolve builder_id.
 
@@ -39,10 +39,10 @@ def marks_builder_sync(conn, ent_group_id: int) -> int:
             FROM sim_lots sl
             JOIN sim_ent_group_developments segd ON segd.dev_id = sl.dev_id
             JOIN devdb_ext.housemaster hm
-                ON  hm.development_code = REGEXP_REPLACE(sl.lot_number, '[0-9]+$', '')
-                AND hm.house_number     = CAST(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', '') AS INT)
-                AND (hm.model_code IS NULL OR hm.model_code <> 'UNK')
-            JOIN dim_builders db ON db.marks_company_code = hm.company_code
+                ON  hm.developmentcode = REGEXP_REPLACE(sl.lot_number, '[0-9]+$', '')
+                AND hm.housenumber     = CAST(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', '') AS INT)
+                AND (hm.modelcode IS NULL OR hm.modelcode <> 'UNK')
+            JOIN dim_builders db ON db.marks_company_code = hm.companycode
             WHERE segd.ent_group_id = %s
               AND sl.lot_source IN ('real', 'pre')
               AND sl.excluded IS NOT TRUE
