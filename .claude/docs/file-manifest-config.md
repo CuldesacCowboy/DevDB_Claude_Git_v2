@@ -56,6 +56,18 @@ Load when working on: session tooling, bat/ps1 scripts, CLAUDE.md, skill files, 
 - Owns: /end skill — updates CLAUDE.md and split file-manifest docs, commits, pushes
 - Last commit: 2026-04-03
 
+### .claude/skills/devdb-start/SKILL.md
+- Owns: /devdb-start skill — runs Start_DevDB.bat from a Claude Code session
+- Last commit: 2026-04-15
+
+### .claude/skills/devdb-stop/SKILL.md
+- Owns: /devdb-stop skill — runs Stop_DevDB.bat from a Claude Code session
+- Last commit: 2026-04-15
+
+### .claude/skills/devdb-restart/SKILL.md
+- Owns: /devdb-restart skill — runs Restart_DevDB.bat from a Claude Code session
+- Last commit: 2026-04-15
+
 ### devdb_python/requirements.txt
 - Owns: Python dependency list (fastapi, uvicorn, psycopg2, pandas, python-dotenv, pydantic, pytest)
 - Last commit: 2026-03-26
