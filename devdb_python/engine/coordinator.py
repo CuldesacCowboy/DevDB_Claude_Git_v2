@@ -28,6 +28,7 @@ from .s0400_chronology_validator import chronology_validator
 from .s0500_takedown_engine import takedown_engine
 from .s0600_demand_generator import demand_generator
 from .s0820_post_generation_chronology_guard import post_generation_chronology_guard
+from .s0050_marks_builder_sync import marks_builder_sync
 from .s0900_builder_assignment import builder_assignment, assign_real_lot_builders
 from kernel import plan, FrozenInput
 from kernel.frozen_input_builder import build_frozen_input
@@ -648,7 +649,13 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         if run_start_date < _horizon_first:
             run_start_date = _horizon_first
 
-        # S-0900 pre-pass: assign builder_id to real/pre lots with no committed builder.
+        # S-0050: apply MARKS builder_id from devdb_ext.housemaster.
+        # Runs once before the iteration loop. MARKS is authoritative for lots it
+        # knows about. builder_id_override still wins (never touched here).
+        marks_builder_sync(conn, ent_group_id)
+
+        # S-0900 pre-pass: assign builder_id to remaining real/pre lots with no
+        # committed builder (not in MARKS or MARKS had no company code match).
         # Runs once per engine run (idempotent — already-assigned lots are skipped).
         assign_real_lot_builders(conn, ent_group_id, builder_splits)
 
