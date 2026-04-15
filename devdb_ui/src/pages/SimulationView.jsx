@@ -1313,6 +1313,13 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
     str_after_cmp: ['date_str', 'date_cmp'],
     cmp_after_cls: ['date_cmp', 'date_cls'],
   }
+  const VIOLATION_LABELS = {
+    ent_after_dev: 'Entitled after developed — entitlement date is later than the development date',
+    dev_after_td:  'Developed after takedown — development date is later than the takedown date',
+    td_after_str:  'Takedown after start — takedown date is later than the start date',
+    str_after_cmp: 'Started after completed — start date is later than the completion date',
+    cmp_after_cls: 'Completed after closed — completion date is later than the closing date',
+  }
   const violatedFields = l => {
     const fields = new Set()
     for (const vt of (l.violations ?? [])) {
@@ -1320,6 +1327,8 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
     }
     return fields
   }
+  const violationTip = l =>
+    (l.violations ?? []).map(vt => VIOLATION_LABELS[vt] ?? vt).join('\n')
   const ViolationDot = ({ title }) => (
     <span title={title}
       style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
@@ -1386,11 +1395,9 @@ function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
           <tbody>
             {filtered.map((l, idx) => {
               const vf = violatedFields(l)
-              const vTip = l.violations?.length
-                ? l.violations.join(', ')
-                : ''
+              const vTip = violationTip(l)
               const VDot = ({ field }) => vf.has(field)
-                ? <ViolationDot title={`Date order violation: ${vTip}`} />
+                ? <ViolationDot title={vTip} />
                 : null
               const bgKey = l.building_group_id != null ? `${l.phase_name}::${l.building_group_id}` : null
               const bgLabel = bgKey ? bgLabelMap[bgKey] : null
