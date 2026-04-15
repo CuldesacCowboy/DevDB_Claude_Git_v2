@@ -89,7 +89,7 @@ def main():
             (development_code, house_number, company_code, model_code, imported_at)
         VALUES %s
         """,
-        [(dev, num, cc, mc, None) for dev, num, cc, mc in rows],
+        [(dev, num, cc, mc) for dev, num, cc, mc in rows],
         template="(%s, %s, %s, %s, NOW())",
     )
 
