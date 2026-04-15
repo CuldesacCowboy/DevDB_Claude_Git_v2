@@ -188,6 +188,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 'dev_name':            p['dev_name'],
                 'instrument_id':       p['instrument_id'],
                 'instrument_name':     p['instrument_name'],
+                'spec_rate':           float(p['spec_rate']) if p['spec_rate'] is not None else None,
                 'phase_id':            pid,
                 'phase_name':          p['phase_name'],
                 'sequence_number':     p['sequence_number'],
