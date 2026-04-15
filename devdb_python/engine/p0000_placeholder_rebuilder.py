@@ -356,6 +356,33 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         return []
 
     # ------------------------------------------------------------------
+    # Step 3d: Find which placeholder phases already have sim lots in the DB
+    # (written by the previous iteration's starts pipeline).
+    # On iteration 1 this set is empty — no placeholder sim lots exist yet —
+    # so behavior is identical to the old pace-estimation path.
+    # On iteration 2+ the DB balance for these phases already carries the
+    # real drain curve through their date_dev/date_td values, so
+    # _apply_delivery_to_balance must be skipped for them to avoid
+    # double-counting the drain.
+    # ------------------------------------------------------------------
+    _placeholder_phase_ids = [p["phase_id"] for p in undelivered]
+    if _placeholder_phase_ids:
+        _sim_lots_check_df = conn.read_df(
+            "SELECT DISTINCT phase_id FROM sim_lots WHERE lot_source = 'sim' AND phase_id = ANY(%s)",
+            (_placeholder_phase_ids,),
+        )
+        phases_with_sim_lots: set[int] = (
+            set(int(x) for x in _sim_lots_check_df["phase_id"])
+            if not _sim_lots_check_df.empty else set()
+        )
+    else:
+        phases_with_sim_lots: set[int] = set()
+    logger.info(
+        f"P-00: {len(phases_with_sim_lots)}/{len(_placeholder_phase_ids)} placeholder "
+        f"phase(s) have prior-iteration sim lots — balance-driven mode active for those phases."
+    )
+
+    # ------------------------------------------------------------------
     # Step 4: Get annual pace per phase (delivery window is ent-group level)
     # ------------------------------------------------------------------
     undelivered_phase_ids = [p["phase_id"] for p in undelivered]
@@ -391,15 +418,13 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     d_balance: dict[int, dict[date, int]] = {d: {} for d in all_dev_ids_for_query}
 
     if all_dev_ids_for_query:
-        if locked_phase_ids:
-            _lot_filter_sql = "AND (sl.lot_source = 'real' OR sl.phase_id = ANY(%s))"
-            _lot_filter_params = [list(locked_phase_ids)]
-        else:
-            _lot_filter_sql = "AND sl.lot_source = 'real'"
-            _lot_filter_params = []
-
+        # Include all lots — real and sim from every phase (locked and placeholder).
+        # Sim lots written by the previous iteration's starts pipeline carry actual
+        # date_dev/date_td values, so their full drain curve is already in the
+        # balance. On iteration 1 no placeholder sim lots exist yet, so the query
+        # result is identical to the old real-only filter.
         d_proj_df = conn.read_df(
-            f"""
+            """
             WITH future AS (
                 SELECT generate_series(
                     DATE_TRUNC('MONTH', CURRENT_DATE)::DATE,
@@ -417,11 +442,10 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 AND sl.date_dev <= f.m
                 AND (sl.date_td     IS NULL OR sl.date_td     > f.m)
                 AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
-                {_lot_filter_sql}
             GROUP BY sl_devs.dev_id, f.m
             ORDER BY sl_devs.dev_id, f.m
             """,
-            [all_dev_ids_for_query] + _lot_filter_params,
+            [all_dev_ids_for_query],
         )
         for _, dr in d_proj_df.iterrows():
             d_id = int(dr["dev_id"])
@@ -683,12 +707,20 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
 
             batch = [dev_phases[dev_id].pop(0)]
             first_lots = sum(_get_phase_lots(conn, batch[0]["phase_id"]))
-            _delay = _compute_drain_delay(dev_id, event_date)
-            _apply_delivery_to_balance(dev_id, event_date, first_lots, pace, _delay)
-            demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + first_lots
-            logger.info(f"P-00: Dev {dev_id}: delivery {event_date}, "
-                        f"lots={first_lots}, drain_delay={_delay}mo, "
-                        f"demand_consumed->{demand_consumed[dev_id]}")
+            if batch[0]["phase_id"] not in phases_with_sim_lots:
+                # Pace-estimation mode: sim lots don't exist yet for this phase,
+                # so project the drain forward manually.
+                _delay = _compute_drain_delay(dev_id, event_date)
+                _apply_delivery_to_balance(dev_id, event_date, first_lots, pace, _delay)
+                demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + first_lots
+                logger.info(f"P-00: Dev {dev_id}: delivery {event_date}, "
+                            f"lots={first_lots}, drain_delay={_delay}mo (pace-est), "
+                            f"demand_consumed->{demand_consumed[dev_id]}")
+            else:
+                # Balance-driven mode: drain already captured in DB balance from
+                # prior-iteration sim lots — skip projection to avoid double-count.
+                logger.info(f"P-00: Dev {dev_id}: delivery {event_date}, "
+                            f"lots={first_lots} (balance-driven, drain in DB)")
 
             _batch_tier = batch[0]["delivery_tier"]
             while True:
@@ -710,9 +742,10 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
                 extra = dev_phases[dev_id].pop(0)
                 batch.append(extra)
                 extra_lots = sum(_get_phase_lots(conn, extra["phase_id"]))
-                _delay_extra = _compute_drain_delay(dev_id, event_date)
-                _apply_delivery_to_balance(dev_id, event_date, extra_lots, pace, _delay_extra)
-                demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + extra_lots
+                if extra["phase_id"] not in phases_with_sim_lots:
+                    _delay_extra = _compute_drain_delay(dev_id, event_date)
+                    _apply_delivery_to_balance(dev_id, event_date, extra_lots, pace, _delay_extra)
+                    demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + extra_lots
 
             dev_scan_floor[dev_id] = event_date
             dev_last_delivery_lots[dev_id] = sum(
