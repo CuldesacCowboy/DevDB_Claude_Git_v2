@@ -1,0 +1,68 @@
+-- Migration 065: ref_states reference table.
+--
+-- Stores US states (+ OFFSITE / OTHER sentinel rows) for use as FK target
+-- on ref_counties. Includes both AP-style abbreviation and postal code.
+
+CREATE TABLE IF NOT EXISTS devdb.ref_states (
+    state_id      SERIAL PRIMARY KEY,
+    state_name    TEXT NOT NULL,
+    state_ap      TEXT NOT NULL,   -- AP-style abbreviation (e.g. "Mich.")
+    state_abbr    CHAR(2) NOT NULL UNIQUE  -- postal code (e.g. "MI")
+);
+
+DELETE FROM devdb.ref_states;
+
+INSERT INTO devdb.ref_states (state_name, state_ap, state_abbr) VALUES
+('Alabama',           'Ala.',    'AL'),
+('Alaska',            'Alaska',  'AK'),
+('Arizona',           'Ariz.',   'AZ'),
+('Arkansas',          'Ark.',    'AR'),
+('California',        'Calif.',  'CA'),
+('Colorado',          'Colo.',   'CO'),
+('Connecticut',       'Conn.',   'CT'),
+('Delaware',          'Del.',    'DE'),
+('District of Columbia', 'D.C.', 'DC'),
+('Florida',           'Fla.',    'FL'),
+('Georgia',           'Ga.',     'GA'),
+('Hawaii',            'Hawaii',  'HI'),
+('Idaho',             'Idaho',   'ID'),
+('Illinois',          'Ill.',    'IL'),
+('Indiana',           'Ind.',    'IN'),
+('Iowa',              'Iowa',    'IA'),
+('Kansas',            'Kans.',   'KS'),
+('Kentucky',          'Ky.',     'KY'),
+('Louisiana',         'La.',     'LA'),
+('Maine',             'Maine',   'ME'),
+('Maryland',          'Md.',     'MD'),
+('Massachusetts',     'Mass.',   'MA'),
+('Michigan',          'Mich.',   'MI'),
+('Minnesota',         'Minn.',   'MN'),
+('Mississippi',       'Miss.',   'MS'),
+('Missouri',          'Mo.',     'MO'),
+('Montana',           'Mont.',   'MT'),
+('Nebraska',          'Nebr.',   'NE'),
+('Nevada',            'Nev.',    'NV'),
+('New Hampshire',     'N.H.',    'NH'),
+('New Jersey',        'N.J.',    'NJ'),
+('New Mexico',        'N.M.',    'NM'),
+('New York',          'N.Y.',    'NY'),
+('North Carolina',    'N.C.',    'NC'),
+('North Dakota',      'N.D.',    'ND'),
+('Ohio',              'Ohio',    'OH'),
+('Oklahoma',          'Okla.',   'OK'),
+('Oregon',            'Ore.',    'OR'),
+('Pennsylvania',      'Pa.',     'PA'),
+('Rhode Island',      'R.I.',    'RI'),
+('South Carolina',    'S.C.',    'SC'),
+('South Dakota',      'S.D.',    'SD'),
+('Tennessee',         'Tenn.',   'TN'),
+('Texas',             'Tex.',    'TX'),
+('Utah',              'Utah',    'UT'),
+('Vermont',           'Vt.',     'VT'),
+('Virginia',          'Va.',     'VA'),
+('Washington',        'Wash.',   'WA'),
+('West Virginia',     'W.Va.',   'WV'),
+('Wisconsin',         'Wis.',    'WI'),
+('Wyoming',           'Wyo.',    'WY'),
+('OFFSITE',           'OFFSITE', 'XX'),
+('OTHER',             'OTHER',   'ZZ');
