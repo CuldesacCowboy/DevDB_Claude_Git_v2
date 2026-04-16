@@ -229,7 +229,7 @@ const loadLedger = useCallback((id) => {
           style={{ fontSize: 13, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}>
           {entGroups.filter(g => showTestCommunities ? g.is_test : !g.is_test).map(g => (
             <option key={g.ent_group_id} value={g.ent_group_id}>
-              {g.ent_group_name ?? `Group ${g.ent_group_id}`}
+              {g.ent_group_name ?? `Group ${g.ent_group_id}`}{g.status ? ` [${g.status}]` : ''}
             </option>
           ))}
         </select>

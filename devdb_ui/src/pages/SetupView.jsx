@@ -13,6 +13,16 @@ import {
 } from '../components/setup/setupShared'
 import PhaseRow from '../components/setup/PhaseRow'
 
+const STATUS_STYLE_MAP = {
+  'Active':      { background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' },
+  'Prospective': { background: '#dbeafe', color: '#1e40af', border: '1px solid #bfdbfe' },
+  'Sold Out':    { background: '#f3f4f6', color: '#6b7280', border: '1px solid #e5e7eb' },
+  'Unlikely':    { background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' },
+  'Abandoned':   { background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' },
+  'OFFSITE':     { background: '#f5f3ff', color: '#5b21b6', border: '1px solid #ddd6fe' },
+  'OTHER':       { background: '#f5f3ff', color: '#5b21b6', border: '1px solid #ddd6fe' },
+}
+
 // ─── Instrument row ───────────────────────────────────────────────────────────
 
 function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onDeleteInstr, onChangeInstrType, onRefresh }) {
@@ -305,6 +315,13 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
         <span style={{ flex: 1 }}>
           <InlineEdit value={comm.ent_group_name} onSave={onRenameComm} />
         </span>
+        {comm.status && (
+          <span style={{
+            ...STATUS_STYLE_MAP[comm.status],
+            fontSize: 10, fontWeight: 600, borderRadius: 3,
+            padding: '1px 5px', marginRight: 6, flexShrink: 0,
+          }}>{comm.status}</span>
+        )}
         <span onClick={e => e.stopPropagation()}
           style={{ opacity: hovered || open ? 1 : 0, pointerEvents: hovered || open ? undefined : 'none', transition: 'opacity 0.1s' }}>
           <AddButton label="development" onClick={() => { setOpen(true); addDev.setOpen(true) }} />

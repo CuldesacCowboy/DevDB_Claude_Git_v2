@@ -3,16 +3,29 @@ import { EditableCell, cellHighlight } from '../EditableCell'
 import { MonthCell, TableShell, BAND } from './configShared'
 import { API_BASE } from '../../config'
 
+const STATUS_OPTIONS = ['Active', 'Prospective', 'Sold Out', 'Unlikely', 'Abandoned', 'OFFSITE', 'OTHER']
+
+const STATUS_STYLE = {
+  'Active':     { background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' },
+  'Prospective':{ background: '#dbeafe', color: '#1e40af', border: '1px solid #bfdbfe' },
+  'Sold Out':   { background: '#f3f4f6', color: '#6b7280', border: '1px solid #e5e7eb' },
+  'Unlikely':   { background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' },
+  'Abandoned':  { background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' },
+  'OFFSITE':    { background: '#f5f3ff', color: '#5b21b6', border: '1px solid #ddd6fe' },
+  'OTHER':      { background: '#f5f3ff', color: '#5b21b6', border: '1px solid #ddd6fe' },
+}
+
 // Column metadata: index → { editable, kind, autoOpen }
 const COMM_COLS = [
   { editable: false },                                     // 0 community name
-  { editable: true, kind: 'edit',     autoOpen: false },  // 1 date_paper (date — don't auto-open)
-  { editable: true, kind: 'edit',     autoOpen: false },  // 2 date_ent   (date — don't auto-open)
-  { editable: false },                                     // 3 county (select, not EditableCell)
-  { editable: false },                                     // 4 school district (select)
-  { editable: true, kind: 'checkbox', autoOpen: false },  // 5 auto_schedule
-  { editable: true, kind: 'month',    autoOpen: false },  // 6 delivery_months
-  { editable: true, kind: 'edit',     autoOpen: true  },  // 7 del/year (number)
+  { editable: false },                                     // 1 status (select)
+  { editable: true, kind: 'edit',     autoOpen: false },  // 2 date_paper (date — don't auto-open)
+  { editable: true, kind: 'edit',     autoOpen: false },  // 3 date_ent   (date — don't auto-open)
+  { editable: false },                                     // 4 county (select, not EditableCell)
+  { editable: false },                                     // 5 school district (select)
+  { editable: true, kind: 'checkbox', autoOpen: false },  // 6 auto_schedule
+  { editable: true, kind: 'month',    autoOpen: false },  // 7 delivery_months
+  { editable: true, kind: 'edit',     autoOpen: true  },  // 8 del/year (number)
 ]
 
 export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal }) {
@@ -79,6 +92,7 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
                          boxShadow: '4px 0 8px -2px rgba(0,0,0,0.08)' }}>
               Community
             </th>
+            <th style={{ ...thG, width: 110, textAlign: 'left' }}>Status</th>
             <th style={{ ...thG, width: 100 }}>Ledger Start</th>
             <th style={{ ...thR, width: 110 }}>Bulk Ent. Date</th>
             <th style={{ ...thG, width: 130, textAlign: 'left' }}>County</th>
@@ -90,7 +104,7 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
         </thead>
         <tbody>
           {filtered.length === 0 && (
-            <tr><td colSpan={8} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+            <tr><td colSpan={9} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
               No communities.
             </td></tr>
           )}
@@ -121,19 +135,35 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
                   </span>
                 </td>
 
-                <td style={tdG(1, { textAlign: 'right' })}>
+                <td style={tdG(1)}>
+                  {(() => {
+                    const st = row.status ?? ''
+                    const sty = STATUS_STYLE[st] ?? {}
+                    return (
+                      <select value={st} style={{ ...selStyle, ...sty, fontWeight: 600, fontSize: 11 }}
+                        onChange={e => onPatchComm(row.ent_group_id, 'location', { status: e.target.value || null })}>
+                        <option value="">— none —</option>
+                        {STATUS_OPTIONS.map(o => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    )
+                  })()}
+                </td>
+
+                <td style={tdG(2, { textAlign: 'right' })}>
                   <EditableCell value={row.date_paper} type="date" width={90}
-                    triggerActivate={ac(i, 1) ? activateSignal : 0} onDone={onDone}
+                    triggerActivate={ac(i, 2) ? activateSignal : 0} onDone={onDone}
                     onSave={v => onPatchComm(row.ent_group_id, 'ledger', { date_paper: v, date_ent: row.date_ent })} />
                 </td>
 
-                <td style={td(2, { textAlign: 'right' })}>
+                <td style={td(3, { textAlign: 'right' })}>
                   <EditableCell value={row.date_ent} type="date" width={100}
-                    triggerActivate={ac(i, 2) ? activateSignal : 0} onDone={onDone}
+                    triggerActivate={ac(i, 3) ? activateSignal : 0} onDone={onDone}
                     onSave={v => onPatchComm(row.ent_group_id, 'ledger', { date_paper: row.date_paper, date_ent: v })} />
                 </td>
 
-                <td style={tdG(3)}>
+                <td style={tdG(4)}>
                   <select value={row.county_id ?? ''} style={selStyle}
                     onChange={e => {
                       const v = e.target.value === '' ? null : Number(e.target.value)
@@ -146,7 +176,7 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
                   </select>
                 </td>
 
-                <td style={td(4)}>
+                <td style={td(5)}>
                   <select value={row.school_district_id ?? ''} style={selStyle}
                     onChange={e => {
                       const v = e.target.value === '' ? null : Number(e.target.value)
@@ -159,7 +189,7 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
                   </select>
                 </td>
 
-                <td style={tdG(5, { textAlign: 'center' })}>
+                <td style={tdG(6, { textAlign: 'center' })}>
                   <input type="checkbox"
                     checked={row.auto_schedule_enabled ?? false}
                     onChange={e => onPatchComm(row.ent_group_id, 'delivery', { auto_schedule_enabled: e.target.checked })}
@@ -167,16 +197,16 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
                   />
                 </td>
 
-                <td style={tdG(6, { padding: '5px 8px' })}>
+                <td style={tdG(7, { padding: '5px 8px' })}>
                   <MonthCell months={row.delivery_months}
                     globalMonths={globalMonths}
                     onSave={v => onPatchComm(row.ent_group_id, 'delivery', { delivery_months: v })}
                     onSaveGlobal={onSaveGlobal} />
                 </td>
 
-                <td style={td(7, { textAlign: 'right' })}>
+                <td style={td(8, { textAlign: 'right' })}>
                   <EditableCell value={row.max_deliveries_per_year} width={60}
-                    triggerActivate={ac(i, 7) ? activateSignal : 0} onDone={onDone}
+                    triggerActivate={ac(i, 8) ? activateSignal : 0} onDone={onDone}
                     onSave={v => onPatchComm(row.ent_group_id, 'delivery', { max_deliveries_per_year: v })} />
                 </td>
               </tr>
