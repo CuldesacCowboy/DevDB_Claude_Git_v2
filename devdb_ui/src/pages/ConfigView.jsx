@@ -55,6 +55,20 @@ export default function ConfigView({ showTestCommunities }) {
       setCommData(prev => prev.map(r => r.ent_group_id === entGroupId
         ? { ...r, date_paper: updated.date_paper, date_ent: updated.date_ent }
         : r))
+    } else if (kind === 'location') {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const updated = await res.json()
+      // Refresh county/SD names by reloading audit data
+      setCommData(prev => prev.map(r => r.ent_group_id === entGroupId
+        ? { ...r, county_id: updated.county_id, school_district_id: updated.school_district_id }
+        : r))
+      // Full reload to get updated names
+      const full = await fetch(`${API_BASE}/admin/audit-data`).then(r => r.json())
+      setCommData(full.communities)
     } else {
       const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/delivery-config`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },

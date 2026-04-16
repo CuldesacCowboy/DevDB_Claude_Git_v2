@@ -551,12 +551,16 @@ def get_audit_data(conn=Depends(get_db_conn)):
         cur.execute("""
             SELECT
                 seg.ent_group_id, seg.ent_group_name, seg.is_test,
+                seg.county_id, seg.school_district_id,
+                c.county_name, sd.district_name AS sd_name,
                 edc.delivery_months,
                 edc.max_deliveries_per_year,
                 edc.auto_schedule_enabled
             FROM sim_entitlement_groups seg
             LEFT JOIN sim_entitlement_delivery_config edc
                    ON edc.ent_group_id = seg.ent_group_id
+            LEFT JOIN devdb.ref_counties c   ON c.county_id = seg.county_id
+            LEFT JOIN devdb.ref_school_districts sd ON sd.sd_id = seg.school_district_id
             ORDER BY seg.ent_group_name
         """)
         comm_map = {}
@@ -565,6 +569,10 @@ def get_audit_data(conn=Depends(get_db_conn)):
                 'ent_group_id':            r['ent_group_id'],
                 'ent_group_name':          r['ent_group_name'],
                 'is_test':                 r['is_test'],
+                'county_id':               r['county_id'],
+                'county_name':             r['county_name'],
+                'school_district_id':      r['school_district_id'],
+                'sd_name':                 r['sd_name'],
                 'delivery_months':         list(r['delivery_months']) if r['delivery_months'] is not None else None,
                 'max_deliveries_per_year': r['max_deliveries_per_year'],
                 'auto_schedule_enabled':   r['auto_schedule_enabled'],

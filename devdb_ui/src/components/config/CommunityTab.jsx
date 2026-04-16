@@ -1,22 +1,32 @@
 import { useState, useRef, useEffect } from 'react'
 import { EditableCell, cellHighlight } from '../EditableCell'
 import { MonthCell, TableShell, BAND } from './configShared'
+import { API_BASE } from '../../utils/api'
 
 // Column metadata: index → { editable, kind, autoOpen }
 const COMM_COLS = [
   { editable: false },                                     // 0 community name
   { editable: true, kind: 'edit',     autoOpen: false },  // 1 date_paper (date — don't auto-open)
   { editable: true, kind: 'edit',     autoOpen: false },  // 2 date_ent   (date — don't auto-open)
-  { editable: true, kind: 'checkbox', autoOpen: false },  // 3 auto_schedule
-  { editable: true, kind: 'month',    autoOpen: false },  // 4 delivery_months
-  { editable: true, kind: 'edit',     autoOpen: true  },  // 5 del/year (number)
+  { editable: false },                                     // 3 county (select, not EditableCell)
+  { editable: false },                                     // 4 school district (select)
+  { editable: true, kind: 'checkbox', autoOpen: false },  // 5 auto_schedule
+  { editable: true, kind: 'month',    autoOpen: false },  // 6 delivery_months
+  { editable: true, kind: 'edit',     autoOpen: true  },  // 7 del/year (number)
 ]
 
 export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal }) {
   const filtered = rows.filter(r => showTest ? r.is_test : !r.is_test)
   const [activeCell,      setActiveCell]      = useState(null)
   const [activateSignal,  setActivateSignal]  = useState(0)
+  const [counties,        setCounties]        = useState([])
+  const [allSDs,          setAllSDs]          = useState([])
   const containerRef = useRef()
+
+  useEffect(() => {
+    fetch(`${API_BASE}/ref/counties`).then(r => r.json()).then(setCounties).catch(() => {})
+    fetch(`${API_BASE}/ref/school-districts`).then(r => r.json()).then(setAllSDs).catch(() => {})
+  }, [])
 
   const maxRow = filtered.length - 1
 
@@ -71,6 +81,8 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
             </th>
             <th style={{ ...thG, width: 100 }}>Ledger Start</th>
             <th style={{ ...thR, width: 110 }}>Bulk Ent. Date</th>
+            <th style={{ ...thG, width: 130, textAlign: 'left' }}>County</th>
+            <th style={{ ...thB, width: 160, textAlign: 'left' }}>School District</th>
             <th style={{ ...thG, width: 90, textAlign: 'center' }}>Auto Schedule</th>
             <th style={{ ...thG, width: 240 }}>Delivery Months</th>
             <th style={{ ...thR, width: 72 }}>Del / Year</th>
@@ -78,7 +90,7 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
         </thead>
         <tbody>
           {filtered.length === 0 && (
-            <tr><td colSpan={6} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
+            <tr><td colSpan={8} style={{ padding: 24, fontSize: 12, color: '#9ca3af', textAlign: 'center' }}>
               No communities.
             </td></tr>
           )}
@@ -91,6 +103,16 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
               ...extra,
             })
             const tdG = (c, extra = {}) => ({ ...td(c, extra), borderLeft: '2px solid #ebebeb' })
+
+            const sdList = row.county_id
+              ? allSDs.filter(s => s.county_id === row.county_id)
+              : allSDs
+
+            const selStyle = {
+              fontSize: 12, border: '1px solid #e5e7eb', borderRadius: 3,
+              padding: '2px 4px', background: '#fafafa', color: '#374151',
+              width: '100%', cursor: 'pointer',
+            }
 
             return (
               <tr key={row.ent_group_id} onClick={() => setActiveCell({ r: i, c: activeCell?.c ?? 1 })}>
@@ -113,7 +135,33 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
                     onSave={v => onPatchComm(row.ent_group_id, 'ledger', { date_paper: row.date_paper, date_ent: v })} />
                 </td>
 
-                <td style={tdG(3, { textAlign: 'center' })}>
+                <td style={tdG(3)}>
+                  <select value={row.county_id ?? ''} style={selStyle}
+                    onChange={e => {
+                      const v = e.target.value === '' ? null : Number(e.target.value)
+                      onPatchComm(row.ent_group_id, 'location', { county_id: v, school_district_id: null })
+                    }}>
+                    <option value="">— none —</option>
+                    {counties.map(c => (
+                      <option key={c.county_id} value={c.county_id}>{c.county_name}</option>
+                    ))}
+                  </select>
+                </td>
+
+                <td style={td(4)}>
+                  <select value={row.school_district_id ?? ''} style={selStyle}
+                    onChange={e => {
+                      const v = e.target.value === '' ? null : Number(e.target.value)
+                      onPatchComm(row.ent_group_id, 'location', { school_district_id: v })
+                    }}>
+                    <option value="">— none —</option>
+                    {sdList.map(s => (
+                      <option key={s.sd_id} value={s.sd_id}>{s.district_name}</option>
+                    ))}
+                  </select>
+                </td>
+
+                <td style={tdG(5, { textAlign: 'center' })}>
                   <input type="checkbox"
                     checked={row.auto_schedule_enabled ?? false}
                     onChange={e => onPatchComm(row.ent_group_id, 'delivery', { auto_schedule_enabled: e.target.checked })}
@@ -121,16 +169,16 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
                   />
                 </td>
 
-                <td style={tdG(4, { padding: '5px 8px' })}>
+                <td style={tdG(6, { padding: '5px 8px' })}>
                   <MonthCell months={row.delivery_months}
                     globalMonths={globalMonths}
                     onSave={v => onPatchComm(row.ent_group_id, 'delivery', { delivery_months: v })}
                     onSaveGlobal={onSaveGlobal} />
                 </td>
 
-                <td style={td(5, { textAlign: 'right' })}>
+                <td style={td(7, { textAlign: 'right' })}>
                   <EditableCell value={row.max_deliveries_per_year} width={60}
-                    triggerActivate={ac(i, 5) ? activateSignal : 0} onDone={onDone}
+                    triggerActivate={ac(i, 7) ? activateSignal : 0} onDone={onDone}
                     onSave={v => onPatchComm(row.ent_group_id, 'delivery', { max_deliveries_per_year: v })} />
                 </td>
               </tr>
