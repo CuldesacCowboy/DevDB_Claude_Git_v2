@@ -18,8 +18,10 @@ class CreateTdaRequest(BaseModel):
     anchor_date: Optional[date_type] = None
 
 
-class RenameTdaRequest(BaseModel):
-    tda_name: str
+class PatchTdaRequest(BaseModel):
+    tda_name: Optional[str] = None
+    status: Optional[str] = None
+    anchor_date: Optional[date_type] = None
 
 
 router = APIRouter(tags=["takedown-agreements"])
@@ -52,6 +54,86 @@ def get_tda_unassigned_lots(ent_group_id: int, conn=Depends(get_db_conn)):
             {"lot_id": r["lot_id"], "lot_number": r["lot_number"], "building_group_id": r["building_group_id"]}
             for r in cur.fetchall()
         ]
+    finally:
+        cur.close()
+
+
+@router.get("/entitlement-groups/{ent_group_id}/tda-overview")
+def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
+    """All agreements for a community with per-checkpoint assigned counts.
+    Returns enough data for the new standalone TakedownView without fetching full lot details."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT ent_group_id, ent_group_name FROM devdb.sim_entitlement_groups WHERE ent_group_id = %s",
+            (ent_group_id,),
+        )
+        eg = cur.fetchone()
+        if eg is None:
+            raise HTTPException(status_code=404, detail=f"Entitlement group {ent_group_id} not found.")
+
+        cur.execute(
+            """
+            SELECT
+                tda.tda_id,
+                tda.tda_name,
+                tda.status,
+                tda.anchor_date,
+                cp.checkpoint_id,
+                cp.checkpoint_number,
+                cp.checkpoint_date,
+                cp.lots_required_cumulative,
+                COUNT(a.assignment_id) AS lots_assigned
+            FROM devdb.sim_takedown_agreements tda
+            LEFT JOIN devdb.sim_takedown_checkpoints cp ON cp.tda_id = tda.tda_id
+            LEFT JOIN devdb.sim_takedown_lot_assignments a ON a.checkpoint_id = cp.checkpoint_id
+            WHERE tda.ent_group_id = %s
+            GROUP BY tda.tda_id, tda.tda_name, tda.status, tda.anchor_date,
+                     cp.checkpoint_id, cp.checkpoint_number, cp.checkpoint_date,
+                     cp.lots_required_cumulative
+            ORDER BY tda.tda_id ASC, cp.checkpoint_number ASC
+            """,
+            (ent_group_id,),
+        )
+        rows = cur.fetchall()
+
+        # Group by tda_id; compute cumulative_assigned as running sum per agreement
+        agreements_map: dict = {}
+        for r in rows:
+            tid = r["tda_id"]
+            if tid not in agreements_map:
+                agreements_map[tid] = {
+                    "tda_id": tid,
+                    "tda_name": r["tda_name"],
+                    "status": r["status"],
+                    "anchor_date": r["anchor_date"].isoformat() if r["anchor_date"] else None,
+                    "checkpoints": [],
+                    "_running_assigned": 0,
+                }
+            if r["checkpoint_id"] is not None:
+                per_cp = int(r["lots_assigned"] or 0)
+                agreements_map[tid]["_running_assigned"] += per_cp
+                cumulative = agreements_map[tid]["_running_assigned"]
+                agreements_map[tid]["checkpoints"].append({
+                    "checkpoint_id": r["checkpoint_id"],
+                    "checkpoint_number": r["checkpoint_number"],
+                    "checkpoint_date": r["checkpoint_date"].isoformat() if r["checkpoint_date"] else None,
+                    "lots_required_cumulative": r["lots_required_cumulative"],
+                    "lots_assigned": per_cp,
+                    "lots_assigned_cumulative": cumulative,
+                })
+
+        # Clean up helper key
+        agreements = []
+        for tda in agreements_map.values():
+            tda.pop("_running_assigned")
+            agreements.append(tda)
+
+        return {
+            "ent_group_id": eg["ent_group_id"],
+            "ent_group_name": eg["ent_group_name"],
+            "agreements": agreements,
+        }
     finally:
         cur.close()
 
@@ -173,26 +255,45 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
 
 
 @router.patch("/takedown-agreements/{tda_id}")
-def rename_takedown_agreement(tda_id: int, body: RenameTdaRequest, conn=Depends(get_db_conn)):
+def patch_takedown_agreement(tda_id: int, body: PatchTdaRequest, conn=Depends(get_db_conn)):
     cur = dict_cursor(conn)
     try:
-        name = body.tda_name.strip()
-        if not name:
-            raise HTTPException(status_code=422, detail="Agreement name cannot be empty.")
+        updates = []
+        values = []
+        if body.tda_name is not None:
+            name = body.tda_name.strip()
+            if not name:
+                raise HTTPException(status_code=422, detail="Agreement name cannot be empty.")
+            updates.append("tda_name = %s")
+            values.append(name)
+        if body.status is not None:
+            allowed = {"active", "closed", "expired"}
+            if body.status not in allowed:
+                raise HTTPException(status_code=422, detail=f"status must be one of {sorted(allowed)}.")
+            updates.append("status = %s")
+            values.append(body.status)
+        if body.anchor_date is not None or "anchor_date" in body.model_fields_set:
+            updates.append("anchor_date = %s")
+            values.append(body.anchor_date)
+        if not updates:
+            raise HTTPException(status_code=422, detail="No fields provided to update.")
+        updates.append("updated_at = now()")
+        values.append(tda_id)
         cur.execute(
-            """
-            UPDATE devdb.sim_takedown_agreements
-            SET tda_name = %s, updated_at = now()
-            WHERE tda_id = %s
-            RETURNING tda_id, tda_name
-            """,
-            (name, tda_id),
+            f"UPDATE devdb.sim_takedown_agreements SET {', '.join(updates)} WHERE tda_id = %s"
+            " RETURNING tda_id, tda_name, status, anchor_date",
+            values,
         )
         row = cur.fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail=f"TDA {tda_id} not found.")
         conn.commit()
-        return {"tda_id": row["tda_id"], "tda_name": row["tda_name"]}
+        return {
+            "tda_id": row["tda_id"],
+            "tda_name": row["tda_name"],
+            "status": row["status"],
+            "anchor_date": row["anchor_date"].isoformat() if row["anchor_date"] else None,
+        }
     except HTTPException:
         conn.rollback()
         raise

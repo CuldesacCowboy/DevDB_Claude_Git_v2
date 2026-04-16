@@ -8,6 +8,7 @@ import SetupView from './pages/SetupView'
 import MarksView from './pages/MarksView'
 import PlanningView from './pages/PlanningView'
 import AuditView from './pages/AuditView'
+import TakedownView from './pages/TakedownView'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const LS_KEY = 'devdb_active_community'
@@ -80,6 +81,7 @@ export default function App() {
         <NavLink to="/setup" style={navLinkStyle}>Setup</NavLink>
         <NavLink to="/planning" style={navLinkStyle}>Planning</NavLink>
         <NavLink to="/marks" style={navLinkStyle}>MARKS</NavLink>
+        <NavLink to="/takedown" style={navLinkStyle}>Agreements</NavLink>
 
         <button
           onClick={() => setGlobalSettingsOpen(true)}
@@ -104,6 +106,7 @@ export default function App() {
           <Route path="/planning" element={<PlanningView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/audit" element={<AuditView showTestCommunities={showTestCommunities} />} />
           <Route path="/marks" element={<MarksView />} />
+          <Route path="/takedown" element={<TakedownView showTestCommunities={showTestCommunities} />} />
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>
