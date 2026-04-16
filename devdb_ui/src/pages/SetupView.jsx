@@ -280,7 +280,11 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
 
   const delComm = useDeleteConfirm(async () => {
     const res = await fetch(`${API_BASE}/entitlement-groups/${comm.ent_group_id}`, { method: 'DELETE' })
-    if (!res.ok) throw new Error((await res.json()).detail ?? 'Delete failed')
+    if (!res.ok) {
+      let msg = 'Delete failed'
+      try { msg = (await res.json()).detail ?? msg } catch { msg = await res.text().catch(() => msg) }
+      throw new Error(msg)
+    }
     onDeleteComm?.()
   })
   const dotColor = commP === 0 ? '#d1d5db'

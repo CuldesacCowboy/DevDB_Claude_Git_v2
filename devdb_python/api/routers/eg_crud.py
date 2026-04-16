@@ -136,6 +136,7 @@ def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
                     cur.execute("DELETE FROM sim_delivery_event_phases WHERE phase_id = %s", (phase_id,))
                 cur.execute("DELETE FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))
             if instr_ids:
+                cur.execute("DELETE FROM sim_instrument_builder_splits WHERE instrument_id = ANY(%s)", (instr_ids,))
                 cur.execute("DELETE FROM sim_legal_instruments WHERE instrument_id = ANY(%s)", (instr_ids,))
 
         if dev_ids:
@@ -143,9 +144,16 @@ def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
 
         # Remove delivery events and config for this group
         cur.execute("DELETE FROM sim_entitlement_delivery_config WHERE ent_group_id = %s", (ent_group_id,))
-        cur.execute("""
-            DELETE FROM sim_delivery_events WHERE ent_group_id = %s
-        """, (ent_group_id,))
+        cur.execute(
+            """
+            DELETE FROM sim_delivery_event_predecessors
+            WHERE event_id IN (
+                SELECT delivery_event_id FROM sim_delivery_events WHERE ent_group_id = %s
+            )
+            """,
+            (ent_group_id,),
+        )
+        cur.execute("DELETE FROM sim_delivery_events WHERE ent_group_id = %s", (ent_group_id,))
         cur.execute("DELETE FROM sim_ent_group_developments WHERE ent_group_id = %s", (ent_group_id,))
         cur.execute("DELETE FROM sim_entitlement_groups WHERE ent_group_id = %s", (ent_group_id,))
         conn.commit()
