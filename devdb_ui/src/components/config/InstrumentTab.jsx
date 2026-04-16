@@ -50,7 +50,6 @@ function SpecRateCell({ instrumentId, value, onSave }) {
 
   async function toggleHints() {
     if (hintsOpen) { setHintsOpen(false); return }
-    if (hints)     { setHintsOpen(true);  return }
     setHintsLoading(true)
     setHintsOpen(true)
     try {
