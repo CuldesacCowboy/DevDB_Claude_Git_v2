@@ -22,6 +22,38 @@ Rules:   True-gap-only per D-084/D-085. Never fill forward from a single anchor.
 
 import pandas as pd
 
+from .connection import DBConnection
+
+
+def load_phase_delivery_dates(conn: DBConnection, dev_id: int) -> dict:
+    """
+    Load {phase_id: date} for all phases in this development.
+    Used by the no-anchor fallback (Scenario 7): lots with zero milestone dates
+    receive the phase delivery date as a gap-fill anchor.
+    """
+    df = conn.read_df(
+        """
+        SELECT DISTINCT sdp.phase_id, sdp.date_dev_projected
+        FROM sim_dev_phases sdp
+        WHERE sdp.dev_id = %s
+          AND sdp.phase_id IN (
+              SELECT DISTINCT phase_id FROM sim_lots
+              WHERE dev_id = %s
+                AND lot_source = 'real'
+                AND excluded IS NOT TRUE
+          )
+        """,
+        (dev_id, dev_id),
+    )
+    result = {}
+    for _, r in df.iterrows():
+        d = r["date_dev_projected"]
+        if d is not None and hasattr(d, 'date'):
+            d = d.date()
+        result[int(r["phase_id"])] = d
+    return result
+
+
 # System default lags (days) -- used when no curve or param configured.
 # STR_FROM_TD raised from 14 to 45: takedown closes on the lot, builder still
 # needs permits pulled (2-6 wks depending on jurisdiction) before breaking ground.

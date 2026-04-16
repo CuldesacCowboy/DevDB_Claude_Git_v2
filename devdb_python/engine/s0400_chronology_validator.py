@@ -10,7 +10,53 @@ Rules:   Checks date_ent <= date_dev <= date_td <= date_str <= date_cmp <= date_
          Not Own: fixing violations (user resolves via UI per Scenario 6).
 """
 
+from datetime import datetime, timezone
+
 import pandas as pd
+
+from .connection import DBConnection
+
+
+def persist_violations(conn: DBConnection, violations_df, dev_id: int,
+                       sim_run_id: int) -> None:
+    """
+    Clear stale violations for this development, then write current violations
+    from S-04 to sim_lot_date_violations.
+    resolution = 'pending' for all new rows (Path A/B UI resolution deferred).
+    """
+    conn.execute(
+        """
+        DELETE FROM sim_lot_date_violations
+        WHERE lot_id IN (
+            SELECT lot_id FROM sim_lots
+            WHERE dev_id = %s
+        )
+        """,
+        (dev_id,),
+    )
+
+    if violations_df is None or (hasattr(violations_df, 'empty') and violations_df.empty):
+        return
+
+    now = datetime.now(timezone.utc)
+
+    rows = []
+    for _, vrow in violations_df.iterrows():
+        ev = vrow["date_value_early"]
+        lv = vrow["date_value_late"]
+        rows.append({
+            "sim_run_id":       sim_run_id,
+            "lot_id":           int(vrow["lot_id"]),
+            "violation_type":   vrow["violation_type"],
+            "date_field_early": vrow["date_field_early"],
+            "date_value_early": ev.date() if hasattr(ev, 'date') and callable(ev.date) else ev,
+            "date_field_late":  vrow["date_field_late"],
+            "date_value_late":  lv.date() if hasattr(lv, 'date') and callable(lv.date) else lv,
+            "resolution":       "pending",
+            "created_at":       now,
+        })
+
+    conn.executemany_insert("sim_lot_date_violations", rows)
 
 
 def chronology_validator(lot_snapshot: pd.DataFrame):

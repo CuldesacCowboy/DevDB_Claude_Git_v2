@@ -19,6 +19,25 @@ from .connection import DBConnection
 logger = logging.getLogger(__name__)
 
 
+def load_phase_delivery_snapshot(conn: DBConnection, ent_group_id: int) -> dict:
+    """
+    Load {phase_id: date_dev_projected} for all phases linked to delivery events
+    in this entitlement group. Called by coordinator before and after the supply
+    pipeline to detect which phases changed.
+    """
+    df = conn.read_df(
+        """
+        SELECT DISTINCT sdp.phase_id, sdp.date_dev_projected
+        FROM sim_dev_phases sdp
+        JOIN sim_delivery_event_phases dep ON sdp.phase_id = dep.phase_id
+        JOIN sim_delivery_events sde ON dep.delivery_event_id = sde.delivery_event_id
+        WHERE sde.ent_group_id = %s
+        """,
+        (ent_group_id,),
+    )
+    return {int(r["phase_id"]): r["date_dev_projected"] for _, r in df.iterrows()}
+
+
 def _dates_equal(a, b) -> bool:
     a_null = pd.isnull(a) if a is not None else True
     b_null = pd.isnull(b) if b is not None else True

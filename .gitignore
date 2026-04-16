@@ -6,3 +6,6 @@ __pycache__/
 .pytest_cache/
 
 devdb_window_positions.json
+
+# Reference/export CSVs — large files, not source code
+ReferenceFiles/

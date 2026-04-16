@@ -1,5 +1,5 @@
 """
-P-0000 placeholder_rebuilder — Rebuild placeholder delivery events from demand signal.
+P-0050 placeholder_rebuilder — Rebuild placeholder delivery events from demand signal.
 
 Reads:   sim_delivery_events, sim_delivery_event_phases, sim_dev_phases,
          sim_entitlement_delivery_config (DB)

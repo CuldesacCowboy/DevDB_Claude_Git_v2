@@ -14,6 +14,25 @@ import pandas as pd
 from .frozen_input import FrozenInput
 
 
+def load_builder_splits(conn) -> dict:
+    """
+    Load sim_instrument_builder_splits and expand to {phase_id: [{builder_id, share}, ...]}
+    by joining to sim_dev_phases. All phases in an instrument share the same splits.
+    """
+    df = conn.read_df("""
+        SELECT sdp.phase_id, sibs.builder_id, sibs.share
+        FROM sim_instrument_builder_splits sibs
+        JOIN sim_dev_phases sdp ON sdp.instrument_id = sibs.instrument_id
+    """)
+    splits: dict = {}
+    for _, r in df.iterrows():
+        pid = int(r["phase_id"])
+        if pid not in splits:
+            splits[pid] = []
+        splits[pid].append({"builder_id": int(r["builder_id"]), "share": r["share"]})
+    return splits
+
+
 def build_frozen_input(
     conn,
     dev_id: int,
