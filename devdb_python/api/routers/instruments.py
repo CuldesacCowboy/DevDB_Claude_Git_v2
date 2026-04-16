@@ -244,150 +244,240 @@ def update_spec_rate(
         cur.close()
 
 
+_SMALL_SAMPLE = 10
+
+_LOT_TYPE_GROUP_EXPR = """
+    CASE
+        WHEN rlt.lot_type_short LIKE 'SF%%' THEN 'SF'
+        WHEN rlt.lot_type_short LIKE 'CD%%' THEN 'CD'
+        WHEN rlt.lot_type_short LIKE 'TH%%' THEN 'TH'
+        WHEN rlt.lot_type_short IN ('Gateway', 'GW', 'GW-PG') THEN 'GW'
+        ELSE 'Other'
+    END
+"""
+
+_SPEC_FLAG_CTE = """
+    WITH spec_flag AS (
+        SELECT DISTINCT companycode, developmentcode, housenumber
+        FROM devdb_ext.codetail
+        WHERE conumber = '000'
+    )
+"""
+
+def _h(value, lot_count, warning):
+    return {"value": value, "lot_count": int(lot_count), "warning": warning}
+
+
 @router.get("/{instrument_id}/spec-rate-hints", response_model=dict)
 def get_spec_rate_hints(instrument_id: int, conn=Depends(get_db_conn)):
     """
-    Return 4 spec-rate hint values for this instrument, derived from MARKS
-    external data (devdb_ext tables) — no simulation dependency.
+    Return 7 spec-rate hints for this instrument.
 
-    Algorithm:
-      1. Find the (companycode, lot_type_id) distribution within this instrument's phases.
-         Each (companycode, lot_type_id) pair is weighted as a fraction of total
-         instrument lots.
-      2. For each pair, compute the company-wide spec rate over the last 6 months
-         and last 2 years using codetail (conumber='000' = spec) vs. housemaster
-         (all lots = denominator), scoped to that (companycode, lot_type_id).
-      3. Weighted-average over pairs to produce hint_6mo and hint_2yr.
-      4. Repeat steps 2-3 using only companycode (ignoring lot_type_id) to produce
-         hint_builder_6mo and hint_builder_2yr.
+    Computed (company-wide curves weighted to this instrument):
+      computed_builder_1yr/2yr  — builder-split-weighted company spec rate (1yr / 2yr closed)
+      computed_blt_1yr/2yr      — builder × lot-type weighted company spec rate (1yr / 2yr)
 
-    Returns:
-      {
-        hint_6mo: float | null,
-        hint_2yr: float | null,
-        hint_builder_6mo: float | null,
-        hint_builder_2yr: float | null,
-        instrument_lot_count: int,
-        data_note: str
-      }
+    Historical (direct from this instrument's own closed lots):
+      historical_1yr / historical_2yr / historical_alltime
+
+    Each hint: {value: float|null, lot_count: int, warning: str|null}
+    Closed = settlement_date; spec = codetail conumber='000'.
     """
+    from datetime import date, timedelta
+
     cur = dict_cursor(conn)
     try:
-        # ── Step 1: instrument's (companycode, lot_type_id) weights ──────────────
+        cutoff_1yr = date.today() - timedelta(days=365)
+        cutoff_2yr = date.today() - timedelta(days=730)
+
+        # ── 1. Instrument builder splits → {companycode: normalised_share} ────
         cur.execute(
             """
-            SELECT hm.companycode,
-                   sl.lot_type_id,
-                   COUNT(*)::float AS cnt
-            FROM sim_lots sl
-            JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
-            JOIN devdb_ext.housemaster hm
-                ON  hm.developmentcode = REGEXP_REPLACE(sl.lot_number, '[0-9]+$', '')
-                AND hm.housenumber     = CAST(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', '') AS BIGINT)
-            WHERE sdp.instrument_id = %s
-              AND sl.lot_source IN ('real', 'pre')
-              AND sl.excluded IS NOT TRUE
-              AND sl.lot_number ~ '^[A-Za-z]+[0-9]+$'
-            GROUP BY hm.companycode, sl.lot_type_id
+            SELECT db.marks_company_code AS companycode, sibs.share
+            FROM sim_instrument_builder_splits sibs
+            JOIN dim_builders db ON db.builder_id = sibs.builder_id
+            WHERE sibs.instrument_id = %s
+              AND db.marks_company_code IS NOT NULL
             """,
             (instrument_id,),
         )
-        weight_rows = cur.fetchall()
+        split_rows = cur.fetchall()
+        splits_raw = {r["companycode"]: float(r["share"]) for r in split_rows}
+        split_total = sum(splits_raw.values())
+        splits = ({cc: s / split_total for cc, s in splits_raw.items()}
+                  if split_total > 0 else {})
 
-        if not weight_rows:
-            return {
-                "hint_6mo": None,
-                "hint_2yr": None,
-                "hint_builder_6mo": None,
-                "hint_builder_2yr": None,
-                "instrument_lot_count": 0,
-                "data_note": "No MARKS-matched lots found for this instrument.",
-            }
+        # ── 2. Instrument lot-type distribution → {group: fraction} ──────────
+        cur.execute(
+            f"""
+            SELECT
+                {_LOT_TYPE_GROUP_EXPR} AS lt_group,
+                SUM(sps.projected_count) AS cnt
+            FROM sim_phase_product_splits sps
+            JOIN sim_dev_phases sdp ON sdp.phase_id = sps.phase_id
+            JOIN ref_lot_types rlt ON rlt.lot_type_id = sps.lot_type_id
+            WHERE sdp.instrument_id = %s
+            GROUP BY lt_group
+            """,
+            (instrument_id,),
+        )
+        lt_raw = {r["lt_group"]: int(r["cnt"]) for r in cur.fetchall()}
+        lt_total = sum(lt_raw.values())
+        lt_dist = ({g: c / lt_total for g, c in lt_raw.items()}
+                   if lt_total > 0 else {})
 
-        total_lots = sum(r["cnt"] for r in weight_rows)
-        weights = [
-            {
-                "companycode": r["companycode"],
-                "lot_type_id": r["lot_type_id"],
-                "weight": r["cnt"] / total_lots,
-            }
-            for r in weight_rows
-        ]
+        # ── 3. Company-wide builder curves ────────────────────────────────────
+        def _builder_curves(cutoff):
+            cur.execute(
+                f"""
+                {_SPEC_FLAG_CTE}
+                SELECT
+                    hm.companycode,
+                    COUNT(*) AS total,
+                    COUNT(sf.companycode) AS spec_count
+                FROM devdb_ext.housemaster hm
+                LEFT JOIN spec_flag sf
+                    ON sf.companycode    = hm.companycode
+                    AND sf.developmentcode = hm.developmentcode
+                    AND sf.housenumber   = hm.housenumber
+                WHERE hm.settlement_date >= %s
+                GROUP BY hm.companycode
+                """,
+                (cutoff,),
+            )
+            return {r["companycode"]: {"total": int(r["total"]),
+                                       "spec":  int(r["spec_count"])}
+                    for r in cur.fetchall()}
 
-        # ── Step 2+3: 6mo and 2yr hints weighted by (companycode, lot_type_id) ──
-        def weighted_hint(months: int, by_builder_only: bool) -> float | None:
-            total_w = 0.0
-            weighted_rate_sum = 0.0
-            for w in weights:
-                cc = w["companycode"]
-                lt = w["lot_type_id"]
-                weight = w["weight"]
+        # ── 4. Company-wide builder × lot-type curves ─────────────────────────
+        def _blt_curves(cutoff):
+            cur.execute(
+                f"""
+                {_SPEC_FLAG_CTE}
+                SELECT
+                    hm.companycode,
+                    {_LOT_TYPE_GROUP_EXPR} AS lt_group,
+                    COUNT(*) AS total,
+                    COUNT(sf.companycode) AS spec_count
+                FROM devdb_ext.housemaster hm
+                JOIN sim_lots siml
+                    ON  siml.lot_number ~ '^[A-Za-z]+[0-9]+$'
+                    AND hm.developmentcode = REGEXP_REPLACE(siml.lot_number, '[0-9]+$', '')
+                    AND hm.housenumber     = CAST(REGEXP_REPLACE(siml.lot_number, '^[A-Za-z]+', '') AS BIGINT)
+                JOIN ref_lot_types rlt ON rlt.lot_type_id = siml.lot_type_id
+                LEFT JOIN spec_flag sf
+                    ON sf.companycode    = hm.companycode
+                    AND sf.developmentcode = hm.developmentcode
+                    AND sf.housenumber   = hm.housenumber
+                WHERE hm.settlement_date >= %s
+                GROUP BY hm.companycode, lt_group
+                """,
+                (cutoff,),
+            )
+            return {(r["companycode"], r["lt_group"]): {"total": int(r["total"]),
+                                                         "spec":  int(r["spec_count"])}
+                    for r in cur.fetchall()}
 
-                if by_builder_only:
-                    cur.execute(
-                        """
-                        SELECT
-                            COUNT(DISTINCT hm.developmentcode || ':' || hm.housenumber::text)::float AS total_lots,
-                            COUNT(DISTINCT CASE WHEN ct.conumber IS NOT NULL
-                                               THEN hm.developmentcode || ':' || hm.housenumber::text END)::float AS spec_lots
-                        FROM devdb_ext.housemaster hm
-                        LEFT JOIN devdb_ext.codetail ct
-                            ON  ct.companycode     = hm.companycode
-                            AND ct.developmentcode = hm.developmentcode
-                            AND ct.housenumber     = hm.housenumber
-                            AND ct.conumber        = '000'
-                        WHERE hm.companycode = %s
-                          AND hm.conststart_date >= NOW() - (%s || ' months')::INTERVAL
-                        """,
-                        (cc, months),
-                    )
-                else:
-                    cur.execute(
-                        """
-                        SELECT
-                            COUNT(DISTINCT hm.developmentcode || ':' || hm.housenumber::text)::float AS total_lots,
-                            COUNT(DISTINCT CASE WHEN ct.conumber IS NOT NULL
-                                               THEN hm.developmentcode || ':' || hm.housenumber::text END)::float AS spec_lots
-                        FROM sim_lots sl_ref
-                        JOIN sim_dev_phases sdp_ref ON sdp_ref.phase_id = sl_ref.phase_id
-                        JOIN devdb_ext.housemaster hm
-                            ON  hm.developmentcode = REGEXP_REPLACE(sl_ref.lot_number, '[0-9]+$', '')
-                            AND hm.housenumber     = CAST(REGEXP_REPLACE(sl_ref.lot_number, '^[A-Za-z]+', '') AS BIGINT)
-                        LEFT JOIN devdb_ext.codetail ct
-                            ON  ct.companycode     = hm.companycode
-                            AND ct.developmentcode = hm.developmentcode
-                            AND ct.housenumber     = hm.housenumber
-                            AND ct.conumber        = '000'
-                        WHERE hm.companycode = %s
-                          AND sl_ref.lot_type_id = %s
-                          AND sl_ref.lot_number ~ '^[A-Za-z]+[0-9]+$'
-                          AND hm.conststart_date >= NOW() - (%s || ' months')::INTERVAL
-                        """,
-                        (cc, lt, months),
-                    )
+        # ── 5. Instrument historical hints ────────────────────────────────────
+        def _instrument_history(cutoff):
+            cur.execute(
+                f"""
+                {_SPEC_FLAG_CTE}
+                SELECT COUNT(*) AS total, COUNT(sf.companycode) AS spec_count
+                FROM devdb_ext.housemaster hm
+                JOIN sim_lots siml
+                    ON  siml.lot_number ~ '^[A-Za-z]+[0-9]+$'
+                    AND hm.developmentcode = REGEXP_REPLACE(siml.lot_number, '[0-9]+$', '')
+                    AND hm.housenumber     = CAST(REGEXP_REPLACE(siml.lot_number, '^[A-Za-z]+', '') AS BIGINT)
+                JOIN sim_dev_phases sdp ON sdp.phase_id = siml.phase_id
+                LEFT JOIN spec_flag sf
+                    ON sf.companycode    = hm.companycode
+                    AND sf.developmentcode = hm.developmentcode
+                    AND sf.housenumber   = hm.housenumber
+                WHERE sdp.instrument_id = %s
+                  AND hm.settlement_date IS NOT NULL
+                  AND (%s IS NULL OR hm.settlement_date >= %s)
+                """,
+                (instrument_id, cutoff, cutoff),
+            )
+            row = cur.fetchone()
+            return (int(row["total"]), int(row["spec_count"])) if row else (0, 0)
 
-                row = cur.fetchone()
-                denom = row["total_lots"] if row else 0.0
-                if not denom:
-                    continue
-                rate = (row["spec_lots"] or 0.0) / denom
-                weighted_rate_sum += rate * weight
-                total_w += weight
+        # ── 6. Compute hints ──────────────────────────────────────────────────
+        def _make_hist_hint(total, spec_count):
+            if total == 0:
+                return _h(None, 0, "No closed lots found for this instrument in this window.")
+            rate = round(spec_count / total, 4)
+            warn = (f"Small sample ({total} lots — results may be unreliable)."
+                    if total < _SMALL_SAMPLE else None)
+            return _h(rate, total, warn)
 
-            return round(weighted_rate_sum / total_w, 4) if total_w > 0 else None
+        def _make_builder_hint(curves):
+            if not splits:
+                return _h(None, 0, "No builder splits configured for this instrument.")
+            wsum = 0.0; wused = 0.0; lots = 0; missing = []
+            for cc, share in splits.items():
+                c = curves.get(cc)
+                if not c or c["total"] == 0:
+                    missing.append(cc); continue
+                wsum  += share * (c["spec"] / c["total"])
+                wused += share
+                lots  += c["total"]
+            if wused == 0:
+                return _h(None, 0, "No company-wide closed-lot data found for any configured builder.")
+            value = round(wsum / wused, 4)
+            warns = []
+            if missing:
+                warns.append(f"No data for builder(s) {', '.join(missing)} "
+                             f"(result covers {round(wused*100)}% of configured splits).")
+            if lots < _SMALL_SAMPLE:
+                warns.append(f"Small company-wide sample ({lots} lots).")
+            return _h(value, lots, " ".join(warns) or None)
 
-        hint_6mo          = weighted_hint(6,  by_builder_only=False)
-        hint_2yr          = weighted_hint(24, by_builder_only=False)
-        hint_builder_6mo  = weighted_hint(6,  by_builder_only=True)
-        hint_builder_2yr  = weighted_hint(24, by_builder_only=True)
+        def _make_blt_hint(curves):
+            if not splits:
+                return _h(None, 0, "No builder splits configured for this instrument.")
+            if not lt_dist:
+                return _h(None, 0, "No lot type distribution found for this instrument's phases.")
+            wsum = 0.0; wused = 0.0; lots = 0
+            missing = 0; total_combos = 0
+            for cc, s_share in splits.items():
+                for lt_group, lt_frac in lt_dist.items():
+                    total_combos += 1
+                    c = curves.get((cc, lt_group))
+                    if not c or c["total"] == 0:
+                        missing += 1; continue
+                    w = s_share * lt_frac
+                    wsum  += w * (c["spec"] / c["total"])
+                    wused += w
+                    lots  += c["total"]
+            if wused == 0:
+                return _h(None, 0, "No company-wide data for any builder × lot type combination.")
+            value = round(wsum / wused, 4)
+            warns = []
+            if missing:
+                warns.append(f"{missing}/{total_combos} builder×lot type combinations had no data "
+                             f"(result covers {round(wused*100)}% of weight).")
+            if lots < _SMALL_SAMPLE:
+                warns.append(f"Small company-wide sample ({lots} lots).")
+            return _h(value, lots, " ".join(warns) or None)
+
+        bc1 = _builder_curves(cutoff_1yr)
+        bc2 = _builder_curves(cutoff_2yr)
+        blt1 = _blt_curves(cutoff_1yr)
+        blt2 = _blt_curves(cutoff_2yr)
+        h1   = _instrument_history(cutoff_1yr)
+        h2   = _instrument_history(cutoff_2yr)
+        hall = _instrument_history(None)
 
         return {
-            "hint_6mo":          hint_6mo,
-            "hint_2yr":          hint_2yr,
-            "hint_builder_6mo":  hint_builder_6mo,
-            "hint_builder_2yr":  hint_builder_2yr,
-            "instrument_lot_count": int(total_lots),
-            "data_note": None,
+            "computed_builder_1yr": _make_builder_hint(bc1),
+            "computed_builder_2yr": _make_builder_hint(bc2),
+            "computed_blt_1yr":     _make_blt_hint(blt1),
+            "computed_blt_2yr":     _make_blt_hint(blt2),
+            "historical_1yr":       _make_hist_hint(*h1),
+            "historical_2yr":       _make_hist_hint(*h2),
+            "historical_alltime":   _make_hist_hint(*hall),
         }
     finally:
         cur.close()

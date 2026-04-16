@@ -764,14 +764,17 @@ function DevTab({ rows, showTest, onPatchDev }) {
 }
 
 // ─── SpecRateCell ─────────────────────────────────────────────────────────────
-// Editable spec rate (percentage) for an instrument, with 4 hint buttons.
+// Editable spec rate for an instrument with collapsible hint panel.
+// Hints are grouped: company-wide curves weighted to instrument, and instrument history.
+// Each hint shows sample size; warnings surface as amber styling + tooltip.
 
 function SpecRateCell({ instrumentId, value, onSave }) {
   const [editing,      setEditing]      = useState(false)
   const [draft,        setDraft]        = useState('')
   const [saving,       setSaving]       = useState(false)
   const [error,        setError]        = useState(null)
-  const [hints,        setHints]        = useState(null)   // {hint_6mo, hint_2yr, hint_builder_6mo, hint_builder_2yr}
+  const [hints,        setHints]        = useState(null)
+  const [hintsOpen,    setHintsOpen]    = useState(false)
   const [hintsLoading, setHintsLoading] = useState(false)
   const inputRef = useRef()
 
@@ -789,7 +792,6 @@ function SpecRateCell({ instrumentId, value, onSave }) {
     setEditing(false)
     const raw = draft.trim()
     if (raw === '') {
-      // clear
       if (value == null) return
       setSaving(true); setError(null)
       try { await onSave(null) } catch (e) { setError(String(e).slice(0, 40)) } finally { setSaving(false) }
@@ -797,7 +799,7 @@ function SpecRateCell({ instrumentId, value, onSave }) {
     }
     const pct = parseFloat(raw)
     if (isNaN(pct) || pct < 0 || pct > 100) { setError('0–100'); return }
-    const frac = Math.round(pct * 10) / 1000   // percent → fraction, 4dp
+    const frac = Math.round(pct * 10) / 1000
     if (frac === value) return
     setSaving(true); setError(null)
     try { await onSave(frac) } catch (e) { setError(String(e).slice(0, 40)) } finally { setSaving(false) }
@@ -808,9 +810,11 @@ function SpecRateCell({ instrumentId, value, onSave }) {
     if (e.key === 'Enter')  { e.stopPropagation(); commit() }
   }
 
-  async function loadHints() {
-    if (hintsLoading || hints) return
+  async function toggleHints() {
+    if (hintsOpen) { setHintsOpen(false); return }
+    if (hints)     { setHintsOpen(true);  return }
     setHintsLoading(true)
+    setHintsOpen(true)
     try {
       const res = await fetch(`${API_BASE}/instruments/${instrumentId}/spec-rate-hints`)
       if (res.ok) setHints(await res.json())
@@ -823,23 +827,33 @@ function SpecRateCell({ instrumentId, value, onSave }) {
     onSave(frac)
   }
 
-  const pctLabel = v => v != null ? `${Math.round(v * 1000) / 10}%` : null
+  // Render one hint button. hint = {value, lot_count, warning} | null
+  function HintBtn({ label, hint }) {
+    const v    = hint?.value ?? null
+    const n    = hint?.lot_count ?? 0
+    const warn = hint?.warning ?? null
+    const hasV = v != null
+    const pct  = hasV ? `${Math.round(v * 1000) / 10}%` : null
+    const tooltip = warn ?? (hasV ? `Apply ${pct} (n=${n})` : 'No data available')
+    return (
+      <button
+        onClick={() => hasV && applyHint(v)}
+        disabled={!hasV}
+        title={tooltip}
+        style={{
+          fontSize: 10, padding: '1px 5px', borderRadius: 3,
+          cursor: hasV ? 'pointer' : 'default', whiteSpace: 'nowrap', fontWeight: 600,
+          border:      `1px solid ${!hasV ? '#e5e7eb' : warn ? '#fcd34d' : '#d1fae5'}`,
+          background:  !hasV ? '#f9fafb' : warn ? '#fffbeb' : '#f0fdfa',
+          color:       !hasV ? '#9ca3af' : warn ? '#b45309' : '#0d9488',
+        }}
+      >
+        {label}{pct ? `: ${pct}` : ''}{n > 0 ? ` (${n})` : ''}{warn ? ' ⚠' : ''}
+      </button>
+    )
+  }
 
-  const hintBtn = (label, v, title) => (
-    <button
-      key={label}
-      onClick={() => applyHint(v)}
-      disabled={v == null}
-      title={title}
-      style={{
-        fontSize: 10, padding: '1px 5px', borderRadius: 3, cursor: v != null ? 'pointer' : 'default',
-        border: '1px solid #d1fae5', background: '#f0fdfa', color: v != null ? '#0d9488' : '#d1d5db',
-        fontWeight: 600, whiteSpace: 'nowrap',
-      }}
-    >
-      {label}{v != null ? `: ${pctLabel(v)}` : ''}
-    </button>
-  )
+  const pctLabel = v => v != null ? `${Math.round(v * 1000) / 10}%` : null
 
   return (
     <div style={{ minWidth: 120 }}>
@@ -865,26 +879,43 @@ function SpecRateCell({ instrumentId, value, onSave }) {
           )}
         </div>
         <button
-          onClick={loadHints}
-          title="Load spec rate hints from MARKS history"
+          onClick={toggleHints}
+          title={hintsOpen ? 'Collapse hints' : 'Show spec rate hints from MARKS history'}
           style={{
             fontSize: 10, padding: '1px 5px', borderRadius: 3, cursor: 'pointer',
-            border: '1px solid #e5e7eb', background: hints ? '#f3f4f6' : '#fff',
+            border: '1px solid #e5e7eb', background: hintsOpen ? '#f3f4f6' : '#fff',
             color: '#6b7280', lineHeight: 1.4,
           }}
         >
-          {hintsLoading ? '…' : hints ? '✓' : 'hints'}
+          {hintsLoading ? '…' : `hints ${hintsOpen ? '▾' : '▸'}`}
         </button>
       </div>
-      {hints && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 4, justifyContent: 'flex-end' }}>
-          {hintBtn('Dev×LT 6mo', hints.hint_6mo,          'Weighted by builder+lot type distribution in this instrument × company-wide spec rate (last 6 months)')}
-          {hintBtn('Dev×LT 2yr', hints.hint_2yr,          'Weighted by builder+lot type distribution in this instrument × company-wide spec rate (last 2 years)')}
-          {hintBtn('Builder 6mo', hints.hint_builder_6mo, 'Weighted by builder distribution in this instrument × company-wide builder spec rate (last 6 months)')}
-          {hintBtn('Builder 2yr', hints.hint_builder_2yr, 'Weighted by builder distribution in this instrument × company-wide builder spec rate (last 2 years)')}
-          {hints.data_note && (
-            <span style={{ fontSize: 10, color: '#9ca3af', width: '100%', textAlign: 'right' }}>{hints.data_note}</span>
-          )}
+
+      {hintsOpen && hints && (
+        <div style={{ marginTop: 5 }}>
+          <div style={{ fontSize: 9, color: '#9ca3af', textAlign: 'right', marginBottom: 2 }}>
+            company-wide, weighted to instrument
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'flex-end', marginBottom: 5 }}>
+            <HintBtn label="Bldr 1yr"    hint={hints.computed_builder_1yr} />
+            <HintBtn label="Bldr 2yr"    hint={hints.computed_builder_2yr} />
+            <HintBtn label="Bldr×LT 1yr" hint={hints.computed_blt_1yr} />
+            <HintBtn label="Bldr×LT 2yr" hint={hints.computed_blt_2yr} />
+          </div>
+          <div style={{ fontSize: 9, color: '#9ca3af', textAlign: 'right', marginBottom: 2 }}>
+            instrument history (closed lots)
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, justifyContent: 'flex-end' }}>
+            <HintBtn label="1yr"     hint={hints.historical_1yr} />
+            <HintBtn label="2yr"     hint={hints.historical_2yr} />
+            <HintBtn label="All-time" hint={hints.historical_alltime} />
+          </div>
+        </div>
+      )}
+
+      {hintsOpen && !hints && !hintsLoading && (
+        <div style={{ fontSize: 10, color: '#9ca3af', textAlign: 'right', marginTop: 4 }}>
+          Failed to load hints.
         </div>
       )}
     </div>
