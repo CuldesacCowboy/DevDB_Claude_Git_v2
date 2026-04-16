@@ -57,8 +57,10 @@ def ledger_aggregator(conn: DBConnection) -> None:
         FROM bounds
     """)
 
+    conn.execute("DROP VIEW IF EXISTS v_sim_ledger_monthly")
+
     conn.execute("""
-        CREATE OR REPLACE VIEW v_sim_ledger_monthly AS
+        CREATE VIEW v_sim_ledger_monthly AS
         SELECT
             l.dev_id,
             COALESCE(l.builder_id_override, l.builder_id) AS builder_id,
@@ -72,6 +74,12 @@ def ledger_aggregator(conn: DBConnection) -> None:
                        THEN 1 END) AS td_plan,
             COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected)) = m.calendar_month
                        THEN 1 END) AS str_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected)) = m.calendar_month
+                            AND l.is_spec = TRUE
+                       THEN 1 END) AS str_plan_spec,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected)) = m.calendar_month
+                            AND l.is_spec = FALSE
+                       THEN 1 END) AS str_plan_build,
             COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_cmp, l.date_cmp_projected)) = m.calendar_month
                        THEN 1 END) AS cmp_plan,
             COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected)) = m.calendar_month
