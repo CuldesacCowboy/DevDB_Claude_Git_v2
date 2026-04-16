@@ -597,6 +597,19 @@ def get_audit_data(conn=Depends(get_db_conn)):
         phase_ids  = [r['phase_id'] for r in phases]
         dev_ids    = list({r['dev_id'] for r in phases})
 
+        # Dev params: annual_starts_target per dev_id
+        dev_params_map = {}
+        if dev_ids:
+            cur.execute("""
+                SELECT dev_id, annual_starts_target
+                FROM sim_dev_params
+                WHERE dev_id = ANY(%s)
+            """, (dev_ids,))
+            for r in cur.fetchall():
+                dev_params_map[r['dev_id']] = float(r['annual_starts_target']) if r['annual_starts_target'] is not None else None
+
+        dev_comm_map = {}  # egid -> {dev_id -> dev dict}
+
         # Real+pre lot counts per phase
         real_pre_map = {}
         if phase_ids:
