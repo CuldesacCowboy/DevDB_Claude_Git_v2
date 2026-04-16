@@ -68,7 +68,7 @@ export function MonthGrid({ selected, onChange, locked }) {
 
 // ─── LedgerConfigSection ──────────────────────────────────────────────────────
 
-export function LedgerConfigSection({ entGroupId, datePaper, dateEnt, earliestDeliveryDate, onSaved, disabled }) {
+export function LedgerConfigSection({ entGroupId, datePaper, dateEnt, earliestDeliveryDate, totalLots, onSaved, disabled }) {
   const [paperVal, setPaperVal] = useState(datePaper ?? '')
   const [entVal,   setEntVal]   = useState(dateEnt   ?? '')
   const [saving,   setSaving]   = useState(false)
@@ -131,7 +131,10 @@ export function LedgerConfigSection({ entGroupId, datePaper, dateEnt, earliestDe
         <DateSuggest suggest={suggestEnt} current={entVal} label="Latest (before earliest delivery)"
           onAccept={v => { setEntVal(v); saveIfChanged(paperVal, v) }} />
       </div>
-      {lotsMsg && <span style={{ fontSize: 11, color: '#16a34a' }}>{lotsMsg}</span>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {totalLots > 0 && <span style={{ fontSize: 11, color: '#6b7280' }}>{totalLots} lots in community</span>}
+        {lotsMsg && <span style={{ fontSize: 11, color: '#16a34a' }}>{lotsMsg}</span>}
+      </div>
       {err    && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
     </div>
   )

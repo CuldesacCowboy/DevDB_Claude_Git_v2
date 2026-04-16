@@ -31,6 +31,7 @@ COMMUNITY_MAP = {
     'Stonewater Condos':               (9066, ['SC']),   # condo lots
     'Villages of Silver Lake':         (9080, ['SL']),
     'RAVINES Ph3':                     (9053, ['RV']),
+    'Villas at  RAVINES Ph3':          (9053, ['RV']),   # same community, lots in 40-81 range
     'Graymoor':                        (9029, ['GM']),
     'Woods of Albright':               (9084, ['WA']),
     'Trailside South Haven':           (9078, ['TI']),
@@ -43,6 +44,10 @@ COMMUNITY_MAP = {
     'Rivertown Highlands TH':          (9058, ['RP']),
     'Peacefield':                      (9048, ['PF']),
     'Hidden Shores West/Waters Edge':  (9033, ['HW', 'WC']),
+    'Deer Creek SF Ph1':               (9019, ['DC']),
+    'Deer Creek Townhome Ph1':         (9019, ['DT']),
+    'The Range SF Ph1':                (9073, ['TR']),
+    'The Range Condos':                (9073, ['TC']),
 }
 
 TDA_NAME_MAP = {
@@ -51,7 +56,12 @@ TDA_NAME_MAP = {
     'Stonewater Condos':               'Stonewater Condos',
     'Villages of Silver Lake':         'Villages of Silver Lake',
     'RAVINES Ph3':                     'Ravines Phase 3',
+    'Villas at  RAVINES Ph3':          'Ravines Villas',
     'Graymoor':                        'Graymoor',
+    'Deer Creek SF Ph1':               'Deer Creek SF',
+    'Deer Creek Townhome Ph1':         'Deer Creek Townhomes',
+    'The Range SF Ph1':                'The Range SF',
+    'The Range Condos':                'The Range Condos',
     'Woods of Albright':               'Woods of Albright',
     'Trailside South Haven':           'Trailside South Haven',
     'Jason Ridge Condos':              'Jason Ridge Condos',

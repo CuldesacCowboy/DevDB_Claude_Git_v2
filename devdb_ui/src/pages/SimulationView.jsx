@@ -652,6 +652,7 @@ const loadLedger = useCallback((id) => {
                   datePaper={ledgerConfig.date_paper}
                   dateEnt={ledgerConfig.date_ent}
                   earliestDeliveryDate={ledgerConfig.earliest_delivery_date ?? null}
+                  totalLots={ledgerConfig.total_lots ?? 0}
                   onSaved={() => { loadConfig(entGroupId); loadLedger(entGroupId) }}
                   disabled={isRunning}
                 />
