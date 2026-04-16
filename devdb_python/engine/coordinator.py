@@ -662,11 +662,6 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         # Runs once per engine run (idempotent — already-assigned lots are skipped).
         assign_real_lot_builders(conn, ent_group_id, builder_splits)
 
-        # S-0950: assign is_spec to undetermined lots (is_spec IS NULL) using
-        # instrument spec_rate. Runs after S-0050 (which sets is_spec for MARKS-known
-        # lots) and after S-0900 (which may generate sim lots that also need assignment).
-        spec_assignment(conn, ent_group_id)
-
         # Seeded RNG: date-based by default (YYYYMMDD), giving reproducibility
         # within a day. Pass rng_seed explicitly for test-time control.
         _seed = rng_seed if rng_seed is not None else sim_run_id * 1000 + ent_group_id
@@ -711,6 +706,13 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
                     """,
                     (dev_id,),
                 )
+
+            # S-0950: assign is_spec to undetermined lots (is_spec IS NULL).
+            # Must run inside the loop: S-1100 does atomic DELETE+INSERT of sim lots
+            # each iteration, resetting is_spec to NULL on every fresh batch.
+            # The WHERE sl.is_spec IS NULL guard makes this idempotent for real/pre
+            # lots (MARKS-set or prior-iteration-assigned values are never overwritten).
+            spec_assignment(conn, ent_group_id)
 
             # Step 2: Run supply pipeline
             logger.info(f"  Running supply pipeline for ent_group_id={ent_group_id}...")
