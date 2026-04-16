@@ -108,6 +108,7 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     "status": r["status"],
                     "anchor_date": r["anchor_date"].isoformat() if r["anchor_date"] else None,
                     "checkpoints": [],
+                    "lots": [],
                     "_running_assigned": 0,
                 }
             if r["checkpoint_id"] is not None:
@@ -123,6 +124,75 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     "lots_assigned_cumulative": cumulative,
                 })
 
+        # Fetch lots per TDA with checkpoint assignments and HC/BLDR dates
+        tda_ids = list(agreements_map.keys())
+        if tda_ids:
+            cur.execute(
+                """
+                SELECT
+                    tal.tda_id,
+                    l.lot_id,
+                    l.lot_number,
+                    la.assignment_id,
+                    la.checkpoint_id,
+                    cp.checkpoint_number,
+                    l.date_td_hold           AS hc_marks_date,
+                    l.date_td_hold_projected AS hc_projected_date,
+                    l.date_td_hold_is_locked AS hc_is_locked,
+                    l.date_td                AS bldr_marks_date,
+                    l.date_td_projected      AS bldr_projected_date,
+                    l.date_td_is_locked      AS bldr_is_locked
+                FROM devdb.sim_takedown_agreement_lots tal
+                JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+                LEFT JOIN devdb.sim_takedown_lot_assignments la
+                    ON la.lot_id = l.lot_id
+                    AND la.checkpoint_id IN (
+                        SELECT checkpoint_id FROM devdb.sim_takedown_checkpoints WHERE tda_id = tal.tda_id
+                    )
+                LEFT JOIN devdb.sim_takedown_checkpoints cp ON cp.checkpoint_id = la.checkpoint_id
+                WHERE tal.tda_id = ANY(%s)
+                ORDER BY tal.tda_id, l.lot_number
+                """,
+                (tda_ids,),
+            )
+            for r in cur.fetchall():
+                tid = r["tda_id"]
+                if tid in agreements_map:
+                    agreements_map[tid]["lots"].append({
+                        "lot_id": r["lot_id"],
+                        "lot_number": r["lot_number"],
+                        "assignment_id": r["assignment_id"],
+                        "checkpoint_id": r["checkpoint_id"],
+                        "checkpoint_number": r["checkpoint_number"],
+                        "hc_marks_date": r["hc_marks_date"].isoformat() if r["hc_marks_date"] else None,
+                        "hc_projected_date": r["hc_projected_date"].isoformat() if r["hc_projected_date"] else None,
+                        "hc_is_locked": bool(r["hc_is_locked"]) if r["hc_is_locked"] is not None else False,
+                        "bldr_marks_date": r["bldr_marks_date"].isoformat() if r["bldr_marks_date"] else None,
+                        "bldr_projected_date": r["bldr_projected_date"].isoformat() if r["bldr_projected_date"] else None,
+                        "bldr_is_locked": bool(r["bldr_is_locked"]) if r["bldr_is_locked"] is not None else False,
+                    })
+
+        # Fetch lots not yet in any TDA for this community
+        cur.execute(
+            """
+            SELECT DISTINCT l.lot_id, l.lot_number
+            FROM devdb.sim_lots l
+            JOIN devdb.sim_dev_phases p ON p.phase_id = l.phase_id
+            JOIN devdb.developments d ON d.dev_id = p.dev_id
+            WHERE d.community_id = %s
+              AND l.lot_source = 'real'
+              AND l.lot_id NOT IN (
+                  SELECT tal.lot_id
+                  FROM devdb.sim_takedown_agreement_lots tal
+                  JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
+                  WHERE tda.ent_group_id = %s
+              )
+            ORDER BY l.lot_number
+            """,
+            (ent_group_id, ent_group_id),
+        )
+        unassigned_lots = [{"lot_id": r["lot_id"], "lot_number": r["lot_number"]} for r in cur.fetchall()]
+
         # Clean up helper key
         agreements = []
         for tda in agreements_map.values():
@@ -133,6 +203,7 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
             "ent_group_id": eg["ent_group_id"],
             "ent_group_name": eg["ent_group_name"],
             "agreements": agreements,
+            "unassigned_lots": unassigned_lots,
         }
     finally:
         cur.close()

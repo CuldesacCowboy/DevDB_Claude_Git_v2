@@ -28,6 +28,11 @@ class UpdateLockRequest(BaseModel):
     dig_is_locked: Optional[bool] = None
 
 
+class UpdateLotTdaDatesRequest(BaseModel):
+    hc_projected_date: Optional[date_type] = None
+    bldr_projected_date: Optional[date_type] = None
+
+
 # Maps API field names (hc/bldr/dig) to sim_lots DB columns
 _DATE_COL = {
     'hc_projected_date':   'date_td_hold_projected',
@@ -425,6 +430,42 @@ def update_lot_assignment_lock(assignment_id: int, body: UpdateLockRequest, conn
         conn.commit()
         return {"assignment_id": assignment_id, "updated_lot_ids": updated_lot_ids}
 
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
+@router.patch("/tda-lots/{lot_id}/dates")
+def update_tda_lot_dates_direct(lot_id: int, body: UpdateLotTdaDatesRequest, conn=Depends(get_db_conn)):
+    """Update HC and/or BLDR projected dates directly on sim_lots.
+    Works for pool lots that have no assignment_id yet."""
+    cur = dict_cursor(conn)
+    try:
+        updates = []
+        values = []
+        if "hc_projected_date" in body.model_fields_set:
+            updates.append("date_td_hold_projected = %s")
+            values.append(body.hc_projected_date)
+        if "bldr_projected_date" in body.model_fields_set:
+            updates.append("date_td_projected = %s")
+            values.append(body.bldr_projected_date)
+        if not updates:
+            raise HTTPException(status_code=422, detail="No date fields provided.")
+        updates.append("updated_at = now()")
+        values.append(lot_id)
+        cur.execute(
+            f"UPDATE devdb.sim_lots SET {', '.join(updates)} WHERE lot_id = %s RETURNING lot_id",
+            values,
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found.")
+        conn.commit()
+        return {"lot_id": lot_id}
     except HTTPException:
         conn.rollback()
         raise
