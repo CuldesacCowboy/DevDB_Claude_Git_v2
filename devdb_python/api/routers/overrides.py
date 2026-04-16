@@ -160,18 +160,36 @@ class OverrideChange(BaseModel):
 class ApplyRequest(BaseModel):
     lot_id: int
     changes: list[OverrideChange]
+    apply_to_building_group: bool = False
+
+
+def _upsert_override(cur, lot_id: int, date_field: str, override_value, marks_val, note, created_by: str):
+    cur.execute("""
+        INSERT INTO devdb.sim_lot_date_overrides
+            (lot_id, date_field, override_value, marks_value, override_note, created_by, updated_at)
+        VALUES (%s, %s, %s, %s, %s, %s, NOW())
+        ON CONFLICT (lot_id, date_field) DO UPDATE
+            SET override_value = EXCLUDED.override_value,
+                marks_value    = EXCLUDED.marks_value,
+                override_note  = EXCLUDED.override_note,
+                created_by     = EXCLUDED.created_by,
+                updated_at     = NOW()
+    """, (lot_id, date_field, override_value, marks_val, note, created_by))
+    return cur.rowcount
 
 
 @router.post("/apply")
 def apply_overrides(body: ApplyRequest, conn=Depends(get_db_conn)):
-    """Upsert override rows for a lot. Snapshots current MARKS date as marks_value."""
+    """Upsert override rows for a lot. Snapshots current MARKS date as marks_value.
+    If apply_to_building_group=True, same overrides are applied to all other lots
+    in the same building group."""
     if not body.changes:
         raise HTTPException(status_code=422, detail="No changes provided.")
     cur = dict_cursor(conn)
     try:
-        # Load current MARKS dates for snapshot
+        # Load primary lot
         cur.execute(
-            "SELECT date_td_hold, date_td, date_str, date_frm, date_cmp, date_cls "
+            "SELECT date_td_hold, date_td, date_str, date_frm, date_cmp, date_cls, building_group_id "
             "FROM devdb.sim_lots WHERE lot_id = %s",
             (body.lot_id,)
         )
@@ -184,22 +202,31 @@ def apply_overrides(body: ApplyRequest, conn=Depends(get_db_conn)):
             if ch.date_field not in _PIPELINE:
                 continue
             marks_val = lot[ch.date_field]
-            cur.execute("""
-                INSERT INTO devdb.sim_lot_date_overrides
-                    (lot_id, date_field, override_value, marks_value, override_note, created_by, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, NOW())
-                ON CONFLICT (lot_id, date_field) DO UPDATE
-                    SET override_value = EXCLUDED.override_value,
-                        marks_value    = EXCLUDED.marks_value,
-                        override_note  = EXCLUDED.override_note,
-                        created_by     = EXCLUDED.created_by,
-                        updated_at     = NOW()
-            """, (body.lot_id, ch.date_field, ch.override_value, marks_val,
-                  ch.note, ch.created_by or 'user'))
-            applied += cur.rowcount
+            applied += _upsert_override(cur, body.lot_id, ch.date_field, ch.override_value,
+                                        marks_val, ch.note, ch.created_by or 'user')
+
+        # Building group fan-out
+        if body.apply_to_building_group and lot["building_group_id"] is not None:
+            cur.execute(
+                "SELECT lot_id, date_td_hold, date_td, date_str, date_frm, date_cmp, date_cls "
+                "FROM devdb.sim_lots WHERE building_group_id = %s AND lot_id != %s",
+                (lot["building_group_id"], body.lot_id)
+            )
+            sibling_lots = cur.fetchall()
+            for sibling in sibling_lots:
+                for ch in body.changes:
+                    if ch.date_field not in _PIPELINE:
+                        continue
+                    marks_val = sibling[ch.date_field]
+                    applied += _upsert_override(cur, sibling["lot_id"], ch.date_field, ch.override_value,
+                                                marks_val, ch.note, ch.created_by or 'user')
 
         conn.commit()
-        return {"applied": applied, "lot_id": body.lot_id}
+        return {
+            "applied": applied,
+            "lot_id": body.lot_id,
+            "building_group_id": lot["building_group_id"],
+        }
     except HTTPException:
         conn.rollback()
         raise

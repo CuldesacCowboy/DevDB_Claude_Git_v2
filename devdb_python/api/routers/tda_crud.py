@@ -124,7 +124,7 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     "lots_assigned_cumulative": cumulative,
                 })
 
-        # Fetch lots per TDA with checkpoint assignments and HC/BLDR dates
+        # Fetch lots per TDA with checkpoint assignments, HC/BLDR dates, lot type, building group
         tda_ids = list(agreements_map.keys())
         if tda_ids:
             cur.execute(
@@ -133,9 +133,15 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     tal.tda_id,
                     l.lot_id,
                     l.lot_number,
+                    l.lot_type_id,
+                    rlt.lot_type_short,
+                    l.building_group_id,
+                    bg.building_name,
                     la.assignment_id,
                     la.checkpoint_id,
                     cp.checkpoint_number,
+                    cp.checkpoint_date,
+                    cp.lots_required_cumulative,
                     l.date_td_hold           AS hc_marks_date,
                     l.date_td_hold_projected AS hc_projected_date,
                     l.date_td_hold_is_locked AS hc_is_locked,
@@ -144,6 +150,8 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     l.date_td_is_locked      AS bldr_is_locked
                 FROM devdb.sim_takedown_agreement_lots tal
                 JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+                LEFT JOIN devdb.ref_lot_types rlt ON rlt.lot_type_id = l.lot_type_id
+                LEFT JOIN devdb.sim_building_groups bg ON bg.building_group_id = l.building_group_id
                 LEFT JOIN devdb.sim_takedown_lot_assignments la
                     ON la.lot_id = l.lot_id
                     AND la.checkpoint_id IN (
@@ -161,9 +169,15 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     agreements_map[tid]["lots"].append({
                         "lot_id": r["lot_id"],
                         "lot_number": r["lot_number"],
+                        "lot_type_id": r["lot_type_id"],
+                        "lot_type_short": r["lot_type_short"],
+                        "building_group_id": r["building_group_id"],
+                        "building_name": r["building_name"],
                         "assignment_id": r["assignment_id"],
                         "checkpoint_id": r["checkpoint_id"],
                         "checkpoint_number": r["checkpoint_number"],
+                        "checkpoint_date": r["checkpoint_date"].isoformat() if r["checkpoint_date"] else None,
+                        "lots_required_cumulative": r["lots_required_cumulative"],
                         "hc_marks_date": r["hc_marks_date"].isoformat() if r["hc_marks_date"] else None,
                         "hc_projected_date": r["hc_projected_date"].isoformat() if r["hc_projected_date"] else None,
                         "hc_is_locked": bool(r["hc_is_locked"]) if r["hc_is_locked"] is not None else False,
@@ -171,6 +185,43 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                         "bldr_projected_date": r["bldr_projected_date"].isoformat() if r["bldr_projected_date"] else None,
                         "bldr_is_locked": bool(r["bldr_is_locked"]) if r["bldr_is_locked"] is not None else False,
                     })
+
+            # Checkpoint aggregate columns: taken_down_to_date, marks_plan, sim_plan
+            # Count TDA lots (all pool lots) by date vs checkpoint_date
+            checkpoint_ids_all = [
+                cp["checkpoint_id"]
+                for tda in agreements_map.values()
+                for cp in tda["checkpoints"]
+            ]
+            if checkpoint_ids_all:
+                cur.execute(
+                    """
+                    SELECT
+                        cp.checkpoint_id,
+                        COUNT(CASE WHEN l.date_td IS NOT NULL AND l.date_td <= CURRENT_DATE THEN 1 END)
+                            AS taken_down_to_date,
+                        COUNT(CASE WHEN l.date_td IS NOT NULL AND cp.checkpoint_date IS NOT NULL
+                                        AND l.date_td <= cp.checkpoint_date THEN 1 END)
+                            AS marks_plan,
+                        COUNT(CASE WHEN cp.checkpoint_date IS NOT NULL
+                                        AND COALESCE(l.date_td, l.date_td_projected) IS NOT NULL
+                                        AND COALESCE(l.date_td, l.date_td_projected) <= cp.checkpoint_date THEN 1 END)
+                            AS sim_plan
+                    FROM devdb.sim_takedown_checkpoints cp
+                    JOIN devdb.sim_takedown_agreement_lots tal ON tal.tda_id = cp.tda_id
+                    JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+                    WHERE cp.checkpoint_id = ANY(%s)
+                    GROUP BY cp.checkpoint_id
+                    """,
+                    (checkpoint_ids_all,),
+                )
+                agg_map = {r["checkpoint_id"]: r for r in cur.fetchall()}
+                for tda in agreements_map.values():
+                    for cp in tda["checkpoints"]:
+                        agg = agg_map.get(cp["checkpoint_id"])
+                        cp["taken_down_to_date"] = int(agg["taken_down_to_date"]) if agg else 0
+                        cp["marks_plan"] = int(agg["marks_plan"]) if agg else 0
+                        cp["sim_plan"] = int(agg["sim_plan"]) if agg else 0
 
         # Fetch lots not yet in any TDA for this community
         cur.execute(
@@ -530,5 +581,170 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
             "pool_lots": pool_lots,
             "unassigned_lots": unassigned_lots,
         }
+    finally:
+        cur.close()
+
+
+@router.get("/entitlement-groups/{ent_group_id}/tda-monthly-ledger")
+def get_tda_monthly_ledger(ent_group_id: int, conn=Depends(get_db_conn)):
+    """Monthly ledger of takedown activity for all TDA lots in a community.
+    Per month returns:
+      - actual: lots taken down in that month (date_td <= today, in that month)
+      - marks_plan: lots scheduled by MARKS in that month (date_td)
+      - sim_plan: lots projected by simulation in that month (date_td_projected, only where date_td is null)
+    """
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT ent_group_id FROM devdb.sim_entitlement_groups WHERE ent_group_id = %s",
+            (ent_group_id,),
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"Entitlement group {ent_group_id} not found.")
+
+        cur.execute(
+            """
+            SELECT
+                TO_CHAR(DATE_TRUNC('month', l.date_td), 'YYYY-MM') AS month,
+                COUNT(CASE WHEN l.date_td <= CURRENT_DATE THEN 1 END) AS actual,
+                COUNT(1) AS marks_plan
+            FROM devdb.sim_takedown_agreement_lots tal
+            JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
+            JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+            WHERE tda.ent_group_id = %s
+              AND l.date_td IS NOT NULL
+            GROUP BY DATE_TRUNC('month', l.date_td)
+            ORDER BY DATE_TRUNC('month', l.date_td)
+            """,
+            (ent_group_id,),
+        )
+        marks_rows = {r["month"]: {"actual": int(r["actual"]), "marks_plan": int(r["marks_plan"])} for r in cur.fetchall()}
+
+        cur.execute(
+            """
+            SELECT
+                TO_CHAR(DATE_TRUNC('month', l.date_td_projected), 'YYYY-MM') AS month,
+                COUNT(1) AS sim_plan
+            FROM devdb.sim_takedown_agreement_lots tal
+            JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
+            JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+            WHERE tda.ent_group_id = %s
+              AND l.date_td IS NULL
+              AND l.date_td_projected IS NOT NULL
+            GROUP BY DATE_TRUNC('month', l.date_td_projected)
+            ORDER BY DATE_TRUNC('month', l.date_td_projected)
+            """,
+            (ent_group_id,),
+        )
+        sim_rows = {r["month"]: int(r["sim_plan"]) for r in cur.fetchall()}
+
+        # Merge all months
+        all_months = sorted(set(list(marks_rows.keys()) + list(sim_rows.keys())))
+        ledger = []
+        for m in all_months:
+            mr = marks_rows.get(m, {"actual": 0, "marks_plan": 0})
+            ledger.append({
+                "month": m,
+                "actual": mr["actual"],
+                "marks_plan": mr["marks_plan"],
+                "sim_plan": sim_rows.get(m, 0),
+            })
+
+        return {"ent_group_id": ent_group_id, "ledger": ledger}
+    finally:
+        cur.close()
+
+
+@router.post("/takedown-agreements/{tda_id}/auto-assign")
+def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
+    """Assign each TDA lot to the earliest checkpoint whose date >= the lot's
+    COALESCE(date_td, date_td_projected). Lots with no applicable date or no
+    matching checkpoint remain unassigned. Existing assignments are cleared first."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT tda_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
+            (tda_id,),
+        )
+        if cur.fetchone() is None:
+            raise HTTPException(status_code=404, detail=f"TDA {tda_id} not found.")
+
+        # Load checkpoints ordered by date ascending
+        cur.execute(
+            """
+            SELECT checkpoint_id, checkpoint_date
+            FROM devdb.sim_takedown_checkpoints
+            WHERE tda_id = %s AND checkpoint_date IS NOT NULL
+            ORDER BY checkpoint_date ASC
+            """,
+            (tda_id,),
+        )
+        checkpoints = list(cur.fetchall())
+
+        if not checkpoints:
+            return {"assigned": 0, "unassigned": 0, "message": "No dated checkpoints to assign to."}
+
+        # Load all lots in TDA pool with their effective takedown date
+        cur.execute(
+            """
+            SELECT l.lot_id,
+                   COALESCE(l.date_td, l.date_td_projected) AS effective_td
+            FROM devdb.sim_takedown_agreement_lots tal
+            JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+            WHERE tal.tda_id = %s
+            ORDER BY l.lot_id
+            """,
+            (tda_id,),
+        )
+        lots = list(cur.fetchall())
+
+        # Clear all existing assignments for this TDA
+        cur.execute(
+            """
+            DELETE FROM devdb.sim_takedown_lot_assignments
+            WHERE checkpoint_id IN (
+                SELECT checkpoint_id FROM devdb.sim_takedown_checkpoints WHERE tda_id = %s
+            )
+            """,
+            (tda_id,),
+        )
+
+        assigned = 0
+        unassigned = 0
+        for lot in lots:
+            td = lot["effective_td"]
+            if td is None:
+                unassigned += 1
+                continue
+            # Find first checkpoint whose date >= lot's effective_td
+            target_cp = None
+            for cp in checkpoints:
+                if cp["checkpoint_date"] is not None and cp["checkpoint_date"] >= td:
+                    target_cp = cp
+                    break
+            if target_cp is None:
+                # No checkpoint covers this lot's date; assign to last checkpoint
+                target_cp = checkpoints[-1]
+
+            cur.execute(
+                """
+                INSERT INTO devdb.sim_takedown_lot_assignments
+                    (checkpoint_id, lot_id, assigned_at)
+                VALUES (%s, %s, now())
+                ON CONFLICT DO NOTHING
+                """,
+                (target_cp["checkpoint_id"], lot["lot_id"]),
+            )
+            assigned += 1
+
+        conn.commit()
+        return {"tda_id": tda_id, "assigned": assigned, "unassigned": unassigned}
+
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         cur.close()
