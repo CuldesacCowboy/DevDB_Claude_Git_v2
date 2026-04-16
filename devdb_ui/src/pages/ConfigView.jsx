@@ -924,8 +924,9 @@ function SpecRateCell({ instrumentId, value, onSave }) {
 
 // ─── Instrument tab ───────────────────────────────────────────────────────────
 
-function InstrumentTab({ phaseRows, showTest, builders, onSaveSpecRate, onSaveBuilderSplit }) {
+function InstrumentTab({ phaseRows, showTest, builders, onSaveSpecRate, onSaveBuilderSplit, initialFilterComm }) {
   const [localInstSplits, setLocalInstSplits] = useState({}) // { instrument_id: { builder_id: share } }
+  const [filterComm, setFilterComm] = useState(initialFilterComm ?? null)
 
   // Derive instrument summary from phase data
   const filtered = phaseRows.filter(r => showTest ? r.is_test : !r.is_test)
@@ -961,11 +962,14 @@ function InstrumentTab({ phaseRows, showTest, builders, onSaveSpecRate, onSaveBu
     if (complement) saves.push(onSaveBuilderSplit(instrumentId, complement.builder_id, compShare))
     await Promise.all(saves)
   }
-  const rows = [...instMap.values()].sort((a, b) =>
+  const allRows = [...instMap.values()].sort((a, b) =>
     a.ent_group_name.localeCompare(b.ent_group_name) ||
     a.dev_name.localeCompare(b.dev_name) ||
     a.instrument_name?.localeCompare(b.instrument_name ?? '')
   )
+  const commOptions = [...new Map(allRows.map(r => [r.ent_group_id, r.ent_group_name])).entries()]
+    .map(([id, name]) => ({ id: String(id), name }))
+  const rows = filterComm ? allRows.filter(r => String(r.ent_group_id) === filterComm) : allRows
 
   const bi = bandIdx(rows, r => r.ent_group_id)
 
@@ -977,8 +981,31 @@ function InstrumentTab({ phaseRows, showTest, builders, onSaveSpecRate, onSaveBu
   const thR = { ...thB, textAlign: 'right' }
   const thG = { ...thR, borderLeft: '2px solid #e0e0e0' }
 
+  const selStyle = on => ({
+    fontSize: 12, padding: '3px 24px 3px 8px', borderRadius: 4,
+    border: on ? '1px solid #2563eb' : '1px solid #d1d5db',
+    background: on ? '#eff6ff' : '#fff', color: on ? '#1d4ed8' : '#374151',
+    appearance: 'none', cursor: 'pointer',
+  })
+
   return (
     <div>
+      {/* Filter bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 500 }}>Filter</span>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+          <select value={filterComm ?? ''} style={selStyle(!!filterComm)}
+            onChange={e => setFilterComm(e.target.value || null)}>
+            <option value="">All communities</option>
+            {commOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          {filterComm && (
+            <button onClick={() => setFilterComm(null)}
+              style={{ position: 'absolute', right: 6, fontSize: 13, lineHeight: 1,
+                       background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', padding: 0 }}>×</button>
+          )}
+        </div>
+      </div>
       <TableShell>
         <thead>
           <tr>
@@ -1111,8 +1138,8 @@ function InstrumentTab({ phaseRows, showTest, builders, onSaveSpecRate, onSaveBu
 
 // ─── Phase tab ────────────────────────────────────────────────────────────────
 
-function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onToggleLock, onLotsAdded }) {
-  const [filterComm,    setFilterComm]    = useState(null)
+function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onToggleLock, onLotsAdded, initialFilterComm }) {
+  const [filterComm,    setFilterComm]    = useState(initialFilterComm ?? null)
   const [filterDev,     setFilterDev]     = useState(null)
   const [showSplits,    setShowSplits]    = useState(true)
   const [bulkInsertPhase, setBulkInsertPhase] = useState(null) // row object or null
@@ -1440,7 +1467,15 @@ function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit, onTog
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export default function ConfigView({ showTestCommunities }) {
-  const [tab,          setTab]         = useState('community')
+  // Read one-shot jump written by AuditView "Go to Config" buttons
+  const [configJump] = useState(() => {
+    try {
+      const j = JSON.parse(localStorage.getItem('devdb_config_jump') || 'null')
+      localStorage.removeItem('devdb_config_jump')
+      return j
+    } catch { return null }
+  })
+  const [tab,          setTab]         = useState(configJump?.tab ?? 'community')
   const [phaseData,    setPhaseData]   = useState(null)
   const [commData,     setCommData]    = useState(null)
   const [devData,      setDevData]     = useState(null)
@@ -1616,7 +1651,8 @@ export default function ConfigView({ showTestCommunities }) {
       {tab === 'instrument' && phaseData && (
         <InstrumentTab phaseRows={phaseData.rows} showTest={showTestCommunities}
           builders={phaseData.builders ?? []}
-          onSaveSpecRate={saveSpecRate} onSaveBuilderSplit={saveBuilderSplit} />
+          onSaveSpecRate={saveSpecRate} onSaveBuilderSplit={saveBuilderSplit}
+          initialFilterComm={configJump?.ent_group_id ? String(configJump.ent_group_id) : null} />
       )}
       {tab === 'phase'      && phaseData && (
         <PhaseTab
@@ -1624,6 +1660,7 @@ export default function ConfigView({ showTestCommunities }) {
           onPatchPhase={patchPhase} onSaveProductSplit={saveProductSplit}
           onToggleLock={toggleLock}
           onLotsAdded={load}
+          initialFilterComm={configJump?.ent_group_id ? String(configJump.ent_group_id) : null}
         />
       )}
     </div>

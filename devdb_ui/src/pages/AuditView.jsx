@@ -1,8 +1,11 @@
 // AuditView.jsx
 // Config audit: surfaces compliance issues between phase config, builder splits,
 // delivery month constraints, delivery event coverage, spec rates, and dev params.
+// Actionable chips: spec rate, delivery tier, and annual starts target can be edited inline.
+// Complex issues (builder splits, product splits) link directly to the relevant Config tab.
 
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { API_BASE } from '../config'
 
 const MONTH_SHORT = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -38,6 +41,108 @@ function Chip({ status, label, title }) {
   )
 }
 
+// ─── Editable chip — wraps a Chip with an inline input triggered by pencil icon ─
+
+function EditableChip({ status, label, title, editType, current, onSave }) {
+  const [editing, setSaving_] = useState(false)  // renamed internal
+  const [val,     setVal]     = useState('')
+  const [busy,    setBusy]    = useState(false)
+  const [err,     setErr]     = useState(null)
+
+  const canEdit = (status === S.WARN || status === S.FAIL) && !!onSave
+
+  function open() {
+    setVal(current != null ? String(current) : '')
+    setErr(null)
+    setSaving_(true)
+  }
+
+  async function commit(rawVal) {
+    const v = (rawVal ?? val).trim()
+    if (!v) { setSaving_(false); return }
+    setBusy(true); setErr(null)
+    try {
+      await onSave(v)
+      setSaving_(false)
+    } catch (e) {
+      setErr(String(e).replace(/^Error:\s*/, '').slice(0, 80))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (editing) {
+    const inputStyle = {
+      width: editType === 'tier' ? 50 : 64, fontSize: 11, padding: '2px 5px',
+      borderRadius: 4, border: `1px solid ${err ? '#f87171' : '#94a3b8'}`,
+      outline: 'none', background: '#fff',
+    }
+    return (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+        {editType === 'tier' ? (
+          <select value={val} autoFocus style={inputStyle}
+            onChange={async e => {
+              const v = e.target.value
+              setVal(v)
+              if (v) await commit(v)
+            }}
+            onBlur={() => { if (!busy) setSaving_(false) }}
+            onKeyDown={e => { if (e.key === 'Escape') setSaving_(false) }}
+          >
+            <option value="">—</option>
+            <option value="1">T1</option>
+            <option value="2">T2</option>
+            <option value="3">T3</option>
+          </select>
+        ) : (
+          <input type="number" value={val} autoFocus style={inputStyle}
+            onChange={e => setVal(e.target.value)}
+            onBlur={() => commit()}
+            onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setSaving_(false) }}
+            placeholder={editType === 'percent' ? '%' : '#'}
+            min={editType === 'percent' ? 0 : 1}
+            max={editType === 'percent' ? 100 : undefined}
+          />
+        )}
+        {busy && <span style={{ fontSize: 10, color: '#9ca3af' }}>…</span>}
+        {err  && <span style={{ fontSize: 10, color: '#dc2626', maxWidth: 120 }} title={err}>⚠ {err}</span>}
+      </span>
+    )
+  }
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+      <Chip status={status} label={label} title={canEdit ? `${title} — click ✎ to edit` : title} />
+      {canEdit && (
+        <span onClick={open} title="Edit inline"
+          style={{ fontSize: 12, color: '#94a3b8', cursor: 'pointer', userSelect: 'none', lineHeight: 1 }}>
+          ✎
+        </span>
+      )}
+    </span>
+  )
+}
+
+// ─── Go-to-Config navigation button ──────────────────────────────────────────
+
+function GoToConfigBtn({ tab, entGroupId, label = '→ Config' }) {
+  const navigate = useNavigate()
+  function go() {
+    try { localStorage.setItem('devdb_config_jump', JSON.stringify({ tab, ent_group_id: entGroupId })) } catch {}
+    navigate('/configure')
+  }
+  return (
+    <button onClick={go} title={`Open Configure → ${tab} tab, filtered to this community`}
+      style={{
+        fontSize: 10, padding: '1px 6px', borderRadius: 4, marginLeft: 4,
+        border: '1px solid #cbd5e1', background: '#f8fafc',
+        color: '#475569', cursor: 'pointer', whiteSpace: 'nowrap',
+      }}>
+      {label}
+    </button>
+  )
+}
+
 function SummaryBar({ checks }) {
   const counts = { pass: 0, warn: 0, fail: 0, skip: 0 }
   for (const s of checks) counts[s] = (counts[s] ?? 0) + 1
@@ -59,7 +164,6 @@ function effectiveMonths(comm, globalMonths) {
   return comm.delivery_months != null ? comm.delivery_months : globalMonths
 }
 
-// Build a map of year -> Set<date-string> for distinct delivery dates per year.
 function buildDatesPerYear(deliveryEvents) {
   const datesPerYear = {}
   for (const ev of deliveryEvents) {
@@ -78,7 +182,7 @@ function checkPhase(phase, hasAnyEvents, globalMonths) {
           in_delivery_event, spec_rate, delivery_tier } = phase
   const hasAnyLots = real_pre_lots > 0 || product_split_total > 0
 
-  // Product splits check
+  // Product splits
   let prod
   if (real_pre_lots > 0) {
     prod = { status: S.SKIP, label: 'lots present', detail: `${real_pre_lots} real/pre lots — product splits optional` }
@@ -88,7 +192,7 @@ function checkPhase(phase, hasAnyEvents, globalMonths) {
     prod = { status: S.WARN, label: 'no splits', detail: 'No product splits and no real/pre lots — phase will have no simulation output' }
   }
 
-  // Builder splits check
+  // Builder splits
   let bld
   if (!hasAnyLots) {
     bld = { status: S.SKIP, label: 'no lots', detail: 'No lots or projections — builder splits not needed' }
@@ -103,19 +207,19 @@ function checkPhase(phase, hasAnyEvents, globalMonths) {
     bld = { status: S.WARN, label: `${builder_split_sum}%`, detail: `Builder splits sum to ${builder_split_sum}% — remaining ${(100 - builder_split_sum).toFixed(1)}% unassigned` }
   }
 
-  // Delivery event coverage check
+  // Delivery coverage
   let del
   if (!hasAnyLots) {
     del = { status: S.SKIP, label: 'no lots', detail: 'No lots — delivery coverage not applicable' }
   } else if (!hasAnyEvents) {
-    del = { status: S.WARN, label: 'no events', detail: 'No delivery events exist for this community yet' }
+    del = { status: S.WARN, label: 'no events', detail: 'No delivery events — run a simulation to auto-create delivery events for this community' }
   } else if (in_delivery_event) {
     del = { status: S.PASS, label: 'covered', detail: 'Phase is assigned to at least one delivery event' }
   } else {
     del = { status: S.FAIL, label: 'uncovered', detail: 'Delivery events exist but this phase has not been assigned to any of them' }
   }
 
-  // Spec rate check (instrument-level, shown per phase)
+  // Spec rate
   let spec
   if (!hasAnyLots) {
     spec = { status: S.SKIP, label: 'no lots', detail: 'No lots — spec rate not needed' }
@@ -125,7 +229,7 @@ function checkPhase(phase, hasAnyEvents, globalMonths) {
     spec = { status: S.WARN, label: 'not set', detail: 'No spec rate on this instrument — S-0950 will skip spec/build assignment for all lots in this phase' }
   }
 
-  // Delivery tier check
+  // Delivery tier
   let tier
   if (!hasAnyLots) {
     tier = { status: S.SKIP, label: 'no lots', detail: 'No lots — delivery tier not needed' }
@@ -208,7 +312,6 @@ function commOverallStatus(comm, globalMonths, globalMaxPerYear) {
   const datesPerYear = buildDatesPerYear(comm.delivery_events)
 
   const statuses = []
-
   for (const p of comm.phases) {
     const c = checkPhase(p, hasEvents, globalMonths)
     statuses.push(c.prod.status, c.bld.status, c.del.status, c.spec.status, c.tier.status)
@@ -230,7 +333,7 @@ function commOverallStatus(comm, globalMonths, globalMaxPerYear) {
 
 // ─── Phase checks table ───────────────────────────────────────────────────────
 
-function PhaseChecksTable({ comm, globalMonths }) {
+function PhaseChecksTable({ comm, globalMonths, onSaved }) {
   const hasEvents = comm.delivery_events.length > 0
   if (comm.phases.length === 0) {
     return <div style={{ fontSize: 12, color: '#9ca3af', padding: '12px 0' }}>No phases configured.</div>
@@ -240,6 +343,28 @@ function PhaseChecksTable({ comm, globalMonths }) {
     padding: '5px 8px', fontSize: 11, fontWeight: 600, color: '#6b7280',
     background: '#f8fafc', borderBottom: '2px solid #e5e7eb',
     textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', top: 0,
+  }
+
+  async function saveSpecRate(phase, rawPct) {
+    const pct = parseFloat(rawPct)
+    if (isNaN(pct) || pct < 0 || pct > 100) throw new Error('Enter 0–100')
+    const res = await fetch(`${API_BASE}/instruments/${phase.instrument_id}/spec-rate`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec_rate: pct / 100 }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    onSaved()
+  }
+
+  async function saveTier(phase, rawTier) {
+    const tier = parseInt(rawTier, 10)
+    if (isNaN(tier)) throw new Error('Invalid tier')
+    const res = await fetch(`${API_BASE}/admin/phase/${phase.phase_id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delivery_tier: tier }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    onSaved()
   }
 
   return (
@@ -269,20 +394,44 @@ function PhaseChecksTable({ comm, globalMonths }) {
                 <td style={td({ textAlign: 'right', color: phase.real_pre_lots > 0 ? '#1e40af' : '#d1d5db' })}>
                   {phase.real_pre_lots > 0 ? phase.real_pre_lots : '—'}
                 </td>
+                {/* Product splits — nav button when no splits */}
                 <td style={td({ borderLeft: '2px solid #f1f5f9' })}>
-                  <Chip status={prod.status} label={prod.label} title={prod.detail} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <Chip status={prod.status} label={prod.label} title={prod.detail} />
+                    {prod.status === S.WARN && (
+                      <GoToConfigBtn tab="phase" entGroupId={comm.ent_group_id} label="→ Config" />
+                    )}
+                  </span>
                 </td>
+                {/* Builder splits — nav button when warn/fail */}
                 <td style={td()}>
-                  <Chip status={bld.status} label={bld.label} title={bld.detail} />
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <Chip status={bld.status} label={bld.label} title={bld.detail} />
+                    {(bld.status === S.WARN || bld.status === S.FAIL) && (
+                      <GoToConfigBtn tab="instrument" entGroupId={comm.ent_group_id} label="→ Config" />
+                    )}
+                  </span>
                 </td>
                 <td style={td()}>
                   <Chip status={del.status} label={del.label} title={del.detail} />
                 </td>
+                {/* Spec rate — editable inline */}
                 <td style={td({ borderLeft: '2px solid #f1f5f9' })}>
-                  <Chip status={spec.status} label={spec.label} title={spec.detail} />
+                  <EditableChip
+                    status={spec.status} label={spec.label} title={spec.detail}
+                    editType="percent"
+                    current={spec.status === S.PASS ? (phase.spec_rate * 100).toFixed(0) : null}
+                    onSave={spec.status !== S.SKIP ? v => saveSpecRate(phase, v) : null}
+                  />
                 </td>
+                {/* Delivery tier — editable inline */}
                 <td style={td()}>
-                  <Chip status={tier.status} label={tier.label} title={tier.detail} />
+                  <EditableChip
+                    status={tier.status} label={tier.label} title={tier.detail}
+                    editType="tier"
+                    current={phase.delivery_tier}
+                    onSave={tier.status !== S.SKIP ? v => saveTier(phase, v) : null}
+                  />
                 </td>
               </tr>
             )
@@ -295,7 +444,7 @@ function PhaseChecksTable({ comm, globalMonths }) {
 
 // ─── Development checks table ─────────────────────────────────────────────────
 
-function DevChecksTable({ comm }) {
+function DevChecksTable({ comm, onSaved }) {
   const devs = comm.developments || []
   if (devs.length === 0) return null
 
@@ -303,6 +452,17 @@ function DevChecksTable({ comm }) {
     padding: '5px 8px', fontSize: 11, fontWeight: 600, color: '#6b7280',
     background: '#f8fafc', borderBottom: '2px solid #e5e7eb',
     textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', top: 0,
+  }
+
+  async function saveStartsTarget(dev, rawVal) {
+    const n = parseInt(rawVal, 10)
+    if (isNaN(n) || n < 1) throw new Error('Must be ≥ 1')
+    const res = await fetch(`${API_BASE}/developments/${dev.dev_id}/sim-params`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ annual_starts_target: n }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    onSaved()
   }
 
   return (
@@ -323,7 +483,12 @@ function DevChecksTable({ comm }) {
               <tr key={dev.dev_id}>
                 <td style={td({ fontWeight: 500, color: '#1e293b' })}>{dev.dev_name}</td>
                 <td style={td({ borderLeft: '2px solid #f1f5f9' })}>
-                  <Chip status={startsTarget.status} label={startsTarget.label} title={startsTarget.detail} />
+                  <EditableChip
+                    status={startsTarget.status} label={startsTarget.label} title={startsTarget.detail}
+                    editType="number"
+                    current={dev.annual_starts_target}
+                    onSave={startsTarget.status !== S.SKIP ? v => saveStartsTarget(dev, v) : null}
+                  />
                 </td>
               </tr>
             )
@@ -446,7 +611,7 @@ function DeliveryConfigStrip({ comm, globalMonths, globalMaxPerYear }) {
 
 // ─── Community detail panel ───────────────────────────────────────────────────
 
-function CommDetail({ comm, globalMonths, globalMaxPerYear }) {
+function CommDetail({ comm, globalMonths, globalMaxPerYear, onSaved }) {
   const effMonths    = effectiveMonths(comm, globalMonths)
   const maxPerYear   = comm.max_deliveries_per_year ?? globalMaxPerYear
   const hasEvents    = comm.delivery_events.length > 0
@@ -483,10 +648,10 @@ function CommDetail({ comm, globalMonths, globalMaxPerYear }) {
       <DeliveryConfigStrip comm={comm} globalMonths={globalMonths} globalMaxPerYear={globalMaxPerYear} />
 
       {sectionHead(`Developments (${(comm.developments || []).length})`)}
-      <DevChecksTable comm={comm} />
+      <DevChecksTable comm={comm} onSaved={onSaved} />
 
       {sectionHead(`Phases (${comm.phases.length})`)}
-      <PhaseChecksTable comm={comm} globalMonths={globalMonths} />
+      <PhaseChecksTable comm={comm} globalMonths={globalMonths} onSaved={onSaved} />
 
       {sectionHead(`Delivery Events (${comm.delivery_events.length})`)}
       <DeliveryEventsTable comm={comm} globalMonths={globalMonths} globalMaxPerYear={globalMaxPerYear} />
@@ -500,9 +665,10 @@ export default function AuditView({ showTestCommunities }) {
   const [data,       setData]       = useState(null)
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState(null)
-  const [selected,   setSelected]   = useState(null)  // ent_group_id
+  const [selected,   setSelected]   = useState(null)
   const [search,     setSearch]     = useState('')
   const [filterFail, setFilterFail] = useState(false)
+  const [reloadKey,  setReloadKey]  = useState(0)
 
   useEffect(() => {
     setLoading(true)
@@ -510,7 +676,9 @@ export default function AuditView({ showTestCommunities }) {
       .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
       .then(d => { setData(d); setLoading(false) })
       .catch(e => { setError(String(e)); setLoading(false) })
-  }, [])
+  }, [reloadKey])
+
+  const reload = () => setReloadKey(k => k + 1)
 
   const communities = useMemo(() => {
     if (!data) return []
@@ -558,7 +726,6 @@ export default function AuditView({ showTestCommunities }) {
         width: 260, flexShrink: 0, borderRight: '1px solid #e5e7eb',
         display: 'flex', flexDirection: 'column', background: '#fafafa',
       }}>
-        {/* Header */}
         <div style={{ padding: '12px 12px 8px', borderBottom: '1px solid #e5e7eb' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>Config Audit</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -583,7 +750,6 @@ export default function AuditView({ showTestCommunities }) {
           </label>
         </div>
 
-        {/* Community list */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {visibleComms.length === 0 && (
             <div style={{ padding: 16, fontSize: 11, color: '#9ca3af', textAlign: 'center' }}>No matches.</div>
@@ -625,6 +791,7 @@ export default function AuditView({ showTestCommunities }) {
               comm={selectedComm}
               globalMonths={data.global_months}
               globalMaxPerYear={data.global_max_per_year}
+              onSaved={reload}
             />
           </div>
         ) : (
@@ -668,8 +835,8 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
     let yearFail=0
     for (const ev of c.delivery_events) {
       const ch = checkDeliveryEvent(ev, effMonths, datesPerYear, maxPerYear)
-      if (ch.month.status===S.FAIL)  monthFail++;   else if (ch.month.status===S.WARN)   monthWarn++
-      if (ch.phases.status===S.FAIL) evPhaseFail++; else if (ch.phases.status===S.WARN)  evPhaseWarn++
+      if (ch.month.status===S.FAIL)     monthFail++;   else if (ch.month.status===S.WARN)   monthWarn++
+      if (ch.phases.status===S.FAIL)    evPhaseFail++; else if (ch.phases.status===S.WARN)  evPhaseWarn++
       if (ch.yearLimit.status===S.FAIL) yearFail++
     }
 
@@ -695,8 +862,6 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-
-      {/* ── Locked title ── */}
       <div style={{ flexShrink: 0, padding: '16px 20px 0', background: '#fff' }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', marginBottom: 4 }}>
           All Communities — Config Overview
@@ -706,7 +871,6 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
         </div>
       </div>
 
-      {/* ── Scrollable table ── */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', padding: '0 20px 16px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
@@ -742,7 +906,7 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
                          stFail, stWarn }, i) => {
               const col = STATUS_COLOR[overall]
               const bg  = i % 2 === 0 ? '#fff' : '#fafafa'
-              const td  = (extra={}) => ({ padding: '6px 10px', background: bg, borderTop: '1px solid #f3f4f6', verticalAlign: 'middle', ...extra })
+              const tdS = (extra={}) => ({ padding: '6px 10px', background: bg, borderTop: '1px solid #f3f4f6', verticalAlign: 'middle', ...extra })
 
               function mini(fail, warn, count) {
                 if (count === 0) return <span style={{ color: '#d1d5db', fontSize: 10 }}>—</span>
@@ -756,38 +920,38 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
                     onClick={() => onSelect(c.ent_group_id)}
                     style={{ cursor: 'pointer' }}
                     onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
-                    onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach(td => td.style.background = '') }}
+                    onMouseLeave={e => { e.currentTarget.querySelectorAll('td').forEach(t => t.style.background = '') }}
                 >
-                  <td style={td({ textAlign: 'center', paddingRight: 4 })}>
+                  <td style={tdS({ textAlign: 'center', paddingRight: 4 })}>
                     <span style={{ width: 8, height: 8, borderRadius: '50%', background: col.dot, display: 'inline-block' }} />
                   </td>
-                  <td style={td({ fontWeight: 500, color: '#1e293b' })}>{c.ent_group_name}</td>
-                  <td style={td({ textAlign: 'center', color: '#6b7280' })}>{c.phases.length}</td>
-                  <td style={td({ textAlign: 'center', borderLeft: '2px solid #f1f5f9' })}>
+                  <td style={tdS({ fontWeight: 500, color: '#1e293b' })}>{c.ent_group_name}</td>
+                  <td style={tdS({ textAlign: 'center', color: '#6b7280' })}>{c.phases.length}</td>
+                  <td style={tdS({ textAlign: 'center', borderLeft: '2px solid #f1f5f9' })}>
                     {mini(prodFail, prodWarn, c.phases.length)}
                   </td>
-                  <td style={td({ textAlign: 'center' })}>
+                  <td style={tdS({ textAlign: 'center' })}>
                     {mini(bldFail, bldWarn, c.phases.length)}
                   </td>
-                  <td style={td({ textAlign: 'center' })}>
+                  <td style={tdS({ textAlign: 'center' })}>
                     {mini(delFail, delWarn, c.phases.length)}
                   </td>
-                  <td style={td({ textAlign: 'center' })}>
+                  <td style={tdS({ textAlign: 'center' })}>
                     {mini(specFail, specWarn, c.phases.length)}
                   </td>
-                  <td style={td({ textAlign: 'center' })}>
+                  <td style={tdS({ textAlign: 'center' })}>
                     {mini(tierFail, tierWarn, c.phases.length)}
                   </td>
-                  <td style={td({ textAlign: 'center', borderLeft: '2px solid #f1f5f9' })}>
+                  <td style={tdS({ textAlign: 'center', borderLeft: '2px solid #f1f5f9' })}>
                     {mini(monthFail, monthWarn, c.delivery_events.length)}
                   </td>
-                  <td style={td({ textAlign: 'center' })}>
+                  <td style={tdS({ textAlign: 'center' })}>
                     {mini(yearFail, 0, c.delivery_events.length)}
                   </td>
-                  <td style={td({ textAlign: 'center' })}>
+                  <td style={tdS({ textAlign: 'center' })}>
                     {mini(evPhaseFail, evPhaseWarn, c.delivery_events.length)}
                   </td>
-                  <td style={td({ textAlign: 'center', borderLeft: '2px solid #f1f5f9' })}>
+                  <td style={tdS({ textAlign: 'center', borderLeft: '2px solid #f1f5f9' })}>
                     {mini(stFail, stWarn, (c.developments || []).length)}
                   </td>
                 </tr>
