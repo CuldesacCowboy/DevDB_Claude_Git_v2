@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { EditableCell, cellHighlight } from '../EditableCell'
 import { MonthCell, TableShell, BAND } from './configShared'
-import { API_BASE } from '../../utils/api'
+import { API_BASE } from '../../config'
 
 // Column metadata: index → { editable, kind, autoOpen }
 const COMM_COLS = [
