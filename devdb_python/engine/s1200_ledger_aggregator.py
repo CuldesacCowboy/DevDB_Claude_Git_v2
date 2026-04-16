@@ -26,8 +26,15 @@ def ledger_aggregator(conn: DBConnection) -> None:
     v_sim_ledger_monthly: COUNT-based aggregation per dev_id, builder_id, and calendar month.
     Read-only -- does not modify any table.
     """
+    # Drop both views in dependency order before recreating.
+    # month_spine must be dropped with CASCADE because v_sim_ledger_monthly depends on it.
+    # CREATE OR REPLACE VIEW fails when the existing view has a type or column mismatch
+    # with the replacement definition (PostgreSQL error: "cannot drop columns from view").
+    conn.execute("DROP VIEW IF EXISTS v_sim_ledger_monthly")
+    conn.execute("DROP VIEW IF EXISTS month_spine CASCADE")
+
     conn.execute("""
-        CREATE OR REPLACE VIEW month_spine AS
+        CREATE VIEW month_spine AS
         WITH lot_floor AS (
             SELECT GREATEST(
                 '2020-01-01'::DATE,
@@ -56,8 +63,6 @@ def ledger_aggregator(conn: DBConnection) -> None:
         )::DATE AS calendar_month
         FROM bounds
     """)
-
-    conn.execute("DROP VIEW IF EXISTS v_sim_ledger_monthly")
 
     conn.execute("""
         CREATE VIEW v_sim_ledger_monthly AS

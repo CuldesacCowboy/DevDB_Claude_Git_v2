@@ -492,6 +492,92 @@ export function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettin
   )
 }
 
+// ─── LocationSection ─────────────────────────────────────────────────────────
+
+export function LocationSection({ entGroupId, onSaved, disabled }) {
+  const [counties, setCounties] = useState([])
+  const [schoolDistricts, setSchoolDistricts] = useState([])
+  const [countyId, setCountyId] = useState(undefined)   // undefined = not loaded
+  const [sdId, setSdId]         = useState(undefined)
+  const [saving, setSaving]     = useState(false)
+  const [err, setErr]           = useState(null)
+
+  useEffect(() => {
+    if (!entGroupId) return
+    Promise.all([
+      fetch(`${API_BASE}/ref/counties`).then(r => r.json()),
+      fetch(`${API_BASE}/admin/community-config/${entGroupId}`).then(r => r.json()),
+    ]).then(([cList, cfg]) => {
+      setCounties(cList)
+      setCountyId(cfg.county_id ?? null)
+      setSdId(cfg.school_district_id ?? null)
+    }).catch(() => { setCountyId(null); setSdId(null) })
+  }, [entGroupId])
+
+  useEffect(() => {
+    if (countyId === undefined) return
+    const url = countyId
+      ? `${API_BASE}/ref/school-districts?county_id=${countyId}`
+      : `${API_BASE}/ref/school-districts`
+    fetch(url).then(r => r.json()).then(setSchoolDistricts).catch(() => {})
+  }, [countyId])
+
+  async function patch(body) {
+    setSaving(true); setErr(null)
+    try {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      onSaved()
+    } catch (e) { setErr(String(e)) }
+    finally { setSaving(false) }
+  }
+
+  const isLocked = disabled || saving
+  if (countyId === undefined) return <div style={{ fontSize: 12, color: '#9ca3af' }}>Loading…</div>
+
+  const selStyle = {
+    padding: '3px 7px', fontSize: 12, borderRadius: 4,
+    border: '1px solid #d1d5db',
+    background: isLocked ? '#f3f4f6' : '#fff', minWidth: 200,
+  }
+  const rowStyle = { display: 'flex', alignItems: 'center', gap: 10 }
+  const labelStyle = { fontSize: 12, color: '#374151', minWidth: 160 }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={rowStyle}>
+        <span style={labelStyle}>County</span>
+        <select value={countyId ?? ''} disabled={isLocked} style={selStyle}
+          onChange={e => {
+            const v = e.target.value === '' ? null : Number(e.target.value)
+            setCountyId(v); setSdId(null)
+            patch({ county_id: v })
+          }}>
+          <option value="">— not set —</option>
+          {counties.map(c => <option key={c.county_id} value={c.county_id}>{c.county_name}</option>)}
+        </select>
+      </div>
+      <div style={rowStyle}>
+        <span style={labelStyle}>School district</span>
+        <select value={sdId ?? ''} disabled={isLocked} style={selStyle}
+          onChange={e => {
+            const v = e.target.value === '' ? null : Number(e.target.value)
+            setSdId(v)
+            patch({ school_district_id: v })
+          }}>
+          <option value="">— not set —</option>
+          {schoolDistricts.map(d => <option key={d.sd_id} value={d.sd_id}>{d.district_name}</option>)}
+        </select>
+      </div>
+      {saving && <span style={{ fontSize: 11, color: '#9ca3af' }}>Saving…</span>}
+      {err    && <span style={{ fontSize: 11, color: '#dc2626' }}>{err}</span>}
+    </div>
+  )
+}
+
 // ─── StartsTargetsSection ─────────────────────────────────────────────────────
 
 export function StartsTargetsSection({ entGroupId, params, onSaved, disabled }) {

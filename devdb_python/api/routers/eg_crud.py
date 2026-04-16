@@ -3,6 +3,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 
 from api.deps import get_db_conn
 from api.db import dict_cursor
@@ -13,7 +14,9 @@ class EntGroupCreateRequest(BaseModel):
 
 
 class EntGroupPatchRequest(BaseModel):
-    ent_group_name: str
+    ent_group_name:     Optional[str] = None
+    county_id:          Optional[int] = None
+    school_district_id: Optional[int] = None
 
 
 router = APIRouter(prefix="/entitlement-groups", tags=["entitlement-groups"])
@@ -156,20 +159,44 @@ def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
 
 @router.patch("/{ent_group_id}", response_model=dict)
 def patch_entitlement_group(ent_group_id: int, body: EntGroupPatchRequest, conn=Depends(get_db_conn)):
-    name = (body.ent_group_name or "").strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="ent_group_name cannot be empty")
+    provided = body.model_fields_set
+    if not provided:
+        return {"ent_group_id": ent_group_id}
+
+    clauses, params = [], []
+    if "ent_group_name" in provided:
+        name = (body.ent_group_name or "").strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="ent_group_name cannot be empty")
+        clauses.append("ent_group_name = %s")
+        params.append(name)
+    if "county_id" in provided:
+        clauses.append("county_id = %s")
+        params.append(body.county_id)
+    if "school_district_id" in provided:
+        clauses.append("school_district_id = %s")
+        params.append(body.school_district_id)
+
+    params.append(ent_group_id)
     cur = dict_cursor(conn)
     try:
         cur.execute(
-            "UPDATE sim_entitlement_groups SET ent_group_name = %s WHERE ent_group_id = %s",
-            (name, ent_group_id),
+            f"UPDATE sim_entitlement_groups SET {', '.join(clauses)} "
+            f"WHERE ent_group_id = %s "
+            f"RETURNING ent_group_id, ent_group_name, county_id, school_district_id",
+            params,
         )
-        if cur.rowcount == 0:
+        row = cur.fetchone()
+        if not row:
             conn.rollback()
             raise HTTPException(status_code=404, detail=f"Entitlement group {ent_group_id} not found.")
         conn.commit()
-        return {"ent_group_id": ent_group_id, "ent_group_name": name}
+        return {
+            "ent_group_id":        row["ent_group_id"],
+            "ent_group_name":      row["ent_group_name"],
+            "county_id":           row["county_id"],
+            "school_district_id":  row["school_district_id"],
+        }
     except HTTPException:
         raise
     except Exception:

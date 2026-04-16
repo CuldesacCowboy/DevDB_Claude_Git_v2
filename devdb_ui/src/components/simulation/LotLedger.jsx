@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { API_BASE } from '../../config'
 import { StatusBadge } from '../../utils/statusConfig'
 import OverrideDateCell from '../overrides/OverrideDateCell'
 import { thS, tdS, fmt, exportToCsv } from './simShared'
@@ -23,10 +24,38 @@ const VIOLATION_LABELS = {
   cmp_after_cls: 'Completed after closed — completion date is later than the closing date',
 }
 
-export function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
+export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onRefreshLots }) {
   const [devFilter,  setDevFilter]  = useState('all')
   const [srcFilter,  setSrcFilter]  = useState('all')
   const [specFilter, setSpecFilter] = useState('all')
+  const [sdEditing,  setSdEditing]  = useState(null)    // lot_id being edited
+  const [sdOptions,  setSdOptions]  = useState([])      // loaded when edit opens
+  const [sdSaving,   setSdSaving]   = useState(false)
+  const sdSelectRef = useRef(null)
+
+  async function openSdEdit(lot) {
+    if (sdEditing === lot.lot_id) { setSdEditing(null); return }
+    const countyId = lot.resolved_county_id
+    const url = countyId
+      ? `${API_BASE}/ref/school-districts?county_id=${countyId}`
+      : `${API_BASE}/ref/school-districts`
+    fetch(url).then(r => r.json()).then(opts => {
+      setSdOptions(opts)
+      setSdEditing(lot.lot_id)
+    }).catch(() => {})
+  }
+
+  async function saveSd(lotId, sdId) {
+    setSdSaving(true)
+    try {
+      await fetch(`${API_BASE}/admin/lot/${lotId}/school-district`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ school_district_id: sdId }),
+      })
+      setSdEditing(null)
+      onRefreshLots?.()
+    } finally { setSdSaving(false) }
+  }
 
   if (loading) return <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>
   if (!lots.length) return <div style={{ color: '#9ca3af', fontSize: 12 }}>No lots. Run a simulation first.</div>
@@ -138,6 +167,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>DIG</th>
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>CMP</th>
               <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>CLS</th>
+              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>SD</th>
             </tr>
           </thead>
           <tbody>
@@ -228,6 +258,31 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride }) {
                       disabled={!overrideable(l)} />
                     <VDot field="date_cls" />
                   </span>
+                </td>
+                <td style={tdS('left')}>
+                  {sdEditing === l.lot_id ? (
+                    <select ref={sdSelectRef} autoFocus
+                      defaultValue={l.resolved_sd_id ?? ''}
+                      disabled={sdSaving}
+                      onChange={e => saveSd(l.lot_id, e.target.value ? Number(e.target.value) : null)}
+                      onBlur={() => setSdEditing(null)}
+                      style={{ fontSize: 11, padding: '1px 3px', borderRadius: 3,
+                               border: '1px solid #2563eb', maxWidth: 140 }}>
+                      <option value="">— clear —</option>
+                      {sdOptions.map(d => <option key={d.sd_id} value={d.sd_id}>{d.district_name}</option>)}
+                    </select>
+                  ) : (
+                    <span
+                      onClick={() => openSdEdit(l)}
+                      title={l.sd_is_lot_exception ? 'Lot-level SD override (click to edit)' : 'Inherited (click to set exception)'}
+                      style={{
+                        fontSize: 11, cursor: 'pointer',
+                        color: l.sd_is_lot_exception ? '#92400e' : '#9ca3af',
+                        borderBottom: l.sd_is_lot_exception ? '1px dashed #d97706' : '1px dashed transparent',
+                      }}>
+                      {l.resolved_sd_name ?? '—'}
+                    </span>
+                  )}
                 </td>
               </tr>
             )})}

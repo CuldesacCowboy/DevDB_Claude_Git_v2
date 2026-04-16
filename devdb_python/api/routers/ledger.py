@@ -144,18 +144,26 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 o.ov_date_frm,
                 o.ov_date_cmp,
                 o.ov_date_cls,
-                v.violation_types
+                v.violation_types,
+                COALESCE(sdp.county_id, eg.county_id)                                              AS resolved_county_id,
+                COALESCE(ph_c.county_name, comm_c.county_name)                                     AS resolved_county_name,
+                COALESCE(sl.school_district_id, sdp.school_district_id, eg.school_district_id)    AS resolved_sd_id,
+                COALESCE(lot_sd.district_name, ph_sd.district_name, comm_sd.district_name)        AS resolved_sd_name,
+                (sl.school_district_id IS NOT NULL)                                                AS sd_is_lot_exception
             FROM sim_lots sl
             JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
             JOIN developments d ON d.dev_id = sl.dev_id
+            JOIN sim_ent_group_developments segd ON segd.dev_id = sl.dev_id AND segd.ent_group_id = %s
+            JOIN sim_entitlement_groups eg ON eg.ent_group_id = segd.ent_group_id
             LEFT JOIN ref_lot_types rlt ON rlt.lot_type_id = sl.lot_type_id
             LEFT JOIN overrides o ON o.lot_id = sl.lot_id
             LEFT JOIN violations v ON v.lot_id = sl.lot_id
-            WHERE sl.dev_id IN (
-                SELECT dev_id FROM sim_ent_group_developments
-                WHERE ent_group_id = %s
-            )
-              AND sl.excluded IS NOT TRUE
+            LEFT JOIN devdb.ref_counties comm_c  ON comm_c.county_id  = eg.county_id
+            LEFT JOIN devdb.ref_counties ph_c    ON ph_c.county_id    = sdp.county_id
+            LEFT JOIN devdb.ref_school_districts comm_sd ON comm_sd.sd_id = eg.school_district_id
+            LEFT JOIN devdb.ref_school_districts ph_sd   ON ph_sd.sd_id   = sdp.school_district_id
+            LEFT JOIN devdb.ref_school_districts lot_sd  ON lot_sd.sd_id  = sl.school_district_id
+            WHERE sl.excluded IS NOT TRUE
             ORDER BY d.dev_name, sdp.sequence_number, sl.lot_source ASC,
                      sl.lot_number NULLS LAST, sl.building_group_id ASC NULLS LAST
             """,
@@ -195,6 +203,11 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 "ov_date_cmp":         _d(r["ov_date_cmp"]),
                 "ov_date_cls":         _d(r["ov_date_cls"]),
                 "violations":          list(r["violation_types"]) if r["violation_types"] else [],
+                "resolved_county_id":  r["resolved_county_id"],
+                "resolved_county_name": r["resolved_county_name"],
+                "resolved_sd_id":      r["resolved_sd_id"],
+                "resolved_sd_name":    r["resolved_sd_name"],
+                "sd_is_lot_exception": bool(r["sd_is_lot_exception"]),
             }
             for r in cur.fetchall()
         ]

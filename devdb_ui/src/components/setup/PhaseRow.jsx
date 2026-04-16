@@ -359,6 +359,34 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
             </span>
           )}
         </div>
+        {/* County + SD read-only badges */}
+        {(() => {
+          const resolvedCounty = phase.phase_county_name ?? phase.community_county_name ?? null
+          const resolvedSd     = phase.phase_sd_name     ?? phase.community_sd_name     ?? null
+          if (!resolvedCounty && !resolvedSd) return null
+          const badgeStyle = (isOverride) => ({
+            fontSize: 9, borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap',
+            border: `1px solid ${isOverride ? '#fcd34d' : '#e5e7eb'}`,
+            background: isOverride ? '#fffbeb' : '#f3f4f6',
+            color: isOverride ? '#92400e' : '#9ca3af',
+          })
+          return (
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0, marginRight: 4 }}>
+              {resolvedCounty && (
+                <span style={badgeStyle(!!phase.phase_county_id)}
+                  title={phase.phase_county_id ? 'Phase county override' : 'Inherited from community'}>
+                  {resolvedCounty}{!phase.phase_county_id && ' ↗'}
+                </span>
+              )}
+              {resolvedSd && (
+                <span style={badgeStyle(!!phase.phase_sd_id)}
+                  title={phase.phase_sd_id ? 'Phase SD override' : 'Inherited from community'}>
+                  {resolvedSd}{!phase.phase_sd_id && ' ↗'}
+                </span>
+              )}
+            </div>
+          )
+        })()}
         {/* Type count — fixed column, always reserves space */}
         <div style={{ width: PHASE_COLS.types, flexShrink: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
           {!open && ltIds.length > 0 && (

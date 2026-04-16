@@ -10,7 +10,7 @@ import { DeliveryScheduleTab } from '../components/simulation/DeliveryScheduleTa
 import { LotLedger } from '../components/simulation/LotLedger'
 import {
   LedgerConfigSection, GlobalSettingsSection,
-  DeliveryConfigSection, StartsTargetsSection,
+  DeliveryConfigSection, StartsTargetsSection, LocationSection,
 } from '../components/simulation/SimSettings'
 import { buildLedgerRows, fmt } from '../components/simulation/simShared'
 
@@ -51,15 +51,30 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   } = useOverrides(entGroupId)
   const [deliverySchedule, setDeliverySchedule]               = useState([])
   const [deliveryScheduleLoading, setDeliveryScheduleLoading] = useState(false)
-  const [modalOpen, setModalOpen] = useState(false)
+  const [modalOpen, setModalOpen]           = useState(false)
   const [selectedDevIds, setSelectedDevIds] = useState(null)
+  const [countyFilter, setCountyFilter]     = useState(null)
+  const [sdFilter, setSdFilter]             = useState(null)
   const [period, setPeriod]                 = useState('monthly')
   const [loadError, setLoadError]           = useState(null)
   const [lastRunAt, setLastRunAt]           = useState(null)
 
+  const countyOptions = useMemo(() => [...new Map(
+    byDev.filter(r => r.community_county_id).map(r => [r.community_county_id, r.community_county_name])
+  ).entries()].map(([id, name]) => ({ id, name })), [byDev])
+
+  const sdOptions = useMemo(() => [...new Map(
+    byDev.filter(r => r.community_sd_id).map(r => [r.community_sd_id, r.community_sd_name])
+  ).entries()].map(([id, name]) => ({ id, name })), [byDev])
+
+  const filteredByDev = useMemo(() => byDev.filter(r =>
+    (!countyFilter || r.community_county_id === countyFilter) &&
+    (!sdFilter     || r.community_sd_id     === sdFilter)
+  ), [byDev, countyFilter, sdFilter])
+
   const devList = useMemo(
-    () => [...new Map(byDev.map(r => [r.dev_id, r.dev_name])).entries()].map(([id, name]) => ({ id, name })),
-    [byDev],
+    () => [...new Map(filteredByDev.map(r => [r.dev_id, r.dev_name])).entries()].map(([id, name]) => ({ id, name })),
+    [filteredByDev],
   )
 
 const loadLedger = useCallback((id) => {
@@ -138,6 +153,8 @@ const loadLedger = useCallback((id) => {
     loadLots(entGroupId)
     setRunErrors([])
     setSelectedDevIds(null)
+    setCountyFilter(null)
+    setSdFilter(null)
   }, [entGroupId, checkSplits, loadLedger, loadConfig, fetchOverrides, loadDeliverySchedule])
 
   async function handleRun() {
@@ -162,8 +179,8 @@ const loadLedger = useCallback((id) => {
   }
 
   const ledgerRows = useMemo(() => buildLedgerRows(
-    byDev, selectedDevIds, period, ledgerConfig?.date_paper ?? null, utilization,
-  ), [byDev, selectedDevIds, period, ledgerConfig, utilization])
+    filteredByDev, selectedDevIds, period, ledgerConfig?.date_paper ?? null, utilization,
+  ), [filteredByDev, selectedDevIds, period, ledgerConfig, utilization])
 
   const filteredUtilization = useMemo(() => {
     if (selectedDevIds === null) return utilization
@@ -395,6 +412,31 @@ const loadLedger = useCallback((id) => {
             <>
               {/* Controls row */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+
+                {/* County + SD filters */}
+                {countyOptions.length > 1 && (
+                  <select value={countyFilter ?? ''}
+                    onChange={e => { setCountyFilter(e.target.value ? Number(e.target.value) : null); setSdFilter(null) }}
+                    style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4,
+                             border: countyFilter ? '1px solid #2563eb' : '1px solid #d1d5db',
+                             background: countyFilter ? '#eff6ff' : '#fff',
+                             color: countyFilter ? '#1d4ed8' : '#374151' }}>
+                    <option value="">All counties</option>
+                    {countyOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                )}
+                {sdOptions.length > 1 && (
+                  <select value={sdFilter ?? ''}
+                    onChange={e => setSdFilter(e.target.value ? Number(e.target.value) : null)}
+                    style={{ fontSize: 11, padding: '3px 6px', borderRadius: 4,
+                             border: sdFilter ? '1px solid #2563eb' : '1px solid #d1d5db',
+                             background: sdFilter ? '#eff6ff' : '#fff',
+                             color: sdFilter ? '#1d4ed8' : '#374151' }}>
+                    <option value="">All school districts</option>
+                    {sdOptions.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                )}
+
                 {/* Dev filter pills */}
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: '#9ca3af', marginRight: 2 }}>Dev</span>
@@ -490,6 +532,7 @@ const loadLedger = useCallback((id) => {
             await clearOverride(lotId, dateField)
             loadLots(entGroupId)
           }}
+          onRefreshLots={() => loadLots(entGroupId)}
         />
       )}
 
@@ -622,6 +665,17 @@ const loadLedger = useCallback((id) => {
                   deliveryConfig={deliveryConfig}
                   globalSettings={globalSettings}
                   onSaved={() => loadConfig(entGroupId)}
+                  disabled={isRunning}
+                />
+              </div>
+            )}
+
+            {entGroupId && (
+              <div style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid #e5e7eb' }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 10 }}>Location</div>
+                <LocationSection
+                  entGroupId={entGroupId}
+                  onSaved={() => loadLedger(entGroupId)}
                   disabled={isRunning}
                 />
               </div>

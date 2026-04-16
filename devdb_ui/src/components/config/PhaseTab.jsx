@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { API_BASE } from '../../config'
 import BulkLotInsertModal from '../BulkLotInsertModal'
 import { EditableCell } from '../EditableCell'
 import { TableShell, LockButton, bandIdx, BAND, CW, LEFT, PHASE_SHADOW } from './configShared'
@@ -8,6 +9,15 @@ export function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit
   const [filterDev,     setFilterDev]     = useState(null)
   const [showSplits,    setShowSplits]    = useState(true)
   const [bulkInsertPhase, setBulkInsertPhase] = useState(null)
+  const [counties,      setCounties]      = useState([])
+  const [allSDs,        setAllSDs]        = useState([])
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`${API_BASE}/ref/counties`).then(r => r.json()),
+      fetch(`${API_BASE}/ref/school-districts`).then(r => r.json()),
+    ]).then(([cs, sds]) => { setCounties(cs); setAllSDs(sds) }).catch(() => {})
+  }, [])
 
   const allRows  = phaseData?.rows ?? []
   const testRows = allRows.filter(r => showTest ? r.is_test : !r.is_test)
@@ -128,6 +138,8 @@ export function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit
             <th rowSpan={2} style={thR({  width: 44 })} title="Excluded lots">Excl</th>
             <th rowSpan={2} style={thGR({ width: 90 })}>Dev Date</th>
             <th rowSpan={2} style={thR({  width: 84 })}>Lock</th>
+            <th rowSpan={2} style={thR({  width: 110 })}>County</th>
+            <th rowSpan={2} style={thR({  width: 130 })}>School District</th>
             {showSplits && lotTypes.map((lt, i) => (
               <th key={lt.lot_type_id} rowSpan={2} style={{ ...thR({ width: 68 }),
                 ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }} title={lt.lot_type_name}>
@@ -227,6 +239,58 @@ export function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit
                 <td style={tdB({ textAlign: 'center' })}>
                   <LockButton locked={isLocked} disabled={!canLock}
                     onToggle={shouldLock => onToggleLock(row, shouldLock)} />
+                </td>
+                {/* County */}
+                <td style={tdB({ padding: '3px 4px' })}>
+                  {(() => {
+                    const hasOverride = row.phase_county_id != null
+                    return (
+                      <select
+                        value={row.phase_county_id ?? ''}
+                        onChange={async e => {
+                          const v = e.target.value === '' ? null : Number(e.target.value)
+                          try { await onPatchPhase(row.phase_id, 'county_id', v) } catch {}
+                        }}
+                        style={{
+                          fontSize: 11, padding: '1px 3px', borderRadius: 3, width: '100%',
+                          border: hasOverride ? '1px solid #fcd34d' : '1px solid #e5e7eb',
+                          background: hasOverride ? '#fffbeb' : '#fafafa',
+                          color: hasOverride ? '#92400e' : '#9ca3af',
+                        }}>
+                        <option value="">
+                          {row.community_county_name ? `${row.community_county_name} ↗` : '—'}
+                        </option>
+                        {counties.map(c => <option key={c.county_id} value={c.county_id}>{c.county_name}</option>)}
+                      </select>
+                    )
+                  })()}
+                </td>
+                {/* School District */}
+                <td style={tdB({ padding: '3px 4px' })}>
+                  {(() => {
+                    const resolvedCountyId = row.phase_county_id ?? row.community_county_id
+                    const sdOpts = allSDs.filter(sd => !sd.county_id || sd.county_id === resolvedCountyId)
+                    const hasOverride = row.phase_sd_id != null
+                    return (
+                      <select
+                        value={row.phase_sd_id ?? ''}
+                        onChange={async e => {
+                          const v = e.target.value === '' ? null : Number(e.target.value)
+                          try { await onPatchPhase(row.phase_id, 'school_district_id', v) } catch {}
+                        }}
+                        style={{
+                          fontSize: 11, padding: '1px 3px', borderRadius: 3, width: '100%',
+                          border: hasOverride ? '1px solid #fcd34d' : '1px solid #e5e7eb',
+                          background: hasOverride ? '#fffbeb' : '#fafafa',
+                          color: hasOverride ? '#92400e' : '#9ca3af',
+                        }}>
+                        <option value="">
+                          {row.community_sd_name ? `${row.community_sd_name} ↗` : '—'}
+                        </option>
+                        {sdOpts.map(d => <option key={d.sd_id} value={d.sd_id}>{d.district_name}</option>)}
+                      </select>
+                    )
+                  })()}
                 </td>
                 {showSplits && lotTypes.map((lt, idx) => {
                   const projVal  = ps[lt.lot_type_id] ?? null

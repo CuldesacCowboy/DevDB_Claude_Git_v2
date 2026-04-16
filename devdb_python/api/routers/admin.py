@@ -43,6 +43,10 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 seg.ent_group_id,
                 seg.ent_group_name,
                 seg.is_test,
+                seg.county_id           AS community_county_id,
+                seg.school_district_id  AS community_sd_id,
+                comm_c.county_name      AS community_county_name,
+                comm_sd.district_name   AS community_sd_name,
                 segd.dev_id,
                 d.dev_name,
                 sli.instrument_id,
@@ -55,12 +59,20 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 sdp.date_dev_projected,
                 sdp.date_dev_actual,
                 sdp.delivery_tier,
-                sdp.updated_at
+                sdp.updated_at,
+                sdp.county_id           AS phase_county_id,
+                sdp.school_district_id  AS phase_sd_id,
+                ph_c.county_name        AS phase_county_name,
+                ph_sd.district_name     AS phase_sd_name
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
             JOIN developments d                  ON d.dev_id = segd.dev_id
             JOIN sim_legal_instruments sli       ON sli.dev_id = d.dev_id
             JOIN sim_dev_phases sdp              ON sdp.instrument_id = sli.instrument_id
+            LEFT JOIN devdb.ref_counties comm_c     ON comm_c.county_id = seg.county_id
+            LEFT JOIN devdb.ref_school_districts comm_sd ON comm_sd.sd_id = seg.school_district_id
+            LEFT JOIN devdb.ref_counties ph_c       ON ph_c.county_id = sdp.county_id
+            LEFT JOIN devdb.ref_school_districts ph_sd   ON ph_sd.sd_id = sdp.school_district_id
             ORDER BY seg.ent_group_name, d.dev_name, sli.instrument_name, sdp.sequence_number
         """)
         phases = cur.fetchall()
@@ -199,23 +211,31 @@ def get_phase_config(conn=Depends(get_db_conn)):
             pid = p['phase_id']
             lc  = lot_count_map.get(pid, {})
             rows.append({
-                'ent_group_id':        p['ent_group_id'],
-                'ent_group_name':      p['ent_group_name'],
-                'is_test':             p['is_test'],
-                'dev_id':              p['dev_id'],
-                'dev_name':            p['dev_name'],
-                'instrument_id':       p['instrument_id'],
-                'instrument_name':     p['instrument_name'],
-                'spec_rate':           float(p['spec_rate']) if p['spec_rate'] is not None else None,
-                'phase_id':            pid,
-                'phase_name':          p['phase_name'],
-                'sequence_number':     p['sequence_number'],
-                'lot_count_projected': p['lot_count_projected'],
-                'date_dev_projected':  p['date_dev_projected'].isoformat() if p['date_dev_projected'] else None,
-                'date_dev_actual':     p['date_dev_actual'].isoformat()    if p['date_dev_actual']    else None,
-                'delivery_tier':       p['delivery_tier'],
-                'updated_at':          p['updated_at'].isoformat()         if p['updated_at']         else None,
-                'hint_date':           hint_map.get(pid),
+                'ent_group_id':           p['ent_group_id'],
+                'ent_group_name':         p['ent_group_name'],
+                'is_test':                p['is_test'],
+                'community_county_id':    p['community_county_id'],
+                'community_county_name':  p['community_county_name'],
+                'community_sd_id':        p['community_sd_id'],
+                'community_sd_name':      p['community_sd_name'],
+                'dev_id':                 p['dev_id'],
+                'dev_name':               p['dev_name'],
+                'instrument_id':          p['instrument_id'],
+                'instrument_name':        p['instrument_name'],
+                'spec_rate':              float(p['spec_rate']) if p['spec_rate'] is not None else None,
+                'phase_id':               pid,
+                'phase_name':             p['phase_name'],
+                'sequence_number':        p['sequence_number'],
+                'lot_count_projected':    p['lot_count_projected'],
+                'date_dev_projected':     p['date_dev_projected'].isoformat() if p['date_dev_projected'] else None,
+                'date_dev_actual':        p['date_dev_actual'].isoformat()    if p['date_dev_actual']    else None,
+                'delivery_tier':          p['delivery_tier'],
+                'updated_at':             p['updated_at'].isoformat()         if p['updated_at']         else None,
+                'hint_date':              hint_map.get(pid),
+                'phase_county_id':        p['phase_county_id'],
+                'phase_county_name':      p['phase_county_name'],
+                'phase_sd_id':            p['phase_sd_id'],
+                'phase_sd_name':          p['phase_sd_name'],
                 'lot_type_counts':        lc,
                 'product_splits':         prod_map.get(pid, {}),
                 'builder_splits':         bldr_map.get(p['instrument_id'], {}),
@@ -234,6 +254,8 @@ class PhasePatchRequest(BaseModel):
     date_dev_projected:  Optional[str] = None
     date_dev_actual:     Optional[str] = None
     delivery_tier:       Optional[int] = None
+    county_id:           Optional[int] = None
+    school_district_id:  Optional[int] = None
 
 
 @router.patch("/phase/{phase_id}")
@@ -257,6 +279,12 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
     if 'delivery_tier' in provided:
         clauses.append("delivery_tier = %s")
         params.append(body.delivery_tier)
+    if 'county_id' in provided:
+        clauses.append("county_id = %s")
+        params.append(body.county_id)
+    if 'school_district_id' in provided:
+        clauses.append("school_district_id = %s")
+        params.append(body.school_district_id)
 
     params.append(phase_id)
     cur = dict_cursor(conn)
@@ -264,7 +292,8 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
         cur.execute(
             f"UPDATE sim_dev_phases SET {', '.join(clauses)} "
             f"WHERE phase_id = %s "
-            f"RETURNING phase_id, lot_count_projected, date_dev_projected, date_dev_actual, delivery_tier",
+            f"RETURNING phase_id, lot_count_projected, date_dev_projected, date_dev_actual, "
+            f"          delivery_tier, county_id, school_district_id",
             params,
         )
         row = cur.fetchone()
@@ -277,6 +306,8 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
             'date_dev_projected':  row['date_dev_projected'].isoformat() if row['date_dev_projected'] else None,
             'date_dev_actual':     row['date_dev_actual'].isoformat()    if row['date_dev_actual']    else None,
             'delivery_tier':       row['delivery_tier'],
+            'county_id':           row['county_id'],
+            'school_district_id':  row['school_district_id'],
         }
     finally:
         cur.close()
@@ -344,6 +375,36 @@ def upsert_builder_split(
         cur.close()
 
 
+# ─── Lot school-district ruling exception ────────────────────────────────────
+
+class LotSdPatchRequest(BaseModel):
+    school_district_id: Optional[int] = None   # None = clear exception
+
+
+@router.patch("/lot/{lot_id}/school-district")
+def patch_lot_school_district(lot_id: int, body: LotSdPatchRequest, conn=Depends(get_db_conn)):
+    """Set or clear the lot-level school district ruling exception on sim_lots."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "UPDATE sim_lots SET school_district_id = %s WHERE lot_id = %s "
+            "RETURNING lot_id, school_district_id",
+            (body.school_district_id, lot_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found")
+        conn.commit()
+        return {"lot_id": row["lot_id"], "school_district_id": row["school_district_id"]}
+    except HTTPException:
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
 # ─── Community config tab ─────────────────────────────────────────────────────
 
 @router.get("/community-config")
@@ -355,12 +416,16 @@ def get_community_config(conn=Depends(get_db_conn)):
             SELECT
                 seg.ent_group_id, seg.ent_group_name, seg.is_test,
                 seg.date_paper, seg.date_ent_actual,
+                seg.county_id, c.county_name,
+                seg.school_district_id, sd.district_name AS sd_name,
                 edc.auto_schedule_enabled,
                 edc.delivery_months,
                 edc.max_deliveries_per_year
             FROM sim_entitlement_groups seg
             LEFT JOIN sim_entitlement_delivery_config edc
                    ON edc.ent_group_id = seg.ent_group_id
+            LEFT JOIN devdb.ref_counties c  ON c.county_id = seg.county_id
+            LEFT JOIN devdb.ref_school_districts sd ON sd.sd_id = seg.school_district_id
             ORDER BY seg.ent_group_name
         """)
         rows = []
@@ -371,6 +436,10 @@ def get_community_config(conn=Depends(get_db_conn)):
                 'is_test':                 r['is_test'],
                 'date_paper':              r['date_paper'].isoformat()      if r['date_paper']      else None,
                 'date_ent':                r['date_ent_actual'].isoformat() if r['date_ent_actual'] else None,
+                'county_id':               r['county_id'],
+                'county_name':             r['county_name'],
+                'school_district_id':      r['school_district_id'],
+                'sd_name':                 r['sd_name'],
                 'auto_schedule_enabled':   r['auto_schedule_enabled'],
                 'delivery_months':         list(r['delivery_months']) if r['delivery_months'] is not None else None,
                 'max_deliveries_per_year': r['max_deliveries_per_year'],
