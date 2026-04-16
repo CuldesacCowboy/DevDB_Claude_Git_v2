@@ -268,8 +268,7 @@ export function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit
                 {/* School District */}
                 <td style={tdB({ padding: '3px 4px' })}>
                   {(() => {
-                    const resolvedCountyId = row.phase_county_id ?? row.community_county_id
-                    const sdOpts = allSDs.filter(sd => !sd.county_id || sd.county_id === resolvedCountyId)
+                    const sdOpts = allSDs
                     const hasOverride = row.phase_sd_id != null
                     return (
                       <select

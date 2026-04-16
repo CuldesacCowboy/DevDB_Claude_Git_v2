@@ -515,12 +515,8 @@ export function LocationSection({ entGroupId, onSaved, disabled }) {
   }, [entGroupId])
 
   useEffect(() => {
-    if (countyId === undefined) return
-    const url = countyId
-      ? `${API_BASE}/ref/school-districts?county_id=${countyId}`
-      : `${API_BASE}/ref/school-districts`
-    fetch(url).then(r => r.json()).then(setSchoolDistricts).catch(() => {})
-  }, [countyId])
+    fetch(`${API_BASE}/ref/school-districts`).then(r => r.json()).then(setSchoolDistricts).catch(() => {})
+  }, [])
 
   async function patch(body) {
     setSaving(true); setErr(null)

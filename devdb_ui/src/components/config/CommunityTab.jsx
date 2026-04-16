@@ -104,9 +104,7 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
             })
             const tdG = (c, extra = {}) => ({ ...td(c, extra), borderLeft: '2px solid #ebebeb' })
 
-            const sdList = row.county_id
-              ? allSDs.filter(s => s.county_id === row.county_id)
-              : allSDs
+            const sdList = allSDs
 
             const selStyle = {
               fontSize: 12, border: '1px solid #e5e7eb', borderRadius: 3,

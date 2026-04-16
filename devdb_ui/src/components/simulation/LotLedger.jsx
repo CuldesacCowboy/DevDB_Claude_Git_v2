@@ -35,11 +35,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
 
   async function openSdEdit(lot) {
     if (sdEditing === lot.lot_id) { setSdEditing(null); return }
-    const countyId = lot.resolved_county_id
-    const url = countyId
-      ? `${API_BASE}/ref/school-districts?county_id=${countyId}`
-      : `${API_BASE}/ref/school-districts`
-    fetch(url).then(r => r.json()).then(opts => {
+    fetch(`${API_BASE}/ref/school-districts`).then(r => r.json()).then(opts => {
       setSdOptions(opts)
       setSdEditing(lot.lot_id)
     }).catch(() => {})
