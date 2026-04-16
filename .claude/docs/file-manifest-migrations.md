@@ -348,3 +348,43 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Moves builder splits from phase level to instrument level; creates sim_instrument_builder_splits (split_id PK, instrument_id FK → sim_legal_instruments, builder_id, share); migrates existing data from sim_phase_builder_splits via DISTINCT ON (instrument_id, builder_id); drops sim_phase_builder_splits
 - Tables: sim_instrument_builder_splits (CREATE TABLE + PK + UNIQUE + FK + SEQUENCE), sim_phase_builder_splits (DROP TABLE)
 - Last commit: 2026-04-15
+
+### devdb_python/migrations/065_ref_states.sql
+- Owns: Creates devdb.ref_states reference table (state_id PK, state_name, state_abbr); seeds MI (Michigan), XX (OFFSITE sentinel), ZZ (OTHER sentinel)
+- Tables: ref_states (CREATE TABLE + seed)
+- Last commit: 2026-04-16
+
+### devdb_python/migrations/066_ref_counties.sql
+- Owns: Creates devdb.ref_counties reference table (county_id PK, county_name, state_id FK → ref_states); seeds 11 Michigan counties (Kent, Ottawa, Muskegon, Kalamazoo, Clinton, Ingham, Eaton, Allegan, Newaygo, Van Buren, Montcalm) + OFFSITE + OTHER sentinels
+- Tables: ref_counties (CREATE TABLE + seed 13 rows)
+- Last commit: 2026-04-16
+
+### devdb_python/migrations/067_ref_school_districts.sql
+- Owns: Creates devdb.ref_school_districts reference table (sd_id PK, district_name, sd_code CHAR(4), quality_grade, county_id — dropped in migration 072); seeds ~50 school districts across service area counties + OFFSITE/OTHER sentinels
+- Tables: ref_school_districts (CREATE TABLE + seed ~52 rows)
+- Last commit: 2026-04-16
+
+### devdb_python/migrations/068_community_county_sd.sql
+- Owns: Adds county_id (FK → ref_counties) and school_district_id (FK → ref_school_districts) to sim_entitlement_groups — community-level defaults for the county/SD three-tier cascade
+- Tables: sim_entitlement_groups (ADD COLUMN county_id, ADD COLUMN school_district_id)
+- Last commit: 2026-04-16
+
+### devdb_python/migrations/069_phase_county_sd.sql
+- Owns: Adds county_id and school_district_id to sim_dev_phases — phase-level exception overrides in the three-tier cascade; NULL = inherit from community
+- Tables: sim_dev_phases (ADD COLUMN county_id, ADD COLUMN school_district_id)
+- Last commit: 2026-04-16
+
+### devdb_python/migrations/070_lot_sd_exception.sql
+- Owns: Adds school_district_id to sim_lots — lot-level ruling exception in the SD three-tier cascade; no lot-level county (county is a plat/instrument-level fact); NULL = inherit from phase or community
+- Tables: sim_lots (ADD COLUMN school_district_id)
+- Last commit: 2026-04-16
+
+### devdb_python/migrations/071_community_county_sd_seed.sql
+- Owns: Seeds county_id and school_district_id on all 78 real sim_entitlement_groups from JTB development reference list; 3 communities left NULL (City View Estates, Firestone, Summerset South); Pokémon test communities left NULL
+- Tables: sim_entitlement_groups (UPDATE 78 rows via JOIN to ref_counties + ref_school_districts)
+- Last commit: 2026-04-16
+
+### devdb_python/migrations/072_drop_sd_county_fk.sql
+- Owns: Drops county_id column from ref_school_districts — school districts commonly span multiple counties; single-county FK over-restricts SD dropdown filtering; county and SD are now fully independent dimensions
+- Tables: ref_school_districts (DROP COLUMN county_id)
+- Last commit: 2026-04-16

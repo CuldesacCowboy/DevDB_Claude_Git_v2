@@ -19,11 +19,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/SimulationView.jsx
-- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); feed_starts_mode checkbox (amber) — aggressive batching toggle that bypasses tier gate in P-0000; showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers, delivery pin markers, rich tooltips, gridlines. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment. Lot ledger (LotLedger component): OverrideDateCell on pipeline date columns; OverridesPanel tab; SyncReconciliationModal post-run; building group visualization — Bldg column (B1/B2/… teal labels), alternating teal/green row tint per group, 2px teal top separator between groups; bgLabelMap computed per phase from building_group_id; CSV export includes Bldg column. Spec/build: specFilter dropdown ('all'|'spec'|'build'|'undet') on lot ledger; Spec column header (teal) with S/B/— cell rendering; STR(S) teal dashed line and STR(B) gray dashed line on velocity panel; stacked STR(S)+STR(B) bars on closings panel; utilization panel shows "12S 28B 5?" breakdown when any spec lots exist.
-- Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge), config (API_BASE), hooks/useOverrides, components/overrides/OverrideDateCell, OverridesPanel, SyncReconciliationModal
+- Owns: Simulation run trigger, 4-tab view (Monthly Ledger, Lot List, Delivery Schedule, Phase Utilization); DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); feed_starts_mode checkbox (amber) — aggressive batching toggle that bypasses tier gate in P-0000; showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers, delivery pin markers, rich tooltips, gridlines. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment. Lot ledger (LotLedger component): OverrideDateCell on pipeline date columns; OverridesPanel tab; SyncReconciliationModal post-run; building group visualization — Bldg column (B1/B2/… teal labels), alternating teal/green row tint per group, 2px teal top separator between groups; bgLabelMap computed per phase from building_group_id; CSV export includes Bldg column. Spec/build: specFilter dropdown ('all'|'spec'|'build'|'undet') on lot ledger; Spec column header (teal) with S/B/— cell rendering; STR(S) teal dashed line and STR(B) gray dashed line on velocity panel; stacked STR(S)+STR(B) bars on closings panel; utilization panel shows "12S 28B 5?" breakdown when any spec lots exist. County/SD filter dropdowns on monthly ledger (countyFilter, sdFilter state; countyOptions/sdOptions memos derived from byDev; filteredByDev memo; dropdowns only shown when >1 unique value). LocationSection in community settings modal (PATCH /entitlement-groups/{id}).
+- Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge), config (API_BASE), hooks/useOverrides, components/overrides/OverrideDateCell, OverridesPanel, SyncReconciliationModal, SimSettings (LocationSection)
 - Imported by: App.jsx
-- Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params, /api/overrides/*)
-- Last commit: 2026-04-15
+- Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params, /api/overrides/*, /api/ref/counties, /api/ref/school-districts)
+- Last commit: 2026-04-16
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker filtered by showTestCommunities prop (is_test exclusive). selectedGroupId lifted to App.jsx.
@@ -47,11 +47,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-14
 
 ### devdb_ui/src/components/setup/PhaseRow.jsx
-- Owns: PhaseRow (expandable phase header with Lots/Buildings tab bar) and LotTypeRow (one table row + lot pill detail expand); lot type table: Product/Total/Active/Pending/Sim/Excl columns; inline lot pill expand via LotPillGroup; silent re-fetch on LotRefreshContext tick; inline delivery date badge in phase header (teal 'del. date', click-to-edit date input, blur/Enter saves, PATCH /admin/phase/{id} with date_dev_actual); Ranch Condos phases fixed (disappearing phase bug)
+- Owns: PhaseRow (expandable phase header with Lots/Buildings tab bar) and LotTypeRow (one table row + lot pill detail expand); lot type table: Product/Total/Active/Pending/Sim/Excl columns; inline lot pill expand via LotPillGroup; silent re-fetch on LotRefreshContext tick; inline delivery date badge in phase header (teal 'del. date', click-to-edit date input, blur/Enter saves, PATCH /admin/phase/{id} with date_dev_actual); county/SD read-only badges (amber border = phase override, gray = inherited from community, ↗ suffix when inherited); Ranch Condos phases fixed (disappearing phase bug)
 - Imports: react (useState, useEffect, useRef, useContext, useCallback), API_BASE, setupShared (multiple), LotPillGroup, BuildingsTab
 - Imported by: SetupView.jsx
 - Tables: none (API calls via /phases/{id}/lot-type/{ltId}/lots, /phases/{id}/lot-type/{ltId}/projected, DELETE /phases/{id}/lot-type/{ltId}, PATCH /admin/phase/{id})
-- Last commit: 2026-04-14
+- Last commit: 2026-04-16
 
 ### devdb_ui/src/components/setup/LotPillGroup.jsx
 - Owns: LotPillGroup (pill grid with add-pre-lots panel); MovableLotPill (drag-to-move, exclude/un-exclude actions); AddPreLotsPanel (bulk pre-lot creation inline); exports LOT_PILL, LotPill, LotPillGroup
@@ -68,11 +68,39 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-10
 
 ### devdb_ui/src/pages/ConfigView.jsx
-- Owns: 4-tab configuration view (Community / Development / Instrument / Phase); Community tab — editable ledger dates (date_paper, date_ent), auto_schedule_enabled checkbox, MonthCell (12-button inline delivery month picker, All/None, "using global" when null), del/year; Development tab — historical pace context (starts YTD/last yr/2yr ago, unstarted lots, total projected, 2yr avg pace), StartsCell (editable annual_starts_target + reactive supply label: ≈ X.x yrs green/≈ N mo amber/exhausted red), editable max_starts_per_month; Instrument tab — editable spec_rate (SpecRateCell with 4 hint buttons, 6mo/2yr weighted average from codetail) + editable builder split % per builder (instrument-level, not phase-level; 2-builder auto-complement; actual committed lot counts displayed); Phase tab — phase config spreadsheet with '+' button per row opening BulkLotInsertModal (builder split columns removed — moved to Instrument tab); data loaded via parallel Promise.all on mount from /admin/community-config, /admin/dev-config, /admin/phase-config
+- Owns: 4-tab configuration view (Community / Development / Instrument / Phase); Community tab — editable ledger dates (date_paper, date_ent), auto_schedule_enabled checkbox, MonthCell (12-button inline delivery month picker, All/None, "using global" when null), del/year, County dropdown, School District dropdown; Development tab — historical pace context (starts YTD/last yr/2yr ago, unstarted lots, total projected, 2yr avg pace), StartsCell (editable annual_starts_target + reactive supply label: ≈ X.x yrs green/≈ N mo amber/exhausted red), editable max_starts_per_month; Instrument tab — editable spec_rate (SpecRateCell with 4 hint buttons, 6mo/2yr weighted average from codetail) + editable builder split % per builder (instrument-level, not phase-level; 2-builder auto-complement; actual committed lot counts displayed); Phase tab — phase config spreadsheet with '+' button per row opening BulkLotInsertModal (builder split columns removed — moved to Instrument tab); data loaded via parallel Promise.all on mount from /admin/community-config, /admin/dev-config, /admin/phase-config; patchComm supports 'ledger', 'delivery', and 'location' (county_id, school_district_id via PATCH /entitlement-groups/{id}) kinds
 - Imports: react (useState, useEffect, useRef, useCallback), BulkLotInsertModal
 - Imported by: App.jsx (via /configure route)
-- Tables: none (API calls via /admin/community-config, /admin/dev-config, /admin/phase-config, PATCH /admin/phase/{id}, PUT /admin/product-split, PUT /admin/builder-split/{instrument_id}/{builder_id}, PATCH /instruments/{id}/spec-rate, GET /instruments/{id}/spec-rate-hints, PUT /entitlement-groups/{id}/delivery-config, PUT /entitlement-groups/{id}/ledger-config, PUT /developments/{id}/sim-params, POST /bulk-lots/suggestions, POST /bulk-lots/insert)
-- Last commit: 2026-04-15
+- Tables: none (API calls via /admin/audit-data, /admin/dev-config, /admin/phase-config, PATCH /admin/phase/{id}, PUT /admin/product-split, PUT /admin/builder-split/{instrument_id}/{builder_id}, PATCH /instruments/{id}/spec-rate, GET /instruments/{id}/spec-rate-hints, PUT /entitlement-groups/{id}/delivery-config, PUT /entitlement-groups/{id}/ledger-config, PATCH /entitlement-groups/{id}, PUT /developments/{id}/sim-params, POST /bulk-lots/suggestions, POST /bulk-lots/insert)
+- Last commit: 2026-04-16
+
+### devdb_ui/src/components/config/CommunityTab.jsx
+- Owns: Community tab spreadsheet for ConfigView; columns: community name, Ledger Start, Bulk Ent. Date, County (dropdown), School District (dropdown), Auto Schedule, Delivery Months, Del/Year; County and SD are independent dropdowns (full SD list shown regardless of county since migration 072); saving county clears SD; 'location' kind saved via PATCH /entitlement-groups/{id}
+- Imports: react (useState, useRef, useEffect), EditableCell, configShared (MonthCell, TableShell, BAND), config (API_BASE)
+- Imported by: ConfigView.jsx
+- Tables: none (API calls via /ref/counties, /ref/school-districts, PATCH /entitlement-groups/{id})
+- Last commit: 2026-04-16
+
+### devdb_ui/src/components/config/PhaseTab.jsx
+- Owns: Phase config spreadsheet for ConfigView; county/SD override columns (amber = phase override, gray = inherited from community); SD dropdown shows all school districts (no county filtering since migration 072)
+- Imports: react (useState, useEffect), EditableCell, configShared, config (API_BASE)
+- Imported by: ConfigView.jsx
+- Tables: none (API calls via /admin/phase-config, PATCH /admin/phase/{id}, /ref/counties, /ref/school-districts)
+- Last commit: 2026-04-16
+
+### devdb_ui/src/components/simulation/LotLedger.jsx
+- Owns: Lot-level ledger table component; SD column with click-to-edit inline select (amber underline when sd_is_lot_exception=true); SD dropdown fetches all school districts (no county filter since migration 072); onRefreshLots callback after SD save
+- Imports: react (useState, useRef), config (API_BASE)
+- Imported by: SimulationView.jsx
+- Tables: none (API calls via /ref/school-districts, PATCH /admin/lot/{id}/school-district)
+- Last commit: 2026-04-16
+
+### devdb_ui/src/components/simulation/SimSettings.jsx
+- Owns: Simulation community settings modal components; LocationSection (county + SD dropdowns for ent_group community-level assignment); StartsTargetsSection; SD list fetched once on mount (no county filtering since migration 072)
+- Imports: react (useState, useEffect), config (API_BASE)
+- Imported by: SimulationView.jsx
+- Tables: none (API calls via /ref/counties, /ref/school-districts, /admin/community-config/{id}, PATCH /entitlement-groups/{id})
+- Last commit: 2026-04-16
 
 ### devdb_ui/src/pages/CommunityDevelopmentsView.jsx
 - Owns: Community-development assignment view; unassigned dev panel; community pills; alphabet slider; drag-to-create-community

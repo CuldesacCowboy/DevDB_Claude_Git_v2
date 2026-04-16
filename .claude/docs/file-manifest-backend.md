@@ -125,11 +125,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-14
 
 ### devdb_python/api/routers/admin.py
-- Owns: GET /admin/phase-config (full phase hierarchy with lot counts, product splits, builder splits derived from instrument level for the phase config spreadsheet); PATCH /admin/phase/{phase_id} (lot_count_projected, date_dev_projected, date_dev_actual); PUT /admin/product-split/{phase_id}/{lot_type_id}; PUT /admin/builder-split/{instrument_id}/{builder_id} (upserts sim_instrument_builder_splits — instrument-level, not phase-level); GET /admin/community-config (ledger dates + delivery scheduling config per ent_group, builder splits derived from instrument level); GET /admin/dev-config (dev sim params + historical pace: starts_ytd/last_year/2yr_ago, unstarted_real, total_projected); GET /admin/setup-tree (full community → dev → instrument → phase tree with D/I/P/L subtotals and updated_at per phase); all segd joins use developments.dev_id directly (no dim_development bridge)
+- Owns: GET /admin/phase-config (full phase hierarchy with lot counts, product splits, builder splits derived from instrument level for the phase config spreadsheet); PATCH /admin/phase/{phase_id} (lot_count_projected, date_dev_projected, date_dev_actual); PUT /admin/product-split/{phase_id}/{lot_type_id}; PUT /admin/builder-split/{instrument_id}/{builder_id} (upserts sim_instrument_builder_splits — instrument-level, not phase-level); GET /admin/community-config (ledger dates + delivery scheduling config per ent_group, builder splits derived from instrument level); GET /admin/dev-config (dev sim params + historical pace: starts_ytd/last_year/2yr_ago, unstarted_real, total_projected); GET /admin/setup-tree (full community → dev → instrument → phase tree with D/I/P/L subtotals and updated_at per phase); GET /admin/audit-data (all data for AuditView: global settings, communities with county_id/county_name/school_district_id/sd_name, phases, delivery events, dev params); all segd joins use developments.dev_id directly (no dim_development bridge)
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
-- Tables: sim_entitlement_groups, sim_ent_group_developments, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, sim_instrument_builder_splits, ref_lot_types, dim_builders, sim_entitlement_delivery_config, sim_dev_params, developments
-- Last commit: 2026-04-15
+- Tables: sim_entitlement_groups, sim_ent_group_developments, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, sim_instrument_builder_splits, ref_lot_types, dim_builders, sim_entitlement_delivery_config, sim_dev_params, developments, ref_counties, ref_school_districts
+- Last commit: 2026-04-16
 
 ### devdb_python/api/routers/bulk_lots.py
 - Owns: POST /bulk-lots/suggestions (infers dev lot-number prefix + max seq from existing lots, returns flat suggestion list for given phase + lot type counts); POST /bulk-lots/insert (inserts pre-MARKS lots as lot_source='pre', sequence-backed lot_id, validates no duplicate lot_numbers, maintains product splits, audit logs each insertion); dev_code from developments.marks_code (no dim_development bridge)
@@ -151,6 +151,13 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imported by: api/main.py
 - Tables: sim_lots, sim_lot_date_overrides
 - Last commit: 2026-04-14
+
+### devdb_python/api/routers/ref_data.py
+- Owns: Reference data endpoints; GET /ref/counties (all counties ordered by name); GET /ref/school-districts (all school districts alphabetically — no county filtering; county and SD are independent dimensions since migration 072)
+- Imports: api.deps, api.db, fastapi
+- Imported by: api/main.py
+- Tables: ref_counties, ref_school_districts
+- Last commit: 2026-04-16
 
 ### devdb_python/api/routers/global_settings.py
 - Owns: GET /global-settings (sim_global_settings row id=1); PUT /global-settings (update delivery_months, max_deliveries_per_year, default_cmp_lag_days, default_cls_lag_days, min_d/u/uc/c_count); community delivery config overrides these where non-null
@@ -216,11 +223,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-05
 
 ### devdb_python/services/ledger_service.py
-- Owns: Ledger query logic extracted from routers/ledger.py; query_ledger_by_dev(conn, ent_group_id) — bounded date range, synthetic start-date rows; _ledger_row() dict serializer includes str_plan_spec and str_plan_build. Entitlement event overlay removed (sim_entitlement_events dropped in migration 025). All joins use developments.dev_id directly (no dim_development bridge).
+- Owns: Ledger query logic extracted from routers/ledger.py; query_ledger_by_dev(conn, ent_group_id) — bounded date range, synthetic start-date rows; _ledger_row() dict serializer includes str_plan_spec, str_plan_build, community_county_id, community_county_name, community_sd_id, community_sd_name. Entitlement event overlay removed (sim_entitlement_events dropped in migration 025). All joins use developments.dev_id directly (no dim_development bridge).
 - Imports: api.db.dict_cursor
 - Imported by: routers/ledger.py
-- Tables: v_sim_ledger_monthly, sim_entitlement_groups, sim_ent_group_developments, sim_lots, developments
-- Last commit: 2026-04-15
+- Tables: v_sim_ledger_monthly, sim_entitlement_groups, sim_ent_group_developments, sim_lots, developments, ref_counties, ref_school_districts
+- Last commit: 2026-04-16
 
 ### devdb_python/services/phase_assignment_service.py
 - Owns: Phase-to-instrument reassignment with entitlement group validation and audit logging
