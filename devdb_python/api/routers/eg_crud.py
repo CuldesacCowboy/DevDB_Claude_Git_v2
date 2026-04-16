@@ -17,6 +17,7 @@ class EntGroupPatchRequest(BaseModel):
     ent_group_name:     Optional[str] = None
     county_id:          Optional[int] = None
     school_district_id: Optional[int] = None
+    status:             Optional[str] = None
 
 
 router = APIRouter(prefix="/entitlement-groups", tags=["entitlement-groups"])
@@ -35,6 +36,7 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
                 eg.ent_group_id,
                 eg.ent_group_name,
                 COALESCE(eg.is_test, FALSE)                   AS is_test,
+                eg.status,
                 COALESCE(SUM(pt.real_count), 0)::int          AS real_count,
                 COALESCE(SUM(pt.projected_count), 0)::int     AS projected_count,
                 COALESCE(SUM(
@@ -66,6 +68,7 @@ def list_entitlement_groups(conn=Depends(get_db_conn)):
                 "ent_group_id": r["ent_group_id"],
                 "ent_group_name": r["ent_group_name"],
                 "is_test": bool(r["is_test"]),
+                "status": r["status"],
                 "real_count": int(r["real_count"]),
                 "projected_count": int(r["projected_count"]),
                 "total_count": int(r["total_count"]),
@@ -176,6 +179,9 @@ def patch_entitlement_group(ent_group_id: int, body: EntGroupPatchRequest, conn=
     if "school_district_id" in provided:
         clauses.append("school_district_id = %s")
         params.append(body.school_district_id)
+    if "status" in provided:
+        clauses.append("status = %s")
+        params.append(body.status)
 
     params.append(ent_group_id)
     cur = dict_cursor(conn)
@@ -183,7 +189,7 @@ def patch_entitlement_group(ent_group_id: int, body: EntGroupPatchRequest, conn=
         cur.execute(
             f"UPDATE sim_entitlement_groups SET {', '.join(clauses)} "
             f"WHERE ent_group_id = %s "
-            f"RETURNING ent_group_id, ent_group_name, county_id, school_district_id",
+            f"RETURNING ent_group_id, ent_group_name, county_id, school_district_id, status",
             params,
         )
         row = cur.fetchone()
@@ -196,6 +202,7 @@ def patch_entitlement_group(ent_group_id: int, body: EntGroupPatchRequest, conn=
             "ent_group_name":      row["ent_group_name"],
             "county_id":           row["county_id"],
             "school_district_id":  row["school_district_id"],
+            "status":              row["status"],
         }
     except HTTPException:
         raise

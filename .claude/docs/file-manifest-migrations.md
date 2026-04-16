@@ -388,3 +388,8 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Drops county_id column from ref_school_districts — school districts commonly span multiple counties; single-county FK over-restricts SD dropdown filtering; county and SD are now fully independent dimensions
 - Tables: ref_school_districts (DROP COLUMN county_id)
 - Last commit: 2026-04-16
+
+### devdb_python/migrations/073_community_status.sql
+- Owns: Adds status VARCHAR(20) with CHECK constraint to sim_entitlement_groups (allowed: Active, Prospective, Sold Out, Unlikely, Abandoned, OFFSITE, OTHER); seeds all 78 communities from JTB reference list; OFFSITE and OTHER communities set to their respective sentinel values
+- Tables: sim_entitlement_groups (ADD COLUMN status + UPDATE 78 rows)
+- Last commit: 2026-04-16

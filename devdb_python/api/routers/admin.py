@@ -415,7 +415,7 @@ def get_community_config(conn=Depends(get_db_conn)):
     try:
         cur.execute("""
             SELECT
-                seg.ent_group_id, seg.ent_group_name, seg.is_test,
+                seg.ent_group_id, seg.ent_group_name, seg.is_test, seg.status,
                 seg.date_paper, seg.date_ent_actual,
                 seg.county_id, c.county_name,
                 seg.school_district_id, sd.district_name AS sd_name,
@@ -435,6 +435,7 @@ def get_community_config(conn=Depends(get_db_conn)):
                 'ent_group_id':            r['ent_group_id'],
                 'ent_group_name':          r['ent_group_name'],
                 'is_test':                 r['is_test'],
+                'status':                  r['status'],
                 'date_paper':              r['date_paper'].isoformat()      if r['date_paper']      else None,
                 'date_ent':                r['date_ent_actual'].isoformat() if r['date_ent_actual'] else None,
                 'county_id':               r['county_id'],
@@ -464,7 +465,7 @@ def get_dev_config(conn=Depends(get_db_conn)):
     try:
         cur.execute("""
             SELECT
-                seg.ent_group_id, seg.ent_group_name, seg.is_test,
+                seg.ent_group_id, seg.ent_group_name, seg.is_test, seg.status,
                 segd.dev_id, d.dev_name,
                 sdp.annual_starts_target, sdp.max_starts_per_month,
 
@@ -511,6 +512,7 @@ def get_dev_config(conn=Depends(get_db_conn)):
                 'ent_group_id':         r['ent_group_id'],
                 'ent_group_name':       r['ent_group_name'],
                 'is_test':              r['is_test'],
+                'status':               r['status'],
                 'dev_id':               r['dev_id'],
                 'dev_name':             r['dev_name'],
                 'annual_starts_target': float(r['annual_starts_target']) if r['annual_starts_target'] is not None else None,
@@ -550,7 +552,7 @@ def get_audit_data(conn=Depends(get_db_conn)):
         # Communities with delivery config
         cur.execute("""
             SELECT
-                seg.ent_group_id, seg.ent_group_name, seg.is_test,
+                seg.ent_group_id, seg.ent_group_name, seg.is_test, seg.status,
                 seg.county_id, seg.school_district_id,
                 c.county_name, sd.district_name AS sd_name,
                 edc.delivery_months,
@@ -569,6 +571,7 @@ def get_audit_data(conn=Depends(get_db_conn)):
                 'ent_group_id':            r['ent_group_id'],
                 'ent_group_name':          r['ent_group_name'],
                 'is_test':                 r['is_test'],
+                'status':                  r['status'],
                 'county_id':               r['county_id'],
                 'county_name':             r['county_name'],
                 'school_district_id':      r['school_district_id'],
