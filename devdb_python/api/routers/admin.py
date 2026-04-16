@@ -77,6 +77,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
         """)
         phases = cur.fetchall()
         phase_ids = [r['phase_id'] for r in phases]
+        dev_ids = list({r['dev_id'] for r in phases})
 
         # Lot counts by (phase_id, lot_type_id) — marks/pre/sim separately.
         # "marks" = lot_source='real' WITH a marks_lot_registry entry (actively in MARKS).
