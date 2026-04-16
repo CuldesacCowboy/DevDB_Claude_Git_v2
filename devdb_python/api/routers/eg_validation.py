@@ -180,7 +180,7 @@ def put_delivery_config(
                  default_cmp_lag_days, default_cls_lag_days,
                  feed_starts_mode, scheduling_horizon_days,
                  updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, current_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, FALSE), %s, current_timestamp)
             ON CONFLICT (ent_group_id) DO UPDATE
                 SET min_d_count              = COALESCE(EXCLUDED.min_d_count,              sim_entitlement_delivery_config.min_d_count),
                     min_p_count              = COALESCE(EXCLUDED.min_p_count,              sim_entitlement_delivery_config.min_p_count),
@@ -193,7 +193,7 @@ def put_delivery_config(
                     auto_schedule_enabled    = COALESCE(EXCLUDED.auto_schedule_enabled,    sim_entitlement_delivery_config.auto_schedule_enabled),
                     default_cmp_lag_days     = COALESCE(EXCLUDED.default_cmp_lag_days,     sim_entitlement_delivery_config.default_cmp_lag_days),
                     default_cls_lag_days     = COALESCE(EXCLUDED.default_cls_lag_days,     sim_entitlement_delivery_config.default_cls_lag_days),
-                    feed_starts_mode         = COALESCE(EXCLUDED.feed_starts_mode,         sim_entitlement_delivery_config.feed_starts_mode),
+                    feed_starts_mode         = COALESCE(%s,                                sim_entitlement_delivery_config.feed_starts_mode),
                     scheduling_horizon_days  = EXCLUDED.scheduling_horizon_days,
                     updated_at               = current_timestamp
             RETURNING ent_group_id, min_d_count, min_p_count, min_e_count,
@@ -216,8 +216,9 @@ def put_delivery_config(
                 body.auto_schedule_enabled,
                 body.default_cmp_lag_days,
                 body.default_cls_lag_days,
-                body.feed_starts_mode,
+                body.feed_starts_mode,       # INSERT: COALESCE(%s, FALSE) — new rows default to FALSE
                 body.scheduling_horizon_days,
+                body.feed_starts_mode,       # ON CONFLICT UPDATE: COALESCE(%s, existing) — preserves existing when not set
             ),
         )
         conn.commit()
@@ -260,11 +261,26 @@ def get_ledger_config(ent_group_id: int, conn=Depends(get_db_conn)):
         """, (ent_group_id, ent_group_id))
         delivery_row = cur.fetchone()
 
+        # Count all lots (real + sim) in this community for display purposes.
+        cur.execute(
+            """
+            SELECT COUNT(*) AS total_lots
+            FROM sim_lots sl
+            JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
+            JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
+            JOIN sim_ent_group_developments egd ON egd.dev_id = sli.dev_id
+            WHERE egd.ent_group_id = %s
+            """,
+            (ent_group_id,),
+        )
+        total_lots = int((cur.fetchone() or {}).get("total_lots", 0) or 0)
+
         return {
             "ent_group_id":          row["ent_group_id"],
             "date_paper":            row["date_paper"].isoformat()            if row["date_paper"]            else None,
             "date_ent":              row["date_ent_actual"].isoformat()       if row["date_ent_actual"]       else None,
             "earliest_delivery_date": delivery_row["earliest_delivery"].isoformat() if delivery_row and delivery_row["earliest_delivery"] else None,
+            "total_lots":            total_lots,
         }
     finally:
         cur.close()
