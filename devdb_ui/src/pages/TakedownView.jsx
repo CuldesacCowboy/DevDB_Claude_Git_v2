@@ -854,6 +854,251 @@ function LotsTab({ selectedId, data, onReload }) {
   )
 }
 
+// ── Checklist tab ──────────────────────────────────────────────────
+const CHECKLIST_COLORS = [
+  '#f59e0b', '#3b82f6', '#8b5cf6', '#ec4899',
+  '#ef4444', '#10b981', '#f97316', '#06b6d4',
+  '#84cc16', '#6366f1',
+]
+
+function ChecklistTab({ showTestCommunities }) {
+  const [items, setItems]             = useState(null)
+  const [loading, setLoading]         = useState(false)
+  const [filter, setFilter]           = useState('all')
+  const [collapsed, setCollapsed]     = useState({})
+  const [activeOverride, setActiveOverride] = useState(null)
+
+  const reload = useCallback(() => {
+    setLoading(true)
+    const q = showTestCommunities ? 'show_test=true' : 'show_test=false'
+    fetch(`${API_BASE}/tda-checklist?${q}`)
+      .then(r => r.json())
+      .then(d => { setItems(d.items || []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [showTestCommunities])
+
+  useEffect(() => { reload() }, [reload])
+
+  if (loading) return <p style={{ color: TEXT_MUTED, fontSize: 14, marginTop: 20 }}>Loading checklist…</p>
+  if (!items)  return null
+
+  // Assign stable colors by ent_group_id order of first appearance
+  const allEgIds = [...new Set(items.map(i => i.ent_group_id))]
+  const colorMap = {}
+  allEgIds.forEach((id, idx) => { colorMap[id] = CHECKLIST_COLORS[idx % CHECKLIST_COLORS.length] })
+
+  // Apply filter
+  const filtered = filter === 'all' ? items
+    : filter === 'closed' ? items.filter(i => i.status === 'closed')
+    : items.filter(i => i.status !== 'closed')
+
+  // Group: monthKey -> Map(ent_group_id -> group)
+  const monthGroups = new Map()
+  for (const item of filtered) {
+    const monthKey = item.checkpoint_date ? item.checkpoint_date.slice(0, 7) : 'no-date'
+    if (!monthGroups.has(monthKey)) monthGroups.set(monthKey, new Map())
+    const cg = monthGroups.get(monthKey)
+    if (!cg.has(item.ent_group_id)) {
+      cg.set(item.ent_group_id, {
+        ent_group_id: item.ent_group_id,
+        ent_group_name: item.ent_group_name,
+        checkpoint_date: item.checkpoint_date,
+        lots_required_cumulative: item.lots_required_cumulative,
+        items: [],
+      })
+    }
+    cg.get(item.ent_group_id).items.push(item)
+  }
+
+  function toggleCollapse(key) {
+    setCollapsed(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  function monthLabel(key) {
+    if (key === 'no-date') return 'No Deadline'
+    const [y, m] = key.split('-')
+    return new Date(Number(y), Number(m) - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+  }
+
+  const visibleEgIds = new Set(filtered.map(i => i.ent_group_id))
+
+  return (
+    <div>
+      {/* Filter bar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <span style={{ fontSize: 11, color: TEXT_MUTED, fontWeight: 600, marginRight: 2 }}>SHOW</span>
+        {['all', 'open', 'closed'].map(f => (
+          <button key={f} onClick={() => setFilter(f)} style={{
+            fontSize: 11, padding: '3px 12px', borderRadius: 12,
+            border: `1px solid ${filter === f ? '#2563eb' : '#d1d5db'}`,
+            background: filter === f ? '#eff6ff' : '#fff',
+            color: filter === f ? '#2563eb' : TEXT_MUTED,
+            cursor: 'pointer', fontWeight: filter === f ? 600 : 400,
+          }}>
+            {f.charAt(0).toUpperCase() + f.slice(1)}
+          </button>
+        ))}
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: TEXT_MUTED }}>
+          {filtered.length} lots · {visibleEgIds.size} communities
+        </span>
+      </div>
+
+      {filtered.length === 0 && (
+        <p style={{ color: TEXT_MUTED, fontSize: 14 }}>No items match the current filter.</p>
+      )}
+
+      {/* Month sections */}
+      {[...monthGroups.entries()].map(([monthKey, commGroup]) => {
+        const monthCollapsed = collapsed[monthKey]
+        const monthTotal  = [...commGroup.values()].reduce((s, g) => s + g.items.length, 0)
+        const monthClosed = [...commGroup.values()].reduce((s, g) => s + g.items.filter(i => i.status === 'closed').length, 0)
+
+        return (
+          <div key={monthKey} style={{ marginBottom: 20 }}>
+            {/* Month header */}
+            <div
+              onClick={() => toggleCollapse(monthKey)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                padding: '7px 14px', background: '#1e293b', borderRadius: 5,
+                marginBottom: monthCollapsed ? 0 : 10,
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{monthLabel(monthKey)}</span>
+              <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 'auto' }}>
+                {monthClosed}/{monthTotal} closed
+              </span>
+              <span style={{ fontSize: 10, color: '#64748b', marginLeft: 4 }}>{monthCollapsed ? '▶' : '▼'}</span>
+            </div>
+
+            {!monthCollapsed && (
+              <div style={{ paddingLeft: 8 }}>
+                {[...commGroup.values()].map(group => {
+                  const groupKey     = `${monthKey}_${group.ent_group_id}`
+                  const groupCollapsed = collapsed[groupKey]
+                  const color        = colorMap[group.ent_group_id] || '#6b7280'
+                  const closedCount  = group.items.filter(i => i.status === 'closed').length
+                  const totalCount   = group.items.length
+                  const req          = group.lots_required_cumulative || 0
+                  const reqMet       = req > 0 && closedCount >= req
+
+                  return (
+                    <div key={groupKey} style={{ marginBottom: 6 }}>
+                      {/* Community group header */}
+                      <div
+                        onClick={() => toggleCollapse(groupKey)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                          padding: '5px 10px',
+                          background: color + '22',
+                          borderLeft: `4px solid ${color}`,
+                          borderRadius: '0 4px 4px 0',
+                          marginBottom: groupCollapsed ? 0 : 2,
+                        }}
+                      >
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
+                          {group.ent_group_name}
+                        </span>
+                        <span style={{ fontSize: 10, color: TEXT_MUTED }}>
+                          {closedCount} of {totalCount} closed
+                        </span>
+                        {req > 0 && (
+                          <span style={{
+                            fontSize: 10, padding: '1px 7px', borderRadius: 8, fontWeight: 600,
+                            background: reqMet ? '#f0fdf4' : '#fef2f2',
+                            color: reqMet ? '#15803d' : '#dc2626',
+                            border: `1px solid ${reqMet ? '#bbf7d0' : '#fecaca'}`,
+                          }}>
+                            {closedCount}/{req} req
+                          </span>
+                        )}
+                        <span style={{ fontSize: 10, color: TEXT_MUTED, marginLeft: 'auto' }}>
+                          {groupCollapsed ? '▶' : '▼'}
+                        </span>
+                      </div>
+
+                      {!groupCollapsed && (
+                        <div>
+                          {group.items.map(item => {
+                            const isClosed = item.status === 'closed'
+                            const isOverrideActive = activeOverride?.lot_id === item.lot_id
+
+                            return (
+                              <div key={item.lot_id}>
+                                <div style={{
+                                  display: 'flex', alignItems: 'center', gap: 8,
+                                  padding: '4px 10px 4px 12px',
+                                  borderLeft: `4px solid ${color}44`,
+                                  background: isClosed ? '#f0fdf4' : (item.status === 'projected' ? '#f0f9ff' : '#fff'),
+                                  borderBottom: `1px solid ${PANEL_BORDER}`,
+                                }}>
+                                  <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0,
+                                    color: isClosed ? '#16a34a' : '#d1d5db' }}>
+                                    {isClosed ? '✓' : '○'}
+                                  </span>
+                                  <span style={{ fontFamily: 'monospace', fontSize: 11, color: TEXT_PRIMARY, minWidth: 80 }}>
+                                    {item.lot_number}
+                                  </span>
+                                  {item.lot_type_short && (
+                                    <span style={{ fontSize: 10, color: TEXT_MUTED, minWidth: 32 }}>
+                                      {item.lot_type_short}
+                                    </span>
+                                  )}
+                                  {item.building_name && (
+                                    <span style={{ fontSize: 10, color: TEXT_MUTED, fontFamily: 'monospace' }}>
+                                      {item.building_name.replace('Building ', 'B')}
+                                    </span>
+                                  )}
+                                  <span style={{ marginLeft: 'auto', fontSize: 11 }}>
+                                    {isClosed ? (
+                                      <span style={{ color: '#16a34a', fontStyle: 'italic' }}>{item.display_date}</span>
+                                    ) : item.display_date ? (
+                                      <span
+                                        onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: 'date_td', lot: item })}
+                                        style={{ color: '#2563eb', cursor: 'pointer', borderBottom: '1px dashed #93c5fd' }}
+                                        title="Click to set override"
+                                      >
+                                        {item.display_date}
+                                      </span>
+                                    ) : (
+                                      <span
+                                        onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: 'date_td', lot: item })}
+                                        style={{ color: TEXT_MUTED, cursor: 'pointer', borderBottom: '1px dashed #e5e7eb' }}
+                                        title="Click to set takedown override"
+                                      >
+                                        —
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+
+                                {isOverrideActive && (
+                                  <div style={{ borderLeft: `4px solid ${color}44`, padding: '0 12px 8px' }}>
+                                    <OverridePanel
+                                      lot={activeOverride.lot}
+                                      dateField={activeOverride.date_field}
+                                      onClose={() => setActiveOverride(null)}
+                                      onApplied={() => { setActiveOverride(null); reload() }}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Main view ──────────────────────────────────────────────────────
 export default function TakedownView({ showTestCommunities }) {
   const [communities, setCommunities] = useState([])
@@ -1043,6 +1288,7 @@ export default function TakedownView({ showTestCommunities }) {
           <button style={tabStyle('agreements')} onClick={() => setActiveTab('agreements')}>Agreements</button>
           <button style={tabStyle('ledger')}     onClick={() => setActiveTab('ledger')}>Ledger</button>
           <button style={tabStyle('lots')}       onClick={() => setActiveTab('lots')}>Lots</button>
+          <button style={tabStyle('checklist')}  onClick={() => setActiveTab('checklist')}>Checklist</button>
         </div>
 
         {/* Tab body */}
@@ -1113,6 +1359,11 @@ export default function TakedownView({ showTestCommunities }) {
           {/* Lots tab */}
           {activeTab === 'lots' && selectedId && !loading && (
             <LotsTab selectedId={selectedId} data={data} onReload={load} />
+          )}
+
+          {/* Checklist tab */}
+          {activeTab === 'checklist' && (
+            <ChecklistTab showTestCommunities={showTestCommunities} />
           )}
         </div>
       </div>

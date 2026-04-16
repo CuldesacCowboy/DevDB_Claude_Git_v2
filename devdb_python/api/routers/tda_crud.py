@@ -655,6 +655,83 @@ def get_tda_monthly_ledger(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.close()
 
 
+@router.get("/tda-checklist")
+def get_tda_checklist(show_test: bool = False, conn=Depends(get_db_conn)):
+    """Master checklist: all TDA lot assignments across all (non-)test communities.
+    Returns flat list sorted by checkpoint_date, community name, lot_number."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            """
+            SELECT
+                eg.ent_group_id,
+                eg.ent_group_name,
+                tda.tda_id,
+                tda.tda_name,
+                cp.checkpoint_id,
+                cp.checkpoint_date,
+                cp.lots_required_cumulative,
+                l.lot_id,
+                l.lot_number,
+                rlt.lot_type_short,
+                l.building_group_id,
+                bg.building_name,
+                l.date_td,
+                l.date_td_projected,
+                l.date_td_hold,
+                l.date_td_hold_projected
+            FROM devdb.sim_takedown_lot_assignments la
+            JOIN devdb.sim_takedown_checkpoints cp ON cp.checkpoint_id = la.checkpoint_id
+            JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = cp.tda_id
+            JOIN devdb.sim_entitlement_groups eg ON eg.ent_group_id = tda.ent_group_id
+            JOIN devdb.sim_lots l ON l.lot_id = la.lot_id
+            LEFT JOIN devdb.ref_lot_types rlt ON rlt.lot_type_id = l.lot_type_id
+            LEFT JOIN devdb.sim_building_groups bg ON bg.building_group_id = l.building_group_id
+            WHERE COALESCE(eg.is_test, FALSE) = %s
+            ORDER BY cp.checkpoint_date NULLS LAST, eg.ent_group_name, l.lot_number
+            """,
+            (show_test,),
+        )
+        rows = cur.fetchall()
+
+        items = []
+        for r in rows:
+            if r["date_td"] is not None:
+                status = "closed"
+                display_date = r["date_td"].isoformat()
+            elif r["date_td_projected"] is not None:
+                status = "projected"
+                display_date = r["date_td_projected"].isoformat()
+            else:
+                status = "pending"
+                display_date = None
+
+            items.append({
+                "ent_group_id":            r["ent_group_id"],
+                "ent_group_name":          r["ent_group_name"],
+                "tda_id":                  r["tda_id"],
+                "tda_name":                r["tda_name"],
+                "checkpoint_id":           r["checkpoint_id"],
+                "checkpoint_date":         r["checkpoint_date"].isoformat() if r["checkpoint_date"] else None,
+                "lots_required_cumulative": r["lots_required_cumulative"],
+                "lot_id":                  r["lot_id"],
+                "lot_number":              r["lot_number"],
+                "lot_type_short":          r["lot_type_short"],
+                "building_group_id":       r["building_group_id"],
+                "building_name":           r["building_name"],
+                "date_td":                 r["date_td"].isoformat() if r["date_td"] else None,
+                "date_td_projected":       r["date_td_projected"].isoformat() if r["date_td_projected"] else None,
+                "date_td_hold":            r["date_td_hold"].isoformat() if r["date_td_hold"] else None,
+                "date_td_hold_projected":  r["date_td_hold_projected"].isoformat() if r["date_td_hold_projected"] else None,
+                "status":                  status,
+                "display_date":            display_date,
+            })
+
+        return {"items": items}
+    finally:
+        cur.close()
+
+
 @router.post("/takedown-agreements/{tda_id}/auto-assign")
 def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
     """Assign each TDA lot to the earliest checkpoint whose date >= the lot's
