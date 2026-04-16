@@ -110,6 +110,22 @@ def get_phase_config(conn=Depends(get_db_conn)):
             for r in cur.fetchall():
                 prod_map.setdefault(r['phase_id'], {})[r['lot_type_id']] = r['projected_count']
 
+        # Dev params: annual_starts_target per dev_id
+        dev_params_map = {}  # dev_id -> annual_starts_target (float or None)
+        if dev_ids:
+            cur.execute("""
+                SELECT dev_id, annual_starts_target
+                FROM sim_dev_params
+                WHERE dev_id = ANY(%s)
+            """, (dev_ids,))
+            for r in cur.fetchall():
+                dev_params_map[r['dev_id']] = (
+                    float(r['annual_starts_target']) if r['annual_starts_target'] is not None else None
+                )
+
+        # Unique devs per community (populated while assembling phases below)
+        dev_comm_map = {}  # ent_group_id -> {dev_id -> {dev_id, dev_name, annual_starts_target}}
+
         # Builder splits (configured): instrument_id -> {builder_id: share}
         # Expanded to phase rows via instrument_id on each phase.
         instrument_ids = list({r['instrument_id'] for r in phases})
@@ -494,9 +510,12 @@ def get_audit_data(conn=Depends(get_db_conn)):
                 d.dev_name,
                 sli.instrument_id,
                 sli.instrument_name,
+                sli.spec_rate,
                 sdp.phase_id,
                 sdp.phase_name,
-                sdp.sequence_number
+                sdp.sequence_number,
+                sdp.delivery_tier,
+                sdp.date_dev_actual
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
             JOIN developments d                  ON d.dev_id = segd.dev_id
@@ -506,6 +525,7 @@ def get_audit_data(conn=Depends(get_db_conn)):
         """)
         phases     = cur.fetchall()
         phase_ids  = [r['phase_id'] for r in phases]
+        dev_ids    = list({r['dev_id'] for r in phases})
 
         # Real+pre lot counts per phase
         real_pre_map = {}
@@ -580,8 +600,9 @@ def get_audit_data(conn=Depends(get_db_conn)):
 
         # Assemble phases into communities
         for p in phases:
-            pid  = p['phase_id']
-            egid = p['ent_group_id']
+            pid   = p['phase_id']
+            egid  = p['ent_group_id']
+            dev_id = p['dev_id']
             if egid not in comm_map:
                 continue
             bs     = bldr_map.get(p['instrument_id'], {})
@@ -589,16 +610,34 @@ def get_audit_data(conn=Depends(get_db_conn)):
             comm_map[egid]['phases'].append({
                 'phase_id':            pid,
                 'phase_name':          p['phase_name'],
+                'dev_id':              dev_id,
                 'dev_name':            p['dev_name'],
                 'instrument_id':       p['instrument_id'],
                 'instrument_name':     p['instrument_name'],
                 'sequence_number':     p['sequence_number'],
+                'spec_rate':           float(p['spec_rate']) if p['spec_rate'] is not None else None,
+                'delivery_tier':       p['delivery_tier'],
+                'date_dev_actual':     p['date_dev_actual'].isoformat() if p['date_dev_actual'] else None,
                 'real_pre_lots':       real_pre_map.get(pid, 0),
                 'product_split_total': prod_total_map.get(pid, 0),
                 'builder_splits':      bs,
                 'builder_split_sum':   bs_sum,
                 'in_delivery_event':   pid in covered_phases.get(egid, set()),
             })
+            # Track unique devs per community
+            dev_comm_map.setdefault(egid, {}).setdefault(dev_id, {
+                'dev_id':                dev_id,
+                'dev_name':              p['dev_name'],
+                'annual_starts_target':  dev_params_map.get(dev_id),
+            })
+
+        # Add developments list to each community
+        for egid, devs in dev_comm_map.items():
+            if egid in comm_map:
+                comm_map[egid]['developments'] = list(devs.values())
+        # Ensure communities with no phases still have an empty list
+        for comm in comm_map.values():
+            comm.setdefault('developments', [])
 
         return {
             'global_months':       global_months,

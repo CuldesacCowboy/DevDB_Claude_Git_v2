@@ -1,6 +1,6 @@
 // AuditView.jsx
 // Config audit: surfaces compliance issues between phase config, builder splits,
-// delivery month constraints, and delivery event coverage.
+// delivery month constraints, delivery event coverage, spec rates, and dev params.
 
 import { useState, useEffect, useMemo } from 'react'
 import { API_BASE } from '../config'
@@ -59,13 +59,28 @@ function effectiveMonths(comm, globalMonths) {
   return comm.delivery_months != null ? comm.delivery_months : globalMonths
 }
 
+// Build a map of year -> Set<date-string> for distinct delivery dates per year.
+function buildDatesPerYear(deliveryEvents) {
+  const datesPerYear = {}
+  for (const ev of deliveryEvents) {
+    const d = ev.date_dev_actual || ev.date_dev_projected
+    if (d) {
+      const y = d.slice(0, 4)
+      if (!datesPerYear[y]) datesPerYear[y] = new Set()
+      datesPerYear[y].add(d)
+    }
+  }
+  return datesPerYear
+}
+
 function checkPhase(phase, hasAnyEvents, globalMonths) {
-  const { real_pre_lots, product_split_total, builder_splits, builder_split_sum, in_delivery_event } = phase
+  const { real_pre_lots, product_split_total, builder_splits, builder_split_sum,
+          in_delivery_event, spec_rate, delivery_tier } = phase
+  const hasAnyLots = real_pre_lots > 0 || product_split_total > 0
 
   // Product splits check
   let prod
   if (real_pre_lots > 0) {
-    // Phase already has real/pre lots — product splits are supplementary
     prod = { status: S.SKIP, label: 'lots present', detail: `${real_pre_lots} real/pre lots — product splits optional` }
   } else if (product_split_total > 0) {
     prod = { status: S.PASS, label: `${product_split_total} projected`, detail: 'Product splits configured' }
@@ -75,7 +90,6 @@ function checkPhase(phase, hasAnyEvents, globalMonths) {
 
   // Builder splits check
   let bld
-  const hasAnyLots = real_pre_lots > 0 || product_split_total > 0
   if (!hasAnyLots) {
     bld = { status: S.SKIP, label: 'no lots', detail: 'No lots or projections — builder splits not needed' }
   } else if (builder_split_sum === null) {
@@ -101,10 +115,46 @@ function checkPhase(phase, hasAnyEvents, globalMonths) {
     del = { status: S.FAIL, label: 'uncovered', detail: 'Delivery events exist but this phase has not been assigned to any of them' }
   }
 
-  return { prod, bld, del }
+  // Spec rate check (instrument-level, shown per phase)
+  let spec
+  if (!hasAnyLots) {
+    spec = { status: S.SKIP, label: 'no lots', detail: 'No lots — spec rate not needed' }
+  } else if (spec_rate != null) {
+    spec = { status: S.PASS, label: `${(spec_rate * 100).toFixed(0)}%`, detail: `Spec rate configured at ${(spec_rate * 100).toFixed(1)}% — S-0950 will assign spec/build flags` }
+  } else {
+    spec = { status: S.WARN, label: 'not set', detail: 'No spec rate on this instrument — S-0950 will skip spec/build assignment for all lots in this phase' }
+  }
+
+  // Delivery tier check
+  let tier
+  if (!hasAnyLots) {
+    tier = { status: S.SKIP, label: 'no lots', detail: 'No lots — delivery tier not needed' }
+  } else if (delivery_tier != null) {
+    tier = { status: S.PASS, label: `T${delivery_tier}`, detail: `Delivery tier ${delivery_tier} — controls P-0050 scheduling order within the entitlement group` }
+  } else {
+    tier = { status: S.WARN, label: 'no tier', detail: 'No delivery tier set — phase will default to NULL tier, which may cause unexpected scheduling order' }
+  }
+
+  return { prod, bld, del, spec, tier }
 }
 
-function checkDeliveryEvent(ev, effMonths, eventsThisYear, maxPerYear) {
+function checkDev(dev, phases) {
+  const devPhases = phases.filter(p => p.dev_id === dev.dev_id)
+  const hasLots   = devPhases.some(p => p.real_pre_lots > 0 || p.product_split_total > 0)
+
+  let startsTarget
+  if (!hasLots) {
+    startsTarget = { status: S.SKIP, label: 'no lots', detail: 'No lots in any phase — annual starts target not needed' }
+  } else if (dev.annual_starts_target != null) {
+    startsTarget = { status: S.PASS, label: `${dev.annual_starts_target}/yr`, detail: `Annual starts target: ${dev.annual_starts_target} — S-0600 will use this as the demand signal` }
+  } else {
+    startsTarget = { status: S.WARN, label: 'not set', detail: 'No annual starts target in sim_dev_params — simulation will not generate projected starts for this development' }
+  }
+
+  return { startsTarget }
+}
+
+function checkDeliveryEvent(ev, effMonths, datesPerYear, maxPerYear) {
   const date = ev.date_dev_actual || ev.date_dev_projected
 
   // Month compliance
@@ -131,17 +181,18 @@ function checkDeliveryEvent(ev, effMonths, eventsThisYear, maxPerYear) {
       : 'No phases assigned — this event will have no lots',
   }
 
-  // Year limit
+  // Year limit — counts distinct delivery dates per year, not events.
+  // Multiple phases/events on the same date count as one delivery day.
   let yearLimit
   if (!date || maxPerYear == null) {
     yearLimit = { status: S.SKIP, label: maxPerYear == null ? 'no limit' : 'no date', detail: maxPerYear == null ? 'No max deliveries/year configured' : 'No date set' }
   } else {
-    const year = date.slice(0, 4)
-    const count = eventsThisYear[year] ?? 0
+    const year  = date.slice(0, 4)
+    const count = datesPerYear[year]?.size ?? 0
     if (count <= maxPerYear) {
-      yearLimit = { status: S.PASS, label: `${count}/${maxPerYear}`, detail: `${count} of ${maxPerYear} allowed events in ${year}` }
+      yearLimit = { status: S.PASS, label: `${count}/${maxPerYear}`, detail: `${count} distinct delivery date${count!==1?'s':''} in ${year} (limit: ${maxPerYear})` }
     } else {
-      yearLimit = { status: S.FAIL, label: `${count}/${maxPerYear} OVER`, detail: `${count} delivery events in ${year} exceeds the configured maximum of ${maxPerYear}` }
+      yearLimit = { status: S.FAIL, label: `${count}/${maxPerYear} OVER`, detail: `${count} distinct delivery dates in ${year} exceeds the configured maximum of ${maxPerYear}` }
     }
   }
 
@@ -154,22 +205,21 @@ function commOverallStatus(comm, globalMonths, globalMaxPerYear) {
   const effMonths    = effectiveMonths(comm, globalMonths)
   const maxPerYear   = comm.max_deliveries_per_year ?? globalMaxPerYear
   const hasEvents    = comm.delivery_events.length > 0
-
-  // Year event counts
-  const eventsThisYear = {}
-  for (const ev of comm.delivery_events) {
-    const d = ev.date_dev_actual || ev.date_dev_projected
-    if (d) { const y = d.slice(0,4); eventsThisYear[y] = (eventsThisYear[y]??0)+1 }
-  }
+  const datesPerYear = buildDatesPerYear(comm.delivery_events)
 
   const statuses = []
+
   for (const p of comm.phases) {
     const c = checkPhase(p, hasEvents, globalMonths)
-    statuses.push(c.prod.status, c.bld.status, c.del.status)
+    statuses.push(c.prod.status, c.bld.status, c.del.status, c.spec.status, c.tier.status)
   }
   for (const ev of comm.delivery_events) {
-    const c = checkDeliveryEvent(ev, effMonths, eventsThisYear, maxPerYear)
+    const c = checkDeliveryEvent(ev, effMonths, datesPerYear, maxPerYear)
     statuses.push(c.month.status, c.phases.status, c.yearLimit.status)
+  }
+  for (const dev of (comm.developments || [])) {
+    const c = checkDev(dev, comm.phases)
+    statuses.push(c.startsTarget.status)
   }
 
   if (statuses.includes(S.FAIL)) return S.FAIL
@@ -203,11 +253,13 @@ function PhaseChecksTable({ comm, globalMonths }) {
             <th style={{ ...thStyle, borderLeft: '2px solid #e5e7eb' }}>Product Splits</th>
             <th style={thStyle}>Builder Splits</th>
             <th style={thStyle}>Delivery Coverage</th>
+            <th style={{ ...thStyle, borderLeft: '2px solid #e5e7eb' }}>Spec Rate</th>
+            <th style={thStyle}>Tier</th>
           </tr>
         </thead>
         <tbody>
           {comm.phases.map((phase, i) => {
-            const { prod, bld, del } = checkPhase(phase, hasEvents, globalMonths)
+            const { prod, bld, del, spec, tier } = checkPhase(phase, hasEvents, globalMonths)
             const bg = i % 2 === 0 ? '#fff' : '#fafafa'
             const td = (extra={}) => ({ padding: '5px 8px', background: bg, borderTop: '1px solid #f3f4f6', verticalAlign: 'middle', ...extra })
             return (
@@ -226,6 +278,53 @@ function PhaseChecksTable({ comm, globalMonths }) {
                 <td style={td()}>
                   <Chip status={del.status} label={del.label} title={del.detail} />
                 </td>
+                <td style={td({ borderLeft: '2px solid #f1f5f9' })}>
+                  <Chip status={spec.status} label={spec.label} title={spec.detail} />
+                </td>
+                <td style={td()}>
+                  <Chip status={tier.status} label={tier.label} title={tier.detail} />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ─── Development checks table ─────────────────────────────────────────────────
+
+function DevChecksTable({ comm }) {
+  const devs = comm.developments || []
+  if (devs.length === 0) return null
+
+  const thStyle = {
+    padding: '5px 8px', fontSize: 11, fontWeight: 600, color: '#6b7280',
+    background: '#f8fafc', borderBottom: '2px solid #e5e7eb',
+    textAlign: 'left', whiteSpace: 'nowrap', position: 'sticky', top: 0,
+  }
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr>
+            <th style={thStyle}>Development</th>
+            <th style={{ ...thStyle, borderLeft: '2px solid #e5e7eb' }}>Annual Starts Target</th>
+          </tr>
+        </thead>
+        <tbody>
+          {devs.map((dev, i) => {
+            const { startsTarget } = checkDev(dev, comm.phases)
+            const bg = i % 2 === 0 ? '#fff' : '#fafafa'
+            const td = (extra={}) => ({ padding: '5px 8px', background: bg, borderTop: '1px solid #f3f4f6', verticalAlign: 'middle', ...extra })
+            return (
+              <tr key={dev.dev_id}>
+                <td style={td({ fontWeight: 500, color: '#1e293b' })}>{dev.dev_name}</td>
+                <td style={td({ borderLeft: '2px solid #f1f5f9' })}>
+                  <Chip status={startsTarget.status} label={startsTarget.label} title={startsTarget.detail} />
+                </td>
               </tr>
             )
           })}
@@ -238,8 +337,9 @@ function PhaseChecksTable({ comm, globalMonths }) {
 // ─── Delivery event checks table ──────────────────────────────────────────────
 
 function DeliveryEventsTable({ comm, globalMonths, globalMaxPerYear }) {
-  const effMonths  = effectiveMonths(comm, globalMonths)
-  const maxPerYear = comm.max_deliveries_per_year ?? globalMaxPerYear
+  const effMonths    = effectiveMonths(comm, globalMonths)
+  const maxPerYear   = comm.max_deliveries_per_year ?? globalMaxPerYear
+  const datesPerYear = buildDatesPerYear(comm.delivery_events)
 
   if (comm.delivery_events.length === 0) {
     return (
@@ -247,13 +347,6 @@ function DeliveryEventsTable({ comm, globalMonths, globalMaxPerYear }) {
         No delivery events. Run a simulation or add events manually in Setup.
       </div>
     )
-  }
-
-  // Precompute events per year
-  const eventsThisYear = {}
-  for (const ev of comm.delivery_events) {
-    const d = ev.date_dev_actual || ev.date_dev_projected
-    if (d) { const y = d.slice(0,4); eventsThisYear[y] = (eventsThisYear[y]??0)+1 }
   }
 
   const thStyle = {
@@ -281,7 +374,7 @@ function DeliveryEventsTable({ comm, globalMonths, globalMaxPerYear }) {
         </thead>
         <tbody>
           {comm.delivery_events.map((ev, i) => {
-            const { month, phases, yearLimit } = checkDeliveryEvent(ev, effMonths, eventsThisYear, maxPerYear)
+            const { month, phases, yearLimit } = checkDeliveryEvent(ev, effMonths, datesPerYear, maxPerYear)
             const bg = i % 2 === 0 ? '#fff' : '#fafafa'
             const td = (extra={}) => ({ padding: '5px 8px', background: bg, borderTop: '1px solid #f3f4f6', verticalAlign: 'middle', ...extra })
             const displayDate = ev.date_dev_actual || ev.date_dev_projected
@@ -337,7 +430,7 @@ function DeliveryConfigStrip({ comm, globalMonths, globalMaxPerYear }) {
         </span>
         {isOverride && <span style={{ color: '#2563eb', marginLeft: 4 }}>(override)</span>}
       </span>
-      <span title="Max delivery events per calendar year">
+      <span title="Max distinct delivery dates per calendar year">
         <span style={{ color: '#94a3b8' }}>Max/yr:</span>{' '}
         <span style={{ color: '#1e293b' }}>{maxPerYear ?? '—'}</span>
       </span>
@@ -354,24 +447,23 @@ function DeliveryConfigStrip({ comm, globalMonths, globalMaxPerYear }) {
 // ─── Community detail panel ───────────────────────────────────────────────────
 
 function CommDetail({ comm, globalMonths, globalMaxPerYear }) {
-  // Collect all check statuses for the summary bar
-  const effMonths  = effectiveMonths(comm, globalMonths)
-  const maxPerYear = comm.max_deliveries_per_year ?? globalMaxPerYear
-  const hasEvents  = comm.delivery_events.length > 0
-  const eventsThisYear = {}
-  for (const ev of comm.delivery_events) {
-    const d = ev.date_dev_actual || ev.date_dev_projected
-    if (d) { const y = d.slice(0,4); eventsThisYear[y] = (eventsThisYear[y]??0)+1 }
-  }
+  const effMonths    = effectiveMonths(comm, globalMonths)
+  const maxPerYear   = comm.max_deliveries_per_year ?? globalMaxPerYear
+  const hasEvents    = comm.delivery_events.length > 0
+  const datesPerYear = buildDatesPerYear(comm.delivery_events)
 
   const allStatuses = []
   for (const p of comm.phases) {
     const c = checkPhase(p, hasEvents, globalMonths)
-    allStatuses.push(c.prod.status, c.bld.status, c.del.status)
+    allStatuses.push(c.prod.status, c.bld.status, c.del.status, c.spec.status, c.tier.status)
   }
   for (const ev of comm.delivery_events) {
-    const c = checkDeliveryEvent(ev, effMonths, eventsThisYear, maxPerYear)
+    const c = checkDeliveryEvent(ev, effMonths, datesPerYear, maxPerYear)
     allStatuses.push(c.month.status, c.phases.status, c.yearLimit.status)
+  }
+  for (const dev of (comm.developments || [])) {
+    const c = checkDev(dev, comm.phases)
+    allStatuses.push(c.startsTarget.status)
   }
 
   const sectionHead = (label) => (
@@ -389,6 +481,9 @@ function CommDetail({ comm, globalMonths, globalMaxPerYear }) {
       </div>
 
       <DeliveryConfigStrip comm={comm} globalMonths={globalMonths} globalMaxPerYear={globalMaxPerYear} />
+
+      {sectionHead(`Developments (${(comm.developments || []).length})`)}
+      <DevChecksTable comm={comm} />
 
       {sectionHead(`Phases (${comm.phases.length})`)}
       <PhaseChecksTable comm={comm} globalMonths={globalMonths} />
@@ -439,15 +534,9 @@ export default function AuditView({ showTestCommunities }) {
     communities.find(c => c.ent_group_id === selected) ?? null,
     [communities, selected])
 
-  // Overall summary across all communities
   const globalStatuses = useMemo(() => {
     if (!data) return []
-    const all = []
-    for (const c of communities) {
-      const s = commOverallStatus(c, data.global_months, data.global_max_per_year)
-      all.push(s)
-    }
-    return all
+    return communities.map(c => commOverallStatus(c, data.global_months, data.global_max_per_year))
   }, [communities, data])
 
   const failCount = globalStatuses.filter(s => s === S.FAIL).length
@@ -555,47 +644,47 @@ export default function AuditView({ showTestCommunities }) {
 
 function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }) {
   const rows = communities.map(c => {
-    const effMonths  = effectiveMonths(c, globalMonths)
-    const maxPerYear = c.max_deliveries_per_year ?? globalMaxPerYear
-    const hasEvents  = c.delivery_events.length > 0
-    const eventsThisYear = {}
-    for (const ev of c.delivery_events) {
-      const d = ev.date_dev_actual || ev.date_dev_projected
-      if (d) { const y = d.slice(0,4); eventsThisYear[y] = (eventsThisYear[y]??0)+1 }
-    }
+    const effMonths    = effectiveMonths(c, globalMonths)
+    const maxPerYear   = c.max_deliveries_per_year ?? globalMaxPerYear
+    const hasEvents    = c.delivery_events.length > 0
+    const datesPerYear = buildDatesPerYear(c.delivery_events)
 
-    // Aggregate phase checks
     let prodFail=0, prodWarn=0
-    let bldFail=0, bldWarn=0
-    let delFail=0, delWarn=0
+    let bldFail=0,  bldWarn=0
+    let delFail=0,  delWarn=0
+    let specFail=0, specWarn=0
+    let tierFail=0, tierWarn=0
     for (const p of c.phases) {
       const ch = checkPhase(p, hasEvents, globalMonths)
       if (ch.prod.status===S.FAIL) prodFail++; else if (ch.prod.status===S.WARN) prodWarn++
       if (ch.bld.status===S.FAIL)  bldFail++;  else if (ch.bld.status===S.WARN)  bldWarn++
       if (ch.del.status===S.FAIL)  delFail++;  else if (ch.del.status===S.WARN)  delWarn++
+      if (ch.spec.status===S.FAIL) specFail++; else if (ch.spec.status===S.WARN) specWarn++
+      if (ch.tier.status===S.FAIL) tierFail++; else if (ch.tier.status===S.WARN) tierWarn++
     }
 
-    // Aggregate event checks
-    let monthFail=0, monthWarn=0
+    let monthFail=0,   monthWarn=0
     let evPhaseFail=0, evPhaseWarn=0
     let yearFail=0
     for (const ev of c.delivery_events) {
-      const ch = checkDeliveryEvent(ev, effMonths, eventsThisYear, maxPerYear)
-      if (ch.month.status===S.FAIL) monthFail++; else if (ch.month.status===S.WARN) monthWarn++
-      if (ch.phases.status===S.FAIL) evPhaseFail++; else if (ch.phases.status===S.WARN) evPhaseWarn++
+      const ch = checkDeliveryEvent(ev, effMonths, datesPerYear, maxPerYear)
+      if (ch.month.status===S.FAIL)  monthFail++;   else if (ch.month.status===S.WARN)   monthWarn++
+      if (ch.phases.status===S.FAIL) evPhaseFail++; else if (ch.phases.status===S.WARN)  evPhaseWarn++
       if (ch.yearLimit.status===S.FAIL) yearFail++
     }
 
-    const overall = commOverallStatus(c, globalMonths, globalMaxPerYear)
-
-    function mini(fail, warn, total, skipVal) {
-      if (total === 0) return <span style={{ color: '#d1d5db', fontSize: 10 }}>—</span>
-      if (fail > 0) return <Chip status="fail" label={`${fail}`} title={`${fail} issue${fail!==1?'s':''}`} />
-      if (warn > 0) return <Chip status="warn" label={`${warn}`} title={`${warn} warning${warn!==1?'s':''}`} />
-      return <Chip status="pass" label="all ok" />
+    let stFail=0, stWarn=0
+    for (const dev of (c.developments || [])) {
+      const ch = checkDev(dev, c.phases)
+      if (ch.startsTarget.status===S.FAIL) stFail++; else if (ch.startsTarget.status===S.WARN) stWarn++
     }
 
-    return { c, overall, prodFail, prodWarn, bldFail, bldWarn, delFail, delWarn, monthFail, monthWarn, evPhaseFail, evPhaseWarn, yearFail }
+    const overall = commOverallStatus(c, globalMonths, globalMaxPerYear)
+    return { c, overall,
+             prodFail, prodWarn, bldFail, bldWarn, delFail, delWarn,
+             specFail, specWarn, tierFail, tierWarn,
+             monthFail, monthWarn, evPhaseFail, evPhaseWarn, yearFail,
+             stFail, stWarn }
   })
 
   const thStyle = {
@@ -617,7 +706,7 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
         </div>
       </div>
 
-      {/* ── Scrollable table (thead sticks within this container) ── */}
+      {/* ── Scrollable table ── */}
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', padding: '0 20px 16px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
@@ -631,16 +720,26 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
                   title="Phases with builder split issues">Builder Splits</th>
               <th style={{ ...thStyle, textAlign: 'center' }}
                   title="Phases not covered by a delivery event">Delivery Coverage</th>
-              <th style={{ ...thStyle, textAlign: 'center', borderLeft: '2px solid #e5e7eb' }}
-                  title="Delivery events in blocked months">Month Compliance</th>
               <th style={{ ...thStyle, textAlign: 'center' }}
-                  title="Delivery events over annual limit">Year Limit</th>
+                  title="Phases with no spec rate on their instrument">Spec Rate</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}
+                  title="Phases with no delivery tier configured">Tier</th>
+              <th style={{ ...thStyle, textAlign: 'center', borderLeft: '2px solid #e5e7eb' }}
+                  title="Delivery events in blocked months">Month</th>
+              <th style={{ ...thStyle, textAlign: 'center' }}
+                  title="Delivery events over annual date limit">Year Limit</th>
               <th style={{ ...thStyle, textAlign: 'center' }}
                   title="Delivery events with no phases assigned">Event Coverage</th>
+              <th style={{ ...thStyle, textAlign: 'center', borderLeft: '2px solid #e5e7eb' }}
+                  title="Developments missing annual starts target">Starts Target</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ c, overall, prodFail, prodWarn, bldFail, bldWarn, delFail, delWarn, monthFail, monthWarn, evPhaseFail, evPhaseWarn, yearFail }, i) => {
+            {rows.map(({ c, overall,
+                         prodFail, prodWarn, bldFail, bldWarn, delFail, delWarn,
+                         specFail, specWarn, tierFail, tierWarn,
+                         monthFail, monthWarn, evPhaseFail, evPhaseWarn, yearFail,
+                         stFail, stWarn }, i) => {
               const col = STATUS_COLOR[overall]
               const bg  = i % 2 === 0 ? '#fff' : '#fafafa'
               const td  = (extra={}) => ({ padding: '6px 10px', background: bg, borderTop: '1px solid #f3f4f6', verticalAlign: 'middle', ...extra })
@@ -673,6 +772,12 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
                   <td style={td({ textAlign: 'center' })}>
                     {mini(delFail, delWarn, c.phases.length)}
                   </td>
+                  <td style={td({ textAlign: 'center' })}>
+                    {mini(specFail, specWarn, c.phases.length)}
+                  </td>
+                  <td style={td({ textAlign: 'center' })}>
+                    {mini(tierFail, tierWarn, c.phases.length)}
+                  </td>
                   <td style={td({ textAlign: 'center', borderLeft: '2px solid #f1f5f9' })}>
                     {mini(monthFail, monthWarn, c.delivery_events.length)}
                   </td>
@@ -681,6 +786,9 @@ function OverviewTable({ communities, globalMonths, globalMaxPerYear, onSelect }
                   </td>
                   <td style={td({ textAlign: 'center' })}>
                     {mini(evPhaseFail, evPhaseWarn, c.delivery_events.length)}
+                  </td>
+                  <td style={td({ textAlign: 'center', borderLeft: '2px solid #f1f5f9' })}>
+                    {mini(stFail, stWarn, (c.developments || []).length)}
                   </td>
                 </tr>
               )
