@@ -65,11 +65,12 @@ function SpecRateCell({ instrumentId, value, onSave }) {
   }
 
   function HintBtn({ label, hint }) {
-    const v    = hint?.value ?? null
+    const vRaw = hint?.value ?? null
+    const v    = vRaw != null ? Math.round(vRaw / 0.05) * 0.05 : null
     const n    = hint?.lot_count ?? 0
     const warn = hint?.warning ?? null
     const hasV = v != null
-    const pct  = hasV ? `${Math.round(v * 1000) / 10}%` : null
+    const pct  = hasV ? `${Math.round(v * 100)}%` : null
     const tooltip = warn ?? (hasV ? `Apply ${pct} (n=${n})` : 'No data available')
     return (
       <button
