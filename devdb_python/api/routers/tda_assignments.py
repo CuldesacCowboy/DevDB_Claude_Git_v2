@@ -266,6 +266,73 @@ def remove_lot_from_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
         cur.close()
 
 
+class MoveLotRequest(BaseModel):
+    lot_ids: list[int]
+    target_tda_id: int
+
+
+@router.post("/takedown-agreements/{tda_id}/lots/move")
+def move_lots_to_tda(tda_id: int, body: MoveLotRequest, conn=Depends(get_db_conn)):
+    """Move a batch of lots from one TDA to another within the same community.
+    Clears assignments in source TDA, adds lots to target TDA pool (no auto-assignment)."""
+    cur = dict_cursor(conn)
+    try:
+        # Verify source TDA exists and get its ent_group_id
+        cur.execute(
+            "SELECT tda_id, ent_group_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
+            (tda_id,),
+        )
+        src = cur.fetchone()
+        if src is None:
+            raise HTTPException(status_code=404, detail=f"Source TDA {tda_id} not found.")
+
+        # Verify target TDA exists and belongs to same community
+        cur.execute(
+            "SELECT tda_id, ent_group_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
+            (body.target_tda_id,),
+        )
+        tgt = cur.fetchone()
+        if tgt is None:
+            raise HTTPException(status_code=404, detail=f"Target TDA {body.target_tda_id} not found.")
+        if tgt["ent_group_id"] != src["ent_group_id"]:
+            raise HTTPException(status_code=422, detail="Source and target TDAs must belong to the same community.")
+
+        moved = 0
+        for lot_id in body.lot_ids:
+            # Remove from source: clear assignment first, then pool
+            cur.execute(
+                """
+                DELETE FROM devdb.sim_takedown_lot_assignments
+                WHERE lot_id = %s
+                  AND checkpoint_id IN (
+                      SELECT checkpoint_id FROM devdb.sim_takedown_checkpoints WHERE tda_id = %s
+                  )
+                """,
+                (lot_id, tda_id),
+            )
+            cur.execute(
+                "DELETE FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
+                (tda_id, lot_id),
+            )
+            # Add to target pool (no assignment — user can auto-assign later)
+            cur.execute(
+                "INSERT INTO devdb.sim_takedown_agreement_lots (tda_id, lot_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (body.target_tda_id, lot_id),
+            )
+            moved += 1
+
+        conn.commit()
+        return {"moved": moved, "from_tda_id": tda_id, "to_tda_id": body.target_tda_id}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cur.close()
+
+
 @router.patch("/tda-lot-assignments/{assignment_id}/dates")
 def update_lot_assignment_dates(assignment_id: int, body: UpdateDatesRequest, conn=Depends(get_db_conn)):
     cur = dict_cursor(conn)

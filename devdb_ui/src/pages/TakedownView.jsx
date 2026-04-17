@@ -272,138 +272,226 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
   )
 }
 
-// ── Lots section ───────────────────────────────────────────────────
-function LotsSection({ tda, unassignedLots, onAddLots, onRemoveLot, onEditLotDates }) {
-  const [showAdd, setShowAdd]         = useState(false)
-  const [addSearch, setAddSearch]     = useState('')
-  const [selectedIds, setSelectedIds] = useState(new Set())
-  const [confirmRemove, setConfirmRemove] = useState(null)
+// ── Lot pill ───────────────────────────────────────────────────────
+function LotPill({ lot, selected, onToggle, cpColor }) {
+  const hasTd = !!(lot.bldr_marks_date || lot.bldr_projected_date || lot.hc_marks_date || lot.hc_projected_date)
+  return (
+    <div
+      onClick={onToggle}
+      title={`${lot.lot_number}${lot.lot_type_short ? ' · ' + lot.lot_type_short : ''}${lot.checkpoint_date ? ' · CP: ' + lot.checkpoint_date : ''}`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        padding: '3px 8px', borderRadius: 12, fontSize: 11,
+        fontFamily: 'monospace', cursor: 'pointer', userSelect: 'none',
+        border: `1.5px solid ${selected ? '#2563eb' : '#d1d5db'}`,
+        background: selected ? '#eff6ff' : '#fff',
+        color: selected ? '#1d4ed8' : TEXT_PRIMARY,
+        fontWeight: selected ? 700 : 400,
+        transition: 'background 0.1s, border-color 0.1s',
+      }}
+    >
+      {cpColor && (
+        <span style={{
+          width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+          background: cpColor,
+        }} />
+      )}
+      {lot.lot_number.replace(/^[A-Z]+0*/, '')}
+      {hasTd && <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />}
+    </div>
+  )
+}
+
+// CP colors for visual coding
+const CP_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#f97316']
+
+// ── Lots section (pill-based) ──────────────────────────────────────
+function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, onMoveLots, onEditLotDates }) {
+  const [selected, setSelected]     = useState(new Set())   // selected lot_ids
+  const [showAdd, setShowAdd]       = useState(false)
+  const [addSearch, setAddSearch]   = useState('')
+  const [addSelected, setAddSelected] = useState(new Set())
+  const [moveTarget, setMoveTarget] = useState('')
+  const [confirmRemove, setConfirmRemove] = useState(false)
+  const [lastClicked, setLastClicked] = useState(null)
+
+  // Build CP color map
+  const cpColorMap = {}
+  tda.checkpoints.forEach((cp, i) => {
+    cpColorMap[cp.checkpoint_id] = CP_COLORS[i % CP_COLORS.length]
+  })
+
+  const otherTdas = allTdas.filter(t => t.tda_id !== tda.tda_id)
+
+  function toggleLot(lotId, shiftKey) {
+    if (shiftKey && lastClicked !== null) {
+      const ids = tda.lots.map(l => l.lot_id)
+      const a = ids.indexOf(lastClicked)
+      const b = ids.indexOf(lotId)
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a]
+        const rangeIds = ids.slice(lo, hi + 1)
+        setSelected(prev => {
+          const next = new Set(prev)
+          rangeIds.forEach(id => next.add(id))
+          return next
+        })
+        setLastClicked(lotId)
+        return
+      }
+    }
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(lotId) ? next.delete(lotId) : next.add(lotId)
+      return next
+    })
+    setLastClicked(lotId)
+  }
+
+  function selectAll() { setSelected(new Set(tda.lots.map(l => l.lot_id))) }
+  function clearSelection() { setSelected(new Set()) }
+
+  async function handleRemove() {
+    await onRemoveLots(tda.tda_id, [...selected])
+    setSelected(new Set())
+    setConfirmRemove(false)
+  }
+
+  async function handleMove() {
+    if (!moveTarget) return
+    await onMoveLots(tda.tda_id, [...selected], Number(moveTarget))
+    setSelected(new Set())
+    setMoveTarget('')
+  }
+
+  async function handleAdd() {
+    if (addSelected.size === 0) return
+    await onAddLots(tda.tda_id, [...addSelected])
+    setAddSelected(new Set())
+    setShowAdd(false)
+    setAddSearch('')
+  }
 
   const filteredUnassigned = unassignedLots.filter(l =>
     !addSearch || (l.lot_number ?? '').toLowerCase().includes(addSearch.toLowerCase())
   )
 
-  function toggleSelect(lotId) {
-    setSelectedIds(prev => {
-      const next = new Set(prev)
-      next.has(lotId) ? next.delete(lotId) : next.add(lotId)
-      return next
-    })
-  }
-
-  async function handleAdd() {
-    if (selectedIds.size === 0) return
-    await onAddLots(tda.tda_id, [...selectedIds])
-    setSelectedIds(new Set())
-    setShowAdd(false)
-    setAddSearch('')
-  }
+  const nSel = selected.size
 
   return (
     <div style={{ padding: '10px 16px', borderTop: `1px solid ${PANEL_BORDER}` }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED, marginBottom: 6 }}>
-        LOTS IN AGREEMENT
-        <span style={{ fontWeight: 400, marginLeft: 6 }}>({tda.lots.length})</span>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED }}>
+          LOTS <span style={{ fontWeight: 400 }}>({tda.lots.length})</span>
+        </span>
+        {tda.lots.length > 0 && (
+          <>
+            <button onClick={selectAll} style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              All
+            </button>
+            <button onClick={clearSelection} style={{ fontSize: 11, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              None
+            </button>
+          </>
+        )}
+
+        {/* CP legend */}
+        {tda.checkpoints.length > 0 && (
+          <span style={{ display: 'flex', gap: 8, marginLeft: 4 }}>
+            {tda.checkpoints.map((cp, i) => (
+              <span key={cp.checkpoint_id} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: TEXT_MUTED }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: CP_COLORS[i % CP_COLORS.length] }} />
+                {cp.checkpoint_date ? cp.checkpoint_date.slice(0, 7) : `CP${i+1}`}
+              </span>
+            ))}
+          </span>
+        )}
+
+        <span style={{ marginLeft: 'auto' }} />
+
+        {!showAdd && unassignedLots.length > 0 && (
+          <button
+            onClick={() => { setShowAdd(true); setAddSelected(new Set()) }}
+            style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}
+          >
+            + Add Lots
+          </button>
+        )}
       </div>
 
+      {/* Pill grid */}
       {tda.lots.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
-          <thead>
-            <tr>
-              <th style={TH}>Lot</th>
-              <th style={TH}>Type</th>
-              <th style={TH}>Bldg</th>
-              <th style={TH}>Checkpoint</th>
-              <th style={{ ...TH }} title="Hold / HC takedown date (date_td_hold_projected)">HC Date</th>
-              <th style={{ ...TH }} title="Builder takedown date (date_td_projected)">BLDR Date</th>
-              <th style={TH}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {tda.lots.map(lot => (
-              <tr key={lot.lot_id} style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
-                <td style={TD}>
-                  <span style={{ fontFamily: 'monospace', fontSize: 12, color: TEXT_PRIMARY }}>
-                    {lot.lot_number}
-                  </span>
-                </td>
-
-                <td style={{ ...TD, color: TEXT_MUTED, fontSize: 11 }}>
-                  {lot.lot_type_short || '—'}
-                </td>
-
-                <td style={{ ...TD, color: TEXT_MUTED, fontSize: 11 }}>
-                  {lot.building_name
-                    ? <span style={{ fontFamily: 'monospace', fontSize: 11 }}>{lot.building_name.replace('Building ', 'B')}</span>
-                    : '—'}
-                </td>
-
-                <td style={{ ...TD, fontSize: 11, color: lot.checkpoint_id ? TEXT_PRIMARY : TEXT_MUTED }}>
-                  {lot.checkpoint_id
-                    ? cpLabel({ lots_required_cumulative: lot.lots_required_cumulative, checkpoint_date: lot.checkpoint_date, checkpoint_number: lot.checkpoint_number })
-                    : <span style={{ color: TEXT_MUTED }}>Unassigned</span>
-                  }
-                </td>
-
-                <td style={TD}>
-                  {lot.hc_marks_date
-                    ? <span style={{ fontSize: 12, color: TEXT_MUTED, fontStyle: 'italic' }}>{lot.hc_marks_date}</span>
-                    : <EditDate value={lot.hc_projected_date}
-                        onSave={v => onEditLotDates(lot.lot_id, { hc_projected_date: v })} />
-                  }
-                </td>
-
-                <td style={TD}>
-                  {lot.bldr_marks_date
-                    ? <span style={{ fontSize: 12, color: TEXT_MUTED, fontStyle: 'italic' }}>{lot.bldr_marks_date}</span>
-                    : <EditDate value={lot.bldr_projected_date}
-                        onSave={v => onEditLotDates(lot.lot_id, { bldr_projected_date: v })} />
-                  }
-                </td>
-
-                <td style={{ ...TD, textAlign: 'right' }}>
-                  {confirmRemove === lot.lot_id ? (
-                    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: '#dc2626' }}>Remove?</span>
-                      <Btn variant="danger" style={{ padding: '1px 6px', fontSize: 11 }}
-                        onClick={() => { onRemoveLot(tda.tda_id, lot.lot_id); setConfirmRemove(null) }}>Yes</Btn>
-                      <Btn style={{ padding: '1px 6px', fontSize: 11 }}
-                        onClick={() => setConfirmRemove(null)}>No</Btn>
-                    </span>
-                  ) : (
-                    <button onClick={() => setConfirmRemove(lot.lot_id)}
-                      style={{ fontSize: 14, color: '#d1d5db', background: 'none', border: 'none', cursor: 'pointer' }}
-                      title="Remove from agreement">×</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
+          {tda.lots.map(lot => (
+            <LotPill
+              key={lot.lot_id}
+              lot={lot}
+              selected={selected.has(lot.lot_id)}
+              onToggle={e => toggleLot(lot.lot_id, e.shiftKey)}
+              cpColor={lot.checkpoint_id ? cpColorMap[lot.checkpoint_id] : '#e5e7eb'}
+            />
+          ))}
+        </div>
       )}
 
-      {/* Add-lots panel toggle */}
-      {!showAdd && unassignedLots.length > 0 && (
-        <button
-          onClick={() => { setShowAdd(true); setSelectedIds(new Set()) }}
-          style={{ fontSize: 12, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}
-        >
-          + Add Lots
-        </button>
+      {tda.lots.length === 0 && !showAdd && (
+        <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>No lots in this agreement.</p>
       )}
 
-      {!showAdd && tda.lots.length === 0 && unassignedLots.length === 0 && (
-        <p style={{ fontSize: 12, color: TEXT_MUTED, margin: 0 }}>No unassigned lots available for this community.</p>
+      {/* Action bar (shows when lots are selected) */}
+      {nSel > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
+          background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, marginBottom: 8,
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#1d4ed8' }}>{nSel} selected</span>
+
+          {otherTdas.length > 0 && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 11, color: TEXT_MUTED }}>Move to:</span>
+              <select
+                value={moveTarget}
+                onChange={e => setMoveTarget(e.target.value)}
+                style={{
+                  fontSize: 11, padding: '2px 6px', borderRadius: 4,
+                  border: '1px solid #d1d5db', background: '#fff', color: TEXT_PRIMARY,
+                  maxWidth: 200,
+                }}
+              >
+                <option value="">— select agreement —</option>
+                {otherTdas.map(t => (
+                  <option key={t.tda_id} value={t.tda_id}>{t.tda_name}</option>
+                ))}
+              </select>
+              <Btn variant="primary" onClick={handleMove} disabled={!moveTarget} style={{ padding: '2px 8px', fontSize: 11 }}>
+                Move
+              </Btn>
+            </span>
+          )}
+
+          {confirmRemove ? (
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
+              <span style={{ fontSize: 11, color: '#dc2626' }}>Remove {nSel} lots?</span>
+              <Btn variant="danger" onClick={handleRemove} style={{ padding: '2px 6px', fontSize: 11 }}>Yes</Btn>
+              <Btn onClick={() => setConfirmRemove(false)} style={{ padding: '2px 6px', fontSize: 11 }}>No</Btn>
+            </span>
+          ) : (
+            <Btn variant="danger" onClick={() => setConfirmRemove(true)} style={{ padding: '2px 6px', fontSize: 11, marginLeft: 'auto' }}>
+              Remove
+            </Btn>
+          )}
+        </div>
       )}
 
-      {/* Add-lots inline panel */}
+      {/* Add-lots panel */}
       {showAdd && (
         <div style={{
           marginTop: 6, padding: 10, border: `1px solid ${PANEL_BORDER}`, borderRadius: 4, background: '#f9fafb',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: TEXT_PRIMARY }}>Add lots to agreement</span>
-            <button onClick={() => { setShowAdd(false); setSelectedIds(new Set()); setAddSearch('') }}
+            <button onClick={() => { setShowAdd(false); setAddSelected(new Set()); setAddSearch('') }}
               style={{ fontSize: 12, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>
               Cancel
             </button>
@@ -417,20 +505,42 @@ function LotsSection({ tda, unassignedLots, onAddLots, onRemoveLot, onEditLotDat
               border: '1px solid #d1d5db', background: '#fff', marginBottom: 6, boxSizing: 'border-box',
             }}
           />
-          <div style={{ maxHeight: 160, overflowY: 'auto', marginBottom: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxHeight: 140, overflowY: 'auto', marginBottom: 8 }}>
             {filteredUnassigned.length === 0 && (
               <p style={{ fontSize: 12, color: TEXT_MUTED, margin: 0 }}>No lots match.</p>
             )}
             {filteredUnassigned.map(lot => (
-              <label key={lot.lot_id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '2px 0', cursor: 'pointer', color: TEXT_PRIMARY }}>
-                <input type="checkbox" checked={selectedIds.has(lot.lot_id)} onChange={() => toggleSelect(lot.lot_id)} />
-                <span style={{ fontFamily: 'monospace' }}>{lot.lot_number}</span>
-              </label>
+              <div
+                key={lot.lot_id}
+                onClick={() => setAddSelected(prev => {
+                  const next = new Set(prev)
+                  next.has(lot.lot_id) ? next.delete(lot.lot_id) : next.add(lot.lot_id)
+                  return next
+                })}
+                style={{
+                  padding: '3px 8px', borderRadius: 12, fontSize: 11, fontFamily: 'monospace',
+                  cursor: 'pointer', userSelect: 'none',
+                  border: `1.5px solid ${addSelected.has(lot.lot_id) ? '#2563eb' : '#d1d5db'}`,
+                  background: addSelected.has(lot.lot_id) ? '#eff6ff' : '#fff',
+                  color: addSelected.has(lot.lot_id) ? '#1d4ed8' : TEXT_PRIMARY,
+                  fontWeight: addSelected.has(lot.lot_id) ? 700 : 400,
+                }}
+              >
+                {lot.lot_number.replace(/^[A-Z]+0*/, '')}
+              </div>
             ))}
           </div>
-          <Btn variant="primary" onClick={handleAdd} disabled={selectedIds.size === 0}>
-            Add {selectedIds.size > 0 ? selectedIds.size : ''} {selectedIds.size === 1 ? 'lot' : 'lots'}
-          </Btn>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <Btn variant="primary" onClick={handleAdd} disabled={addSelected.size === 0}>
+              Add {addSelected.size > 0 ? addSelected.size : ''} {addSelected.size === 1 ? 'lot' : 'lots'}
+            </Btn>
+            <button
+              onClick={() => setAddSelected(new Set(filteredUnassigned.map(l => l.lot_id)))}
+              style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              Select all
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -438,11 +548,11 @@ function LotsSection({ tda, unassignedLots, onAddLots, onRemoveLot, onEditLotDat
 }
 
 // ── Agreement card ─────────────────────────────────────────────────
-function AgreementCard({ tda, unassignedLots, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLot, onEditLotDates, onAutoAssign }) {
+function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign }) {
   const ss = AGREEMENT_STATUS_STYLE[tda.status] || AGREEMENT_STATUS_STYLE.active
 
   return (
-    <div style={{ marginBottom: 18, border: `1px solid ${PANEL_BORDER}`, borderRadius: 6, background: '#fff', overflow: 'hidden' }}>
+    <div style={{ border: `1px solid ${PANEL_BORDER}`, borderRadius: 6, background: '#fff', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12, padding: '9px 16px',
@@ -480,9 +590,11 @@ function AgreementCard({ tda, unassignedLots, onPatch, onAddCheckpoint, onPatchC
 
       <LotsSection
         tda={tda}
+        allTdas={allTdas}
         unassignedLots={unassignedLots}
         onAddLots={onAddLots}
-        onRemoveLot={onRemoveLot}
+        onRemoveLots={onRemoveLots}
+        onMoveLots={onMoveLots}
         onEditLotDates={onEditLotDates}
       />
     </div>
@@ -510,7 +622,6 @@ function LedgerTab({ selectedId }) {
 
   const thS = { ...TH, background: '#f9fafb', position: 'sticky', top: 0 }
 
-  // Running cumulative totals
   let cumActual = 0, cumMarks = 0, cumSim = 0
   const rows = ledger.map(r => {
     cumActual += r.actual || 0
@@ -519,7 +630,7 @@ function LedgerTab({ selectedId }) {
     return { ...r, cumActual, cumMarks, cumSim }
   })
 
-  const today = new Date().toISOString().slice(0, 7) // YYYY-MM
+  const today = new Date().toISOString().slice(0, 7)
 
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -680,8 +791,8 @@ function OverridePanel({ lot, dateField, onClose, onApplied }) {
 
 // ── Lots tab ───────────────────────────────────────────────────────
 function LotsTab({ selectedId, data, onReload }) {
-  const [overrideMap, setOverrideMap] = useState({}) // lot_id -> [overrides]
-  const [activeOverride, setActiveOverride] = useState(null) // {lot_id, date_field}
+  const [overrideMap, setOverrideMap] = useState({})
+  const [activeOverride, setActiveOverride] = useState(null)
   const [clearConfirm, setClearConfirm] = useState(null)
 
   useEffect(() => {
@@ -702,7 +813,6 @@ function LotsTab({ selectedId, data, onReload }) {
   if (!selectedId) return <p style={{ color: TEXT_MUTED, fontSize: 14, marginTop: 20 }}>Select a community.</p>
   if (!data) return null
 
-  // Flatten all TDA lots (deduplicated by lot_id)
   const lotMap = new Map()
   for (const tda of (data.agreements || [])) {
     for (const lot of (tda.lots || [])) {
@@ -727,11 +837,6 @@ function LotsTab({ selectedId, data, onReload }) {
   }
 
   const thS = { ...TH, background: '#f9fafb', position: 'sticky', top: 0, zIndex: 1 }
-  const _OVERRIDE_FIELDS = [
-    { field: 'date_td_hold', label: 'HC' },
-    { field: 'date_td',      label: 'BLDR' },
-    { field: 'date_str',     label: 'DIG' },
-  ]
 
   function dateCell(lot, field, label, marksKey, projKey) {
     const overrides = overrideMap[lot.lot_id] || {}
@@ -804,11 +909,8 @@ function LotsTab({ selectedId, data, onReload }) {
                         : 'Unassigned'}
                     </td>
 
-                    {/* HC date cell */}
                     {dateCell(lot, 'date_td_hold', 'HC', 'hc_marks_date', 'hc_projected_date')}
-                    {/* BLDR date cell */}
                     {dateCell(lot, 'date_td', 'BLDR', 'bldr_marks_date', 'bldr_projected_date')}
-                    {/* DIG — not in overview data; show placeholder */}
                     <td style={TD}><span style={{ fontSize: 11, color: TEXT_MUTED }}>—</span></td>
 
                     <td style={{ ...TD, textAlign: 'right' }}>
@@ -882,17 +984,14 @@ function ChecklistTab({ showTestCommunities }) {
   if (loading) return <p style={{ color: TEXT_MUTED, fontSize: 14, marginTop: 20 }}>Loading checklist…</p>
   if (!items)  return null
 
-  // Assign stable colors by ent_group_id order of first appearance
   const allEgIds = [...new Set(items.map(i => i.ent_group_id))]
   const colorMap = {}
   allEgIds.forEach((id, idx) => { colorMap[id] = CHECKLIST_COLORS[idx % CHECKLIST_COLORS.length] })
 
-  // Apply filter
   const filtered = filter === 'all' ? items
     : filter === 'closed' ? items.filter(i => i.status === 'closed')
     : items.filter(i => i.status !== 'closed')
 
-  // Group: monthKey -> Map(ent_group_id -> group)
   const monthGroups = new Map()
   for (const item of filtered) {
     const monthKey = item.checkpoint_date ? item.checkpoint_date.slice(0, 7) : 'no-date'
@@ -924,7 +1023,6 @@ function ChecklistTab({ showTestCommunities }) {
 
   return (
     <div>
-      {/* Filter bar */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
         <span style={{ fontSize: 11, color: TEXT_MUTED, fontWeight: 600, marginRight: 2 }}>SHOW</span>
         {['all', 'open', 'closed'].map(f => (
@@ -947,7 +1045,6 @@ function ChecklistTab({ showTestCommunities }) {
         <p style={{ color: TEXT_MUTED, fontSize: 14 }}>No items match the current filter.</p>
       )}
 
-      {/* Month sections */}
       {[...monthGroups.entries()].map(([monthKey, commGroup]) => {
         const monthCollapsed = collapsed[monthKey]
         const monthTotal  = [...commGroup.values()].reduce((s, g) => s + g.items.length, 0)
@@ -955,7 +1052,6 @@ function ChecklistTab({ showTestCommunities }) {
 
         return (
           <div key={monthKey} style={{ marginBottom: 20 }}>
-            {/* Month header */}
             <div
               onClick={() => toggleCollapse(monthKey)}
               style={{
@@ -984,7 +1080,6 @@ function ChecklistTab({ showTestCommunities }) {
 
                   return (
                     <div key={groupKey} style={{ marginBottom: 6 }}>
-                      {/* Community group header */}
                       <div
                         onClick={() => toggleCollapse(groupKey)}
                         style={{
@@ -1099,6 +1194,51 @@ function ChecklistTab({ showTestCommunities }) {
   )
 }
 
+// ── TDA pill tabs ──────────────────────────────────────────────────
+function TdaPillTabs({ agreements, activeId, onSelect }) {
+  if (!agreements || agreements.length === 0) return null
+  return (
+    <div style={{
+      display: 'flex', flexWrap: 'wrap', gap: 6, padding: '10px 0 12px',
+    }}>
+      {agreements.map(tda => {
+        const isActive = tda.tda_id === activeId
+        const ss = AGREEMENT_STATUS_STYLE[tda.status] || AGREEMENT_STATUS_STYLE.active
+        const nLots = tda.lots?.length ?? 0
+        return (
+          <button
+            key={tda.tda_id}
+            onClick={() => onSelect(tda.tda_id)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '5px 12px', borderRadius: 20,
+              border: `1.5px solid ${isActive ? '#2563eb' : '#d1d5db'}`,
+              background: isActive ? '#eff6ff' : '#fff',
+              color: isActive ? '#1d4ed8' : TEXT_PRIMARY,
+              fontWeight: isActive ? 700 : 500,
+              fontSize: 12, cursor: 'pointer',
+              boxShadow: isActive ? '0 1px 3px rgba(37,99,235,0.15)' : 'none',
+            }}
+          >
+            {tda.tda_name}
+            <span style={{
+              fontSize: 10, padding: '1px 6px', borderRadius: 8, fontWeight: 600,
+              background: ss.bg, color: ss.color, border: `1px solid ${ss.border}`,
+            }}>
+              {tda.status}
+            </span>
+            {nLots > 0 && (
+              <span style={{ fontSize: 10, color: isActive ? '#3b82f6' : TEXT_MUTED }}>
+                {nLots}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Main view ──────────────────────────────────────────────────────
 export default function TakedownView({ showTestCommunities }) {
   const [communities, setCommunities] = useState([])
@@ -1107,6 +1247,7 @@ export default function TakedownView({ showTestCommunities }) {
     try { return Number(localStorage.getItem('devdb_tda_community')) || null } catch { return null }
   })
   const [activeTab, setActiveTab] = useState('agreements')
+  const [activeTdaId, setActiveTdaId] = useState(null)   // which TDA pill is active
   const [data, setData]     = useState(null)
   const [loading, setLoading] = useState(false)
   const [showNewForm, setShowNewForm] = useState(false)
@@ -1138,22 +1279,40 @@ export default function TakedownView({ showTestCommunities }) {
     setLoading(true)
     fetch(`${API_BASE}/entitlement-groups/${selectedId}/tda-overview`)
       .then(r => r.json())
-      .then(d => { setData(d); setLoading(false) })
+      .then(d => {
+        setData(d)
+        setLoading(false)
+        // Auto-select first active TDA if none selected or current one is gone
+        setActiveTdaId(prev => {
+          const agreements = d.agreements || []
+          if (!prev || !agreements.find(a => a.tda_id === prev)) {
+            const first = agreements.find(a => a.status === 'active') || agreements[0]
+            return first?.tda_id ?? null
+          }
+          return prev
+        })
+      })
       .catch(() => setLoading(false))
   }, [selectedId])
 
   useEffect(() => { load() }, [load])
+
+  // Reset active TDA when community changes
+  useEffect(() => { setActiveTdaId(null) }, [selectedId])
 
   // ── Mutations ──────────────────────────────────────────────────────
 
   async function createAgreement() {
     const name = newName.trim()
     if (!name || !selectedId) return
-    await fetch(`${API_BASE}/takedown-agreements`, {
+    const resp = await fetch(`${API_BASE}/takedown-agreements`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tda_name: name, ent_group_id: selectedId }),
     })
-    setNewName(''); setShowNewForm(false); load()
+    const created = await resp.json()
+    setNewName(''); setShowNewForm(false)
+    setActiveTdaId(created.tda_id)
+    load()
   }
 
   async function patchAgreement(tdaId, patch) {
@@ -1197,8 +1356,18 @@ export default function TakedownView({ showTestCommunities }) {
     load()
   }
 
-  async function removeLot(tdaId, lotId) {
-    await fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/pool`, { method: 'DELETE' })
+  async function removeLots(tdaId, lotIds) {
+    await Promise.all(lotIds.map(id =>
+      fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${id}/pool`, { method: 'DELETE' })
+    ))
+    load()
+  }
+
+  async function moveLots(fromTdaId, lotIds, targetTdaId) {
+    await fetch(`${API_BASE}/takedown-agreements/${fromTdaId}/lots/move`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lot_ids: lotIds, target_tda_id: targetTdaId }),
+    })
     load()
   }
 
@@ -1226,11 +1395,14 @@ export default function TakedownView({ showTestCommunities }) {
     }
   }
 
+  // Active TDA object
+  const activeTda = data?.agreements?.find(a => a.tda_id === activeTdaId)
+
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 44px)', overflow: 'hidden' }}>
 
-      {/* ── Left sidebar (AuditView pattern) ── */}
+      {/* ── Left sidebar ── */}
       <div style={{
         width: 260, flexShrink: 0,
         borderRight: '1px solid #e5e7eb',
@@ -1292,7 +1464,7 @@ export default function TakedownView({ showTestCommunities }) {
         </div>
 
         {/* Tab body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px' }}>
 
           {!selectedId && (
             <p style={{ color: TEXT_MUTED, fontSize: 14, marginTop: 20 }}>
@@ -1307,47 +1479,61 @@ export default function TakedownView({ showTestCommunities }) {
           {/* Agreements tab */}
           {activeTab === 'agreements' && selectedId && !loading && data && (
             <>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-                {showNewForm ? (
-                  <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <input
-                      autoFocus
-                      value={newName}
-                      onChange={e => setNewName(e.target.value)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') createAgreement()
-                        if (e.key === 'Escape') { setShowNewForm(false); setNewName('') }
-                      }}
-                      placeholder="Agreement name"
-                      style={{ fontSize: 13, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db', width: 200 }}
-                    />
-                    <Btn variant="success" onClick={createAgreement} disabled={!newName.trim()}>Create</Btn>
-                    <Btn onClick={() => { setShowNewForm(false); setNewName('') }}>Cancel</Btn>
-                  </span>
-                ) : (
-                  <Btn variant="primary" onClick={() => setShowNewForm(true)}>+ New Agreement</Btn>
-                )}
+              {/* Pill tab row + New Agreement button */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <TdaPillTabs
+                  agreements={data.agreements}
+                  activeId={activeTdaId}
+                  onSelect={setActiveTdaId}
+                />
+                <div style={{ paddingTop: 10 }}>
+                  {showNewForm ? (
+                    <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input
+                        autoFocus
+                        value={newName}
+                        onChange={e => setNewName(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') createAgreement()
+                          if (e.key === 'Escape') { setShowNewForm(false); setNewName('') }
+                        }}
+                        placeholder="Agreement name"
+                        style={{ fontSize: 13, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db', width: 200 }}
+                      />
+                      <Btn variant="success" onClick={createAgreement} disabled={!newName.trim()}>Create</Btn>
+                      <Btn onClick={() => { setShowNewForm(false); setNewName('') }}>Cancel</Btn>
+                    </span>
+                  ) : (
+                    <Btn variant="primary" onClick={() => setShowNewForm(true)}>+ New Agreement</Btn>
+                  )}
+                </div>
               </div>
 
               {data.agreements.length === 0 && (
                 <p style={{ color: TEXT_MUTED, fontSize: 14 }}>No agreements yet for this community.</p>
               )}
 
-              {data.agreements.map(tda => (
+              {activeTda && (
                 <AgreementCard
-                  key={tda.tda_id}
-                  tda={tda}
+                  key={activeTda.tda_id}
+                  tda={activeTda}
+                  allTdas={data.agreements}
                   unassignedLots={data.unassigned_lots || []}
-                  onPatch={patch => patchAgreement(tda.tda_id, patch)}
+                  onPatch={patch => patchAgreement(activeTda.tda_id, patch)}
                   onAddCheckpoint={addCheckpoint}
                   onPatchCheckpoint={patchCheckpoint}
                   onDeleteCheckpoint={deleteCheckpoint}
                   onAddLots={addLots}
-                  onRemoveLot={removeLot}
+                  onRemoveLots={removeLots}
+                  onMoveLots={moveLots}
                   onEditLotDates={editLotDates}
                   onAutoAssign={autoAssign}
                 />
-              ))}
+              )}
+
+              {data.agreements.length > 0 && !activeTda && (
+                <p style={{ color: TEXT_MUTED, fontSize: 14 }}>Select an agreement above.</p>
+              )}
             </>
           )}
 
