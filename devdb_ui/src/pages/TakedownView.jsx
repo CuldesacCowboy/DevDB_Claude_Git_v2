@@ -173,10 +173,107 @@ const TH = {
 const TD = { padding: '6px 8px', verticalAlign: 'middle' }
 const BADGE = { display: 'inline-block', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10 }
 
+// ── Checkpoint slot list ───────────────────────────────────────────
+function SlotList({ checkpoint, lots, perRequired }) {
+  // lots = all lots assigned to THIS checkpoint
+  const slots = []
+  for (let i = 0; i < Math.max(perRequired, lots.length); i++) {
+    slots.push(lots[i] || null)
+  }
+
+  const STD = { padding: '4px 8px', fontSize: 11, verticalAlign: 'middle' }
+  const isEmpty = slots.length === 0
+
+  return (
+    <div style={{
+      margin: '0 0 4px', background: '#f8fafc',
+      borderTop: `1px solid ${PANEL_BORDER}`,
+      borderBottom: `1px solid ${PANEL_BORDER}`,
+    }}>
+      {isEmpty ? (
+        <div style={{ padding: '6px 32px', fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }}>
+          No lots assigned to this checkpoint.
+        </div>
+      ) : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+          <thead>
+            <tr style={{ background: '#f1f5f9' }}>
+              <th style={{ ...STD, width: 32, color: TEXT_MUTED, fontWeight: 600 }}>#</th>
+              <th style={{ ...STD, color: TEXT_MUTED, fontWeight: 600 }}>Lot</th>
+              <th style={{ ...STD, color: TEXT_MUTED, fontWeight: 600 }}>Type</th>
+              <th style={{ ...STD, color: TEXT_MUTED, fontWeight: 600 }}>Bldg</th>
+              <th style={{ ...STD, color: TEXT_MUTED, fontWeight: 600 }}>HC</th>
+              <th style={{ ...STD, color: TEXT_MUTED, fontWeight: 600 }}>BLDR</th>
+            </tr>
+          </thead>
+          <tbody>
+            {slots.map((lot, i) => {
+              const filled = lot !== null
+              const hcDate  = lot?.hc_marks_date  || lot?.hc_projected_date  || null
+              const bldrDate = lot?.bldr_marks_date || lot?.bldr_projected_date || null
+              const hcIsMarks  = !!lot?.hc_marks_date
+              const bldrIsMarks = !!lot?.bldr_marks_date
+              return (
+                <tr
+                  key={i}
+                  style={{
+                    borderTop: `1px solid ${PANEL_BORDER}`,
+                    background: filled ? '#fff' : '#f9fafb',
+                  }}
+                >
+                  <td style={{ ...STD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>
+                    {i + 1}
+                  </td>
+                  <td style={{ ...STD, fontFamily: 'monospace', fontWeight: filled ? 500 : 400 }}>
+                    {filled
+                      ? <span style={{ color: TEXT_PRIMARY }}>{lot.lot_number}</span>
+                      : <span style={{ color: '#d1d5db' }}>— open slot —</span>
+                    }
+                  </td>
+                  <td style={{ ...STD, color: TEXT_MUTED }}>{lot?.lot_type_short || (filled ? '—' : '')}</td>
+                  <td style={{ ...STD, color: TEXT_MUTED }}>
+                    {lot?.building_name ? lot.building_name.replace('Building ', 'B') : (filled ? '—' : '')}
+                  </td>
+                  <td style={{ ...STD }}>
+                    {hcDate
+                      ? <span style={{ color: hcIsMarks ? TEXT_MUTED : TEXT_PRIMARY, fontStyle: hcIsMarks ? 'italic' : 'normal' }}>{hcDate}</span>
+                      : <span style={{ color: '#e5e7eb' }}>—</span>
+                    }
+                  </td>
+                  <td style={{ ...STD }}>
+                    {bldrDate
+                      ? <span style={{ color: bldrIsMarks ? TEXT_MUTED : TEXT_PRIMARY, fontStyle: bldrIsMarks ? 'italic' : 'normal' }}>{bldrDate}</span>
+                      : <span style={{ color: '#e5e7eb' }}>—</span>
+                    }
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 // ── Checkpoints section ────────────────────────────────────────────
 function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteCheckpoint, onAutoAssign }) {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [assigning, setAssigning] = useState(false)
+  const [expanded, setExpanded] = useState({})   // checkpoint_id -> bool
+
+  // Build lookup: checkpoint_id -> lots assigned to it
+  const lotsByCp = {}
+  for (const lot of tda.lots || []) {
+    if (lot.checkpoint_id) {
+      if (!lotsByCp[lot.checkpoint_id]) lotsByCp[lot.checkpoint_id] = []
+      lotsByCp[lot.checkpoint_id].push(lot)
+    }
+  }
+
+  function toggleExpand(cpId) {
+    setExpanded(prev => ({ ...prev, [cpId]: !prev[cpId] }))
+  }
 
   async function handleAutoAssign() {
     setAssigning(true)
@@ -199,61 +296,99 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 6 }}>
           <thead>
             <tr>
+              <th style={{ ...TH, width: 24, padding: '3px 4px' }}></th>
               {['Checkpoint', 'Required', 'Assigned', 'Gap', 'Status', 'Taken Down', 'MARKS Plan', 'Sim Plan', ''].map(h => (
                 <th key={h} style={TH}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {tda.checkpoints.map(cp => {
+            {tda.checkpoints.map((cp, idx) => {
               const required    = cp.lots_required_cumulative || 0
               const cumAssigned = cp.lots_assigned_cumulative || 0
               const gap         = required - cumAssigned
               const status      = cpObligationStatus(required, cumAssigned)
+              const isOpen      = !!expanded[cp.checkpoint_id]
+
+              // Per-checkpoint required = delta from previous cumulative
+              const prevRequired = idx > 0 ? (tda.checkpoints[idx - 1].lots_required_cumulative || 0) : 0
+              const perRequired  = required - prevRequired
+              const cpLots       = lotsByCp[cp.checkpoint_id] || []
 
               return (
-                <tr key={cp.checkpoint_id} style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
-                  <td style={TD}>
-                    <span style={{ fontWeight: 500, color: TEXT_PRIMARY }}>
-                      <EditNumber value={required}
-                        onSave={v => onPatchCheckpoint(cp.checkpoint_id, { lots_required_cumulative: v })} />
-                      {' by '}
-                      <EditDate value={cp.checkpoint_date}
-                        onSave={v => onPatchCheckpoint(cp.checkpoint_id, { checkpoint_date: v })} />
-                    </span>
-                  </td>
-                  <td style={{ ...TD, color: TEXT_MUTED }}>{required}</td>
-                  <td style={{ ...TD, color: TEXT_MUTED }}>{cumAssigned}</td>
-                  <td style={{
-                    ...TD, fontWeight: gap !== 0 ? 600 : 400,
-                    color: gap > 0 ? '#dc2626' : gap < 0 ? '#15803d' : TEXT_MUTED,
-                  }}>
-                    {required === 0 ? '—' : gap > 0 ? `−${gap}` : gap < 0 ? `+${Math.abs(gap)}` : '0'}
-                  </td>
-                  <td style={TD}>
-                    {status === 'met'   && <span style={{ ...BADGE, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>Met</span>}
-                    {status === 'short' && <span style={{ ...BADGE, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Short {gap}</span>}
-                    {status === 'none'  && <span style={{ ...BADGE, background: '#f3f4f6', color: '#9ca3af', border: '1px solid #e5e7eb' }}>—</span>}
-                  </td>
-                  <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.taken_down_to_date ?? 0}</td>
-                  <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.marks_plan ?? 0}</td>
-                  <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.sim_plan ?? 0}</td>
-                  <td style={{ ...TD, textAlign: 'right', paddingRight: 4 }}>
-                    {confirmDelete === cp.checkpoint_id ? (
-                      <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, color: '#dc2626' }}>Delete?</span>
-                        <Btn variant="danger" style={{ padding: '1px 6px', fontSize: 11 }}
-                          onClick={() => { onDeleteCheckpoint(cp.checkpoint_id); setConfirmDelete(null) }}>Yes</Btn>
-                        <Btn style={{ padding: '1px 6px', fontSize: 11 }}
-                          onClick={() => setConfirmDelete(null)}>No</Btn>
+                <>
+                  <tr
+                    key={cp.checkpoint_id}
+                    style={{ borderBottom: isOpen ? 'none' : `1px solid ${PANEL_BORDER}` }}
+                  >
+                    {/* Expand toggle */}
+                    <td style={{ ...TD, padding: '6px 4px', width: 24 }}>
+                      <button
+                        onClick={() => toggleExpand(cp.checkpoint_id)}
+                        title={isOpen ? 'Collapse slots' : 'Expand slots'}
+                        style={{
+                          fontSize: 10, color: TEXT_MUTED, background: 'none', border: 'none',
+                          cursor: 'pointer', padding: '1px 3px', lineHeight: 1,
+                        }}
+                      >
+                        {isOpen ? '▼' : '▶'}
+                      </button>
+                    </td>
+                    <td style={TD}>
+                      <span style={{ fontWeight: 500, color: TEXT_PRIMARY }}>
+                        <EditNumber value={required}
+                          onSave={v => onPatchCheckpoint(cp.checkpoint_id, { lots_required_cumulative: v })} />
+                        {' by '}
+                        <EditDate value={cp.checkpoint_date}
+                          onSave={v => onPatchCheckpoint(cp.checkpoint_id, { checkpoint_date: v })} />
                       </span>
-                    ) : (
-                      <button onClick={() => setConfirmDelete(cp.checkpoint_id)}
-                        style={{ fontSize: 14, color: '#d1d5db', background: 'none', border: 'none', cursor: 'pointer' }}
-                        title="Delete checkpoint">×</button>
-                    )}
-                  </td>
-                </tr>
+                    </td>
+                    <td style={{ ...TD, color: TEXT_MUTED }}>{required}</td>
+                    <td style={{ ...TD, color: TEXT_MUTED }}>{cumAssigned}</td>
+                    <td style={{
+                      ...TD, fontWeight: gap !== 0 ? 600 : 400,
+                      color: gap > 0 ? '#dc2626' : gap < 0 ? '#15803d' : TEXT_MUTED,
+                    }}>
+                      {required === 0 ? '—' : gap > 0 ? `−${gap}` : gap < 0 ? `+${Math.abs(gap)}` : '0'}
+                    </td>
+                    <td style={TD}>
+                      {status === 'met'   && <span style={{ ...BADGE, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>Met</span>}
+                      {status === 'short' && <span style={{ ...BADGE, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Short {gap}</span>}
+                      {status === 'none'  && <span style={{ ...BADGE, background: '#f3f4f6', color: '#9ca3af', border: '1px solid #e5e7eb' }}>—</span>}
+                    </td>
+                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.taken_down_to_date ?? 0}</td>
+                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.marks_plan ?? 0}</td>
+                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.sim_plan ?? 0}</td>
+                    <td style={{ ...TD, textAlign: 'right', paddingRight: 4 }}>
+                      {confirmDelete === cp.checkpoint_id ? (
+                        <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, color: '#dc2626' }}>Delete?</span>
+                          <Btn variant="danger" style={{ padding: '1px 6px', fontSize: 11 }}
+                            onClick={() => { onDeleteCheckpoint(cp.checkpoint_id); setConfirmDelete(null) }}>Yes</Btn>
+                          <Btn style={{ padding: '1px 6px', fontSize: 11 }}
+                            onClick={() => setConfirmDelete(null)}>No</Btn>
+                        </span>
+                      ) : (
+                        <button onClick={() => setConfirmDelete(cp.checkpoint_id)}
+                          style={{ fontSize: 14, color: '#d1d5db', background: 'none', border: 'none', cursor: 'pointer' }}
+                          title="Delete checkpoint">×</button>
+                      )}
+                    </td>
+                  </tr>
+
+                  {/* Slot list row */}
+                  {isOpen && (
+                    <tr key={`${cp.checkpoint_id}_slots`} style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
+                      <td colSpan={10} style={{ padding: 0, paddingLeft: 24 }}>
+                        <SlotList
+                          checkpoint={cp}
+                          lots={cpLots}
+                          perRequired={perRequired}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </>
               )
             })}
           </tbody>
@@ -272,144 +407,57 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
   )
 }
 
-// ── Lot pill ───────────────────────────────────────────────────────
-function LotPill({ lot, selected, onToggle, cpColor }) {
-  const hasTd = !!(lot.bldr_marks_date || lot.bldr_projected_date || lot.hc_marks_date || lot.hc_projected_date)
-  return (
-    <div
-      onClick={onToggle}
-      title={`${lot.lot_number}${lot.lot_type_short ? ' · ' + lot.lot_type_short : ''}${lot.checkpoint_date ? ' · CP: ' + lot.checkpoint_date : ''}`}
-      style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4,
-        padding: '3px 8px', borderRadius: 12, fontSize: 11,
-        fontFamily: 'monospace', cursor: 'pointer', userSelect: 'none',
-        border: `1.5px solid ${selected ? '#2563eb' : '#d1d5db'}`,
-        background: selected ? '#eff6ff' : '#fff',
-        color: selected ? '#1d4ed8' : TEXT_PRIMARY,
-        fontWeight: selected ? 700 : 400,
-        transition: 'background 0.1s, border-color 0.1s',
-      }}
-    >
-      {cpColor && (
-        <span style={{
-          width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-          background: cpColor,
-        }} />
-      )}
-      {lot.lot_number.replace(/^[A-Z]+0*/, '')}
-      {hasTd && <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />}
-    </div>
-  )
-}
-
-// CP colors for visual coding
-const CP_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#f97316']
-
-// ── Lots section (pill-based) ──────────────────────────────────────
-function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, onMoveLots, onEditLotDates }) {
-  const [selected, setSelected]     = useState(new Set())   // selected lot_ids
-  const [showAdd, setShowAdd]       = useState(false)
-  const [addSearch, setAddSearch]   = useState('')
-  const [addSelected, setAddSelected] = useState(new Set())
-  const [moveTarget, setMoveTarget] = useState('')
+// ── Lots section (unassigned pool management) ──────────────────────
+function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, onMoveLots }) {
+  const [selected, setSelected]       = useState(new Set())
+  const [moveTarget, setMoveTarget]   = useState('')
   const [confirmRemove, setConfirmRemove] = useState(false)
-  const [lastClicked, setLastClicked] = useState(null)
+  const [showAdd, setShowAdd]         = useState(false)
+  const [addSearch, setAddSearch]     = useState('')
+  const [addSelected, setAddSelected] = useState(new Set())
 
-  // Build CP color map
-  const cpColorMap = {}
-  tda.checkpoints.forEach((cp, i) => {
-    cpColorMap[cp.checkpoint_id] = CP_COLORS[i % CP_COLORS.length]
-  })
-
+  // Only show lots not assigned to any checkpoint (pool-only lots)
+  const poolLots = (tda.lots || []).filter(l => !l.checkpoint_id)
   const otherTdas = allTdas.filter(t => t.tda_id !== tda.tda_id)
+  const nSel = selected.size
 
-  function toggleLot(lotId, shiftKey) {
-    if (shiftKey && lastClicked !== null) {
-      const ids = tda.lots.map(l => l.lot_id)
-      const a = ids.indexOf(lastClicked)
-      const b = ids.indexOf(lotId)
-      if (a !== -1 && b !== -1) {
-        const [lo, hi] = a < b ? [a, b] : [b, a]
-        const rangeIds = ids.slice(lo, hi + 1)
-        setSelected(prev => {
-          const next = new Set(prev)
-          rangeIds.forEach(id => next.add(id))
-          return next
-        })
-        setLastClicked(lotId)
-        return
-      }
-    }
-    setSelected(prev => {
-      const next = new Set(prev)
-      next.has(lotId) ? next.delete(lotId) : next.add(lotId)
-      return next
-    })
-    setLastClicked(lotId)
+  function toggleLot(lotId) {
+    setSelected(prev => { const n = new Set(prev); n.has(lotId) ? n.delete(lotId) : n.add(lotId); return n })
   }
-
-  function selectAll() { setSelected(new Set(tda.lots.map(l => l.lot_id))) }
-  function clearSelection() { setSelected(new Set()) }
 
   async function handleRemove() {
     await onRemoveLots(tda.tda_id, [...selected])
-    setSelected(new Set())
-    setConfirmRemove(false)
+    setSelected(new Set()); setConfirmRemove(false)
   }
 
   async function handleMove() {
     if (!moveTarget) return
     await onMoveLots(tda.tda_id, [...selected], Number(moveTarget))
-    setSelected(new Set())
-    setMoveTarget('')
+    setSelected(new Set()); setMoveTarget('')
   }
 
   async function handleAdd() {
     if (addSelected.size === 0) return
     await onAddLots(tda.tda_id, [...addSelected])
-    setAddSelected(new Set())
-    setShowAdd(false)
-    setAddSearch('')
+    setAddSelected(new Set()); setShowAdd(false); setAddSearch('')
   }
 
   const filteredUnassigned = unassignedLots.filter(l =>
     !addSearch || (l.lot_number ?? '').toLowerCase().includes(addSearch.toLowerCase())
   )
 
-  const nSel = selected.size
+  const STD = { padding: '5px 8px', fontSize: 11, verticalAlign: 'middle' }
 
   return (
     <div style={{ padding: '10px 16px', borderTop: `1px solid ${PANEL_BORDER}` }}>
-      {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED }}>
-          LOTS <span style={{ fontWeight: 400 }}>({tda.lots.length})</span>
+          UNASSIGNED LOTS <span style={{ fontWeight: 400 }}>({poolLots.length})</span>
         </span>
-        {tda.lots.length > 0 && (
-          <>
-            <button onClick={selectAll} style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              All
-            </button>
-            <button onClick={clearSelection} style={{ fontSize: 11, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              None
-            </button>
-          </>
-        )}
-
-        {/* CP legend */}
-        {tda.checkpoints.length > 0 && (
-          <span style={{ display: 'flex', gap: 8, marginLeft: 4 }}>
-            {tda.checkpoints.map((cp, i) => (
-              <span key={cp.checkpoint_id} style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 10, color: TEXT_MUTED }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: CP_COLORS[i % CP_COLORS.length] }} />
-                {cp.checkpoint_date ? cp.checkpoint_date.slice(0, 7) : `CP${i+1}`}
-              </span>
-            ))}
-          </span>
-        )}
-
+        <span style={{ fontSize: 10, color: TEXT_MUTED, fontStyle: 'italic' }}>
+          in pool, not yet assigned to a checkpoint
+        </span>
         <span style={{ marginLeft: 'auto' }} />
-
         {!showAdd && unassignedLots.length > 0 && (
           <button
             onClick={() => { setShowAdd(true); setAddSelected(new Set()) }}
@@ -420,124 +468,130 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
         )}
       </div>
 
-      {/* Pill grid */}
-      {tda.lots.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 8 }}>
-          {tda.lots.map(lot => (
-            <LotPill
-              key={lot.lot_id}
-              lot={lot}
-              selected={selected.has(lot.lot_id)}
-              onToggle={e => toggleLot(lot.lot_id, e.shiftKey)}
-              cpColor={lot.checkpoint_id ? cpColorMap[lot.checkpoint_id] : '#e5e7eb'}
-            />
-          ))}
-        </div>
-      )}
+      {/* Pool lots table */}
+      {poolLots.length > 0 && (
+        <>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 6 }}>
+            <thead>
+              <tr>
+                <th style={{ ...TH, width: 20, padding: '3px 4px' }}></th>
+                {['Lot', 'Type', 'Bldg', 'HC', 'BLDR', ''].map(h => <th key={h} style={TH}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {poolLots.map(lot => {
+                const isSel = selected.has(lot.lot_id)
+                const hcDate   = lot.hc_marks_date   || lot.hc_projected_date   || null
+                const bldrDate = lot.bldr_marks_date || lot.bldr_projected_date || null
+                return (
+                  <tr
+                    key={lot.lot_id}
+                    style={{ borderBottom: `1px solid ${PANEL_BORDER}`, background: isSel ? '#eff6ff' : '#fff' }}
+                  >
+                    <td style={{ ...STD, padding: '5px 4px' }}>
+                      <input type="checkbox" checked={isSel} onChange={() => toggleLot(lot.lot_id)} style={{ cursor: 'pointer' }} />
+                    </td>
+                    <td style={{ ...STD, fontFamily: 'monospace', fontWeight: 500 }}>{lot.lot_number}</td>
+                    <td style={{ ...STD, color: TEXT_MUTED }}>{lot.lot_type_short || '—'}</td>
+                    <td style={{ ...STD, color: TEXT_MUTED }}>
+                      {lot.building_name ? lot.building_name.replace('Building ', 'B') : '—'}
+                    </td>
+                    <td style={STD}>
+                      {hcDate ? <span style={{ color: lot.hc_marks_date ? TEXT_MUTED : TEXT_PRIMARY, fontStyle: lot.hc_marks_date ? 'italic' : 'normal' }}>{hcDate}</span> : <span style={{ color: '#e5e7eb' }}>—</span>}
+                    </td>
+                    <td style={STD}>
+                      {bldrDate ? <span style={{ color: lot.bldr_marks_date ? TEXT_MUTED : TEXT_PRIMARY, fontStyle: lot.bldr_marks_date ? 'italic' : 'normal' }}>{bldrDate}</span> : <span style={{ color: '#e5e7eb' }}>—</span>}
+                    </td>
+                    <td style={{ ...STD, textAlign: 'right' }} />
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
 
-      {tda.lots.length === 0 && !showAdd && (
-        <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>No lots in this agreement.</p>
-      )}
-
-      {/* Action bar (shows when lots are selected) */}
-      {nSel > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-          background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, marginBottom: 8,
-        }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#1d4ed8' }}>{nSel} selected</span>
-
-          {otherTdas.length > 0 && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ fontSize: 11, color: TEXT_MUTED }}>Move to:</span>
-              <select
-                value={moveTarget}
-                onChange={e => setMoveTarget(e.target.value)}
-                style={{
-                  fontSize: 11, padding: '2px 6px', borderRadius: 4,
-                  border: '1px solid #d1d5db', background: '#fff', color: TEXT_PRIMARY,
-                  maxWidth: 200,
-                }}
-              >
-                <option value="">— select agreement —</option>
-                {otherTdas.map(t => (
-                  <option key={t.tda_id} value={t.tda_id}>{t.tda_name}</option>
-                ))}
-              </select>
-              <Btn variant="primary" onClick={handleMove} disabled={!moveTarget} style={{ padding: '2px 8px', fontSize: 11 }}>
-                Move
-              </Btn>
-            </span>
+          {/* Bulk action bar */}
+          {nSel > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px',
+              background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 5, marginBottom: 6,
+            }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#1d4ed8' }}>{nSel} selected</span>
+              {otherTdas.length > 0 && (
+                <>
+                  <span style={{ fontSize: 11, color: TEXT_MUTED }}>Move to:</span>
+                  <select
+                    value={moveTarget}
+                    onChange={e => setMoveTarget(e.target.value)}
+                    style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', maxWidth: 200 }}
+                  >
+                    <option value="">— select agreement —</option>
+                    {otherTdas.map(t => <option key={t.tda_id} value={t.tda_id}>{t.tda_name}</option>)}
+                  </select>
+                  <Btn variant="primary" onClick={handleMove} disabled={!moveTarget} style={{ padding: '2px 8px', fontSize: 11 }}>Move</Btn>
+                </>
+              )}
+              {confirmRemove ? (
+                <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
+                  <span style={{ fontSize: 11, color: '#dc2626' }}>Remove {nSel}?</span>
+                  <Btn variant="danger" onClick={handleRemove} style={{ padding: '2px 6px', fontSize: 11 }}>Yes</Btn>
+                  <Btn onClick={() => setConfirmRemove(false)} style={{ padding: '2px 6px', fontSize: 11 }}>No</Btn>
+                </span>
+              ) : (
+                <Btn variant="danger" onClick={() => setConfirmRemove(true)} style={{ padding: '2px 6px', fontSize: 11, marginLeft: 'auto' }}>Remove</Btn>
+              )}
+            </div>
           )}
-
-          {confirmRemove ? (
-            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
-              <span style={{ fontSize: 11, color: '#dc2626' }}>Remove {nSel} lots?</span>
-              <Btn variant="danger" onClick={handleRemove} style={{ padding: '2px 6px', fontSize: 11 }}>Yes</Btn>
-              <Btn onClick={() => setConfirmRemove(false)} style={{ padding: '2px 6px', fontSize: 11 }}>No</Btn>
-            </span>
-          ) : (
-            <Btn variant="danger" onClick={() => setConfirmRemove(true)} style={{ padding: '2px 6px', fontSize: 11, marginLeft: 'auto' }}>
-              Remove
-            </Btn>
-          )}
-        </div>
+        </>
       )}
 
-      {/* Add-lots panel */}
+      {poolLots.length === 0 && !showAdd && (
+        <p style={{ fontSize: 11, color: TEXT_MUTED, margin: '0 0 6px' }}>
+          {tda.lots.length > 0 ? 'All lots assigned to checkpoints.' : 'No lots in this agreement.'}
+        </p>
+      )}
+
+      {/* Add lots — pill picker */}
       {showAdd && (
-        <div style={{
-          marginTop: 6, padding: 10, border: `1px solid ${PANEL_BORDER}`, borderRadius: 4, background: '#f9fafb',
-        }}>
+        <div style={{ marginTop: 6, padding: 10, border: `1px solid ${PANEL_BORDER}`, borderRadius: 4, background: '#f9fafb' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: TEXT_PRIMARY }}>Add lots to agreement</span>
             <button onClick={() => { setShowAdd(false); setAddSelected(new Set()); setAddSearch('') }}
-              style={{ fontSize: 12, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>
-              Cancel
-            </button>
+              style={{ fontSize: 12, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
           </div>
           <input
             value={addSearch}
             onChange={e => setAddSearch(e.target.value)}
             placeholder="Filter lots…"
-            style={{
-              width: '100%', fontSize: 12, padding: '3px 7px', borderRadius: 4,
-              border: '1px solid #d1d5db', background: '#fff', marginBottom: 6, boxSizing: 'border-box',
-            }}
+            style={{ width: '100%', fontSize: 12, padding: '3px 7px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', marginBottom: 6, boxSizing: 'border-box' }}
           />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxHeight: 140, overflowY: 'auto', marginBottom: 8 }}>
-            {filteredUnassigned.length === 0 && (
-              <p style={{ fontSize: 12, color: TEXT_MUTED, margin: 0 }}>No lots match.</p>
-            )}
-            {filteredUnassigned.map(lot => (
-              <div
-                key={lot.lot_id}
-                onClick={() => setAddSelected(prev => {
-                  const next = new Set(prev)
-                  next.has(lot.lot_id) ? next.delete(lot.lot_id) : next.add(lot.lot_id)
-                  return next
-                })}
-                style={{
-                  padding: '3px 8px', borderRadius: 12, fontSize: 11, fontFamily: 'monospace',
-                  cursor: 'pointer', userSelect: 'none',
-                  border: `1.5px solid ${addSelected.has(lot.lot_id) ? '#2563eb' : '#d1d5db'}`,
-                  background: addSelected.has(lot.lot_id) ? '#eff6ff' : '#fff',
-                  color: addSelected.has(lot.lot_id) ? '#1d4ed8' : TEXT_PRIMARY,
-                  fontWeight: addSelected.has(lot.lot_id) ? 700 : 400,
-                }}
-              >
-                {lot.lot_number.replace(/^[A-Z]+0*/, '')}
-              </div>
-            ))}
+            {filteredUnassigned.length === 0 && <p style={{ fontSize: 12, color: TEXT_MUTED, margin: 0 }}>No lots match.</p>}
+            {filteredUnassigned.map(lot => {
+              const isSel = addSelected.has(lot.lot_id)
+              return (
+                <div
+                  key={lot.lot_id}
+                  onClick={() => setAddSelected(prev => { const n = new Set(prev); n.has(lot.lot_id) ? n.delete(lot.lot_id) : n.add(lot.lot_id); return n })}
+                  style={{
+                    padding: '3px 8px', borderRadius: 12, fontSize: 11, fontFamily: 'monospace',
+                    cursor: 'pointer', userSelect: 'none',
+                    border: `1.5px solid ${isSel ? '#2563eb' : '#d1d5db'}`,
+                    background: isSel ? '#eff6ff' : '#fff',
+                    color: isSel ? '#1d4ed8' : TEXT_PRIMARY,
+                    fontWeight: isSel ? 700 : 400,
+                  }}
+                >
+                  {lot.lot_number.replace(/^[A-Z]+0*/, '')}
+                </div>
+              )
+            })}
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <Btn variant="primary" onClick={handleAdd} disabled={addSelected.size === 0}>
               Add {addSelected.size > 0 ? addSelected.size : ''} {addSelected.size === 1 ? 'lot' : 'lots'}
             </Btn>
-            <button
-              onClick={() => setAddSelected(new Set(filteredUnassigned.map(l => l.lot_id)))}
-              style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-            >
+            <button onClick={() => setAddSelected(new Set(filteredUnassigned.map(l => l.lot_id)))}
+              style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
               Select all
             </button>
           </div>
@@ -595,7 +649,6 @@ function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint,
         onAddLots={onAddLots}
         onRemoveLots={onRemoveLots}
         onMoveLots={onMoveLots}
-        onEditLotDates={onEditLotDates}
       />
     </div>
   )
