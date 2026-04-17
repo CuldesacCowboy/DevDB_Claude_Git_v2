@@ -44,15 +44,14 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_entitlement_groups, developments, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits
-- Last commit: 2026-04-16
+- Last commit: 2026-04-17
 
 ### devdb_python/api/routers/eg_validation.py
 - Owns: split-check, param-check, delivery-config GET/PUT (delivery_months integer[] replaces delivery_window_start/end; validates each month 1–12; max_deliveries_per_year, auto_schedule_enabled, default_cmp_lag_days, default_cls_lag_days, feed_starts_mode), ledger-config GET/PUT (propagates date_ent to sim_dev_phases + sim_lots; propagates date_plan_start to sim_dev_phases; date_ent truncated to first-of-month; earliest_delivery_date from sim_delivery_events COALESCE(actual, projected))
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
-- Last commit: 2026-04-15
+- Last commit: 2026-04-17
 - Tables: sim_dev_phases, sim_legal_instruments, sim_ent_group_developments, sim_phase_product_splits, sim_dev_params, sim_entitlement_delivery_config, sim_entitlement_groups, sim_lots
-- Last commit: 2026-04-14
 
 ### devdb_python/api/routers/eg_views.py
 - Owns: lot-phase-view route only (delegates to eg_lot_phase_service); entitlement events CRUD removed — table dropped in migration 025
@@ -80,7 +79,7 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments, sim_lots, sim_entitlement_groups, developments
-- Last commit: 2026-04-14
+- Last commit: 2026-04-17
 
 ### devdb_python/api/routers/tda_checkpoints.py
 - Owns: Checkpoint create (POST /takedown-agreements/{tda_id}/checkpoints)
@@ -90,11 +89,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-02
 
 ### devdb_python/api/routers/tda_assignments.py
-- Owns: Lot assignment/unassignment, pool management, HC/BLDR/DIG date and lock editing with building-group fan-out
+- Owns: Lot assignment/unassignment, pool management, HC/BLDR/DIG date and lock editing with building-group fan-out; POST /takedown-agreements/{tda_id}/lots/move (moves lots between TDAs within same ent_group — clears source assignments, removes from source pool, adds to target pool)
 - Imports: api.deps, api.db, psycopg2.extras, pydantic, fastapi
 - Imported by: api/main.py
-- Tables: sim_takedown_agreement_lots, sim_takedown_lot_assignments, sim_takedown_checkpoints, sim_lots, sim_assignment_log
-- Last commit: 2026-04-02
+- Tables: sim_takedown_agreement_lots, sim_takedown_lot_assignments, sim_takedown_checkpoints, sim_lots, sim_assignment_log, sim_takedown_agreements
+- Last commit: 2026-04-17
 
 ### devdb_python/api/routers/phases.py
 - Owns: Phase CRUD, lot-type split management; GET /lot-types (all ref_lot_types for picker); POST /{phase_id}/lot-type/{lot_type_id} (add split with p=0, 409 if exists); DELETE /{phase_id}/lot-type/{lot_type_id} (requires p=0 AND r=0); PATCH /{phase_id}/lot-type/{lot_type_id}/projected; DELETE and PATCH routes registered BEFORE generic /{phase_id} (route ordering intentional); phase INSERT and split INSERT both use RETURNING (sequence-backed via migration 027, no MAX query); dev_code returned from developments.marks_code (no dim_development bridge); GET /{phase_id}/lots/{lot_type_id} includes is_spec field

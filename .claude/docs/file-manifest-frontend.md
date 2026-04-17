@@ -23,7 +23,7 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge), config (API_BASE), hooks/useOverrides, components/overrides/OverrideDateCell, OverridesPanel, SyncReconciliationModal, SimSettings (LocationSection)
 - Imported by: App.jsx
 - Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params, /api/overrides/*, /api/ref/counties, /api/ref/school-districts)
-- Last commit: 2026-04-16
+- Last commit: 2026-04-17
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker filtered by showTestCommunities prop (is_test exclusive). selectedGroupId lifted to App.jsx.
@@ -37,7 +37,7 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imports: react (useState, useEffect, useContext, useRef, createContext), API_BASE from config, setupShared (all shared atoms), PhaseRow
 - Imported by: App.jsx (via /setup route)
 - Tables: none (API calls via /admin/setup-tree, /phases, /instruments, /developments, /entitlement-groups, PATCH /instruments/{id}/type)
-- Last commit: 2026-04-16
+- Last commit: 2026-04-17
 
 ### devdb_ui/src/components/setup/setupShared.jsx
 - Owns: All shared hooks, utilities, and UI atoms for the Setup tree; exports LotRefreshContext, ExpandAllContext, useLocalOpen, SUB (column widths), SUB_LABELS, phaseTotal, fmtRelative, SubCell, SortHeader, formatLotNum, lotSeqStr, formatLotNumPadded, ChevronIcon, InlineEdit, EditableCount, AddForm, useAddForm, ROW (padding 5px), AddButton; ROW padding increased 3→5px
@@ -51,7 +51,7 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imports: react (useState, useEffect, useRef, useContext, useCallback), API_BASE, setupShared (multiple), LotPillGroup, BuildingsTab
 - Imported by: SetupView.jsx
 - Tables: none (API calls via /phases/{id}/lot-type/{ltId}/lots, /phases/{id}/lot-type/{ltId}/projected, DELETE /phases/{id}/lot-type/{ltId}, PATCH /admin/phase/{id})
-- Last commit: 2026-04-16
+- Last commit: 2026-04-17
 
 ### devdb_ui/src/components/setup/LotPillGroup.jsx
 - Owns: LotPillGroup (pill grid with add-pre-lots panel); MovableLotPill (drag-to-move, exclude/un-exclude actions); AddPreLotsPanel (bulk pre-lot creation inline); exports LOT_PILL, LotPill, LotPillGroup
@@ -100,7 +100,7 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imports: react (useState, useEffect), config (API_BASE)
 - Imported by: SimulationView.jsx
 - Tables: none (API calls via /ref/counties, /ref/school-districts, /admin/community-config/{id}, PATCH /entitlement-groups/{id})
-- Last commit: 2026-04-16
+- Last commit: 2026-04-17
 
 ### devdb_ui/src/pages/CommunityDevelopmentsView.jsx
 - Owns: Community-development assignment view; unassigned dev panel; community pills; alphabet slider; drag-to-create-community
@@ -108,6 +108,13 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imported by: LotPhaseView.jsx
 - Tables: none (API calls via /api/entitlement-groups, /api/developments)
 - Last commit: 2026-03-28
+
+### devdb_ui/src/pages/TakedownView.jsx
+- Owns: Standalone TDA management page (route /takedown); pill tab switcher (TdaPillTabs — one pill per TDA per community, click to switch, one AgreementCard visible at a time); CheckpointsSection with ▶/▼ expandable slot list per checkpoint (SlotList — one slot per required takedown, filled with lot data or "— open slot —", MARKS dates italic/muted); LotsSection shows only unassigned pool lots (checkbox-based bulk move/remove); Add Lots picker uses pill grid; moveLots mutation via POST /takedown-agreements/{id}/lots/move; activeTdaId state auto-selects first active TDA on load; community picker with showTestCommunities support
+- Imports: react (useState, useEffect, useCallback, useMemo), config (API_BASE)
+- Imported by: App.jsx (via /takedown route)
+- Tables: none (API calls via /api/takedown-agreements, /api/entitlement-groups, POST /takedown-agreements/{id}/lots/move, DELETE pool, POST pool)
+- Last commit: 2026-04-17
 
 ### devdb_ui/src/pages/TakedownAgreementsView.jsx
 - Owns: Takedown agreement management view orchestrator; wires TdaNavBar, TdaPageHeader, UnassignedBank, TdaCard, CheckpointBand, TdaDragOverlay, ContextMenu; manages context menu state; threads dragLot for landing zone highlights; contextMenuItems is useMemo([contextMenu, detail, agreements, ...callbacks]); handleContextMenu is useCallback

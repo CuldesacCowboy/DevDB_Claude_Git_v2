@@ -77,6 +77,16 @@ Load when working on: session tooling, bat/ps1 scripts, CLAUDE.md, skill files, 
 - Tables: all 35 tables (reads from Databricks, inserts to local Postgres)
 - Last commit: 2026-03-25
 
+### devdb_python/scripts/import_tda_spreadsheets.py
+- Owns: Idempotent import of TDA agreements, checkpoints, lot assignments, and takedown dates from ReferenceFiles/Lot Takedown Requirements spreadsheets (2024-2026); COMMUNITY_MAP + TDA_NAME_MAP; skips communities with existing TDAs unless --force; sets date_td on sim_lots when closed+close_date present
+- Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_agreement_lots, sim_takedown_lot_assignments, sim_lots
+- Last commit: 2026-04-17
+
+### devdb_python/scripts/import_done_tab.py
+- Owns: Three-part one-time script: (1) splits Stonewater Condos TDA 7042 into 3 phase-based TDAs (Ph1=SC1-27, Ph2=SC28-50, Ph3=SC51-73) then cascade-deletes 7042; (2) reads Done tab from 2026 spreadsheet and creates historical closed 2023 TDAs for Graymoor/Hidden Shores West/Stonewater SF/Stony Bluff/West Point/Woods of Albright; (3) assigns Jul 2023 SC lots to Stonewater Ph1 TDA; extract_lot_ints() handles comma-separated lot values in a single cell
+- Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_agreement_lots, sim_takedown_lot_assignments, sim_lots
+- Last commit: 2026-04-17
+
 ### devdb_python/scripts/seed_developments.py
 - Owns: One-time seed script populating the developments table from dim_development bridge
 - Tables: developments (INSERT), dim_development (SELECT)
