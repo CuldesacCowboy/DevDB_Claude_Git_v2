@@ -177,7 +177,9 @@ const BADGE = { display: 'inline-block', fontSize: 11, fontWeight: 600, padding:
 function pillLotNum(lot_number) {
   const m = (lot_number || '').match(/^([A-Za-z]+)(\d+)$/)
   if (!m) return lot_number || ''
-  return m[1] + m[2].padStart(4, ' ')
+  // Strip leading zeros then right-align number in 4 chars: "ST   1", "ST  11", "ST 111"
+  const num = String(parseInt(m[2], 10))
+  return m[1] + num.padStart(4, ' ')
 }
 
 function bldgType(unitCount) {
@@ -256,11 +258,17 @@ function TdaDateEditor({ lot, field, onApplied, onClose }) {
 const SLOT_COLS = { num: 28, lot: 80, type: 42, bldg: 44, bldgType: 66, hc: 92, bldr: 92, fulfill: 112 }
 
 // ── Checkpoint slot table ──────────────────────────────────────────
-function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssignSlot, marksplan, simplan, buildingUnitCounts, onPatchLotDate }) {
-  const [sortCol, setSortCol]     = useState('fulfill')
-  const [sortDir, setSortDir]     = useState(1)
-  const [pickerSlot, setPickerSlot] = useState(null)
-  const [editingDate, setEditingDate] = useState(null) // { lot_id, field, lot }
+function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssignSlot, marksplan, simplan, buildingUnitCounts, onPatchLotDate, onRemoveLots }) {
+  const [sortCol, setSortCol]           = useState('fulfill')
+  const [sortDir, setSortDir]           = useState(1)
+  const [pickerSlot, setPickerSlot]     = useState(null)
+  const [editingDate, setEditingDate]   = useState(null) // { lot_id, field, lot }
+  const [selected, setSelected]         = useState(new Set())
+  const lastClickedRef                  = useRef(null)
+  const [bulkMode, setBulkMode]         = useState(null)  // 'hc' | 'bldr'
+  const [bulkDate, setBulkDate]         = useState('')
+  const [bulkApplying, setBulkApplying] = useState(false)
+  const [overflowOpen, setOverflowOpen] = useState(false)
 
   const STD_H = {
     padding: '3px 6px', fontSize: 10, fontWeight: 600,
@@ -288,28 +296,136 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
     return ''
   }
 
-  const sortedLots = [...lots].sort((a, b) => {
-    const ka = sortKey(a), kb = sortKey(b)
-    return sortDir * (ka < kb ? -1 : ka > kb ? 1 : 0)
-  })
-
+  const sortedLots   = [...lots].sort((a, b) => { const ka = sortKey(a), kb = sortKey(b); return sortDir * (ka < kb ? -1 : ka > kb ? 1 : 0) })
+  const satisfyLots  = sortedLots.slice(0, Math.max(perRequired, 0))
+  const overflowLots = sortedLots.slice(Math.max(perRequired, 0))
   const openSlotCount = Math.max(0, perRequired - lots.length)
-  const totalSlots    = sortedLots.length + openSlotCount
+  const nSel = selected.size
+
+  function handleNumClick(lotId, e) {
+    e.stopPropagation()
+    const idx = sortedLots.findIndex(l => l.lot_id === lotId)
+    if (e.shiftKey && lastClickedRef.current !== null) {
+      const lo = Math.min(lastClickedRef.current, idx), hi = Math.max(lastClickedRef.current, idx)
+      setSelected(prev => { const n = new Set(prev); sortedLots.slice(lo, hi + 1).forEach(l => n.add(l.lot_id)); return n })
+    } else {
+      setSelected(prev => { const n = new Set(prev); n.has(lotId) ? n.delete(lotId) : n.add(lotId); return n })
+      lastClickedRef.current = idx
+    }
+  }
+
+  async function applyBulk(field, val) {
+    setBulkApplying(true)
+    const projKey = field === 'hc' ? 'hc_projected_date' : 'bldr_projected_date'
+    await Promise.all([...selected].map(lotId =>
+      fetch(`${API_BASE}/tda-lots/${lotId}/dates`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [projKey]: val }),
+      })
+    ))
+    setBulkApplying(false); setBulkMode(null); setBulkDate('')
+    setSelected(new Set()); lastClickedRef.current = null
+    onPatchLotDate && onPatchLotDate()
+  }
+
+  async function handleBulkRemove() {
+    if (!onRemoveLots || !nSel) return
+    setBulkApplying(true)
+    await onRemoveLots([...selected])
+    setBulkApplying(false); setSelected(new Set()); lastClickedRef.current = null; setBulkMode(null)
+  }
 
   function sTh(col, label) {
     const active = sortCol === col
-    const arrow  = active ? (sortDir > 0 ? ' ▲' : ' ▼') : ''
     return (
-      <th
-        onClick={() => toggleSort(col)}
-        style={{ ...STD_H, cursor: 'pointer', width: SLOT_COLS[col], color: active ? '#2563eb' : TEXT_MUTED }}
-      >
-        {label}{arrow}
+      <th onClick={() => toggleSort(col)} style={{ ...STD_H, cursor: 'pointer', width: SLOT_COLS[col], color: active ? '#2563eb' : TEXT_MUTED }}>
+        {label}{active ? (sortDir > 0 ? ' ▲' : ' ▼') : ''}
       </th>
     )
   }
 
-  if (totalSlots === 0) {
+  // Render a filled lot row, returning an array of <tr> elements
+  function renderLotRow(lot, displayIdx, isOverflow) {
+    const isSel       = selected.has(lot.lot_id)
+    const hcDate      = lot.hc_marks_date   || lot.hc_projected_date  || null
+    const bldrDate    = lot.bldr_marks_date  || lot.bldr_projected_date || null
+    const hcIsMarks   = !!lot.hc_marks_date
+    const bldrIsMarks = !!lot.bldr_marks_date
+    const fulfill     = fulfillmentInfo(lot)
+    const unitCount   = lot.building_group_id != null ? ((buildingUnitCounts || {})[lot.building_group_id] ?? null) : null
+    const bType       = bldgType(unitCount)
+    const isEditHc    = editingDate?.lot_id === lot.lot_id && editingDate?.field === 'date_td_hold'
+    const isEditBldr  = editingDate?.lot_id === lot.lot_id && editingDate?.field === 'date_td'
+    const anyEdit     = isEditHc || isEditBldr
+    const rowBg       = anyEdit ? '#e0f2fe' : isSel ? '#dbeafe' : (isOverflow ? '#fefce8' : '#fff')
+
+    const rows = [
+      <tr key={lot.lot_id} style={{ borderTop: `1px solid ${PANEL_BORDER}`, background: rowBg }}>
+        <td
+          onClick={e => handleNumClick(lot.lot_id, e)}
+          title="Click to select · Shift+click for range"
+          style={{ ...STD_D, textAlign: 'center', cursor: 'pointer', userSelect: 'none', color: isSel ? '#2563eb' : TEXT_MUTED, fontWeight: isSel ? 700 : 400 }}
+        >
+          {isSel ? '✓' : displayIdx + 1}
+        </td>
+        <td style={{ ...STD_D, fontFamily: 'monospace', whiteSpace: 'pre', overflow: 'hidden' }}>
+          <span style={{ fontWeight: 600, color: TEXT_PRIMARY }}>{pillLotNum(lot.lot_number)}</span>
+        </td>
+        <td style={{ ...STD_D, color: TEXT_MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lot.lot_type_short || '—'}</td>
+        <td style={{ ...STD_D, color: TEXT_MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {lot.building_name ? lot.building_name.replace('Building ', 'B') : '—'}
+        </td>
+        <td style={{ ...STD_D, color: TEXT_MUTED }}>{bType || <span style={{ color: '#e5e7eb' }}>—</span>}</td>
+        <td style={STD_D}>
+          {hcIsMarks ? (
+            <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }} title={`MARKS: ${hcDate}`}>{hcDate}</span>
+          ) : (
+            <span
+              onClick={() => setEditingDate(isEditHc ? null : { lot_id: lot.lot_id, field: 'date_td_hold', lot })}
+              style={{ cursor: 'pointer', fontSize: 11, color: hcDate ? '#0369a1' : TEXT_MUTED, borderBottom: `1px dashed ${hcDate ? '#7dd3fc' : '#e5e7eb'}` }}
+              title={hcDate ? 'Click to edit' : 'Click to set'}
+            >{hcDate || '—'}</span>
+          )}
+        </td>
+        <td style={STD_D}>
+          {bldrIsMarks ? (
+            <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }} title={`MARKS: ${bldrDate}`}>{bldrDate}</span>
+          ) : (
+            <span
+              onClick={() => setEditingDate(isEditBldr ? null : { lot_id: lot.lot_id, field: 'date_td', lot })}
+              style={{ cursor: 'pointer', fontSize: 11, color: bldrDate ? '#0369a1' : TEXT_MUTED, borderBottom: `1px dashed ${bldrDate ? '#7dd3fc' : '#e5e7eb'}` }}
+              title={bldrDate ? 'Click to edit' : 'Click to set'}
+            >{bldrDate || '—'}</span>
+          )}
+        </td>
+        <td style={{ ...STD_D, fontVariantNumeric: 'tabular-nums' }}>
+          {fulfill ? (
+            <><span style={{ color: TEXT_PRIMARY }}>{fulfill.date}</span>{' '}<span style={{ fontSize: 9, color: TEXT_MUTED }}>({fulfill.label})</span></>
+          ) : (
+            <span style={{ color: '#e5e7eb' }}>—</span>
+          )}
+        </td>
+      </tr>,
+    ]
+    if (anyEdit) {
+      rows.push(
+        <tr key={`edit_${lot.lot_id}`} style={{ background: '#f0f9ff', borderTop: '1px solid #bae6fd' }}>
+          <td colSpan={8} style={{ padding: '6px 10px' }}>
+            <TdaDateEditor
+              lot={editingDate.lot}
+              field={editingDate.field}
+              onApplied={() => { setEditingDate(null); onPatchLotDate && onPatchLotDate() }}
+              onClose={() => setEditingDate(null)}
+            />
+          </td>
+        </tr>
+      )
+    }
+    return rows
+  }
+
+  const totalSlots = satisfyLots.length + openSlotCount
+  if (totalSlots === 0 && overflowLots.length === 0) {
     return (
       <div style={{ padding: '6px 32px', fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic', background: '#f8fafc', borderTop: `1px solid ${PANEL_BORDER}`, borderBottom: `1px solid ${PANEL_BORDER}` }}>
         No slots for this checkpoint.
@@ -317,22 +433,68 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
     )
   }
 
+  const colGroup = (
+    <colgroup>
+      <col style={{ width: SLOT_COLS.num }} />
+      <col style={{ width: SLOT_COLS.lot }} />
+      <col style={{ width: SLOT_COLS.type }} />
+      <col style={{ width: SLOT_COLS.bldg }} />
+      <col style={{ width: SLOT_COLS.bldgType }} />
+      <col style={{ width: SLOT_COLS.hc }} />
+      <col style={{ width: SLOT_COLS.bldr }} />
+      <col />
+    </colgroup>
+  )
+
   return (
     <div style={{ margin: '0 0 4px', background: '#f8fafc', borderTop: `1px solid ${PANEL_BORDER}`, borderBottom: `1px solid ${PANEL_BORDER}` }}>
+      {/* Selection action bar */}
+      {nSel > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '5px 8px', background: '#eff6ff', borderBottom: '1px solid #bfdbfe' }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#1d4ed8' }}>{nSel} selected</span>
+          <button onClick={() => { setSelected(new Set(sortedLots.map(l => l.lot_id))); lastClickedRef.current = null }}
+            style={{ fontSize: 10, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>All</button>
+          <button onClick={() => { setSelected(new Set()); lastClickedRef.current = null; setBulkMode(null) }}
+            style={{ fontSize: 10, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>None</button>
+          <span style={{ width: 1, height: 12, background: '#bfdbfe', display: 'inline-block' }} />
+          <Btn onClick={() => { setBulkMode(bulkMode === 'hc' ? null : 'hc'); setBulkDate('') }}
+            style={{ padding: '1px 6px', fontSize: 10, background: bulkMode === 'hc' ? '#bfdbfe' : undefined }}>Set HC</Btn>
+          <Btn onClick={() => { setBulkMode(bulkMode === 'bldr' ? null : 'bldr'); setBulkDate('') }}
+            style={{ padding: '1px 6px', fontSize: 10, background: bulkMode === 'bldr' ? '#bfdbfe' : undefined }}>Set BLDR</Btn>
+          <Btn onClick={() => applyBulk('hc', null)} disabled={bulkApplying} style={{ padding: '1px 6px', fontSize: 10 }}>Clear HC</Btn>
+          <Btn onClick={() => applyBulk('bldr', null)} disabled={bulkApplying} style={{ padding: '1px 6px', fontSize: 10 }}>Clear BLDR</Btn>
+          {onRemoveLots && (
+            <Btn variant="danger" onClick={handleBulkRemove} disabled={bulkApplying} style={{ padding: '1px 6px', fontSize: 10, marginLeft: 'auto' }}>Remove</Btn>
+          )}
+        </div>
+      )}
+
+      {/* Bulk date input form */}
+      {bulkMode && nSel > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', background: '#f0f9ff', borderBottom: '1px solid #bae6fd' }}>
+          <span style={{ fontSize: 11, color: '#0369a1', fontWeight: 600 }}>
+            Set {bulkMode === 'hc' ? 'HC' : 'BLDR'} for {nSel} lot{nSel > 1 ? 's' : ''}:
+          </span>
+          <input
+            autoFocus type="date" value={bulkDate} onChange={e => setBulkDate(e.target.value)}
+            style={{ fontSize: 11, padding: '2px 5px', borderRadius: 3, border: '1px solid #7dd3fc', ...greenEditorStyle }}
+          />
+          <Btn variant="primary" onClick={() => applyBulk(bulkMode, bulkDate || null)} disabled={!bulkDate || bulkApplying} style={{ padding: '2px 8px', fontSize: 11 }}>
+            {bulkApplying ? '…' : 'Apply'}
+          </Btn>
+          <Btn onClick={() => { setBulkMode(null); setBulkDate('') }} style={{ padding: '2px 8px', fontSize: 11 }}>Cancel</Btn>
+        </div>
+      )}
+
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, tableLayout: 'fixed' }}>
-        <colgroup>
-          <col style={{ width: SLOT_COLS.num }} />
-          <col style={{ width: SLOT_COLS.lot }} />
-          <col style={{ width: SLOT_COLS.type }} />
-          <col style={{ width: SLOT_COLS.bldg }} />
-          <col style={{ width: SLOT_COLS.bldgType }} />
-          <col style={{ width: SLOT_COLS.hc }} />
-          <col style={{ width: SLOT_COLS.bldr }} />
-          <col />
-        </colgroup>
+        {colGroup}
         <thead>
           <tr>
-            <th style={{ ...STD_H, width: SLOT_COLS.num, color: TEXT_MUTED }}>#</th>
+            <th
+              onClick={() => { setSelected(s => s.size === sortedLots.length ? new Set() : new Set(sortedLots.map(l => l.lot_id))); lastClickedRef.current = null }}
+              style={{ ...STD_H, width: SLOT_COLS.num, cursor: 'pointer', color: TEXT_MUTED }}
+              title="Click to select all / none"
+            >#</th>
             {sTh('lot', 'Lot')}
             {sTh('type', 'Type')}
             {sTh('bldg', 'Bldg')}
@@ -343,134 +505,44 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
           </tr>
         </thead>
         <tbody>
-          {sortedLots.map((lot, i) => {
-            const hcDate      = lot.hc_marks_date   || lot.hc_projected_date  || null
-            const bldrDate    = lot.bldr_marks_date  || lot.bldr_projected_date || null
-            const hcIsMarks   = !!lot.hc_marks_date
-            const bldrIsMarks = !!lot.bldr_marks_date
-            const fulfill     = fulfillmentInfo(lot)
-            const unitCount   = lot.building_group_id != null ? ((buildingUnitCounts || {})[lot.building_group_id] ?? null) : null
-            const bType       = bldgType(unitCount)
-            const isEditHc    = editingDate?.lot_id === lot.lot_id && editingDate?.field === 'date_td_hold'
-            const isEditBldr  = editingDate?.lot_id === lot.lot_id && editingDate?.field === 'date_td'
-            const anyEdit     = isEditHc || isEditBldr
-
-            return (
-              <>
-                <tr key={lot.lot_id} style={{ borderTop: `1px solid ${PANEL_BORDER}`, background: anyEdit ? '#e0f2fe' : '#fff' }}>
-                  <td style={{ ...STD_D, color: TEXT_MUTED, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{i + 1}</td>
-                  <td style={{ ...STD_D, fontFamily: 'monospace', whiteSpace: 'pre', overflow: 'hidden' }}>
-                    <span style={{ fontWeight: 600, color: TEXT_PRIMARY }}>{pillLotNum(lot.lot_number)}</span>
-                  </td>
-                  <td style={{ ...STD_D, color: TEXT_MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {lot.lot_type_short || '—'}
-                  </td>
-                  <td style={{ ...STD_D, color: TEXT_MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {lot.building_name ? lot.building_name.replace('Building ', 'B') : '—'}
-                  </td>
-                  <td style={{ ...STD_D, color: TEXT_MUTED }}>
-                    {bType || <span style={{ color: '#e5e7eb' }}>—</span>}
-                  </td>
-                  <td style={STD_D}>
-                    {hcIsMarks ? (
-                      <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }} title={`MARKS: ${hcDate}`}>{hcDate}</span>
-                    ) : (
-                      <span
-                        onClick={() => setEditingDate(isEditHc ? null : { lot_id: lot.lot_id, field: 'date_td_hold', lot })}
-                        style={{ cursor: 'pointer', fontSize: 11, color: hcDate ? '#0369a1' : TEXT_MUTED, borderBottom: `1px dashed ${hcDate ? '#7dd3fc' : '#e5e7eb'}` }}
-                        title={hcDate ? 'Click to edit' : 'Click to set'}
-                      >
-                        {hcDate || '—'}
-                      </span>
-                    )}
-                  </td>
-                  <td style={STD_D}>
-                    {bldrIsMarks ? (
-                      <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }} title={`MARKS: ${bldrDate}`}>{bldrDate}</span>
-                    ) : (
-                      <span
-                        onClick={() => setEditingDate(isEditBldr ? null : { lot_id: lot.lot_id, field: 'date_td', lot })}
-                        style={{ cursor: 'pointer', fontSize: 11, color: bldrDate ? '#0369a1' : TEXT_MUTED, borderBottom: `1px dashed ${bldrDate ? '#7dd3fc' : '#e5e7eb'}` }}
-                        title={bldrDate ? 'Click to edit' : 'Click to set'}
-                      >
-                        {bldrDate || '—'}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ ...STD_D, fontVariantNumeric: 'tabular-nums' }}>
-                    {fulfill ? (
-                      <>
-                        <span style={{ color: TEXT_PRIMARY }}>{fulfill.date}</span>
-                        {' '}
-                        <span style={{ fontSize: 9, color: TEXT_MUTED }}>({fulfill.label})</span>
-                      </>
-                    ) : (
-                      <span style={{ color: '#e5e7eb' }}>—</span>
-                    )}
-                  </td>
-                </tr>
-                {anyEdit && (
-                  <tr key={`edit_${lot.lot_id}`} style={{ background: '#f0f9ff', borderTop: '1px solid #bae6fd' }}>
-                    <td colSpan={8} style={{ padding: '6px 10px' }}>
-                      <TdaDateEditor
-                        lot={editingDate.lot}
-                        field={editingDate.field}
-                        onApplied={() => { setEditingDate(null); onPatchLotDate && onPatchLotDate() }}
-                        onClose={() => setEditingDate(null)}
-                      />
-                    </td>
-                  </tr>
-                )}
-              </>
-            )
-          })}
+          {satisfyLots.flatMap((lot, i) => renderLotRow(lot, i, false))}
 
           {/* Open slots */}
           {Array.from({ length: openSlotCount }, (_, i) => {
-            const slotIdx   = sortedLots.length + i
+            const slotIdx    = satisfyLots.length + i
             const showPicker = pickerSlot === slotIdx
-            return (
-              <>
-                <tr key={`open_${i}`} style={{ borderTop: `1px solid ${PANEL_BORDER}`, background: '#f9fafb' }}>
-                  <td style={{ ...STD_D, color: TEXT_MUTED, textAlign: 'center' }}>{slotIdx + 1}</td>
-                  <td colSpan={7} style={{ ...STD_D, fontFamily: 'monospace' }}>
-                    <button
-                      onClick={() => setPickerSlot(showPicker ? null : slotIdx)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: showPicker ? '#2563eb' : '#cbd5e1', fontSize: 11, fontFamily: 'monospace', padding: 0 }}
-                    >
-                      — open slot —
-                    </button>
+            return [
+              <tr key={`open_${i}`} style={{ borderTop: `1px solid ${PANEL_BORDER}`, background: '#f9fafb' }}>
+                <td style={{ ...STD_D, color: TEXT_MUTED, textAlign: 'center' }}>{slotIdx + 1}</td>
+                <td colSpan={7} style={{ ...STD_D, fontFamily: 'monospace' }}>
+                  <button onClick={() => setPickerSlot(showPicker ? null : slotIdx)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: showPicker ? '#2563eb' : '#cbd5e1', fontSize: 11, fontFamily: 'monospace', padding: 0 }}>
+                    — open slot —
+                  </button>
+                </td>
+              </tr>,
+              showPicker && (
+                <tr key={`picker_${slotIdx}`} style={{ background: '#eff6ff' }}>
+                  <td colSpan={8} style={{ padding: '5px 8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 600 }}>Assign lot to slot:</span>
+                      {poolLots.length === 0 ? (
+                        <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }}>No lots in pool</span>
+                      ) : (
+                        <select defaultValue=""
+                          onChange={e => { if (e.target.value) { onAssignSlot(Number(e.target.value), checkpoint.checkpoint_id); setPickerSlot(null) } }}
+                          style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, border: '1px solid #93c5fd', background: '#fff' }}>
+                          <option value="">— select lot —</option>
+                          {poolLots.map(l => <option key={l.lot_id} value={l.lot_id}>{pillLotNum(l.lot_number)}</option>)}
+                        </select>
+                      )}
+                      <button onClick={() => setPickerSlot(null)}
+                        style={{ fontSize: 11, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                    </div>
                   </td>
                 </tr>
-                {showPicker && (
-                  <tr key={`picker_${slotIdx}`} style={{ background: '#eff6ff' }}>
-                    <td colSpan={8} style={{ padding: '5px 8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 600 }}>Assign lot to slot:</span>
-                        {poolLots.length === 0 ? (
-                          <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }}>No lots in pool</span>
-                        ) : (
-                          <select
-                            defaultValue=""
-                            onChange={e => { if (e.target.value) { onAssignSlot(Number(e.target.value), checkpoint.checkpoint_id); setPickerSlot(null) } }}
-                            style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, border: '1px solid #93c5fd', background: '#fff' }}
-                          >
-                            <option value="">— select lot —</option>
-                            {poolLots.map(l => (
-                              <option key={l.lot_id} value={l.lot_id}>{pillLotNum(l.lot_number)}</option>
-                            ))}
-                          </select>
-                        )}
-                        <button onClick={() => setPickerSlot(null)}
-                          style={{ fontSize: 11, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>
-                          Cancel
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </>
-            )
+              ),
+            ].filter(Boolean)
           })}
 
           {/* Footer: MARKS Plan / Sim Plan */}
@@ -482,6 +554,28 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
           </tr>
         </tbody>
       </table>
+
+      {/* Overflow: lots beyond required count */}
+      {overflowLots.length > 0 && (
+        <div style={{ borderTop: '2px solid #f59e0b' }}>
+          <div
+            onClick={() => setOverflowOpen(v => !v)}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#fefce8', cursor: 'pointer', userSelect: 'none' }}
+          >
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#92400e' }}>OVERFLOW ({overflowLots.length})</span>
+            <span style={{ fontSize: 10, color: '#a16207' }}>lots beyond required count</span>
+            <span style={{ fontSize: 9, color: '#92400e', marginLeft: 'auto' }}>{overflowOpen ? '▼' : '▶'}</span>
+          </div>
+          {overflowOpen && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, tableLayout: 'fixed' }}>
+              {colGroup}
+              <tbody>
+                {overflowLots.flatMap((lot, i) => renderLotRow(lot, satisfyLots.length + i, true))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -536,7 +630,7 @@ function CheckpointTimeline({ pins }) {
 }
 
 // ── Checkpoints section ────────────────────────────────────────────
-function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteCheckpoint, onAutoAssign, onAssignLot, onReorderCheckpoints, buildingUnitCounts, onPatchLotDate }) {
+function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteCheckpoint, onAutoAssign, onAssignLot, onReorderCheckpoints, buildingUnitCounts, onPatchLotDate, onRemoveLots }) {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [assigning, setAssigning] = useState(false)
   const [expanded, setExpanded] = useState({})
@@ -700,6 +794,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                           simplan={cp.sim_plan}
                           buildingUnitCounts={buildingUnitCounts}
                           onPatchLotDate={onPatchLotDate}
+                          onRemoveLots={onRemoveLots ? lotIds => onRemoveLots(tda.tda_id, lotIds) : undefined}
                         />
                       </td>
                     </tr>
@@ -1223,6 +1318,7 @@ function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint,
         onReorderCheckpoints={onReorderCheckpoints}
         buildingUnitCounts={buildingUnitCounts}
         onPatchLotDate={onPatchLotDate}
+        onRemoveLots={onRemoveLots}
       />
 
       <LotsSection
@@ -1359,7 +1455,7 @@ function OverridePanel({ lot, dateField, onClose, onApplied }) {
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: TEXT_PRIMARY }}>
-          Set {_LABEL[dateField] || dateField} override — <span style={{ fontFamily: 'monospace' }}>{lot.lot_number}</span>
+          Set {_LABEL[dateField] || dateField} override — <span style={{ fontFamily: 'monospace', whiteSpace: 'pre' }}>{pillLotNum(lot.lot_number)}</span>
         </span>
         <button onClick={onClose} style={{ fontSize: 14, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>×</button>
       </div>
@@ -1534,7 +1630,7 @@ function LotsTab({ selectedId, data, onReload }) {
                     borderBottom: isAnyActive ? 'none' : `1px solid ${PANEL_BORDER}`,
                     background: isAnyActive ? '#f0f9ff' : (hasOverrides ? '#fefce8' : '#fff'),
                   }}>
-                    <td style={{ ...TD, fontFamily: 'monospace', fontWeight: 500 }}>{lot.lot_number}</td>
+                    <td style={{ ...TD, fontFamily: 'monospace', whiteSpace: 'pre', fontWeight: 500 }}>{pillLotNum(lot.lot_number)}</td>
                     <td style={{ ...TD, color: TEXT_MUTED }}>{lot.lot_type_short || '—'}</td>
                     <td style={{ ...TD, color: TEXT_MUTED }}>
                       {lot.building_name ? lot.building_name.replace('Building ', 'B') : '—'}
@@ -1803,8 +1899,8 @@ function ChecklistTab({ showTestCommunities }) {
                                   </span>
                                   {item ? (
                                     <>
-                                      <span style={{ fontFamily: 'monospace', fontSize: 11, color: TEXT_PRIMARY, minWidth: 80 }}>
-                                        {item.lot_number}
+                                      <span style={{ fontFamily: 'monospace', whiteSpace: 'pre', fontSize: 11, color: TEXT_PRIMARY, minWidth: 80 }}>
+                                        {pillLotNum(item.lot_number)}
                                       </span>
                                       {item.lot_type_short && (
                                         <span style={{ fontSize: 10, color: TEXT_MUTED, minWidth: 32 }}>
