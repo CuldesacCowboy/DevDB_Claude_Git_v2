@@ -305,15 +305,14 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
           <tbody>
             {tda.checkpoints.map((cp, idx) => {
               const required    = cp.lots_required_cumulative || 0
-              const cumAssigned = cp.lots_assigned_cumulative || 0
-              const gap         = required - cumAssigned
-              const status      = cpObligationStatus(required, cumAssigned)
               const isOpen      = !!expanded[cp.checkpoint_id]
 
               // Per-checkpoint required = delta from previous cumulative
               const prevRequired = idx > 0 ? (tda.checkpoints[idx - 1].lots_required_cumulative || 0) : 0
               const perRequired  = required - prevRequired
               const cpLots       = lotsByCp[cp.checkpoint_id] || []
+              const gap          = perRequired - cpLots.length
+              const status       = cpObligationStatus(perRequired, cpLots.length)
 
               return (
                 <>
@@ -343,13 +342,13 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                           onSave={v => onPatchCheckpoint(cp.checkpoint_id, { checkpoint_date: v })} />
                       </span>
                     </td>
-                    <td style={{ ...TD, color: TEXT_MUTED }}>{required}</td>
-                    <td style={{ ...TD, color: TEXT_MUTED }}>{cumAssigned}</td>
+                    <td style={{ ...TD, color: TEXT_MUTED }}>{perRequired}</td>
+                    <td style={{ ...TD, color: TEXT_MUTED }}>{cpLots.length}</td>
                     <td style={{
                       ...TD, fontWeight: gap !== 0 ? 600 : 400,
                       color: gap > 0 ? '#dc2626' : gap < 0 ? '#15803d' : TEXT_MUTED,
                     }}>
-                      {required === 0 ? '—' : gap > 0 ? `−${gap}` : gap < 0 ? `+${Math.abs(gap)}` : '0'}
+                      {perRequired === 0 ? '—' : gap > 0 ? `−${gap}` : gap < 0 ? `+${Math.abs(gap)}` : '0'}
                     </td>
                     <td style={TD}>
                       {status === 'met'   && <span style={{ ...BADGE, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>Met</span>}
@@ -1045,21 +1044,46 @@ function ChecklistTab({ showTestCommunities }) {
     : filter === 'closed' ? items.filter(i => i.status === 'closed')
     : items.filter(i => i.status !== 'closed')
 
+  // Build per-checkpoint required count (delta from previous cumulative) using all items (unfiltered)
+  const perRequiredMap = new Map()
+  {
+    const communityCheckpoints = new Map()
+    for (const item of items) {
+      if (!item.checkpoint_id) continue
+      if (!communityCheckpoints.has(item.ent_group_id)) communityCheckpoints.set(item.ent_group_id, new Map())
+      const cpMap = communityCheckpoints.get(item.ent_group_id)
+      if (!cpMap.has(item.checkpoint_id)) {
+        cpMap.set(item.checkpoint_id, { lots_required_cumulative: item.lots_required_cumulative || 0, checkpoint_date: item.checkpoint_date })
+      }
+    }
+    for (const [, cpMap] of communityCheckpoints) {
+      const sorted = [...cpMap.entries()].sort((a, b) => (a[1].checkpoint_date || '').localeCompare(b[1].checkpoint_date || ''))
+      let prevCum = 0
+      for (const [cpId, cp] of sorted) {
+        perRequiredMap.set(cpId, cp.lots_required_cumulative - prevCum)
+        prevCum = cp.lots_required_cumulative
+      }
+    }
+  }
+
+  // Group filtered items by month → checkpoint (one block per checkpoint, not per community)
   const monthGroups = new Map()
   for (const item of filtered) {
     const monthKey = item.checkpoint_date ? item.checkpoint_date.slice(0, 7) : 'no-date'
+    const cpKey    = item.checkpoint_id ? String(item.checkpoint_id) : `eg_${item.ent_group_id}`
     if (!monthGroups.has(monthKey)) monthGroups.set(monthKey, new Map())
     const cg = monthGroups.get(monthKey)
-    if (!cg.has(item.ent_group_id)) {
-      cg.set(item.ent_group_id, {
+    if (!cg.has(cpKey)) {
+      cg.set(cpKey, {
         ent_group_id: item.ent_group_id,
         ent_group_name: item.ent_group_name,
         checkpoint_date: item.checkpoint_date,
+        checkpoint_id: item.checkpoint_id,
         lots_required_cumulative: item.lots_required_cumulative,
         items: [],
       })
     }
-    cg.get(item.ent_group_id).items.push(item)
+    cg.get(cpKey).items.push(item)
   }
 
   function toggleCollapse(key) {
@@ -1100,7 +1124,10 @@ function ChecklistTab({ showTestCommunities }) {
 
       {[...monthGroups.entries()].map(([monthKey, commGroup]) => {
         const monthCollapsed = collapsed[monthKey]
-        const monthTotal  = [...commGroup.values()].reduce((s, g) => s + g.items.length, 0)
+        const monthTotal  = [...commGroup.values()].reduce((s, g) => {
+          const pr = perRequiredMap.has(g.checkpoint_id) ? perRequiredMap.get(g.checkpoint_id) : (g.lots_required_cumulative || 0)
+          return s + Math.max(pr, g.items.length)
+        }, 0)
         const monthClosed = [...commGroup.values()].reduce((s, g) => s + g.items.filter(i => i.status === 'closed').length, 0)
 
         return (
@@ -1123,13 +1150,15 @@ function ChecklistTab({ showTestCommunities }) {
             {!monthCollapsed && (
               <div style={{ paddingLeft: 8 }}>
                 {[...commGroup.values()].map(group => {
-                  const groupKey     = `${monthKey}_${group.ent_group_id}`
+                  const groupKey      = `${monthKey}_${group.checkpoint_id || group.ent_group_id}`
                   const groupCollapsed = collapsed[groupKey]
-                  const color        = colorMap[group.ent_group_id] || '#6b7280'
-                  const closedCount  = group.items.filter(i => i.status === 'closed').length
-                  const totalCount   = group.items.length
-                  const req          = group.lots_required_cumulative || 0
-                  const reqMet       = req > 0 && closedCount >= req
+                  const color         = colorMap[group.ent_group_id] || '#6b7280'
+                  const closedCount   = group.items.filter(i => i.status === 'closed').length
+                  const perRequired   = perRequiredMap.has(group.checkpoint_id)
+                    ? perRequiredMap.get(group.checkpoint_id)
+                    : (group.lots_required_cumulative || 0)
+                  const slotCount     = Math.max(perRequired, group.items.length)
+                  const reqMet        = perRequired > 0 && closedCount >= perRequired
 
                   return (
                     <div key={groupKey} style={{ marginBottom: 6 }}>
@@ -1148,16 +1177,16 @@ function ChecklistTab({ showTestCommunities }) {
                           {group.ent_group_name}
                         </span>
                         <span style={{ fontSize: 10, color: TEXT_MUTED }}>
-                          {closedCount} of {totalCount} closed
+                          {closedCount} of {slotCount} closed
                         </span>
-                        {req > 0 && (
+                        {perRequired > 0 && (
                           <span style={{
                             fontSize: 10, padding: '1px 7px', borderRadius: 8, fontWeight: 600,
                             background: reqMet ? '#f0fdf4' : '#fef2f2',
                             color: reqMet ? '#15803d' : '#dc2626',
                             border: `1px solid ${reqMet ? '#bbf7d0' : '#fecaca'}`,
                           }}>
-                            {closedCount}/{req} req
+                            {closedCount}/{perRequired} req
                           </span>
                         )}
                         <span style={{ fontSize: 10, color: TEXT_MUTED, marginLeft: 'auto' }}>
@@ -1167,60 +1196,71 @@ function ChecklistTab({ showTestCommunities }) {
 
                       {!groupCollapsed && (
                         <div>
-                          {group.items.map(item => {
-                            const isClosed = item.status === 'closed'
-                            const isOverrideActive = activeOverride?.lot_id === item.lot_id
+                          {Array.from({ length: slotCount }, (_, i) => {
+                            const item = group.items[i] ?? null
+                            const isClosed = item?.status === 'closed'
+                            const isOverrideActive = item && activeOverride?.lot_id === item.lot_id
 
                             return (
-                              <div key={item.lot_id}>
+                              <div key={item ? item.lot_id : `slot_${group.checkpoint_id}_${i}`}>
                                 <div style={{
                                   display: 'flex', alignItems: 'center', gap: 8,
                                   padding: '4px 10px 4px 12px',
                                   borderLeft: `4px solid ${color}44`,
-                                  background: isClosed ? '#f0fdf4' : (item.status === 'projected' ? '#f0f9ff' : '#fff'),
+                                  background: item
+                                    ? (isClosed ? '#f0fdf4' : item.status === 'projected' ? '#f0f9ff' : '#fff')
+                                    : '#f9fafb',
                                   borderBottom: `1px solid ${PANEL_BORDER}`,
                                 }}>
                                   <span style={{ fontSize: 13, width: 16, textAlign: 'center', flexShrink: 0,
                                     color: isClosed ? '#16a34a' : '#d1d5db' }}>
                                     {isClosed ? '✓' : '○'}
                                   </span>
-                                  <span style={{ fontFamily: 'monospace', fontSize: 11, color: TEXT_PRIMARY, minWidth: 80 }}>
-                                    {item.lot_number}
-                                  </span>
-                                  {item.lot_type_short && (
-                                    <span style={{ fontSize: 10, color: TEXT_MUTED, minWidth: 32 }}>
-                                      {item.lot_type_short}
+                                  {item ? (
+                                    <>
+                                      <span style={{ fontFamily: 'monospace', fontSize: 11, color: TEXT_PRIMARY, minWidth: 80 }}>
+                                        {item.lot_number}
+                                      </span>
+                                      {item.lot_type_short && (
+                                        <span style={{ fontSize: 10, color: TEXT_MUTED, minWidth: 32 }}>
+                                          {item.lot_type_short}
+                                        </span>
+                                      )}
+                                      {item.building_name && (
+                                        <span style={{ fontSize: 10, color: TEXT_MUTED, fontFamily: 'monospace' }}>
+                                          {item.building_name.replace('Building ', 'B')}
+                                        </span>
+                                      )}
+                                      <span style={{ marginLeft: 'auto', fontSize: 11 }}>
+                                        {isClosed ? (
+                                          <span style={{ color: '#16a34a', fontStyle: 'italic' }}>{item.display_date}</span>
+                                        ) : item.display_date ? (
+                                          <span
+                                            onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: 'date_td', lot: item })}
+                                            style={{ color: '#2563eb', cursor: 'pointer', borderBottom: '1px dashed #93c5fd' }}
+                                            title="Click to set override"
+                                          >
+                                            {item.display_date}
+                                          </span>
+                                        ) : (
+                                          <span
+                                            onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: 'date_td', lot: item })}
+                                            style={{ color: TEXT_MUTED, cursor: 'pointer', borderBottom: '1px dashed #e5e7eb' }}
+                                            title="Click to set takedown override"
+                                          >
+                                            —
+                                          </span>
+                                        )}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#d1d5db' }}>
+                                      — open slot —
                                     </span>
                                   )}
-                                  {item.building_name && (
-                                    <span style={{ fontSize: 10, color: TEXT_MUTED, fontFamily: 'monospace' }}>
-                                      {item.building_name.replace('Building ', 'B')}
-                                    </span>
-                                  )}
-                                  <span style={{ marginLeft: 'auto', fontSize: 11 }}>
-                                    {isClosed ? (
-                                      <span style={{ color: '#16a34a', fontStyle: 'italic' }}>{item.display_date}</span>
-                                    ) : item.display_date ? (
-                                      <span
-                                        onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: 'date_td', lot: item })}
-                                        style={{ color: '#2563eb', cursor: 'pointer', borderBottom: '1px dashed #93c5fd' }}
-                                        title="Click to set override"
-                                      >
-                                        {item.display_date}
-                                      </span>
-                                    ) : (
-                                      <span
-                                        onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: 'date_td', lot: item })}
-                                        style={{ color: TEXT_MUTED, cursor: 'pointer', borderBottom: '1px dashed #e5e7eb' }}
-                                        title="Click to set takedown override"
-                                      >
-                                        —
-                                      </span>
-                                    )}
-                                  </span>
                                 </div>
 
-                                {isOverrideActive && (
+                                {isOverrideActive && item && (
                                   <div style={{ borderLeft: `4px solid ${color}44`, padding: '0 12px 8px' }}>
                                     <OverridePanel
                                       lot={activeOverride.lot}
