@@ -368,8 +368,22 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
         >
           {isSel ? '✓' : displayIdx + 1}
         </td>
-        <td style={{ ...STD_D, fontFamily: 'monospace', whiteSpace: 'pre', overflow: 'hidden' }}>
-          <span style={{ fontWeight: 600, color: TEXT_PRIMARY }}>{pillLotNum(lot.lot_number)}</span>
+        <td style={{ ...STD_D }}>
+          <div
+            onClick={e => handleNumClick(lot.lot_id, e)}
+            title="Click to select · Shift+click for range"
+            style={{
+              fontFamily: 'monospace', whiteSpace: 'pre',
+              padding: '2px 8px', borderRadius: 5, fontSize: 11,
+              cursor: 'pointer', userSelect: 'none', display: 'inline-block',
+              border: `1.5px solid ${isSel ? '#2563eb' : '#d1d5db'}`,
+              background: isSel ? '#eff6ff' : '#fff',
+              color: isSel ? '#1d4ed8' : TEXT_PRIMARY,
+              fontWeight: isSel ? 700 : 400,
+            }}
+          >
+            {pillLotNum(lot.lot_number)}
+          </div>
         </td>
         <td style={{ ...STD_D, color: TEXT_MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{lot.lot_type_short || '—'}</td>
         <td style={{ ...STD_D, color: TEXT_MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -448,6 +462,24 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
 
   return (
     <div style={{ margin: '0 0 4px', background: '#f8fafc', borderTop: `1px solid ${PANEL_BORDER}`, borderBottom: `1px solid ${PANEL_BORDER}` }}>
+      {/* Always-visible All / None + selection hint */}
+      {sortedLots.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#f1f5f9', borderBottom: `1px solid ${PANEL_BORDER}` }}>
+          <button
+            onClick={() => { setSelected(new Set(sortedLots.map(l => l.lot_id))); lastClickedRef.current = null }}
+            style={{ fontSize: 10, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+          >All</button>
+          <button
+            onClick={() => { setSelected(new Set()); lastClickedRef.current = null; setBulkMode(null) }}
+            style={{ fontSize: 10, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 600 }}
+          >None</button>
+          <span style={{ width: 1, height: 10, background: '#cbd5e1', display: 'inline-block' }} />
+          {nSel > 0
+            ? <span style={{ fontSize: 10, fontWeight: 600, color: '#1d4ed8' }}>{nSel} of {sortedLots.length} selected</span>
+            : <span style={{ fontSize: 10, color: TEXT_MUTED, fontStyle: 'italic' }}>Click pill to select · Shift+click for range</span>
+          }
+        </div>
+      )}
       {/* Selection action bar */}
       {nSel > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '5px 8px', background: '#eff6ff', borderBottom: '1px solid #bfdbfe' }}>
