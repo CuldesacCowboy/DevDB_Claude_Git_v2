@@ -174,15 +174,13 @@ const TD = { padding: '6px 8px', verticalAlign: 'middle' }
 const BADGE = { display: 'inline-block', fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10 }
 
 // ── Checkpoint slot list ───────────────────────────────────────────
-function SlotList({ checkpoint, lots, perRequired }) {
-  // lots = all lots assigned to THIS checkpoint
-  const slots = []
-  for (let i = 0; i < Math.max(perRequired, lots.length); i++) {
-    slots.push(lots[i] || null)
-  }
+function SlotList({ checkpoint, lots, perRequired, poolLots, onAssignSlot, marksplan, simplan }) {
+  const [pickerSlot, setPickerSlot] = useState(null)
+  const slotCount = Math.max(perRequired, lots.length)
+  const slots = Array.from({ length: slotCount }, (_, i) => lots[i] || null)
 
   const STD = { padding: '4px 8px', fontSize: 11, verticalAlign: 'middle' }
-  const isEmpty = slots.length === 0
+  const isEmpty = slotCount === 0
 
   return (
     <div style={{
@@ -192,7 +190,7 @@ function SlotList({ checkpoint, lots, perRequired }) {
     }}>
       {isEmpty ? (
         <div style={{ padding: '6px 32px', fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }}>
-          No lots assigned to this checkpoint.
+          No slots for this checkpoint.
         </div>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
@@ -208,47 +206,88 @@ function SlotList({ checkpoint, lots, perRequired }) {
           </thead>
           <tbody>
             {slots.map((lot, i) => {
-              const filled = lot !== null
-              const hcDate  = lot?.hc_marks_date  || lot?.hc_projected_date  || null
-              const bldrDate = lot?.bldr_marks_date || lot?.bldr_projected_date || null
-              const hcIsMarks  = !!lot?.hc_marks_date
+              const filled      = lot !== null
+              const hcDate      = lot?.hc_marks_date   || lot?.hc_projected_date  || null
+              const bldrDate    = lot?.bldr_marks_date  || lot?.bldr_projected_date || null
+              const hcIsMarks   = !!lot?.hc_marks_date
               const bldrIsMarks = !!lot?.bldr_marks_date
+              const showPicker  = pickerSlot === i
+
               return (
-                <tr
-                  key={i}
-                  style={{
-                    borderTop: `1px solid ${PANEL_BORDER}`,
-                    background: filled ? '#fff' : '#f9fafb',
-                  }}
-                >
-                  <td style={{ ...STD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>
-                    {i + 1}
-                  </td>
-                  <td style={{ ...STD, fontFamily: 'monospace', fontWeight: filled ? 500 : 400 }}>
-                    {filled
-                      ? <span style={{ color: TEXT_PRIMARY }}>{lot.lot_number}</span>
-                      : <span style={{ color: '#d1d5db' }}>— open slot —</span>
-                    }
-                  </td>
-                  <td style={{ ...STD, color: TEXT_MUTED }}>{lot?.lot_type_short || (filled ? '—' : '')}</td>
-                  <td style={{ ...STD, color: TEXT_MUTED }}>
-                    {lot?.building_name ? lot.building_name.replace('Building ', 'B') : (filled ? '—' : '')}
-                  </td>
-                  <td style={{ ...STD }}>
-                    {hcDate
-                      ? <span style={{ color: hcIsMarks ? TEXT_MUTED : TEXT_PRIMARY, fontStyle: hcIsMarks ? 'italic' : 'normal' }}>{hcDate}</span>
-                      : <span style={{ color: '#e5e7eb' }}>—</span>
-                    }
-                  </td>
-                  <td style={{ ...STD }}>
-                    {bldrDate
-                      ? <span style={{ color: bldrIsMarks ? TEXT_MUTED : TEXT_PRIMARY, fontStyle: bldrIsMarks ? 'italic' : 'normal' }}>{bldrDate}</span>
-                      : <span style={{ color: '#e5e7eb' }}>—</span>
-                    }
-                  </td>
-                </tr>
+                <>
+                  <tr key={i} style={{ borderTop: `1px solid ${PANEL_BORDER}`, background: filled ? '#fff' : '#f9fafb' }}>
+                    <td style={{ ...STD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums', textAlign: 'center' }}>
+                      {i + 1}
+                    </td>
+                    <td style={{ ...STD, fontFamily: 'monospace', fontWeight: filled ? 500 : 400 }}>
+                      {filled ? (
+                        <span style={{ color: TEXT_PRIMARY }}>{lot.lot_number}</span>
+                      ) : (
+                        <button
+                          onClick={() => setPickerSlot(showPicker ? null : i)}
+                          style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: showPicker ? '#2563eb' : '#cbd5e1',
+                            fontSize: 11, fontFamily: 'monospace', padding: 0,
+                          }}
+                          title="Click to assign a lot to this slot"
+                        >
+                          — open slot —
+                        </button>
+                      )}
+                    </td>
+                    <td style={{ ...STD, color: TEXT_MUTED }}>{lot?.lot_type_short || (filled ? '—' : '')}</td>
+                    <td style={{ ...STD, color: TEXT_MUTED }}>
+                      {lot?.building_name ? lot.building_name.replace('Building ', 'B') : (filled ? '—' : '')}
+                    </td>
+                    <td style={STD}>
+                      {hcDate ? <span style={{ color: hcIsMarks ? TEXT_MUTED : TEXT_PRIMARY, fontStyle: hcIsMarks ? 'italic' : 'normal' }}>{hcDate}</span> : <span style={{ color: '#e5e7eb' }}>—</span>}
+                    </td>
+                    <td style={STD}>
+                      {bldrDate ? <span style={{ color: bldrIsMarks ? TEXT_MUTED : TEXT_PRIMARY, fontStyle: bldrIsMarks ? 'italic' : 'normal' }}>{bldrDate}</span> : <span style={{ color: '#e5e7eb' }}>—</span>}
+                    </td>
+                  </tr>
+                  {showPicker && !filled && (
+                    <tr key={`picker_${i}`} style={{ background: '#eff6ff' }}>
+                      <td colSpan={6} style={{ padding: '5px 8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 600 }}>Assign lot to this slot:</span>
+                          {poolLots.length === 0 ? (
+                            <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }}>No lots in pool</span>
+                          ) : (
+                            <select
+                              defaultValue=""
+                              onChange={e => {
+                                if (e.target.value) {
+                                  onAssignSlot(Number(e.target.value), checkpoint.checkpoint_id)
+                                  setPickerSlot(null)
+                                }
+                              }}
+                              style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, border: '1px solid #93c5fd', background: '#fff' }}
+                            >
+                              <option value="">— select lot —</option>
+                              {poolLots.map(l => (
+                                <option key={l.lot_id} value={l.lot_id}>{l.lot_number}</option>
+                              ))}
+                            </select>
+                          )}
+                          <button onClick={() => setPickerSlot(null)}
+                            style={{ fontSize: 11, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>
+                            Cancel
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               )
             })}
+            {/* MARKS Plan / Sim Plan footer */}
+            <tr style={{ borderTop: `2px solid ${PANEL_BORDER}`, background: '#f1f5f9' }}>
+              <td colSpan={4} style={{ ...STD, color: TEXT_MUTED, fontStyle: 'italic', fontSize: 10 }}>Scheduled by checkpoint date</td>
+              <td style={{ ...STD, color: TEXT_MUTED, fontSize: 10 }}>MARKS: <strong>{marksplan ?? '—'}</strong></td>
+              <td style={{ ...STD, color: '#2563eb', fontSize: 10 }}>Sim: <strong>{simplan ?? '—'}</strong></td>
+            </tr>
           </tbody>
         </table>
       )}
@@ -256,13 +295,61 @@ function SlotList({ checkpoint, lots, perRequired }) {
   )
 }
 
+// ── Checkpoint timeline strip ──────────────────────────────────────
+function CheckpointTimeline({ pins }) {
+  if (!pins || pins.length === 0) return null
+  const dated = pins.filter(p => p.date)
+  if (dated.length === 0) return null
+
+  const timestamps = dated.map(p => new Date(p.date + 'T00:00:00').getTime())
+  const minD = Math.min(...timestamps)
+  const maxD = Math.max(...timestamps)
+  const span = maxD - minD || 1
+
+  const STATUS_COLOR = { met: '#16a34a', short: '#dc2626', none: '#9ca3af' }
+
+  return (
+    <div style={{ position: 'relative', height: 58, marginBottom: 10, overflow: 'visible' }}>
+      {/* track */}
+      <div style={{
+        position: 'absolute', top: 16, left: '3%', right: '3%',
+        height: 2, background: '#e2e8f0', borderRadius: 1,
+      }} />
+      {dated.map((pin, i) => {
+        const t    = new Date(pin.date + 'T00:00:00').getTime()
+        const raw  = span === 1 ? 0.5 : (t - minD) / span
+        const pct  = 3 + raw * 94   // 3% … 97%
+        const color = STATUS_COLOR[pin.status] || STATUS_COLOR.none
+        return (
+          <div key={i} style={{
+            position: 'absolute', left: `${pct}%`, top: 0,
+            transform: 'translateX(-50%)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+          }}>
+            <div style={{
+              width: 14, height: 14, borderRadius: '50%',
+              background: color, border: '2px solid #fff',
+              boxShadow: `0 0 0 1.5px ${color}`,
+            }} />
+            <div style={{ marginTop: 4, fontSize: 9, color: '#6b7280', whiteSpace: 'nowrap' }}>
+              {pin.date.slice(5).replace('-', '/')}
+            </div>
+            <div style={{ fontSize: 9, color: '#374151', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              {pin.label}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Checkpoints section ────────────────────────────────────────────
-function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteCheckpoint, onAutoAssign }) {
+function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteCheckpoint, onAutoAssign, onAssignLot, onReorderCheckpoints }) {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [assigning, setAssigning] = useState(false)
-  const [expanded, setExpanded] = useState({})   // checkpoint_id -> bool
+  const [expanded, setExpanded] = useState({})
 
-  // Build lookup: checkpoint_id -> lots assigned to it
   const lotsByCp = {}
   for (const lot of tda.lots || []) {
     if (lot.checkpoint_id) {
@@ -270,6 +357,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
       lotsByCp[lot.checkpoint_id].push(lot)
     }
   }
+  const poolLots = (tda.lots || []).filter(l => !l.checkpoint_id)
 
   function toggleExpand(cpId) {
     setExpanded(prev => ({ ...prev, [cpId]: !prev[cpId] }))
@@ -281,9 +369,19 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
     setAssigning(false)
   }
 
+  // Build timeline pins
+  const timelinePins = tda.checkpoints.map((cp, idx) => {
+    const required    = cp.lots_required_cumulative || 0
+    const prevCum     = idx > 0 ? (tda.checkpoints[idx - 1].lots_required_cumulative || 0) : 0
+    const perRequired = required - prevCum
+    const cpLots      = lotsByCp[cp.checkpoint_id] || []
+    const status      = cpObligationStatus(perRequired, cpLots.length)
+    return { date: cp.checkpoint_date, status, label: `CP${idx + 1} ${cpLots.length}/${perRequired}` }
+  })
+
   return (
     <div style={{ padding: '10px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED }}>CHECKPOINTS</span>
         {tda.checkpoints.length > 0 && (
           <Btn variant="teal" onClick={handleAutoAssign} disabled={assigning} style={{ padding: '1px 7px', fontSize: 11 }}>
@@ -292,47 +390,51 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
         )}
       </div>
 
+      {tda.checkpoints.length > 0 && <CheckpointTimeline pins={timelinePins} />}
+
       {tda.checkpoints.length > 0 && (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 6 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 0 }}>
           <thead>
             <tr>
-              <th style={{ ...TH, width: 24, padding: '3px 4px' }}></th>
-              {['Checkpoint', 'Required', 'Assigned', 'Gap', 'Status', 'Taken Down', 'MARKS Plan', 'Sim Plan', ''].map(h => (
-                <th key={h} style={TH}>{h}</th>
+              <th style={{ ...TH, width: 44, padding: '3px 4px' }}></th>
+              {['Checkpoint', 'Required', 'Assigned', 'Status', 'Taken Down', '', ''].map((h, i) => (
+                <th key={i} style={TH}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {tda.checkpoints.map((cp, idx) => {
-              const required    = cp.lots_required_cumulative || 0
-              const isOpen      = !!expanded[cp.checkpoint_id]
-
-              // Per-checkpoint required = delta from previous cumulative
+              const required     = cp.lots_required_cumulative || 0
+              const isOpen       = !!expanded[cp.checkpoint_id]
               const prevRequired = idx > 0 ? (tda.checkpoints[idx - 1].lots_required_cumulative || 0) : 0
               const perRequired  = required - prevRequired
               const cpLots       = lotsByCp[cp.checkpoint_id] || []
               const gap          = perRequired - cpLots.length
-              const status       = cpObligationStatus(perRequired, cpLots.length)
+              const isFirst      = idx === 0
+              const isLast       = idx === tda.checkpoints.length - 1
+
+              const rowBg = perRequired === 0 ? '#fff'
+                : gap === 0 ? '#f0fdf4'
+                : gap < 0   ? '#f0fdf4'
+                : '#fef2f2'
 
               return (
                 <>
-                  <tr
-                    key={cp.checkpoint_id}
-                    style={{ borderBottom: isOpen ? 'none' : `1px solid ${PANEL_BORDER}` }}
-                  >
-                    {/* Expand toggle */}
-                    <td style={{ ...TD, padding: '6px 4px', width: 24 }}>
+                  <tr key={cp.checkpoint_id} style={{ borderBottom: isOpen ? 'none' : `1px solid ${PANEL_BORDER}`, background: rowBg }}>
+                    {/* CP# + expand toggle */}
+                    <td style={{ ...TD, padding: '6px 4px', width: 44, whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 10, color: TEXT_MUTED, fontWeight: 700, marginRight: 2 }}>
+                        CP{idx + 1}
+                      </span>
                       <button
                         onClick={() => toggleExpand(cp.checkpoint_id)}
                         title={isOpen ? 'Collapse slots' : 'Expand slots'}
-                        style={{
-                          fontSize: 10, color: TEXT_MUTED, background: 'none', border: 'none',
-                          cursor: 'pointer', padding: '1px 3px', lineHeight: 1,
-                        }}
+                        style={{ fontSize: 10, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', lineHeight: 1 }}
                       >
                         {isOpen ? '▼' : '▶'}
                       </button>
                     </td>
+                    {/* Checkpoint editable */}
                     <td style={TD}>
                       <span style={{ fontWeight: 500, color: TEXT_PRIMARY }}>
                         <EditNumber value={required}
@@ -342,22 +444,40 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                           onSave={v => onPatchCheckpoint(cp.checkpoint_id, { checkpoint_date: v })} />
                       </span>
                     </td>
-                    <td style={{ ...TD, color: TEXT_MUTED }}>{perRequired}</td>
-                    <td style={{ ...TD, color: TEXT_MUTED }}>{cpLots.length}</td>
-                    <td style={{
-                      ...TD, fontWeight: gap !== 0 ? 600 : 400,
-                      color: gap > 0 ? '#dc2626' : gap < 0 ? '#15803d' : TEXT_MUTED,
-                    }}>
-                      {perRequired === 0 ? '—' : gap > 0 ? `−${gap}` : gap < 0 ? `+${Math.abs(gap)}` : '0'}
+                    {/* Required (per-cp) */}
+                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{perRequired}</td>
+                    {/* Assigned */}
+                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cpLots.length}</td>
+                    {/* Status (merged gap + status) */}
+                    <td style={{ ...TD }}>
+                      {perRequired === 0 ? (
+                        <span style={{ color: TEXT_MUTED }}>—</span>
+                      ) : gap === 0 ? (
+                        <span style={{ color: '#16a34a', fontWeight: 700, fontSize: 13 }}>✓</span>
+                      ) : gap < 0 ? (
+                        <span style={{ color: '#15803d', fontWeight: 700 }}>+{Math.abs(gap)}</span>
+                      ) : (
+                        <span style={{ color: '#dc2626', fontWeight: 700 }}>−{gap}</span>
+                      )}
                     </td>
-                    <td style={TD}>
-                      {status === 'met'   && <span style={{ ...BADGE, background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>Met</span>}
-                      {status === 'short' && <span style={{ ...BADGE, background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' }}>Short {gap}</span>}
-                      {status === 'none'  && <span style={{ ...BADGE, background: '#f3f4f6', color: '#9ca3af', border: '1px solid #e5e7eb' }}>—</span>}
-                    </td>
+                    {/* Taken Down */}
                     <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.taken_down_to_date ?? 0}</td>
-                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.marks_plan ?? 0}</td>
-                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.sim_plan ?? 0}</td>
+                    {/* Reorder ▲▼ */}
+                    <td style={{ ...TD, padding: '4px 2px', whiteSpace: 'nowrap' }}>
+                      <button
+                        onClick={() => !isFirst && onReorderCheckpoints(tda.checkpoints[idx - 1], cp)}
+                        disabled={isFirst}
+                        title="Move up"
+                        style={{ fontSize: 10, color: isFirst ? '#e5e7eb' : TEXT_MUTED, background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer', padding: '1px 3px' }}
+                      >▲</button>
+                      <button
+                        onClick={() => !isLast && onReorderCheckpoints(cp, tda.checkpoints[idx + 1])}
+                        disabled={isLast}
+                        title="Move down"
+                        style={{ fontSize: 10, color: isLast ? '#e5e7eb' : TEXT_MUTED, background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer', padding: '1px 3px' }}
+                      >▼</button>
+                    </td>
+                    {/* Delete */}
                     <td style={{ ...TD, textAlign: 'right', paddingRight: 4 }}>
                       {confirmDelete === cp.checkpoint_id ? (
                         <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
@@ -378,11 +498,15 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                   {/* Slot list row */}
                   {isOpen && (
                     <tr key={`${cp.checkpoint_id}_slots`} style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
-                      <td colSpan={10} style={{ padding: 0, paddingLeft: 24 }}>
+                      <td colSpan={8} style={{ padding: 0, paddingLeft: 28 }}>
                         <SlotList
                           checkpoint={cp}
                           lots={cpLots}
                           perRequired={perRequired}
+                          poolLots={poolLots}
+                          onAssignSlot={onAssignLot}
+                          marksplan={cp.marks_plan}
+                          simplan={cp.sim_plan}
                         />
                       </td>
                     </tr>
@@ -390,18 +514,28 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                 </>
               )
             })}
+            {/* Add Checkpoint row inside table */}
+            <tr style={{ borderTop: `1px solid ${PANEL_BORDER}` }}>
+              <td colSpan={8} style={{ padding: '7px 8px' }}>
+                <button onClick={onAddCheckpoint}
+                  style={{ fontSize: 12, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}>
+                  + Add Checkpoint
+                </button>
+              </td>
+            </tr>
           </tbody>
         </table>
       )}
 
       {tda.checkpoints.length === 0 && (
-        <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>No checkpoints.</p>
+        <div>
+          <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>No checkpoints.</p>
+          <button onClick={onAddCheckpoint}
+            style={{ fontSize: 12, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}>
+            + Add Checkpoint
+          </button>
+        </div>
       )}
-
-      <button onClick={onAddCheckpoint}
-        style={{ fontSize: 12, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}>
-        + Add Checkpoint
-      </button>
     </div>
   )
 }
@@ -414,6 +548,7 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
   const [showAdd, setShowAdd]         = useState(false)
   const [addSearch, setAddSearch]     = useState('')
   const [addSelected, setAddSelected] = useState(new Set())
+  const [lotsExpanded, setLotsExpanded] = useState(true)
 
   // Only show lots not assigned to any checkpoint (pool-only lots)
   const poolLots = (tda.lots || []).filter(l => !l.checkpoint_id)
@@ -449,15 +584,22 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
 
   return (
     <div style={{ padding: '10px 16px', borderTop: `1px solid ${PANEL_BORDER}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED }}>
-          UNASSIGNED LOTS <span style={{ fontWeight: 400 }}>({poolLots.length})</span>
-        </span>
-        <span style={{ fontSize: 10, color: TEXT_MUTED, fontStyle: 'italic' }}>
-          in pool, not yet assigned to a checkpoint
-        </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: lotsExpanded ? 6 : 0 }}>
+        <button
+          onClick={() => setLotsExpanded(v => !v)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED }}>
+            UNASSIGNED LOTS
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 400, color: TEXT_MUTED }}>({poolLots.length})</span>
+          <span style={{ fontSize: 10, color: TEXT_MUTED }}>{lotsExpanded ? '▼' : '▶'}</span>
+        </button>
+        {lotsExpanded && (
+          <span style={{ fontSize: 10, color: TEXT_MUTED, fontStyle: 'italic' }}>in pool, not yet assigned to a checkpoint</span>
+        )}
         <span style={{ marginLeft: 'auto' }} />
-        {!showAdd && unassignedLots.length > 0 && (
+        {lotsExpanded && !showAdd && unassignedLots.length > 0 && (
           <button
             onClick={() => { setShowAdd(true); setAddSelected(new Set()) }}
             style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}
@@ -468,7 +610,7 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
       </div>
 
       {/* Pool lots table */}
-      {poolLots.length > 0 && (
+      {lotsExpanded && poolLots.length > 0 && (
         <>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 6 }}>
             <thead>
@@ -543,14 +685,14 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
         </>
       )}
 
-      {poolLots.length === 0 && !showAdd && (
+      {lotsExpanded && poolLots.length === 0 && !showAdd && (
         <p style={{ fontSize: 11, color: TEXT_MUTED, margin: '0 0 6px' }}>
           {tda.lots.length > 0 ? 'All lots assigned to checkpoints.' : 'No lots in this agreement.'}
         </p>
       )}
 
       {/* Add lots — pill picker */}
-      {showAdd && (
+      {lotsExpanded && showAdd && (
         <div style={{ marginTop: 6, padding: 10, border: `1px solid ${PANEL_BORDER}`, borderRadius: 4, background: '#f9fafb' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: TEXT_PRIMARY }}>Add lots to agreement</span>
@@ -601,8 +743,15 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
 }
 
 // ── Agreement card ─────────────────────────────────────────────────
-function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign }) {
+function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign, onAssignLot, onReorderCheckpoints }) {
   const ss = AGREEMENT_STATUS_STYLE[tda.status] || AGREEMENT_STATUS_STYLE.active
+
+  const totalLots     = tda.lots?.length ?? 0
+  const assignedToCp  = (tda.lots || []).filter(l => l.checkpoint_id).length
+  const inPool        = totalLots - assignedToCp
+  const totalRequired = tda.checkpoints.length > 0
+    ? Math.max(...tda.checkpoints.map(cp => cp.lots_required_cumulative || 0))
+    : 0
 
   return (
     <div style={{ border: `1px solid ${PANEL_BORDER}`, borderRadius: 6, background: '#fff', overflow: 'hidden' }}>
@@ -633,12 +782,32 @@ function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint,
         <EditDate value={tda.anchor_date} onSave={v => onPatch({ anchor_date: v })} />
       </div>
 
+      {/* Summary stats */}
+      <div style={{
+        display: 'flex', gap: 24, padding: '6px 16px 7px',
+        background: '#f8fafc', borderBottom: `1px solid ${PANEL_BORDER}`, flexWrap: 'wrap',
+      }}>
+        {[
+          { label: 'Total lots', value: totalLots },
+          { label: 'In checkpoint', value: assignedToCp },
+          { label: 'In pool', value: inPool },
+          { label: 'Total required', value: totalRequired },
+        ].map(({ label, value }) => (
+          <div key={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 64 }}>
+            <span style={{ fontSize: 9, color: TEXT_MUTED, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{label}</span>
+            <span style={{ fontSize: 18, fontWeight: 700, color: TEXT_PRIMARY, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+          </div>
+        ))}
+      </div>
+
       <CheckpointsSection
         tda={tda}
         onPatchCheckpoint={onPatchCheckpoint}
         onAddCheckpoint={() => onAddCheckpoint(tda.tda_id)}
         onDeleteCheckpoint={onDeleteCheckpoint}
         onAutoAssign={onAutoAssign}
+        onAssignLot={(lotId, cpId) => onAssignLot(tda.tda_id, lotId, cpId)}
+        onReorderCheckpoints={onReorderCheckpoints}
       />
 
       <LotsSection
@@ -1472,6 +1641,29 @@ export default function TakedownView({ showTestCommunities }) {
     load()
   }
 
+  async function assignLot(tdaId, lotId, checkpointId) {
+    await fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ checkpoint_id: checkpointId }),
+    })
+    load()
+  }
+
+  async function reorderCheckpoints(cpA, cpB) {
+    // Swap checkpoint_number AND lots_required_cumulative between adjacent checkpoints
+    await Promise.all([
+      fetch(`${API_BASE}/tda-checkpoints/${cpA.checkpoint_id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkpoint_number: cpB.checkpoint_number, lots_required_cumulative: cpB.lots_required_cumulative }),
+      }),
+      fetch(`${API_BASE}/tda-checkpoints/${cpB.checkpoint_id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ checkpoint_number: cpA.checkpoint_number, lots_required_cumulative: cpA.lots_required_cumulative }),
+      }),
+    ])
+    load()
+  }
+
   // ── Filtered community list ────────────────────────────────────────
   const visibleCommunities = search
     ? communities.filter(c => c.ent_group_name.toLowerCase().includes(search.toLowerCase()))
@@ -1621,6 +1813,8 @@ export default function TakedownView({ showTestCommunities }) {
                   onMoveLots={moveLots}
                   onEditLotDates={editLotDates}
                   onAutoAssign={autoAssign}
+                  onAssignLot={assignLot}
+                  onReorderCheckpoints={reorderCheckpoints}
                 />
               )}
 

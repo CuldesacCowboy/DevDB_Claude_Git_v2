@@ -20,6 +20,7 @@ class CreateCheckpointRequest(BaseModel):
 class PatchCheckpointRequest(BaseModel):
     checkpoint_date: Optional[date_type] = None
     lots_required_cumulative: Optional[int] = None
+    checkpoint_number: Optional[int] = None
 
 
 router = APIRouter(tags=["takedown-agreements"])
@@ -88,6 +89,9 @@ def patch_checkpoint(checkpoint_id: int, body: PatchCheckpointRequest, conn=Depe
         if body.lots_required_cumulative is not None:
             updates.append("lots_required_cumulative = %s")
             values.append(body.lots_required_cumulative)
+        if body.checkpoint_number is not None:
+            updates.append("checkpoint_number = %s")
+            values.append(body.checkpoint_number)
         if not updates:
             raise HTTPException(status_code=422, detail="No fields provided to update.")
         values.append(checkpoint_id)
