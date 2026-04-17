@@ -244,6 +244,22 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
         )
         unassigned_lots = [{"lot_id": r["lot_id"], "lot_number": r["lot_number"]} for r in cur.fetchall()]
 
+        # Fetch building unit counts (lots per building_group_id) for this community
+        cur.execute(
+            """
+            SELECT l.building_group_id, COUNT(*) AS unit_count
+            FROM devdb.sim_lots l
+            JOIN devdb.sim_dev_phases p ON p.phase_id = l.phase_id
+            JOIN devdb.developments d ON d.dev_id = p.dev_id
+            WHERE d.community_id = %s
+              AND l.building_group_id IS NOT NULL
+              AND l.lot_source = 'real'
+            GROUP BY l.building_group_id
+            """,
+            (ent_group_id,),
+        )
+        building_unit_counts = {str(r["building_group_id"]): int(r["unit_count"]) for r in cur.fetchall()}
+
         # Clean up helper key
         agreements = []
         for tda in agreements_map.values():
@@ -255,6 +271,7 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
             "ent_group_name": eg["ent_group_name"],
             "agreements": agreements,
             "unassigned_lots": unassigned_lots,
+            "building_unit_counts": building_unit_counts,
         }
     finally:
         cur.close()
