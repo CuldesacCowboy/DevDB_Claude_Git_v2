@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { API_BASE } from '../config'
 import {
   PANEL_BORDER, PANEL_HEADER_BG,
@@ -844,8 +844,8 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                 : '#fef2f2'
 
               return (
-                <>
-                  <tr key={cp.checkpoint_id} style={{ borderBottom: isOpen ? 'none' : `1px solid ${PANEL_BORDER}`, background: rowBg }}>
+                <Fragment key={cp.checkpoint_id}>
+                  <tr style={{ borderBottom: isOpen ? 'none' : `1px solid ${PANEL_BORDER}`, background: rowBg }}>
                     {/* CP# + expand toggle */}
                     <td style={{ ...TD, padding: '6px 4px', width: 44, whiteSpace: 'nowrap' }}>
                       <span style={{ fontSize: 10, color: TEXT_MUTED, fontWeight: 700, marginRight: 2 }}>
@@ -941,7 +941,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
 
                   {/* Slot list row */}
                   {isOpen && (
-                    <tr key={`${cp.checkpoint_id}_slots`} style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
+                    <tr style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
                       <td colSpan={8} style={{ padding: 0, paddingLeft: 28 }}>
                         <CheckpointSlotTable
                           checkpoint={cp}
@@ -958,7 +958,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               )
             })}
             {/* Add Checkpoint row inside table */}
@@ -1487,7 +1487,7 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
   const builderEligibleCount   = tda.builder_eligible_count ?? null
   const leadDays               = tda.checkpoint_lead_days ?? 16
 
-  const datedCps    = tda.checkpoints.filter(cp => cp.sim_plan != null)
+  const datedCps    = tda.checkpoints.filter(cp => cp.checkpoint_date != null)
   const simAtRisk   = datedCps.length > 0 && datedCps.some(cp => cp.sim_plan < (cp.lots_required_cumulative || 0))
   const simOnTrack  = datedCps.length > 0 && datedCps.every(cp => cp.sim_plan >= (cp.lots_required_cumulative || 0))
 
@@ -1566,8 +1566,8 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
           const next  = tda.checkpoints.find(cp => cp.checkpoint_date && cp.checkpoint_date >= today)
             || tda.checkpoints[tda.checkpoints.length - 1]
           if (!next?.checkpoint_date) return null
-          const holdDate = new Date(new Date(next.checkpoint_date + 'T00:00:00').getTime() - leadDays * 86400000)
-            .toISOString().slice(0, 10)
+          const _hd = new Date(new Date(next.checkpoint_date + 'T00:00:00').getTime() - leadDays * 86400000)
+          const holdDate = _hd.getFullYear() + '-' + String(_hd.getMonth() + 1).padStart(2, '0') + '-' + String(_hd.getDate()).padStart(2, '0')
           return (
             <span style={{ fontSize: 10, color: TEXT_MUTED, fontStyle: 'italic' }}
                   title={`Next checkpoint ${next.checkpoint_date} → HC hold ${holdDate}`}>
@@ -1928,8 +1928,8 @@ function LotsTab({ selectedId, data, onReload }) {
               const hasOverrides = Object.keys(overrideMap[lot.lot_id] || {}).length > 0
               const isAnyActive = activeOverride?.lot_id === lot.lot_id
               return (
-                <>
-                  <tr key={lot.lot_id} style={{
+                <Fragment key={lot.lot_id}>
+                  <tr style={{
                     borderBottom: isAnyActive ? 'none' : `1px solid ${PANEL_BORDER}`,
                     background: isAnyActive ? '#f0f9ff' : (hasOverrides ? '#fefce8' : '#fff'),
                   }}>
@@ -1971,7 +1971,7 @@ function LotsTab({ selectedId, data, onReload }) {
                   </tr>
 
                   {isAnyActive && (
-                    <tr key={`${lot.lot_id}_panel`} style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
+                    <tr style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
                       <td colSpan={9} style={{ padding: '0 12px 8px' }}>
                         <OverridePanel
                           lot={lot}
@@ -1982,7 +1982,7 @@ function LotsTab({ selectedId, data, onReload }) {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               )
             })}
           </tbody>
