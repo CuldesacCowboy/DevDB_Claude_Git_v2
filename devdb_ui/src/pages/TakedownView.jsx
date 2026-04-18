@@ -1561,7 +1561,8 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
         <span style={{ fontSize: 11, color: TEXT_MUTED }} title="Days before each checkpoint date that HC hold dates are scheduled">Lead days:</span>
         <EditNumber value={leadDays} onSave={v => onPatch({ checkpoint_lead_days: v })} />
         {tda.checkpoints.length > 0 && (() => {
-          const today = new Date().toISOString().slice(0, 10)
+          const _now = new Date()
+          const today = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0') + '-' + String(_now.getDate()).padStart(2, '0')
           const next  = tda.checkpoints.find(cp => cp.checkpoint_date && cp.checkpoint_date >= today)
             || tda.checkpoints[tda.checkpoints.length - 1]
           if (!next?.checkpoint_date) return null
@@ -1670,7 +1671,7 @@ function LedgerTab({ selectedId }) {
           <tr>
             <th style={{ ...thS, minWidth: 80 }}>Month</th>
             <th style={{ ...thS, textAlign: 'right' }} title="Lots with actual MARKS date_td in this month and in the past">Taken Down</th>
-            <th style={{ ...thS, textAlign: 'right' }} title="Lots with MARKS date_td in this month">MARKS Plan</th>
+            <th style={{ ...thS, textAlign: 'right' }} title="Lots with actual MARKS takedown or HC hold date in this month">MARKS Plan</th>
             <th style={{ ...thS, textAlign: 'right', color: '#2563eb' }} title="Lots with sim-projected BLDR date (date_td_projected, no actual date_td) in this month">BLDR Proj</th>
             <th style={{ ...thS, textAlign: 'right', color: '#0d9488' }} title="Lots with sim-projected HC date only (date_td_hold_projected, no BLDR path) in this month">HC Proj</th>
             <th style={{ ...thS, textAlign: 'right' }}>Cum. Taken</th>

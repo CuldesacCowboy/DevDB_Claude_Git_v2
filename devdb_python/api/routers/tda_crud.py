@@ -839,17 +839,17 @@ def get_tda_monthly_ledger(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.execute(
             """
             SELECT
-                TO_CHAR(DATE_TRUNC('month', l.date_td), 'YYYY-MM') AS month,
-                COUNT(CASE WHEN l.date_td <= CURRENT_DATE THEN 1 END) AS actual,
+                TO_CHAR(DATE_TRUNC('month', COALESCE(l.date_td, l.date_td_hold)), 'YYYY-MM') AS month,
+                COUNT(CASE WHEN COALESCE(l.date_td, l.date_td_hold) <= CURRENT_DATE THEN 1 END) AS actual,
                 COUNT(1) AS marks_plan
             FROM devdb.sim_takedown_agreement_lots tal
             JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
             JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
             WHERE tda.ent_group_id = %s
-              AND l.date_td IS NOT NULL
+              AND (l.date_td IS NOT NULL OR (l.date_td_hold IS NOT NULL AND l.date_td IS NULL))
               AND (tda.builder_id IS NULL OR COALESCE(l.builder_id_override, l.builder_id) = tda.builder_id)
-            GROUP BY DATE_TRUNC('month', l.date_td)
-            ORDER BY DATE_TRUNC('month', l.date_td)
+            GROUP BY DATE_TRUNC('month', COALESCE(l.date_td, l.date_td_hold))
+            ORDER BY DATE_TRUNC('month', COALESCE(l.date_td, l.date_td_hold))
             """,
             (ent_group_id,),
         )
