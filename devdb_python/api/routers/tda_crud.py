@@ -823,9 +823,13 @@ def get_takedown_agreement_detail(tda_id: int, conn=Depends(get_db_conn)):
 def get_tda_monthly_ledger(ent_group_id: int, conn=Depends(get_db_conn)):
     """Monthly ledger of takedown activity for all TDA lots in a community.
     Per month returns:
-      - actual: lots taken down in that month (date_td <= today, in that month)
-      - marks_plan: lots scheduled by MARKS in that month (date_td)
-      - sim_plan: lots projected by simulation in that month (date_td_projected, only where date_td is null)
+      - actual: lots with an actual MARKS date (date_td OR date_td_hold when no date_td) in that month
+                and on or before today — both BLDR and HC paths count (D-087).
+      - marks_plan: same as actual but includes future months — all lots with an actual MARKS date
+                    (date_td OR date_td_hold when no date_td) bucketed by that date's month.
+      - bldr_proj: lots with sim-projected BLDR date (date_td_projected) but no actual date_td.
+      - hc_proj: lots with sim-projected HC date only (date_td_hold_projected, no BLDR path at all).
+      - sim_plan: bldr_proj + hc_proj (kept for backward compat).
     """
     cur = dict_cursor(conn)
     try:

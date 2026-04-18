@@ -1670,7 +1670,7 @@ function LedgerTab({ selectedId }) {
         <thead>
           <tr>
             <th style={{ ...thS, minWidth: 80 }}>Month</th>
-            <th style={{ ...thS, textAlign: 'right' }} title="Lots with actual MARKS date_td in this month and in the past">Taken Down</th>
+            <th style={{ ...thS, textAlign: 'right' }} title="Lots with actual MARKS takedown or HC hold date in this month and in the past">Taken Down</th>
             <th style={{ ...thS, textAlign: 'right' }} title="Lots with actual MARKS takedown or HC hold date in this month">MARKS Plan</th>
             <th style={{ ...thS, textAlign: 'right', color: '#2563eb' }} title="Lots with sim-projected BLDR date (date_td_projected, no actual date_td) in this month">BLDR Proj</th>
             <th style={{ ...thS, textAlign: 'right', color: '#0d9488' }} title="Lots with sim-projected HC date only (date_td_hold_projected, no BLDR path) in this month">HC Proj</th>
@@ -2044,7 +2044,11 @@ function ChecklistTab({ showTestCommunities }) {
       }
     }
     for (const [, cpMap] of tdaCheckpoints) {
-      const sorted = [...cpMap.entries()].sort((a, b) => (a[1].checkpoint_date || '').localeCompare(b[1].checkpoint_date || ''))
+      // Sort NULLS LAST to match DB (ORDER BY checkpoint_date ASC NULLS LAST).
+      // Using empty string '' for null would sort undated CPs first, producing
+      // negative delta values when an undated CP has lower lots_required_cumulative
+      // than a later dated CP.
+      const sorted = [...cpMap.entries()].sort((a, b) => (a[1].checkpoint_date || '9999-99-99').localeCompare(b[1].checkpoint_date || '9999-99-99'))
       let prevCum = 0
       for (const [cpId, cp] of sorted) {
         perRequiredMap.set(cpId, cp.lots_required_cumulative - prevCum)
