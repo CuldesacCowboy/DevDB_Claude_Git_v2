@@ -777,7 +777,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
     const perRequired = required - prevCum
     const cpLots      = lotsByCp[cp.checkpoint_id] || []
     const slotsFull   = perRequired > 0 && cpLots.length >= perRequired
-    const simShort    = cp.sim_plan != null && cp.sim_plan < required
+    const simShort    = cp.sim_plan != null && cp.checkpoint_date != null && cp.sim_plan < required
     const status      = perRequired <= 0 ? 'none'
         : slotsFull && simShort ? 'conflict'
         : slotsFull             ? 'met'
@@ -1564,7 +1564,10 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
           const next  = tda.checkpoints.find(cp => cp.checkpoint_date && cp.checkpoint_date >= today)
             || tda.checkpoints[tda.checkpoints.length - 1]
           if (!next?.checkpoint_date) return null
-          const _hd = new Date(new Date(next.checkpoint_date + 'T00:00:00').getTime() - leadDays * 86400000)
+          // Use date-component arithmetic (not ms subtraction) to avoid DST off-by-one
+          // when the lead-days window crosses a daylight-saving time boundary.
+          const [_cy, _cm, _cd] = next.checkpoint_date.split('-').map(Number)
+          const _hd = new Date(_cy, _cm - 1, _cd - leadDays)
           const holdDate = _hd.getFullYear() + '-' + String(_hd.getMonth() + 1).padStart(2, '0') + '-' + String(_hd.getDate()).padStart(2, '0')
           return (
             <span style={{ fontSize: 10, color: TEXT_MUTED, fontStyle: 'italic' }}
