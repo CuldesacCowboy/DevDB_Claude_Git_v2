@@ -1658,7 +1658,10 @@ function LedgerTab({ selectedId }) {
     return { ...r, cumActual, cumMarks, cumBldr, cumHc }
   })
 
-  const today = new Date().toISOString().slice(0, 7)
+  // Use local time (not UTC) to avoid the UTC-midnight shift that would
+  // mark the current month as past in negative-offset timezones near end-of-month.
+  const _now = new Date()
+  const today = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0')
 
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -2224,23 +2227,30 @@ function ChecklistTab({ showTestCommunities }) {
                                       <span style={{ marginLeft: 'auto', fontSize: 11 }}>
                                         {isClosed ? (
                                           <span style={{ color: '#16a34a', fontStyle: 'italic' }}>{item.display_date}</span>
-                                        ) : item.display_date ? (
-                                          <span
-                                            onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: 'date_td', lot: item })}
-                                            style={{ color: '#2563eb', cursor: 'pointer', borderBottom: '1px dashed #93c5fd' }}
-                                            title="Click to set override"
-                                          >
-                                            {item.display_date}
-                                          </span>
-                                        ) : (
-                                          <span
-                                            onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: 'date_td', lot: item })}
-                                            style={{ color: TEXT_MUTED, cursor: 'pointer', borderBottom: '1px dashed #e5e7eb' }}
-                                            title="Click to set takedown override"
-                                          >
-                                            —
-                                          </span>
-                                        )}
+                                        ) : (() => {
+                                          // HC-path projected lots (only date_td_hold_projected set) must
+                                          // target date_td_hold so the override sets the HC field, not BLDR.
+                                          const overrideField = (!item.date_td && !item.date_td_hold && !item.date_td_projected && item.date_td_hold_projected)
+                                            ? 'date_td_hold'
+                                            : 'date_td'
+                                          return item.display_date ? (
+                                            <span
+                                              onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: overrideField, lot: item })}
+                                              style={{ color: '#2563eb', cursor: 'pointer', borderBottom: '1px dashed #93c5fd' }}
+                                              title="Click to set override"
+                                            >
+                                              {item.display_date}
+                                            </span>
+                                          ) : (
+                                            <span
+                                              onClick={() => setActiveOverride(isOverrideActive ? null : { lot_id: item.lot_id, date_field: overrideField, lot: item })}
+                                              style={{ color: TEXT_MUTED, cursor: 'pointer', borderBottom: '1px dashed #e5e7eb' }}
+                                              title="Click to set takedown override"
+                                            >
+                                              —
+                                            </span>
+                                          )
+                                        })()}
                                       </span>
                                     </>
                                   ) : (
