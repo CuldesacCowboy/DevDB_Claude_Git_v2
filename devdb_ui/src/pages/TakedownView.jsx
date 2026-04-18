@@ -23,11 +23,6 @@ function cpLabel(cp) {
   return `CP ${cp.checkpoint_number ?? ''}`
 }
 
-function cpObligationStatus(required, assignedCumulative) {
-  if (!required || required === 0) return 'none'
-  if (assignedCumulative >= required) return 'met'
-  return 'short'
-}
 
 // ── Inline editable date ───────────────────────────────────────────
 function EditDate({ value, onSave }) {
@@ -708,7 +703,7 @@ function CheckpointTimeline({ pins }) {
   const maxD = Math.max(...timestamps)
   const span = maxD - minD || 1
 
-  const STATUS_COLOR = { met: '#16a34a', short: '#dc2626', none: '#9ca3af' }
+  const STATUS_COLOR = { met: '#16a34a', short: '#dc2626', none: '#9ca3af', conflict: '#d97706' }
 
   return (
     <div style={{ position: 'relative', height: 58, marginBottom: 10, overflow: 'visible' }}>
@@ -781,7 +776,12 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
     const prevCum     = idx > 0 ? (tda.checkpoints[idx - 1].lots_required_cumulative || 0) : 0
     const perRequired = required - prevCum
     const cpLots      = lotsByCp[cp.checkpoint_id] || []
-    const status      = cpObligationStatus(perRequired, cpLots.length)
+    const slotsFull   = perRequired > 0 && cpLots.length >= perRequired
+    const simShort    = cp.sim_plan != null && cp.sim_plan < required
+    const status      = perRequired <= 0 ? 'none'
+        : slotsFull && simShort ? 'conflict'
+        : slotsFull             ? 'met'
+        :                         'short'
     return { date: cp.checkpoint_date, status, label: `CP${idx + 1} ${cpLots.length}/${perRequired}` }
   })
 

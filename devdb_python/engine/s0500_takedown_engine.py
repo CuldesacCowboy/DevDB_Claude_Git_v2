@@ -33,6 +33,38 @@ logger = logging.getLogger(__name__)
 _DEFAULT_LEAD_DAYS = 16
 
 
+def _fulfills(lot: dict, cp_date) -> bool:
+    """Return True if this lot counts toward checkpoint fulfillment on or before cp_date.
+    D-087: COALESCE(date_td, date_td_projected) and COALESCE(date_td_hold, date_td_hold_projected)
+    both satisfy independently — actual wins over projected for both paths.
+    """
+    td    = lot.get("date_td")
+    td_p  = lot.get("date_td_projected")
+    tdh   = lot.get("date_td_hold")
+    tdh_p = lot.get("date_td_hold_projected")
+    eff_td  = td  if (td  is not None and pd.notna(td))  else td_p
+    eff_tdh = tdh if (tdh is not None and pd.notna(tdh)) else tdh_p
+    td_ok  = eff_td  is not None and pd.notna(eff_td)  and pd.Timestamp(eff_td)  <= cp_date
+    tdh_ok = eff_tdh is not None and pd.notna(eff_tdh) and pd.Timestamp(eff_tdh) <= cp_date
+    return td_ok or tdh_ok
+
+
+def _available(lot: dict) -> bool:
+    """Return True if this lot is a valid candidate for a new HC hold assignment.
+    Excludes lots with any date or lock — including date_td_projected (BLDR-path lots
+    already satisfy _fulfills() and need no redundant HC hold assignment).
+    """
+    return (
+        lot.get("date_dev") is not None and pd.notna(lot.get("date_dev"))
+        and (lot.get("date_td")               is None or pd.isna(lot.get("date_td")))
+        and (lot.get("date_td_projected")     is None or pd.isna(lot.get("date_td_projected")))
+        and (lot.get("date_td_hold")           is None or pd.isna(lot.get("date_td_hold")))
+        and (lot.get("date_td_hold_projected") is None or pd.isna(lot.get("date_td_hold_projected")))
+        and (lot.get("date_str")               is None or pd.isna(lot.get("date_str")))
+        and not lot.get("date_td_hold_is_locked", False)
+    )
+
+
 def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int):
     """
     Enforce TDA checkpoint obligations.
@@ -168,33 +200,6 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int)
                 f"  TDA {tda_id}: no snapshot lots match builder_id={tda_builder_id}. Skipping."
             )
             continue
-
-        # Does this lot count toward a checkpoint on or before cp_date?
-        # D-087: actual wins over projected for both td and td_hold.
-        def _fulfills(lot, cp_date):
-            td    = lot.get("date_td")
-            td_p  = lot.get("date_td_projected")
-            tdh   = lot.get("date_td_hold")
-            tdh_p = lot.get("date_td_hold_projected")
-            eff_td  = td  if (td  is not None and pd.notna(td))  else td_p
-            eff_tdh = tdh if (tdh is not None and pd.notna(tdh)) else tdh_p
-            td_ok  = eff_td  is not None and pd.notna(eff_td)  and pd.Timestamp(eff_td)  <= cp_date
-            tdh_ok = eff_tdh is not None and pd.notna(eff_tdh) and pd.Timestamp(eff_tdh) <= cp_date
-            return td_ok or tdh_ok
-
-        # Is this lot a valid candidate for a new HC assignment?
-        # Excludes lots with date_td_projected: they already satisfy _fulfills() via
-        # the BLDR projection path and don't need a redundant HC hold assignment.
-        def _available(lot):
-            return (
-                lot.get("date_dev") is not None and pd.notna(lot.get("date_dev"))
-                and (lot.get("date_td")               is None or pd.isna(lot.get("date_td")))
-                and (lot.get("date_td_projected")     is None or pd.isna(lot.get("date_td_projected")))
-                and (lot.get("date_td_hold")           is None or pd.isna(lot.get("date_td_hold")))
-                and (lot.get("date_td_hold_projected") is None or pd.isna(lot.get("date_td_hold_projected")))
-                and (lot.get("date_str")               is None or pd.isna(lot.get("date_str")))
-                and not lot.get("date_td_hold_is_locked", False)
-            )
 
         def _assign_hold(lid, hold_date):
             lots_dict[lid]["date_td_hold_projected"] = hold_date
