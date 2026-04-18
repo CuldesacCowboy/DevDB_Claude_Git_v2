@@ -73,17 +73,32 @@ function EditDate({ value, onSave }) {
 }
 
 // ── Inline editable number ─────────────────────────────────────────
-function EditNumber({ value, onSave }) {
+function EditNumber({ value, onSave, min, nullable }) {
+  const nullVal = nullable && value == null
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(String(value ?? 0))
+  const [draft, setDraft] = useState(nullVal ? '' : String(value ?? 0))
+  const [rejected, setRejected] = useState(false)
   const ref = useRef()
 
   useEffect(() => { if (editing && ref.current) ref.current.focus() }, [editing])
 
   function commit() {
-    setEditing(false)
+    if (nullable && draft.trim() === '') {
+      setEditing(false)
+      if (value != null) onSave(null)
+      return
+    }
     const n = parseInt(draft, 10)
-    if (!isNaN(n) && n !== value) onSave(n)
+    if (!isNaN(n) && n !== value) {
+      if (min != null && n < min) {
+        // Flash red then revert — user needs to know the value was rejected
+        setRejected(true)
+        setTimeout(() => { setRejected(false); setEditing(false) }, 600)
+        return
+      }
+      onSave(n)
+    }
+    setEditing(false)
   }
 
   if (editing) {
@@ -91,22 +106,26 @@ function EditNumber({ value, onSave }) {
       <input
         ref={ref}
         type="number"
+        min={min}
         value={draft}
         onChange={e => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false) }}
-        style={{ fontSize: 12, padding: '1px 4px', borderRadius: 3, width: 60, ...greenEditorStyle }}
+        style={{
+          fontSize: 12, padding: '1px 4px', borderRadius: 3, width: 60,
+          ...(rejected ? { border: '1.5px solid #dc2626', background: '#fef2f2', color: '#dc2626' } : greenEditorStyle),
+        }}
       />
     )
   }
 
   return (
     <span
-      onClick={() => { setDraft(String(value ?? 0)); setEditing(true) }}
-      title="Click to edit"
+      onClick={() => { setDraft(nullVal ? '' : String(value ?? 0)); setEditing(true) }}
+      title={min != null ? `Click to edit (minimum ${min})` : 'Click to edit'}
       style={{ cursor: 'text', fontSize: 12, borderBottom: '1px dashed #d1d5db', fontVariantNumeric: 'tabular-nums' }}
     >
-      {value ?? 0}
+      {nullVal ? <span style={{ color: '#9ca3af' }}>—</span> : (value ?? 0)}
     </span>
   )
 }
@@ -188,20 +207,68 @@ function bldgType(unitCount) {
   return MAP[unitCount] || `${unitCount}-unit`
 }
 
+// ── Three-tier date resolution ────────────────────────────────────
+// Hierarchy: marks (actual) > override (user-locked projected) > sim (engine projected)
+// Returns { date, source: 'marks' | 'override' | 'sim' | null }
+function resolveDate(lot, type) {
+  if (type === 'hc') {
+    if (lot.hc_marks_date)                         return { date: lot.hc_marks_date,     source: 'marks'    }
+    if (lot.hc_is_locked && lot.hc_projected_date) return { date: lot.hc_projected_date, source: 'override' }
+    if (lot.hc_projected_date)                     return { date: lot.hc_projected_date, source: 'sim'      }
+    return { date: null, source: null }
+  }
+  if (lot.bldr_marks_date)                           return { date: lot.bldr_marks_date,     source: 'marks'    }
+  if (lot.bldr_is_locked && lot.bldr_projected_date) return { date: lot.bldr_projected_date, source: 'override' }
+  if (lot.bldr_projected_date)                       return { date: lot.bldr_projected_date, source: 'sim'      }
+  return { date: null, source: null }
+}
+
+// Render a resolved date with source-specific styling.
+// marks = gray italic (read-only) | override = teal bold (user set) | sim = slate dashed (projected)
+function ResolvedDate({ resolved, onClick }) {
+  const { date, source } = resolved
+  if (source === 'marks') return (
+    <span style={{ fontSize: 11, color: '#9ca3af', fontStyle: 'italic' }}
+          title="MARKS — actual date from source system">{date}</span>
+  )
+  if (source === 'override') return (
+    <span onClick={onClick}
+          style={{ fontSize: 11, color: '#0d9488', fontWeight: 600, cursor: 'pointer', borderBottom: '1px solid #0d9488' }}
+          title="User override — click to edit or clear">{date}</span>
+  )
+  if (source === 'sim') return (
+    <span onClick={onClick}
+          style={{ fontSize: 11, color: '#94a3b8', cursor: 'pointer', borderBottom: '1px dashed #94a3b8' }}
+          title="Sim projection — click to set override">{date}</span>
+  )
+  return (
+    <span onClick={onClick}
+          style={{ fontSize: 11, color: '#d1d5db', cursor: 'pointer' }}
+          title="Click to set">—</span>
+  )
+}
+
 function fulfillmentInfo(lot) {
-  const hc = lot.hc_marks_date || lot.hc_projected_date || null
-  const bl = lot.bldr_marks_date || lot.bldr_projected_date || null
-  if (!hc && !bl) return null
-  if (hc && bl) return hc <= bl ? { date: hc, label: 'HC' } : { date: bl, label: 'BLDR' }
-  return hc ? { date: hc, label: 'HC' } : { date: bl, label: 'BLDR' }
+  const hc   = resolveDate(lot, 'hc')
+  const bldr = resolveDate(lot, 'bldr')
+  if (!hc.date && !bldr.date) return null
+  if (hc.date && bldr.date)
+    return hc.date <= bldr.date
+      ? { date: hc.date,   label: 'HC',   source: hc.source   }
+      : { date: bldr.date, label: 'BLDR', source: bldr.source }
+  return hc.date
+    ? { date: hc.date,   label: 'HC',   source: hc.source   }
+    : { date: bldr.date, label: 'BLDR', source: bldr.source }
 }
 
 // ── TDA lot date editor (inline) ───────────────────────────────────
 function TdaDateEditor({ lot, field, onApplied, onClose }) {
-  const label     = field === 'date_td_hold' ? 'HC' : 'BLDR'
-  const projKey   = field === 'date_td_hold' ? 'hc_projected_date' : 'bldr_projected_date'
-  const marksDate = field === 'date_td_hold' ? lot.hc_marks_date  : lot.bldr_marks_date
-  const projDate  = field === 'date_td_hold' ? lot.hc_projected_date : lot.bldr_projected_date
+  const label      = field === 'date_td_hold' ? 'HC' : 'BLDR'
+  const projKey    = field === 'date_td_hold' ? 'hc_projected_date' : 'bldr_projected_date'
+  const resolved   = resolveDate(lot, field === 'date_td_hold' ? 'hc' : 'bldr')
+  const isOverride = resolved.source === 'override'
+  const isSim      = resolved.source === 'sim'
+  const projDate   = resolved.source !== 'marks' ? resolved.date : null
   const [draft, setDraft]       = useState(projDate || '')
   const [applying, setApplying] = useState(false)
   const inputRef = useRef()
@@ -218,35 +285,42 @@ function TdaDateEditor({ lot, field, onApplied, onClose }) {
     onApplied()
   }
 
+  const headerLabel = isOverride ? `Edit ${label} Override` : `Set ${label} Override`
+  const bg     = isOverride ? '#f0fdf4' : '#f0f9ff'
+  const border = isOverride ? '#bbf7d0' : '#bae6fd'
+  const color  = isOverride ? '#15803d' : '#0369a1'
+
   return (
-    <div style={{ padding: '8px 12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 5 }}>
+    <div style={{ padding: '8px 12px', background: bg, border: `1px solid ${border}`, borderRadius: 5 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: '#0369a1' }}>
-          Set {label} — <span style={{ fontFamily: 'monospace', whiteSpace: 'pre' }}>{pillLotNum(lot.lot_number)}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color }}>
+          {headerLabel} — <span style={{ fontFamily: 'monospace', whiteSpace: 'pre' }}>{pillLotNum(lot.lot_number)}</span>
         </span>
         <button onClick={onClose} style={{ fontSize: 13, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>×</button>
       </div>
-      {marksDate && (
-        <div style={{ fontSize: 10, color: TEXT_MUTED, marginBottom: 5 }}>
-          MARKS date: <span style={{ fontStyle: 'italic' }}>{marksDate}</span>
+      {isSim && projDate && (
+        <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 5 }}>
+          Sim projection: <span style={{ fontStyle: 'italic' }}>{projDate}</span> — setting a date locks it as your override.
         </div>
       )}
       <div style={{ marginBottom: 6 }}>
-        <span style={{ fontSize: 10, color: TEXT_MUTED, display: 'block', marginBottom: 2 }}>New Date</span>
+        <span style={{ fontSize: 10, color: TEXT_MUTED, display: 'block', marginBottom: 2 }}>
+          {isOverride ? 'Update date' : 'Set date'}
+        </span>
         <input
           ref={inputRef}
           type="date"
           value={draft}
           onChange={e => setDraft(e.target.value)}
-          style={{ fontSize: 11, padding: '2px 5px', borderRadius: 3, border: '1px solid #7dd3fc', ...greenEditorStyle }}
+          style={{ fontSize: 11, padding: '2px 5px', borderRadius: 3, border: `1px solid ${isOverride ? '#86efac' : '#7dd3fc'}`, ...greenEditorStyle }}
         />
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        <Btn variant="primary" onClick={() => apply(draft || null)} disabled={applying || !draft} style={{ padding: '2px 8px', fontSize: 11 }}>
-          {applying ? '…' : 'Apply'}
+        <Btn variant={isOverride ? 'success' : 'primary'} onClick={() => apply(draft || null)} disabled={applying || !draft} style={{ padding: '2px 8px', fontSize: 11 }}>
+          {applying ? '…' : isOverride ? 'Update Override' : 'Set Override'}
         </Btn>
         <Btn onClick={onClose} style={{ padding: '2px 8px', fontSize: 11 }}>Cancel</Btn>
-        {projDate && (
+        {(isOverride || isSim) && projDate && (
           <Btn variant="danger" onClick={() => apply(null)} disabled={applying} style={{ padding: '2px 8px', fontSize: 11 }}>Clear</Btn>
         )}
       </div>
@@ -268,6 +342,7 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
   const [bulkMode, setBulkMode]         = useState(null)  // 'hc' | 'bldr'
   const [bulkDate, setBulkDate]         = useState('')
   const [bulkApplying, setBulkApplying] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState(false)
   const [overflowOpen, setOverflowOpen] = useState(false)
 
   const STD_H = {
@@ -291,8 +366,8 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
       const uc = lot.building_group_id != null ? ((buildingUnitCounts || {})[lot.building_group_id] ?? null) : null
       return bldgType(uc) || ''
     }
-    if (sortCol === 'hc')   return lot.hc_marks_date   || lot.hc_projected_date   || '9999-99-99'
-    if (sortCol === 'bldr') return lot.bldr_marks_date  || lot.bldr_projected_date || '9999-99-99'
+    if (sortCol === 'hc')   return resolveDate(lot, 'hc').date   || '9999-99-99'
+    if (sortCol === 'bldr') return resolveDate(lot, 'bldr').date || '9999-99-99'
     return ''
   }
 
@@ -347,10 +422,8 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
   // Render a filled lot row, returning an array of <tr> elements
   function renderLotRow(lot, displayIdx, isOverflow) {
     const isSel       = selected.has(lot.lot_id)
-    const hcDate      = lot.hc_marks_date   || lot.hc_projected_date  || null
-    const bldrDate    = lot.bldr_marks_date  || lot.bldr_projected_date || null
-    const hcIsMarks   = !!lot.hc_marks_date
-    const bldrIsMarks = !!lot.bldr_marks_date
+    const hcResolved  = resolveDate(lot, 'hc')
+    const bldrResolved = resolveDate(lot, 'bldr')
     const fulfill     = fulfillmentInfo(lot)
     const unitCount   = lot.building_group_id != null ? ((buildingUnitCounts || {})[lot.building_group_id] ?? null) : null
     const bType       = bldgType(unitCount)
@@ -391,31 +464,30 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
         </td>
         <td style={{ ...STD_D, color: TEXT_MUTED }}>{bType || <span style={{ color: '#e5e7eb' }}>—</span>}</td>
         <td style={STD_D}>
-          {hcIsMarks ? (
-            <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }} title={`MARKS: ${hcDate}`}>{hcDate}</span>
-          ) : (
-            <span
-              onClick={() => setEditingDate(isEditHc ? null : { lot_id: lot.lot_id, field: 'date_td_hold', lot })}
-              style={{ cursor: 'pointer', fontSize: 11, color: hcDate ? '#0369a1' : TEXT_MUTED, borderBottom: `1px dashed ${hcDate ? '#7dd3fc' : '#e5e7eb'}` }}
-              title={hcDate ? 'Click to edit' : 'Click to set'}
-            >{hcDate || '—'}</span>
-          )}
+          <ResolvedDate
+            resolved={hcResolved}
+            onClick={hcResolved.source !== 'marks' ? () => setEditingDate(isEditHc ? null : { lot_id: lot.lot_id, field: 'date_td_hold', lot }) : undefined}
+          />
         </td>
         <td style={STD_D}>
-          {bldrIsMarks ? (
-            <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }} title={`MARKS: ${bldrDate}`}>{bldrDate}</span>
-          ) : (
-            <span
-              onClick={() => setEditingDate(isEditBldr ? null : { lot_id: lot.lot_id, field: 'date_td', lot })}
-              style={{ cursor: 'pointer', fontSize: 11, color: bldrDate ? '#0369a1' : TEXT_MUTED, borderBottom: `1px dashed ${bldrDate ? '#7dd3fc' : '#e5e7eb'}` }}
-              title={bldrDate ? 'Click to edit' : 'Click to set'}
-            >{bldrDate || '—'}</span>
-          )}
+          <ResolvedDate
+            resolved={bldrResolved}
+            onClick={bldrResolved.source !== 'marks' ? () => setEditingDate(isEditBldr ? null : { lot_id: lot.lot_id, field: 'date_td', lot }) : undefined}
+          />
         </td>
         <td style={{ ...STD_D, fontVariantNumeric: 'tabular-nums' }}>
-          {fulfill ? (
-            <><span style={{ color: TEXT_PRIMARY }}>{fulfill.date}</span>{' '}<span style={{ fontSize: 9, color: TEXT_MUTED }}>({fulfill.label})</span></>
-          ) : (
+          {fulfill ? (() => {
+            const cpDate = checkpoint.checkpoint_date
+            const late   = cpDate && fulfill.date > cpDate
+            return (
+              <span title={late ? `Fulfillment date ${fulfill.date} is after checkpoint ${cpDate} — this lot does not satisfy this checkpoint` : undefined}>
+                <span style={{ color: late ? '#d97706' : TEXT_PRIMARY }}>{fulfill.date}</span>
+                {' '}
+                <span style={{ fontSize: 9, color: late ? '#d97706' : TEXT_MUTED }}>({fulfill.label})</span>
+                {late && <span style={{ fontSize: 9, color: '#d97706', marginLeft: 2 }}>⚠</span>}
+              </span>
+            )
+          })() : (
             <span style={{ color: '#e5e7eb' }}>—</span>
           )}
         </td>
@@ -495,8 +567,15 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
             style={{ padding: '1px 6px', fontSize: 10, background: bulkMode === 'bldr' ? '#bfdbfe' : undefined }}>Set BLDR</Btn>
           <Btn onClick={() => applyBulk('hc', null)} disabled={bulkApplying} style={{ padding: '1px 6px', fontSize: 10 }}>Clear HC</Btn>
           <Btn onClick={() => applyBulk('bldr', null)} disabled={bulkApplying} style={{ padding: '1px 6px', fontSize: 10 }}>Clear BLDR</Btn>
-          {onRemoveLots && (
-            <Btn variant="danger" onClick={handleBulkRemove} disabled={bulkApplying} style={{ padding: '1px 6px', fontSize: 10, marginLeft: 'auto' }}>Remove</Btn>
+          {onRemoveLots && !confirmRemove && (
+            <Btn variant="danger" onClick={() => setConfirmRemove(true)} disabled={bulkApplying} style={{ padding: '1px 6px', fontSize: 10, marginLeft: 'auto' }}>Remove from TDA</Btn>
+          )}
+          {onRemoveLots && confirmRemove && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+              <span style={{ fontSize: 10, color: '#dc2626' }}>Remove {nSel} lot{nSel > 1 ? 's' : ''} from TDA?</span>
+              <Btn variant="danger" onClick={() => { setConfirmRemove(false); handleBulkRemove() }} disabled={bulkApplying} style={{ padding: '1px 6px', fontSize: 10 }}>Yes</Btn>
+              <Btn onClick={() => setConfirmRemove(false)} style={{ padding: '1px 6px', fontSize: 10 }}>No</Btn>
+            </span>
           )}
         </div>
       )}
@@ -579,9 +658,15 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
 
           {/* Footer: MARKS Plan / Sim Plan */}
           <tr style={{ borderTop: `2px solid ${PANEL_BORDER}`, background: '#f1f5f9' }}>
-            <td colSpan={5} style={{ ...STD_D, color: TEXT_MUTED, fontStyle: 'italic', fontSize: 10 }}>Scheduled by checkpoint date</td>
-            <td style={{ ...STD_D, color: TEXT_MUTED, fontSize: 10 }}>MARKS: <strong>{marksplan ?? '—'}</strong></td>
-            <td style={{ ...STD_D, color: '#2563eb', fontSize: 10 }}>Sim: <strong>{simplan ?? '—'}</strong></td>
+            <td colSpan={5} style={{ ...STD_D, color: TEXT_MUTED, fontStyle: 'italic', fontSize: 10 }}
+                title="Cumulative totals: lots with dates on or before this checkpoint date, across the whole agreement">
+              Cumulative through checkpoint date
+            </td>
+            <td colSpan={2} style={{ ...STD_D, fontSize: 10 }}>
+              <span style={{ color: TEXT_MUTED }} title="Lots with actual MARKS takedown or HC hold dates on or before this checkpoint date">MARKS: <strong>{marksplan ?? '—'}</strong></span>
+              <span style={{ color: TEXT_MUTED }}> · </span>
+              <span style={{ color: '#2563eb' }} title="Lots with sim-projected dates on or before this checkpoint date">Sim: <strong>{simplan ?? '—'}</strong></span>
+            </td>
             <td />
           </tr>
         </tbody>
@@ -662,9 +747,10 @@ function CheckpointTimeline({ pins }) {
 }
 
 // ── Checkpoints section ────────────────────────────────────────────
-function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteCheckpoint, onAutoAssign, onAssignLot, onReorderCheckpoints, buildingUnitCounts, onPatchLotDate, onRemoveLots }) {
+function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteCheckpoint, onAutoAssign, onAssignLot, buildingUnitCounts, onPatchLotDate, onRemoveLots }) {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [assigning, setAssigning] = useState(false)
+  const [autoAssignResult, setAutoAssignResult] = useState(null)
   const [expanded, setExpanded] = useState({})
 
   const lotsByCp = {}
@@ -682,8 +768,11 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
 
   async function handleAutoAssign() {
     setAssigning(true)
-    await onAutoAssign(tda.tda_id)
+    setAutoAssignResult(null)
+    const result = await onAutoAssign(tda.tda_id)
+    setAutoAssignResult(result)
     setAssigning(false)
+    setTimeout(() => setAutoAssignResult(null), 4000)
   }
 
   // Build timeline pins
@@ -699,11 +788,22 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
   return (
     <div style={{ padding: '10px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED }}>CHECKPOINTS</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED }}
+              title="Assigned/Status tracks manual slot organization. Sim Plan tracks engine date projections. These are independent — both should agree for a checkpoint to be truly on track.">
+          CHECKPOINTS
+        </span>
         {tda.checkpoints.length > 0 && (
-          <Btn variant="teal" onClick={handleAutoAssign} disabled={assigning} style={{ padding: '1px 7px', fontSize: 11 }}>
+          <Btn variant="teal" onClick={handleAutoAssign} disabled={assigning} style={{ padding: '1px 7px', fontSize: 11 }}
+               title="Assigns each TDA lot to the earliest checkpoint whose date covers its effective takedown date">
             {assigning ? 'Assigning…' : 'Auto-Assign Lots'}
           </Btn>
+        )}
+        {autoAssignResult && !assigning && (
+          <span style={{ fontSize: 10, color: '#0d9488', fontStyle: 'italic', animation: 'tda-fadeout 0.5s ease 3.5s forwards' }}>
+            {autoAssignResult.assigned} assigned
+            {autoAssignResult.unassigned > 0 ? `, ${autoAssignResult.unassigned} without dates` : ''}
+            {autoAssignResult.skipped_builder_mismatch > 0 ? `, ${autoAssignResult.skipped_builder_mismatch} skipped (builder mismatch)` : ''}
+          </span>
         )}
       </div>
 
@@ -714,8 +814,16 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
           <thead>
             <tr>
               <th style={{ ...TH, width: 44, padding: '3px 4px' }}></th>
-              {['Checkpoint', 'Required', 'Assigned', 'Status', 'Taken Down', '', ''].map((h, i) => (
-                <th key={i} style={TH}>{h}</th>
+              {[
+                { h: 'Checkpoint', tip: 'Cumulative lots required by this date' },
+                { h: 'Required', tip: 'Lots needed for this checkpoint slot (delta from previous)' },
+                { h: 'Assigned', tip: 'Lots manually slotted into this checkpoint — independent of engine date projections' },
+                { h: 'Status', tip: 'Manual slot fill vs per-checkpoint delta (✓ full, +N surplus, −N short). Amber = slots full but Sim Plan is short — engine and slots disagree.' },
+                { h: 'Sim Plan', tip: 'Engine projection: lots with projected or actual dates on or before this checkpoint date — cumulative (per D-087: both HC and BLDR count). Run sim to update.' },
+                { h: 'To Date', tip: 'Cumulative lots actually taken down (actuals only) through this checkpoint date' },
+                { h: '', tip: '' },
+              ].map(({ h, tip }, i) => (
+                <th key={i} style={TH} title={tip}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -755,6 +863,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                     <td style={TD}>
                       <span style={{ fontWeight: 500, color: TEXT_PRIMARY }}>
                         <EditNumber value={required}
+                          min={prevRequired}
                           onSave={v => onPatchCheckpoint(cp.checkpoint_id, { lots_required_cumulative: v })} />
                         {' by '}
                         <EditDate value={cp.checkpoint_date}
@@ -765,35 +874,51 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                     <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{perRequired}</td>
                     {/* Assigned */}
                     <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cpLots.length}</td>
-                    {/* Status (merged gap + status) */}
-                    <td style={{ ...TD }}>
-                      {perRequired === 0 ? (
-                        <span style={{ color: TEXT_MUTED }}>—</span>
-                      ) : gap === 0 ? (
-                        <span style={{ color: '#16a34a', fontWeight: 700, fontSize: 13 }}>✓</span>
-                      ) : gap < 0 ? (
-                        <span style={{ color: '#15803d', fontWeight: 700 }}>+{Math.abs(gap)}</span>
-                      ) : (
-                        <span style={{ color: '#dc2626', fontWeight: 700 }}>−{gap}</span>
-                      )}
+                    {/* Status — amber when slots are full but Sim Plan is short */}
+                    {(() => {
+                      const slotsFull = perRequired > 0 && gap <= 0
+                      const simShort  = cp.sim_plan != null && cp.sim_plan < required
+                      const conflict  = slotsFull && simShort
+                      return (
+                        <td style={{ ...TD, background: conflict ? '#fef3c7' : undefined }}
+                            title={conflict ? 'Slots full but engine projection is short — check lot dates or run sim' : undefined}>
+                          {perRequired === 0 ? (
+                            <span style={{ color: TEXT_MUTED }}>—</span>
+                          ) : gap === 0 ? (
+                            <span style={{ color: conflict ? '#92400e' : '#16a34a', fontWeight: 700, fontSize: 13 }}>✓</span>
+                          ) : gap < 0 ? (
+                            <span style={{ color: '#15803d', fontWeight: 700 }}>+{Math.abs(gap)}</span>
+                          ) : (
+                            <span style={{ color: '#dc2626', fontWeight: 700 }}>−{gap}</span>
+                          )}
+                        </td>
+                      )
+                    })()}
+                    {/* Sim Plan */}
+                    <td style={{ ...TD, fontVariantNumeric: 'tabular-nums' }}>
+                      {cp.sim_plan != null ? (() => {
+                        const simOk = cp.sim_plan >= required
+                        const contributing = (tda.lots || []).filter(lot => {
+                          if (tda.builder_id != null && lot.resolved_builder_id !== tda.builder_id) return false
+                          const effBldr = lot.bldr_marks_date || lot.bldr_projected_date
+                          const effHc   = lot.hc_marks_date   || lot.hc_projected_date
+                          // Compare ISO date strings directly — avoids timezone shifts
+                          // that occur when new Date('YYYY-MM-DD') is parsed as UTC midnight
+                          // and then compared against a local-timezone T23:59:59 boundary.
+                          return (effBldr && effBldr <= cp.checkpoint_date) || (effHc && effHc <= cp.checkpoint_date)
+                        })
+                        const simTip = contributing.length > 0
+                          ? `Contributing lots: ${contributing.map(l => pillLotNum(l.lot_number).trim()).join(', ')}`
+                          : 'No lots with dates on or before this checkpoint'
+                        return (
+                          <span title={simTip} style={{ color: simOk ? '#15803d' : '#dc2626', fontWeight: 600, cursor: 'help' }}>
+                            {cp.sim_plan}/{required}
+                          </span>
+                        )
+                      })() : <span style={{ color: TEXT_MUTED }}>—</span>}
                     </td>
-                    {/* Taken Down */}
+                    {/* To Date */}
                     <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.taken_down_to_date ?? 0}</td>
-                    {/* Reorder ▲▼ */}
-                    <td style={{ ...TD, padding: '4px 2px', whiteSpace: 'nowrap' }}>
-                      <button
-                        onClick={() => !isFirst && onReorderCheckpoints(tda.checkpoints[idx - 1], cp)}
-                        disabled={isFirst}
-                        title="Move up"
-                        style={{ fontSize: 10, color: isFirst ? '#e5e7eb' : TEXT_MUTED, background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer', padding: '1px 3px' }}
-                      >▲</button>
-                      <button
-                        onClick={() => !isLast && onReorderCheckpoints(cp, tda.checkpoints[idx + 1])}
-                        disabled={isLast}
-                        title="Move down"
-                        style={{ fontSize: 10, color: isLast ? '#e5e7eb' : TEXT_MUTED, background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer', padding: '1px 3px' }}
-                      >▼</button>
-                    </td>
                     {/* Delete */}
                     <td style={{ ...TD, textAlign: 'right', paddingRight: 4 }}>
                       {confirmDelete === cp.checkpoint_id ? (
@@ -849,7 +974,17 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
 
       {tda.checkpoints.length === 0 && (
         <div>
-          <p style={{ fontSize: 12, color: TEXT_MUTED, margin: '0 0 6px' }}>No checkpoints.</p>
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 8,
+            padding: '8px 12px', marginBottom: 8,
+            background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 5,
+          }}>
+            <span style={{ fontSize: 13, lineHeight: 1 }}>⚠</span>
+            <span style={{ fontSize: 11, color: '#92400e', lineHeight: 1.5 }}>
+              No checkpoints — this agreement is excluded from simulation runs.
+              Add at least one checkpoint to enable engine scheduling.
+            </span>
+          </div>
           <button onClick={onAddCheckpoint}
             style={{ fontSize: 12, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}>
             + Add Checkpoint
@@ -926,7 +1061,7 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
           onClick={() => setLotsExpanded(v => !v)}
           style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
         >
-          <span style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED }}>UNASSIGNED LOTS</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: TEXT_MUTED }}>POOL LOTS</span>
           <span style={{ fontSize: 11, color: TEXT_MUTED }}>({poolLots.length})</span>
           <span style={{ fontSize: 10, color: TEXT_MUTED }}>{lotsExpanded ? '▼' : '▶'}</span>
         </button>
@@ -952,26 +1087,76 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
                 {nSel > 0 && <span style={{ fontSize: 10, fontWeight: 600, color: '#1d4ed8' }}>{nSel} selected</span>}
               </div>
 
+              {/* Pill legend */}
+              <div style={{ display: 'flex', gap: 10, marginBottom: 5, flexWrap: 'wrap' }}>
+                {[
+                  { border: '#0d9488', bg: '#f0fdfa', label: 'HC override' },
+                  { border: '#7dd3fc', bg: '#f0f9ff', label: 'HC sim' },
+                  { border: '#9ca3af', bg: '#fff',    label: 'HC marks' },
+                  { border: '#d97706', bg: '#fffbeb', label: 'BLDR only' },
+                  { border: '#d1d5db', bg: '#fff',    label: 'Free' },
+                ].map(({ border, bg, label }) => (
+                  <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 9, color: TEXT_MUTED }}>
+                    <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, border: `1.5px solid ${border}`, background: bg }} />
+                    {label}
+                  </span>
+                ))}
+              </div>
+
               {/* Pill grid */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
                 {poolLots.map(lot => {
-                  const isSel = selected.has(lot.lot_id)
+                  const isSel   = selected.has(lot.lot_id)
+                  const hcRes   = resolveDate(lot, 'hc')
+                  const bldrRes = resolveDate(lot, 'bldr')
+                  // Border/bg driven by HC first; fall back to BLDR source for lots with no HC
+                  const pillBorder = isSel ? '#2563eb'
+                    : hcRes.source === 'override' ? '#0d9488'
+                    : hcRes.source === 'sim'      ? '#7dd3fc'
+                    : hcRes.source === 'marks'    ? '#9ca3af'
+                    : bldrRes.source === 'marks'  ? '#d97706'   // BLDR-only marks → amber
+                    : bldrRes.source === 'override' ? '#d97706' // BLDR-only override → amber
+                    : bldrRes.source === 'sim'    ? '#fbbf24'   // BLDR-only sim → light amber
+                    : '#d1d5db'
+                  const pillBg = isSel ? '#eff6ff'
+                    : hcRes.source === 'override' ? '#f0fdfa'
+                    : hcRes.source === 'sim'      ? '#f0f9ff'
+                    : bldrRes.date                ? '#fffbeb'   // any BLDR-only date → amber tint
+                    : '#fff'
+                  const hcSubColor = hcRes.source === 'override' ? '#0d9488'
+                    : hcRes.source === 'marks'    ? '#9ca3af'
+                    : '#0369a1'
+                  const hcTitle = hcRes.source === 'override' ? `${lot.lot_number} — override HC: ${hcRes.date}`
+                    : hcRes.source === 'sim'      ? `${lot.lot_number} — sim HC: ${hcRes.date}`
+                    : hcRes.source === 'marks'    ? `${lot.lot_number} — marks HC: ${hcRes.date}`
+                    : bldrRes.date                ? `${lot.lot_number} — BLDR date only: ${bldrRes.date}`
+                    : lot.lot_number
                   return (
                     <div
                       key={lot.lot_id}
                       onClick={e => handlePillClick(lot.lot_id, e)}
-                      title={lot.lot_number}
+                      title={hcTitle}
                       style={{
                         fontFamily: 'monospace', whiteSpace: 'pre',
                         padding: '3px 8px', borderRadius: 5, fontSize: 11,
                         cursor: 'pointer', userSelect: 'none',
-                        border: `1.5px solid ${isSel ? '#2563eb' : '#d1d5db'}`,
-                        background: isSel ? '#eff6ff' : '#fff',
+                        border: `1.5px solid ${pillBorder}`,
+                        background: pillBg,
                         color: isSel ? '#1d4ed8' : TEXT_PRIMARY,
                         fontWeight: isSel ? 700 : 400,
                       }}
                     >
                       {pillLotNum(lot.lot_number)}
+                      {hcRes.date && (
+                        <span style={{ display: 'block', fontSize: 9, fontFamily: 'sans-serif', fontWeight: 400, color: hcSubColor, textAlign: 'center', marginTop: 1, whiteSpace: 'nowrap', fontStyle: hcRes.source === 'marks' ? 'italic' : 'normal' }}>
+                          {hcRes.date.slice(5)}
+                        </span>
+                      )}
+                      {bldrRes.date && (
+                        <span style={{ display: 'block', fontSize: 9, fontFamily: 'sans-serif', fontWeight: 400, color: '#9ca3af', textAlign: 'center', whiteSpace: 'nowrap', fontStyle: bldrRes.source === 'marks' ? 'italic' : 'normal' }}>
+                          B:{bldrRes.date.slice(5)}
+                        </span>
+                      )}
                     </div>
                   )
                 })}
@@ -1002,12 +1187,13 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <input autoFocus type="date" value={dateDraft} onChange={e => setDateDraft(e.target.value)}
                       style={{ fontSize: 11, padding: '2px 5px', borderRadius: 3, border: '1px solid #86efac', ...greenEditorStyle }} />
-                    <Btn variant="success" onClick={() => handleSetDate('hc')} disabled={!dateDraft || applying} style={{ padding: '2px 8px', fontSize: 11 }}>
-                      {applying ? 'Applying…' : 'Apply & Snap'}
+                    <Btn variant="success" onClick={() => handleSetDate('hc')} disabled={!dateDraft || applying} style={{ padding: '2px 8px', fontSize: 11 }}
+                         title="Sets HC date for selected lots (locked as your override) then auto-assigns them into their earliest matching checkpoint slot">
+                      {applying ? 'Applying…' : 'Apply & Auto-Assign'}
                     </Btn>
                     <Btn onClick={cancelAction} style={{ padding: '2px 8px', fontSize: 11 }}>Cancel</Btn>
                   </div>
-                  <div style={{ fontSize: 10, color: '#15803d', marginTop: 4, fontStyle: 'italic' }}>Lots auto-assigned to checkpoint after applying.</div>
+                  <div style={{ fontSize: 10, color: '#15803d', marginTop: 4, fontStyle: 'italic' }}>Date is locked as your override — sim will not overwrite it. Lots are then auto-assigned into their earliest matching checkpoint slot.</div>
                 </div>
               )}
 
@@ -1020,12 +1206,13 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                     <input autoFocus type="date" value={dateDraft} onChange={e => setDateDraft(e.target.value)}
                       style={{ fontSize: 11, padding: '2px 5px', borderRadius: 3, border: '1px solid #93c5fd', ...greenEditorStyle }} />
-                    <Btn variant="primary" onClick={() => handleSetDate('bldr')} disabled={!dateDraft || applying} style={{ padding: '2px 8px', fontSize: 11 }}>
-                      {applying ? 'Applying…' : 'Apply & Snap'}
+                    <Btn variant="primary" onClick={() => handleSetDate('bldr')} disabled={!dateDraft || applying} style={{ padding: '2px 8px', fontSize: 11 }}
+                         title="Sets BLDR date for selected lots (locked as your override) then auto-assigns them into their earliest matching checkpoint slot">
+                      {applying ? 'Applying…' : 'Apply & Auto-Assign'}
                     </Btn>
                     <Btn onClick={cancelAction} style={{ padding: '2px 8px', fontSize: 11 }}>Cancel</Btn>
                   </div>
-                  <div style={{ fontSize: 10, color: '#1d4ed8', marginTop: 4, fontStyle: 'italic' }}>Lots auto-assigned to checkpoint after applying.</div>
+                  <div style={{ fontSize: 10, color: '#1d4ed8', marginTop: 4, fontStyle: 'italic' }}>Date is locked as your override — sim will not overwrite it. Lots are then auto-assigned into their earliest matching checkpoint slot.</div>
                 </div>
               )}
 
@@ -1098,8 +1285,10 @@ function AddLotsSection({ tda, allTdas, unassignedLots, onAddLots, onMoveLots })
   const lastClickedRef                = useRef({}) // keyed by groupKey
 
   const sourceGroups = []
-  if (unassignedLots.length > 0) {
-    sourceGroups.push({ key: 'unassigned', label: 'Not in any agreement', lots: unassignedLots, isMove: false, tdaId: null })
+  const bankAvailable = tda.bank_id != null ? (tda.bank_available_lots || []) : unassignedLots
+  const unassignedLabel = tda.bank_id != null ? 'Available in bank' : 'Not in any agreement'
+  if (bankAvailable.length > 0) {
+    sourceGroups.push({ key: 'unassigned', label: unassignedLabel, lots: bankAvailable, isMove: false, tdaId: null })
   }
   for (const otherTda of allTdas.filter(t => t.tda_id !== tda.tda_id)) {
     const lots = otherTda.lots || []
@@ -1283,15 +1472,24 @@ function AddLotsSection({ tda, allTdas, unassignedLots, onAddLots, onMoveLots })
 }
 
 // ── Agreement card ─────────────────────────────────────────────────
-function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign, onAssignLot, onReorderCheckpoints, buildingUnitCounts, onPatchLotDate }) {
+function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign, onAssignLot, buildingUnitCounts, onPatchLotDate }) {
   const ss = AGREEMENT_STATUS_STYLE[tda.status] || AGREEMENT_STATUS_STYLE.active
 
-  const totalLots     = tda.lots?.length ?? 0
-  const assignedToCp  = (tda.lots || []).filter(l => l.checkpoint_id).length
-  const inPool        = totalLots - assignedToCp
-  const totalRequired = tda.checkpoints.length > 0
+  const totalLots        = tda.lots?.length ?? 0
+  const assignedToCp     = (tda.lots || []).filter(l => l.checkpoint_id).length
+  const inPool           = totalLots - assignedToCp
+  const totalRequired    = tda.checkpoints.length > 0
     ? Math.max(...tda.checkpoints.map(cp => cp.lots_required_cumulative || 0))
     : 0
+  const ineligibleCount        = tda.ineligible_lot_count ?? 0
+  const builderEligibleCount   = tda.builder_eligible_count ?? null
+  const leadDays               = tda.checkpoint_lead_days ?? 16
+
+  const datedCps    = tda.checkpoints.filter(cp => cp.sim_plan != null)
+  const simAtRisk   = datedCps.length > 0 && datedCps.some(cp => cp.sim_plan < (cp.lots_required_cumulative || 0))
+  const simOnTrack  = datedCps.length > 0 && datedCps.every(cp => cp.sim_plan >= (cp.lots_required_cumulative || 0))
+
+  const SEL_STYLE = { fontSize: 11, padding: '2px 5px', borderRadius: 4, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' }
 
   return (
     <div style={{ border: `1px solid ${PANEL_BORDER}`, borderRadius: 6, background: '#fff', overflow: 'hidden' }}>
@@ -1318,8 +1516,62 @@ function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint,
             <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
           ))}
         </select>
-        <span style={{ fontSize: 12, color: TEXT_MUTED }}>Anchor:</span>
+        <span style={{ fontSize: 11, color: TEXT_MUTED }}
+              title="Agreement anchor date — informational only, not used by the engine scheduler">
+          Anchor:
+        </span>
         <EditDate value={tda.anchor_date} onSave={v => onPatch({ anchor_date: v })} />
+        {/* Builder — editable dropdown */}
+        <span style={{ fontSize: 11, color: TEXT_MUTED }}>Builder:</span>
+        <select
+          value={tda.builder_id ?? ''}
+          onChange={e => onPatch({ builder_id: e.target.value ? Number(e.target.value) : null })}
+          style={{ ...SEL_STYLE, color: tda.builder_id ? '#0d9488' : TEXT_MUTED, fontWeight: tda.builder_id ? 600 : 400 }}
+          title="Builder filter — engine only assigns HC dates to lots matching this builder. Leave blank for any builder."
+        >
+          <option value="">— any builder —</option>
+          {(builders || []).map(b => <option key={b.builder_id} value={b.builder_id}>{b.builder_name.replace(' Homes', '')}</option>)}
+        </select>
+        {/* Bank — editable dropdown */}
+        {banks && banks.length > 0 && (
+          <>
+            <span style={{ fontSize: 11, color: TEXT_MUTED }}>Bank:</span>
+            <select
+              value={tda.bank_id ?? ''}
+              onChange={e => onPatch({ bank_id: e.target.value ? Number(e.target.value) : null })}
+              style={{ ...SEL_STYLE, color: tda.bank_id ? '#6366f1' : TEXT_MUTED }}
+              title="Lot bank — restricts which lots can be added to this agreement"
+            >
+              <option value="">— no bank —</option>
+              {banks.map(b => <option key={b.bank_id} value={b.bank_id}>{b.bank_name}</option>)}
+            </select>
+          </>
+        )}
+        {/* Lot quota — editable; null means unlimited */}
+        <span style={{ fontSize: 11, color: TEXT_MUTED }}
+              title="Max HC hold assignments the engine will make. Counts actual HC holds, actual BLDR TDs, and locked projected HC dates. Lots with only a BLDR sim projection (date_td_projected) do not count against quota — they travel the BLDR path and need no HC hold.">Quota:</span>
+        <EditNumber
+          value={tda.lot_quota ?? null}
+          nullable
+          onSave={v => onPatch({ lot_quota: v != null && v > 0 ? v : null })}
+        />
+        {/* Checkpoint lead days — editable with next-hold preview */}
+        <span style={{ fontSize: 11, color: TEXT_MUTED }} title="Days before each checkpoint date that HC hold dates are scheduled">Lead days:</span>
+        <EditNumber value={leadDays} onSave={v => onPatch({ checkpoint_lead_days: v })} />
+        {tda.checkpoints.length > 0 && (() => {
+          const today = new Date().toISOString().slice(0, 10)
+          const next  = tda.checkpoints.find(cp => cp.checkpoint_date && cp.checkpoint_date >= today)
+            || tda.checkpoints[tda.checkpoints.length - 1]
+          if (!next?.checkpoint_date) return null
+          const holdDate = new Date(new Date(next.checkpoint_date + 'T00:00:00').getTime() - leadDays * 86400000)
+            .toISOString().slice(0, 10)
+          return (
+            <span style={{ fontSize: 10, color: TEXT_MUTED, fontStyle: 'italic' }}
+                  title={`Next checkpoint ${next.checkpoint_date} → HC hold ${holdDate}`}>
+              → {holdDate}
+            </span>
+          )
+        })()}
       </div>
 
       {/* Summary stats */}
@@ -1328,14 +1580,23 @@ function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint,
         background: '#f8fafc', borderBottom: `1px solid ${PANEL_BORDER}`, flexWrap: 'wrap',
       }}>
         {[
-          { label: 'Total lots', value: totalLots },
-          { label: 'In checkpoint', value: assignedToCp },
-          { label: 'In pool', value: inPool },
-          { label: 'Total required', value: totalRequired },
-        ].map(({ label, value }) => (
-          <div key={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 64 }}>
-            <span style={{ fontSize: 9, color: TEXT_MUTED, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{label}</span>
-            <span style={{ fontSize: 18, fontWeight: 700, color: TEXT_PRIMARY, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+          { label: 'Total lots', value: totalLots, tip: null },
+          { label: 'In checkpoint', value: assignedToCp, tip: null },
+          { label: 'In pool', value: inPool, tip: null },
+          { label: 'Total required', value: totalRequired, tip: null },
+          ...(builderEligibleCount !== null ? [{ label: 'Builder match', value: builderEligibleCount, tip: `Lots in this TDA whose resolved builder matches the TDA's builder filter (${totalLots - builderEligibleCount} excluded)`, warn: builderEligibleCount < totalLots }] : []),
+          ...(ineligibleCount > 0 ? [{ label: 'No dev date', value: ineligibleCount, tip: 'Lots the engine cannot schedule — they have no dev date yet. Run sim after dev dates are assigned.', warn: true }] : []),
+          ...(datedCps.length > 0 ? [{ label: 'Sim', value: simAtRisk ? 'At Risk' : 'On Track', tip: 'Engine projection vs checkpoint requirements — run sim to update', warn: simAtRisk, ok: simOnTrack, isText: true }] : []),
+        ].map(({ label, value, tip, warn, ok, isText }) => (
+          <div key={label} title={tip || undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 64, cursor: tip ? 'help' : undefined }}>
+            <span style={{ fontSize: 9, color: warn ? '#b45309' : TEXT_MUTED, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{label}</span>
+            {isText ? (
+              <span style={{ fontSize: 12, fontWeight: 700, color: warn ? '#dc2626' : ok ? '#16a34a' : TEXT_MUTED, lineHeight: 1.2, paddingTop: 2 }}>
+                {warn ? '✗ ' : ok ? '✓ ' : ''}{value}
+              </span>
+            ) : (
+              <span style={{ fontSize: 18, fontWeight: 700, color: warn ? '#d97706' : TEXT_PRIMARY, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+            )}
           </div>
         ))}
       </div>
@@ -1347,7 +1608,6 @@ function AgreementCard({ tda, allTdas, unassignedLots, onPatch, onAddCheckpoint,
         onDeleteCheckpoint={onDeleteCheckpoint}
         onAutoAssign={onAutoAssign}
         onAssignLot={(lotId, cpId) => onAssignLot(tda.tda_id, lotId, cpId)}
-        onReorderCheckpoints={onReorderCheckpoints}
         buildingUnitCounts={buildingUnitCounts}
         onPatchLotDate={onPatchLotDate}
         onRemoveLots={onRemoveLots}
@@ -1387,12 +1647,13 @@ function LedgerTab({ selectedId }) {
 
   const thS = { ...TH, background: '#f9fafb', position: 'sticky', top: 0 }
 
-  let cumActual = 0, cumMarks = 0, cumSim = 0
+  let cumActual = 0, cumMarks = 0, cumBldr = 0, cumHc = 0
   const rows = ledger.map(r => {
-    cumActual += r.actual || 0
+    cumActual += r.actual     || 0
     cumMarks  += r.marks_plan || 0
-    cumSim    += r.sim_plan || 0
-    return { ...r, cumActual, cumMarks, cumSim }
+    cumBldr   += r.bldr_proj  || 0
+    cumHc     += r.hc_proj    || 0
+    return { ...r, cumActual, cumMarks, cumBldr, cumHc }
   })
 
   const today = new Date().toISOString().slice(0, 7)
@@ -1405,15 +1666,17 @@ function LedgerTab({ selectedId }) {
             <th style={{ ...thS, minWidth: 80 }}>Month</th>
             <th style={{ ...thS, textAlign: 'right' }} title="Lots with actual MARKS date_td in this month and in the past">Taken Down</th>
             <th style={{ ...thS, textAlign: 'right' }} title="Lots with MARKS date_td in this month">MARKS Plan</th>
-            <th style={{ ...thS, textAlign: 'right' }} title="Lots with sim projected date_td in this month (no MARKS date)">Sim Plan</th>
+            <th style={{ ...thS, textAlign: 'right', color: '#2563eb' }} title="Lots with sim-projected BLDR date (date_td_projected, no actual date_td) in this month">BLDR Proj</th>
+            <th style={{ ...thS, textAlign: 'right', color: '#0d9488' }} title="Lots with sim-projected HC date only (date_td_hold_projected, no BLDR path) in this month">HC Proj</th>
             <th style={{ ...thS, textAlign: 'right' }}>Cum. Taken</th>
             <th style={{ ...thS, textAlign: 'right' }}>Cum. MARKS</th>
-            <th style={{ ...thS, textAlign: 'right' }}>Cum. Sim</th>
+            <th style={{ ...thS, textAlign: 'right', color: '#2563eb' }}>Cum. BLDR</th>
+            <th style={{ ...thS, textAlign: 'right', color: '#0d9488' }}>Cum. HC</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(r => {
-            const isPast = r.month < today
+            const isPast    = r.month < today
             const isCurrent = r.month === today
             return (
               <tr key={r.month} style={{
@@ -1423,10 +1686,12 @@ function LedgerTab({ selectedId }) {
                 <td style={{ ...TD, fontFamily: 'monospace', fontWeight: isCurrent ? 700 : 400 }}>{r.month}</td>
                 <td style={{ ...TD, textAlign: 'right', color: r.actual > 0 ? '#15803d' : TEXT_MUTED, fontWeight: r.actual > 0 ? 600 : 400 }}>{r.actual || '—'}</td>
                 <td style={{ ...TD, textAlign: 'right', color: TEXT_MUTED }}>{r.marks_plan || '—'}</td>
-                <td style={{ ...TD, textAlign: 'right', color: '#2563eb' }}>{r.sim_plan || '—'}</td>
+                <td style={{ ...TD, textAlign: 'right', color: r.bldr_proj > 0 ? '#2563eb' : TEXT_MUTED }}>{r.bldr_proj || '—'}</td>
+                <td style={{ ...TD, textAlign: 'right', color: r.hc_proj > 0 ? '#0d9488' : TEXT_MUTED }}>{r.hc_proj || '—'}</td>
                 <td style={{ ...TD, textAlign: 'right', color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{r.cumActual}</td>
                 <td style={{ ...TD, textAlign: 'right', color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{r.cumMarks}</td>
-                <td style={{ ...TD, textAlign: 'right', color: '#2563eb', fontVariantNumeric: 'tabular-nums' }}>{r.cumSim}</td>
+                <td style={{ ...TD, textAlign: 'right', color: '#2563eb', fontVariantNumeric: 'tabular-nums' }}>{r.cumBldr}</td>
+                <td style={{ ...TD, textAlign: 'right', color: '#0d9488', fontVariantNumeric: 'tabular-nums' }}>{r.cumHc}</td>
               </tr>
             )
           })}
@@ -1757,19 +2022,22 @@ function ChecklistTab({ showTestCommunities }) {
     : filter === 'closed' ? items.filter(i => i.status === 'closed')
     : items.filter(i => i.status !== 'closed')
 
-  // Build per-checkpoint required count (delta from previous cumulative) using all items (unfiltered)
+  // Build per-checkpoint required count (delta from previous cumulative) using all items (unfiltered).
+  // Must group by tda_id (not ent_group_id): communities with multiple TDAs have independent
+  // cumulative sequences. Grouping by community mixes them, producing negative deltas when
+  // a second TDA's CP has a lower lots_required_cumulative than the first TDA's CP.
   const perRequiredMap = new Map()
   {
-    const communityCheckpoints = new Map()
+    const tdaCheckpoints = new Map()
     for (const item of items) {
       if (!item.checkpoint_id) continue
-      if (!communityCheckpoints.has(item.ent_group_id)) communityCheckpoints.set(item.ent_group_id, new Map())
-      const cpMap = communityCheckpoints.get(item.ent_group_id)
+      if (!tdaCheckpoints.has(item.tda_id)) tdaCheckpoints.set(item.tda_id, new Map())
+      const cpMap = tdaCheckpoints.get(item.tda_id)
       if (!cpMap.has(item.checkpoint_id)) {
         cpMap.set(item.checkpoint_id, { lots_required_cumulative: item.lots_required_cumulative || 0, checkpoint_date: item.checkpoint_date })
       }
     }
-    for (const [, cpMap] of communityCheckpoints) {
+    for (const [, cpMap] of tdaCheckpoints) {
       const sorted = [...cpMap.entries()].sort((a, b) => (a[1].checkpoint_date || '').localeCompare(b[1].checkpoint_date || ''))
       let prevCum = 0
       for (const [cpId, cp] of sorted) {
@@ -2027,13 +2295,23 @@ function TdaPillTabs({ agreements, activeId, onSelect }) {
             }}
           >
             {tda.tda_name}
+            {tda.builder_name && (
+              <span style={{ fontSize: 10, color: isActive ? '#0d9488' : '#6b7280', fontWeight: 600 }}>
+                {tda.builder_name.replace(' Homes', '')}
+              </span>
+            )}
             <span style={{
               fontSize: 10, padding: '1px 6px', borderRadius: 8, fontWeight: 600,
               background: ss.bg, color: ss.color, border: `1px solid ${ss.border}`,
             }}>
               {tda.status}
             </span>
-            {nLots > 0 && (
+            {tda.lot_quota != null && (
+              <span style={{ fontSize: 10, color: isActive ? '#3b82f6' : TEXT_MUTED }}>
+                {nLots}/{tda.lot_quota}
+              </span>
+            )}
+            {tda.lot_quota == null && nLots > 0 && (
               <span style={{ fontSize: 10, color: isActive ? '#3b82f6' : TEXT_MUTED }}>
                 {nLots}
               </span>
@@ -2058,6 +2336,13 @@ export default function TakedownView({ showTestCommunities }) {
   const [loading, setLoading] = useState(false)
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName]         = useState('')
+  const [newBankId, setNewBankId]     = useState('')
+  const [newBuilderId, setNewBuilderId] = useState('')
+  const [newLotQuota, setNewLotQuota] = useState('')
+  const [simRunning, setSimRunning]   = useState(false)
+  const [simLastRunAt, setSimLastRunAt] = useState(null)   // Date.now() after each run
+  const [simGaps, setSimGaps]         = useState([])       // residual gaps from last run
+  const [simError, setSimError]       = useState(null)     // error message from last run
 
   // Load community list
   useEffect(() => {
@@ -2103,20 +2388,52 @@ export default function TakedownView({ showTestCommunities }) {
 
   useEffect(() => { load() }, [load])
 
-  // Reset active TDA when community changes
-  useEffect(() => { setActiveTdaId(null) }, [selectedId])
+  // Reset active TDA + sim state when community changes
+  useEffect(() => { setActiveTdaId(null); setSimGaps([]); setSimLastRunAt(null); setSimError(null) }, [selectedId])
 
   // ── Mutations ──────────────────────────────────────────────────────
+
+  async function runSim() {
+    if (!selectedId || simRunning) return
+    setSimRunning(true)
+    setSimGaps([])
+    setSimError(null)
+    try {
+      const resp = await fetch(`${API_BASE}/simulations/run`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ent_group_id: selectedId }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}))
+        throw new Error(err.detail || `HTTP ${resp.status}`)
+      }
+      const result = await resp.json()
+      setSimGaps(result.tda_gaps || [])
+      setSimLastRunAt(Date.now())
+      load()
+    } catch (e) {
+      setSimError(e.message || 'Simulation failed')
+    }
+    setSimRunning(false)
+  }
+
+  function resetNewForm() {
+    setNewName(''); setNewBankId(''); setNewBuilderId(''); setNewLotQuota(''); setShowNewForm(false)
+  }
 
   async function createAgreement() {
     const name = newName.trim()
     if (!name || !selectedId) return
+    const body = { tda_name: name, ent_group_id: selectedId }
+    if (newBankId)    body.bank_id    = Number(newBankId)
+    if (newBuilderId) body.builder_id = Number(newBuilderId)
+    if (newLotQuota)  body.lot_quota  = Number(newLotQuota)
     const resp = await fetch(`${API_BASE}/takedown-agreements`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tda_name: name, ent_group_id: selectedId }),
+      body: JSON.stringify(body),
     })
     const created = await resp.json()
-    setNewName(''); setShowNewForm(false)
+    resetNewForm()
     setActiveTdaId(created.tda_id)
     load()
   }
@@ -2151,8 +2468,10 @@ export default function TakedownView({ showTestCommunities }) {
   }
 
   async function autoAssign(tdaId) {
-    await fetch(`${API_BASE}/takedown-agreements/${tdaId}/auto-assign`, { method: 'POST' })
+    const resp = await fetch(`${API_BASE}/takedown-agreements/${tdaId}/auto-assign`, { method: 'POST' })
+    const result = await resp.json().catch(() => ({}))
     load()
+    return result
   }
 
   async function addLots(tdaId, lotIds) {
@@ -2193,21 +2512,6 @@ export default function TakedownView({ showTestCommunities }) {
     load()
   }
 
-  async function reorderCheckpoints(cpA, cpB) {
-    // Swap checkpoint_number AND lots_required_cumulative between adjacent checkpoints
-    await Promise.all([
-      fetch(`${API_BASE}/tda-checkpoints/${cpA.checkpoint_id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ checkpoint_number: cpB.checkpoint_number, lots_required_cumulative: cpB.lots_required_cumulative }),
-      }),
-      fetch(`${API_BASE}/tda-checkpoints/${cpB.checkpoint_id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ checkpoint_number: cpA.checkpoint_number, lots_required_cumulative: cpA.lots_required_cumulative }),
-      }),
-    ])
-    load()
-  }
-
   // ── Filtered community list ────────────────────────────────────────
   const visibleCommunities = search
     ? communities.filter(c => c.ent_group_name.toLowerCase().includes(search.toLowerCase()))
@@ -2230,6 +2534,7 @@ export default function TakedownView({ showTestCommunities }) {
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 44px)', overflow: 'hidden' }}>
+      <style>{`@keyframes tda-fadeout { from { opacity: 1 } to { opacity: 0; pointer-events: none } }`}</style>
 
       {/* ── Left sidebar ── */}
       <div style={{
@@ -2285,11 +2590,31 @@ export default function TakedownView({ showTestCommunities }) {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f9fafb' }}>
 
         {/* Tab bar */}
-        <div style={{ display: 'flex', borderBottom: `1px solid ${PANEL_BORDER}`, background: '#fff', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', borderBottom: `1px solid ${PANEL_BORDER}`, background: '#fff', flexShrink: 0 }}>
           <button style={tabStyle('agreements')} onClick={() => setActiveTab('agreements')}>Agreements</button>
           <button style={tabStyle('ledger')}     onClick={() => setActiveTab('ledger')}>Ledger</button>
           <button style={tabStyle('lots')}       onClick={() => setActiveTab('lots')}>Lots</button>
           <button style={tabStyle('checklist')}  onClick={() => setActiveTab('checklist')}>Checklist</button>
+          {selectedId && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px' }}>
+              {simLastRunAt && (
+                <span style={{ fontSize: 10, color: TEXT_MUTED, fontStyle: 'italic' }}>
+                  ran {new Date(simLastRunAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+              <button
+                onClick={runSim}
+                disabled={simRunning}
+                style={{
+                  fontSize: 11, padding: '3px 12px', borderRadius: 4,
+                  border: '1px solid #2563eb', background: simRunning ? '#eff6ff' : '#2563eb',
+                  color: simRunning ? '#2563eb' : '#fff', fontWeight: 600, cursor: simRunning ? 'default' : 'pointer',
+                }}
+              >
+                {simRunning ? 'Running…' : 'Run Sim'}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Tab body */}
@@ -2308,6 +2633,38 @@ export default function TakedownView({ showTestCommunities }) {
           {/* Agreements tab */}
           {activeTab === 'agreements' && selectedId && !loading && data && (
             <>
+              {/* Sim error banner */}
+              {simError && (
+                <div style={{ marginBottom: 12, padding: '8px 14px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 12, color: '#991b1b', fontWeight: 500 }}>
+                  Simulation error: {simError}
+                </div>
+              )}
+
+              {/* Sim gaps banner — shown after a run from this view */}
+              {simLastRunAt && simGaps.length > 0 && (
+                <div style={{ marginBottom: 12, padding: '8px 14px', background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, fontSize: 12 }}>
+                  <div style={{ fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>
+                    {simGaps.length} checkpoint{simGaps.length !== 1 ? 's' : ''} at risk after simulation:
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: 18, color: '#7f1d1d', lineHeight: 1.8 }}>
+                    {simGaps.map((g, i) => (
+                      <li key={i}>
+                        <b>{g.tda_name}</b> CP{g.checkpoint_number} ({g.checkpoint_date})
+                        {' — '}{g.projected}/{g.required} lots projected
+                        <span style={{ marginLeft: 6, background: '#fee2e2', color: '#991b1b', borderRadius: 10, padding: '0 6px', fontWeight: 700, fontSize: 11 }}>
+                          gap {g.gap}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {simLastRunAt && simGaps.length === 0 && !simError && (
+                <div style={{ marginBottom: 12, padding: '6px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, fontSize: 12, color: '#15803d', fontWeight: 500 }}>
+                  All TDA checkpoints on track after simulation.
+                </div>
+              )}
+
               {/* Pill tab row + New Agreement button */}
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                 <TdaPillTabs
@@ -2317,21 +2674,53 @@ export default function TakedownView({ showTestCommunities }) {
                 />
                 <div style={{ paddingTop: 10 }}>
                   {showNewForm ? (
-                    <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <input
-                        autoFocus
-                        value={newName}
-                        onChange={e => setNewName(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') createAgreement()
-                          if (e.key === 'Escape') { setShowNewForm(false); setNewName('') }
-                        }}
-                        placeholder="Agreement name"
-                        style={{ fontSize: 13, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db', width: 200 }}
-                      />
-                      <Btn variant="success" onClick={createAgreement} disabled={!newName.trim()}>Create</Btn>
-                      <Btn onClick={() => { setShowNewForm(false); setNewName('') }}>Cancel</Btn>
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <input
+                          autoFocus
+                          value={newName}
+                          onChange={e => setNewName(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') createAgreement()
+                            if (e.key === 'Escape') resetNewForm()
+                          }}
+                          placeholder="Agreement name *"
+                          style={{ fontSize: 13, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db', width: 200 }}
+                        />
+                        <select
+                          value={newBuilderId}
+                          onChange={e => setNewBuilderId(e.target.value)}
+                          style={{ fontSize: 12, padding: '3px 7px', borderRadius: 4, border: '1px solid #d1d5db', color: newBuilderId ? '#111827' : '#9ca3af' }}
+                        >
+                          <option value="">Builder (optional)</option>
+                          {(data?.builders || []).map(b => (
+                            <option key={b.builder_id} value={b.builder_id}>{b.builder_name}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={newBankId}
+                          onChange={e => setNewBankId(e.target.value)}
+                          style={{ fontSize: 12, padding: '3px 7px', borderRadius: 4, border: '1px solid #d1d5db', color: newBankId ? '#111827' : '#9ca3af' }}
+                        >
+                          <option value="">Lot bank (optional)</option>
+                          {(data?.banks || []).map(b => (
+                            <option key={b.bank_id} value={b.bank_id}>{b.bank_name}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min={1}
+                          value={newLotQuota}
+                          onChange={e => setNewLotQuota(e.target.value)}
+                          placeholder="Quota"
+                          style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db', width: 70 }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Btn variant="success" onClick={createAgreement} disabled={!newName.trim()}>Create</Btn>
+                        <Btn onClick={resetNewForm}>Cancel</Btn>
+                      </div>
+                    </div>
                   ) : (
                     <Btn variant="primary" onClick={() => setShowNewForm(true)}>+ New Agreement</Btn>
                   )}
@@ -2348,6 +2737,8 @@ export default function TakedownView({ showTestCommunities }) {
                   tda={activeTda}
                   allTdas={data.agreements}
                   unassignedLots={data.unassigned_lots || []}
+                  builders={data.builders || []}
+                  banks={data.banks || []}
                   onPatch={patch => patchAgreement(activeTda.tda_id, patch)}
                   onAddCheckpoint={addCheckpoint}
                   onPatchCheckpoint={patchCheckpoint}
@@ -2358,7 +2749,6 @@ export default function TakedownView({ showTestCommunities }) {
                   onEditLotDates={editLotDates}
                   onAutoAssign={autoAssign}
                   onAssignLot={assignLot}
-                  onReorderCheckpoints={reorderCheckpoints}
                   buildingUnitCounts={data.building_unit_counts || {}}
                   onPatchLotDate={load}
                 />
