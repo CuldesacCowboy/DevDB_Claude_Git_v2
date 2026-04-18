@@ -16,40 +16,68 @@ class CreateTdaRequest(BaseModel):
     tda_name: str
     ent_group_id: int
     anchor_date: Optional[date_type] = None
+    bank_id: Optional[int] = None
+    lot_quota: Optional[int] = None
+    builder_id: Optional[int] = None
 
 
 class PatchTdaRequest(BaseModel):
     tda_name: Optional[str] = None
     status: Optional[str] = None
     anchor_date: Optional[date_type] = None
+    bank_id: Optional[int] = None
+    lot_quota: Optional[int] = None
+    builder_id: Optional[int] = None
+    checkpoint_lead_days: Optional[int] = None
 
 
 router = APIRouter(tags=["takedown-agreements"])
 
 
 @router.get("/entitlement-groups/{ent_group_id}/tda-unassigned-lots")
-def get_tda_unassigned_lots(ent_group_id: int, conn=Depends(get_db_conn)):
-    """Real lots for this community not yet in any TDA."""
+def get_tda_unassigned_lots(ent_group_id: int, bank_id: Optional[int] = None, conn=Depends(get_db_conn)):
+    """Real lots not yet committed to any TDA.
+    If bank_id is provided, restricts to lots in that bank not committed to any TDA
+    that references the same bank. Otherwise returns all community real lots not in
+    any TDA pool (legacy behaviour)."""
     cur = dict_cursor(conn)
     try:
-        cur.execute(
-            """
-            SELECT DISTINCT l.lot_id, l.lot_number, l.building_group_id
-            FROM devdb.sim_lots l
-            JOIN devdb.sim_dev_phases p ON p.phase_id = l.phase_id
-            JOIN devdb.developments d ON d.dev_id = p.dev_id
-            WHERE d.community_id = %s
-              AND l.lot_source = 'real'
-              AND l.lot_id NOT IN (
-                  SELECT tal.lot_id
-                  FROM devdb.sim_takedown_agreement_lots tal
-                  JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
-                  WHERE tda.ent_group_id = %s
-              )
-            ORDER BY l.lot_number ASC
-            """,
-            (ent_group_id, ent_group_id),
-        )
+        if bank_id is not None:
+            cur.execute(
+                """
+                SELECT l.lot_id, l.lot_number, l.building_group_id
+                FROM devdb.sim_tda_lot_bank_members m
+                JOIN devdb.sim_lots l ON l.lot_id = m.lot_id
+                WHERE m.bank_id = %s
+                  AND l.lot_id NOT IN (
+                      SELECT tal.lot_id
+                      FROM devdb.sim_takedown_agreement_lots tal
+                      JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
+                      WHERE tda.bank_id = %s
+                  )
+                ORDER BY l.lot_number ASC
+                """,
+                (bank_id, bank_id),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT DISTINCT l.lot_id, l.lot_number, l.building_group_id
+                FROM devdb.sim_lots l
+                JOIN devdb.sim_dev_phases p ON p.phase_id = l.phase_id
+                JOIN devdb.developments d ON d.dev_id = p.dev_id
+                WHERE d.community_id = %s
+                  AND l.lot_source = 'real'
+                  AND l.lot_id NOT IN (
+                      SELECT tal.lot_id
+                      FROM devdb.sim_takedown_agreement_lots tal
+                      JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
+                      WHERE tda.ent_group_id = %s
+                  )
+                ORDER BY l.lot_number ASC
+                """,
+                (ent_group_id, ent_group_id),
+            )
         return [
             {"lot_id": r["lot_id"], "lot_number": r["lot_number"], "building_group_id": r["building_group_id"]}
             for r in cur.fetchall()
@@ -79,16 +107,26 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                 tda.tda_name,
                 tda.status,
                 tda.anchor_date,
+                tda.bank_id,
+                tda.lot_quota,
+                tda.builder_id,
+                tda.checkpoint_lead_days,
+                b.bank_name,
+                db.builder_name,
                 cp.checkpoint_id,
                 cp.checkpoint_number,
                 cp.checkpoint_date,
                 cp.lots_required_cumulative,
                 COUNT(a.assignment_id) AS lots_assigned
             FROM devdb.sim_takedown_agreements tda
+            LEFT JOIN devdb.sim_tda_lot_banks b ON b.bank_id = tda.bank_id
+            LEFT JOIN devdb.dim_builders db ON db.builder_id = tda.builder_id
             LEFT JOIN devdb.sim_takedown_checkpoints cp ON cp.tda_id = tda.tda_id
             LEFT JOIN devdb.sim_takedown_lot_assignments a ON a.checkpoint_id = cp.checkpoint_id
             WHERE tda.ent_group_id = %s
             GROUP BY tda.tda_id, tda.tda_name, tda.status, tda.anchor_date,
+                     tda.bank_id, tda.lot_quota, tda.builder_id, tda.checkpoint_lead_days,
+                     b.bank_name, db.builder_name,
                      cp.checkpoint_id, cp.checkpoint_number, cp.checkpoint_date,
                      cp.lots_required_cumulative
             ORDER BY tda.tda_id ASC, cp.checkpoint_number ASC
@@ -107,8 +145,16 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     "tda_name": r["tda_name"],
                     "status": r["status"],
                     "anchor_date": r["anchor_date"].isoformat() if r["anchor_date"] else None,
+                    "bank_id": r["bank_id"],
+                    "bank_name": r["bank_name"],
+                    "lot_quota": r["lot_quota"],
+                    "builder_id": r["builder_id"],
+                    "builder_name": r["builder_name"],
+                    "checkpoint_lead_days": r["checkpoint_lead_days"],
                     "checkpoints": [],
                     "lots": [],
+                    "ineligible_lot_count": 0,
+                    "builder_eligible_count": None,
                     "_running_assigned": 0,
                 }
             if r["checkpoint_id"] is not None:
@@ -147,7 +193,8 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     l.date_td_hold_is_locked AS hc_is_locked,
                     l.date_td                AS bldr_marks_date,
                     l.date_td_projected      AS bldr_projected_date,
-                    l.date_td_is_locked      AS bldr_is_locked
+                    l.date_td_is_locked      AS bldr_is_locked,
+                    COALESCE(l.builder_id_override, l.builder_id) AS resolved_builder_id
                 FROM devdb.sim_takedown_agreement_lots tal
                 JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
                 LEFT JOIN devdb.ref_lot_types rlt ON rlt.lot_type_id = l.lot_type_id
@@ -184,6 +231,7 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                         "bldr_marks_date": r["bldr_marks_date"].isoformat() if r["bldr_marks_date"] else None,
                         "bldr_projected_date": r["bldr_projected_date"].isoformat() if r["bldr_projected_date"] else None,
                         "bldr_is_locked": bool(r["bldr_is_locked"]) if r["bldr_is_locked"] is not None else False,
+                        "resolved_builder_id": int(r["resolved_builder_id"]) if r["resolved_builder_id"] is not None else None,
                     })
 
             # Checkpoint aggregate columns: taken_down_to_date, marks_plan, sim_plan
@@ -198,19 +246,32 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     """
                     SELECT
                         cp.checkpoint_id,
-                        COUNT(CASE WHEN l.date_td IS NOT NULL AND l.date_td <= CURRENT_DATE THEN 1 END)
+                        -- D-087: both date_td AND date_td_hold count toward fulfillment.
+                        -- Cumulative actuals on or before this checkpoint's date (not today).
+                        COUNT(CASE WHEN cp.checkpoint_date IS NOT NULL AND (
+                            (l.date_td IS NOT NULL AND l.date_td <= cp.checkpoint_date)
+                            OR (l.date_td_hold IS NOT NULL AND l.date_td_hold <= cp.checkpoint_date
+                                AND l.date_td IS NULL)
+                          ) THEN 1 END)
                             AS taken_down_to_date,
-                        COUNT(CASE WHEN l.date_td IS NOT NULL AND cp.checkpoint_date IS NOT NULL
-                                        AND l.date_td <= cp.checkpoint_date THEN 1 END)
+                        COUNT(CASE WHEN cp.checkpoint_date IS NOT NULL AND (
+                            (l.date_td IS NOT NULL AND l.date_td <= cp.checkpoint_date)
+                            OR (l.date_td_hold IS NOT NULL AND l.date_td_hold <= cp.checkpoint_date
+                                AND l.date_td IS NULL)
+                          ) THEN 1 END)
                             AS marks_plan,
-                        COUNT(CASE WHEN cp.checkpoint_date IS NOT NULL
-                                        AND COALESCE(l.date_td, l.date_td_projected) IS NOT NULL
-                                        AND COALESCE(l.date_td, l.date_td_projected) <= cp.checkpoint_date THEN 1 END)
+                        COUNT(CASE WHEN cp.checkpoint_date IS NOT NULL AND (
+                            COALESCE(l.date_td, l.date_td_projected) <= cp.checkpoint_date
+                            OR COALESCE(l.date_td_hold, l.date_td_hold_projected) <= cp.checkpoint_date
+                          ) THEN 1 END)
                             AS sim_plan
                     FROM devdb.sim_takedown_checkpoints cp
+                    JOIN devdb.sim_takedown_agreements ta ON ta.tda_id = cp.tda_id
                     JOIN devdb.sim_takedown_agreement_lots tal ON tal.tda_id = cp.tda_id
                     JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
                     WHERE cp.checkpoint_id = ANY(%s)
+                      AND (ta.builder_id IS NULL
+                           OR COALESCE(l.builder_id_override, l.builder_id) = ta.builder_id)
                     GROUP BY cp.checkpoint_id
                     """,
                     (checkpoint_ids_all,),
@@ -223,7 +284,84 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                         cp["marks_plan"] = int(agg["marks_plan"]) if agg else 0
                         cp["sim_plan"] = int(agg["sim_plan"]) if agg else 0
 
-        # Fetch lots not yet in any TDA for this community
+        # Count lots with no dev date — engine cannot project HC for these (issue #3)
+        if tda_ids:
+            cur.execute(
+                """
+                SELECT tal.tda_id, COUNT(*) AS ineligible_lot_count
+                FROM devdb.sim_takedown_agreement_lots tal
+                JOIN devdb.sim_takedown_agreements ta ON ta.tda_id = tal.tda_id
+                JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+                WHERE tal.tda_id = ANY(%s)
+                  AND (ta.builder_id IS NULL
+                       OR COALESCE(l.builder_id_override, l.builder_id) = ta.builder_id)
+                  AND l.date_dev IS NULL
+                  AND l.date_td IS NULL
+                  AND l.date_td_projected IS NULL
+                  AND l.date_td_hold IS NULL
+                  AND l.date_td_hold_projected IS NULL
+                  AND (l.date_str IS NULL)
+                  AND (l.date_td_hold_is_locked IS NOT TRUE)
+                GROUP BY tal.tda_id
+                """,
+                (tda_ids,),
+            )
+            for r in cur.fetchall():
+                tid = r["tda_id"]
+                if tid in agreements_map:
+                    agreements_map[tid]["ineligible_lot_count"] = int(r["ineligible_lot_count"])
+
+        # Count builder-eligible lots for TDAs that have builder_id set
+        builder_tda_ids = [tid for tid, tda in agreements_map.items() if tda["builder_id"] is not None]
+        if builder_tda_ids:
+            cur.execute(
+                """
+                SELECT tal.tda_id, COUNT(*) AS builder_eligible_count
+                FROM devdb.sim_takedown_agreement_lots tal
+                JOIN devdb.sim_takedown_agreements ta ON ta.tda_id = tal.tda_id
+                JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+                WHERE tal.tda_id = ANY(%s)
+                  AND COALESCE(l.builder_id_override, l.builder_id) = ta.builder_id
+                GROUP BY tal.tda_id
+                """,
+                (builder_tda_ids,),
+            )
+            for r in cur.fetchall():
+                tid = r["tda_id"]
+                if tid in agreements_map:
+                    agreements_map[tid]["builder_eligible_count"] = int(r["builder_eligible_count"])
+
+        # Fetch bank_available_lots per TDA (lots in their bank not committed to any TDA sharing that bank)
+        bank_ids_needed = list({
+            tda["bank_id"] for tda in agreements_map.values() if tda["bank_id"] is not None
+        })
+        bank_available_map: dict = {}
+        for bid in bank_ids_needed:
+            cur.execute(
+                """
+                SELECT l.lot_id, l.lot_number, l.building_group_id
+                FROM devdb.sim_tda_lot_bank_members m
+                JOIN devdb.sim_lots l ON l.lot_id = m.lot_id
+                WHERE m.bank_id = %s
+                  AND l.lot_id NOT IN (
+                      SELECT tal.lot_id
+                      FROM devdb.sim_takedown_agreement_lots tal
+                      JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
+                      WHERE tda.bank_id = %s
+                  )
+                ORDER BY l.lot_number
+                """,
+                (bid, bid),
+            )
+            bank_available_map[bid] = [
+                {"lot_id": r["lot_id"], "lot_number": r["lot_number"], "building_group_id": r["building_group_id"]}
+                for r in cur.fetchall()
+            ]
+        for tda in agreements_map.values():
+            bid = tda["bank_id"]
+            tda["bank_available_lots"] = bank_available_map.get(bid, []) if bid else []
+
+        # Fetch lots not yet in any TDA for this community (community-wide fallback, no bank)
         cur.execute(
             """
             SELECT DISTINCT l.lot_id, l.lot_number
@@ -260,6 +398,19 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
         )
         building_unit_counts = {str(r["building_group_id"]): int(r["unit_count"]) for r in cur.fetchall()}
 
+        # Fetch lot banks for this community (for create-agreement form and header edit)
+        cur.execute(
+            "SELECT bank_id, bank_name FROM devdb.sim_tda_lot_banks WHERE ent_group_id = %s ORDER BY bank_id",
+            (ent_group_id,),
+        )
+        banks = [{"bank_id": r["bank_id"], "bank_name": r["bank_name"]} for r in cur.fetchall()]
+
+        # Fetch builders (for TDA header edit)
+        cur.execute(
+            "SELECT builder_id, builder_name FROM devdb.dim_builders ORDER BY builder_name",
+        )
+        builders = [{"builder_id": r["builder_id"], "builder_name": r["builder_name"]} for r in cur.fetchall()]
+
         # Clean up helper key
         agreements = []
         for tda in agreements_map.values():
@@ -272,6 +423,8 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
             "agreements": agreements,
             "unassigned_lots": unassigned_lots,
             "building_unit_counts": building_unit_counts,
+            "banks": banks,
+            "builders": builders,
         }
     finally:
         cur.close()
@@ -369,11 +522,13 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
         cur.execute(
             """
             INSERT INTO devdb.sim_takedown_agreements
-                (tda_name, ent_group_id, anchor_date, status, checkpoint_lead_days, created_at, updated_at)
-            VALUES (%s, %s, %s, 'active', 16, now(), now())
-            RETURNING tda_id, tda_name, status, anchor_date
+                (tda_name, ent_group_id, anchor_date, status, checkpoint_lead_days,
+                 bank_id, lot_quota, builder_id, created_at, updated_at)
+            VALUES (%s, %s, %s, 'active', 16, %s, %s, %s, now(), now())
+            RETURNING tda_id, tda_name, status, anchor_date, bank_id, lot_quota, builder_id, checkpoint_lead_days
             """,
-            (body.tda_name.strip(), body.ent_group_id, body.anchor_date),
+            (body.tda_name.strip(), body.ent_group_id, body.anchor_date,
+             body.bank_id, body.lot_quota, body.builder_id),
         )
         row = cur.fetchone()
         conn.commit()
@@ -382,6 +537,10 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
             "tda_name": row["tda_name"],
             "status": row["status"],
             "anchor_date": row["anchor_date"].isoformat() if row["anchor_date"] else None,
+            "bank_id": row["bank_id"],
+            "lot_quota": row["lot_quota"],
+            "builder_id": row["builder_id"],
+            "checkpoint_lead_days": row["checkpoint_lead_days"],
         }
     except HTTPException:
         conn.rollback()
@@ -414,24 +573,82 @@ def patch_takedown_agreement(tda_id: int, body: PatchTdaRequest, conn=Depends(ge
         if body.anchor_date is not None or "anchor_date" in body.model_fields_set:
             updates.append("anchor_date = %s")
             values.append(body.anchor_date)
+        if body.bank_id is not None or "bank_id" in body.model_fields_set:
+            updates.append("bank_id = %s")
+            values.append(body.bank_id)
+        if body.lot_quota is not None or "lot_quota" in body.model_fields_set:
+            updates.append("lot_quota = %s")
+            values.append(body.lot_quota)
+        if body.builder_id is not None or "builder_id" in body.model_fields_set:
+            updates.append("builder_id = %s")
+            values.append(body.builder_id)
+        if body.checkpoint_lead_days is not None:
+            if body.checkpoint_lead_days < 0:
+                raise HTTPException(status_code=422, detail="checkpoint_lead_days must be non-negative.")
+            updates.append("checkpoint_lead_days = %s")
+            values.append(body.checkpoint_lead_days)
         if not updates:
             raise HTTPException(status_code=422, detail="No fields provided to update.")
         updates.append("updated_at = now()")
         values.append(tda_id)
         cur.execute(
             f"UPDATE devdb.sim_takedown_agreements SET {', '.join(updates)} WHERE tda_id = %s"
-            " RETURNING tda_id, tda_name, status, anchor_date",
+            " RETURNING tda_id, tda_name, status, anchor_date, bank_id, lot_quota, builder_id, checkpoint_lead_days",
             values,
         )
         row = cur.fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail=f"TDA {tda_id} not found.")
+
+        # When builder_id changes, the engine pre-clear uses the new builder filter,
+        # so lots that matched the old builder escape the pre-clear and retain stale
+        # HC projections until a dev-level engine run re-processes them. Clear
+        # proactively so the next run computes a clean slate for the TDA.
+        if "builder_id" in body.model_fields_set:
+            cur.execute(
+                """
+                UPDATE devdb.sim_lots
+                SET date_td_hold_projected = NULL,
+                    updated_at = now()
+                WHERE date_td_hold IS NULL
+                  AND date_td_hold_is_locked IS NOT TRUE
+                  AND lot_id IN (
+                      SELECT lot_id FROM devdb.sim_takedown_agreement_lots
+                      WHERE tda_id = %s
+                  )
+                """,
+                (tda_id,),
+            )
+
+        # When marking a TDA inactive, clear sim-projected HC dates so those lots
+        # don't remain in the H bucket on future simulation runs.
+        if body.status in ("expired", "closed"):
+            cur.execute(
+                """
+                UPDATE devdb.sim_lots
+                SET date_td_hold_projected = NULL,
+                    date_td_hold_is_locked = FALSE,
+                    updated_at = now()
+                WHERE date_td_hold IS NULL
+                  AND date_td_hold_is_locked IS NOT TRUE
+                  AND lot_id IN (
+                      SELECT lot_id FROM devdb.sim_takedown_agreement_lots
+                      WHERE tda_id = %s
+                  )
+                """,
+                (tda_id,),
+            )
+
         conn.commit()
         return {
             "tda_id": row["tda_id"],
             "tda_name": row["tda_name"],
             "status": row["status"],
             "anchor_date": row["anchor_date"].isoformat() if row["anchor_date"] else None,
+            "bank_id": row["bank_id"],
+            "lot_quota": row["lot_quota"],
+            "builder_id": row["builder_id"],
+            "checkpoint_lead_days": row["checkpoint_lead_days"],
         }
     except HTTPException:
         conn.rollback()
@@ -630,6 +847,7 @@ def get_tda_monthly_ledger(ent_group_id: int, conn=Depends(get_db_conn)):
             JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
             WHERE tda.ent_group_id = %s
               AND l.date_td IS NOT NULL
+              AND (tda.builder_id IS NULL OR COALESCE(l.builder_id_override, l.builder_id) = tda.builder_id)
             GROUP BY DATE_TRUNC('month', l.date_td)
             ORDER BY DATE_TRUNC('month', l.date_td)
             """,
@@ -637,34 +855,61 @@ def get_tda_monthly_ledger(ent_group_id: int, conn=Depends(get_db_conn)):
         )
         marks_rows = {r["month"]: {"actual": int(r["actual"]), "marks_plan": int(r["marks_plan"])} for r in cur.fetchall()}
 
+        # D-087: split sim projection into two buckets per lot:
+        #   bldr_proj — lots with date_td_projected but no actual date_td
+        #   hc_proj   — lots with date_td_hold_projected only (no BLDR path at all)
+        # Each lot counted in at most one bucket.
         cur.execute(
             """
             SELECT
-                TO_CHAR(DATE_TRUNC('month', l.date_td_projected), 'YYYY-MM') AS month,
-                COUNT(1) AS sim_plan
-            FROM devdb.sim_takedown_agreement_lots tal
-            JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
-            JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
-            WHERE tda.ent_group_id = %s
-              AND l.date_td IS NULL
-              AND l.date_td_projected IS NOT NULL
-            GROUP BY DATE_TRUNC('month', l.date_td_projected)
-            ORDER BY DATE_TRUNC('month', l.date_td_projected)
+                TO_CHAR(bucket_month, 'YYYY-MM') AS month,
+                SUM(CASE WHEN bucket = 'bldr' THEN 1 ELSE 0 END) AS bldr_proj,
+                SUM(CASE WHEN bucket = 'hc'   THEN 1 ELSE 0 END) AS hc_proj
+            FROM (
+                SELECT
+                    CASE
+                        WHEN l.date_td IS NULL AND l.date_td_projected IS NOT NULL
+                            THEN 'bldr'
+                        WHEN l.date_td IS NULL AND l.date_td_projected IS NULL
+                             AND l.date_td_hold IS NULL AND l.date_td_hold_projected IS NOT NULL
+                            THEN 'hc'
+                        ELSE NULL
+                    END AS bucket,
+                    CASE
+                        WHEN l.date_td IS NULL AND l.date_td_projected IS NOT NULL
+                            THEN DATE_TRUNC('month', l.date_td_projected)
+                        WHEN l.date_td IS NULL AND l.date_td_projected IS NULL
+                             AND l.date_td_hold IS NULL AND l.date_td_hold_projected IS NOT NULL
+                            THEN DATE_TRUNC('month', l.date_td_hold_projected)
+                        ELSE NULL
+                    END AS bucket_month
+                FROM devdb.sim_takedown_agreement_lots tal
+                JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
+                JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
+                WHERE tda.ent_group_id = %s
+                  AND (tda.builder_id IS NULL OR COALESCE(l.builder_id_override, l.builder_id) = tda.builder_id)
+            ) sub
+            WHERE bucket IS NOT NULL
+            GROUP BY bucket_month
+            ORDER BY bucket_month
             """,
             (ent_group_id,),
         )
-        sim_rows = {r["month"]: int(r["sim_plan"]) for r in cur.fetchall()}
+        sim_rows = {r["month"]: {"bldr_proj": int(r["bldr_proj"]), "hc_proj": int(r["hc_proj"])} for r in cur.fetchall()}
 
         # Merge all months
         all_months = sorted(set(list(marks_rows.keys()) + list(sim_rows.keys())))
         ledger = []
         for m in all_months:
             mr = marks_rows.get(m, {"actual": 0, "marks_plan": 0})
+            sr = sim_rows.get(m, {"bldr_proj": 0, "hc_proj": 0})
             ledger.append({
-                "month": m,
-                "actual": mr["actual"],
+                "month":      m,
+                "actual":     mr["actual"],
                 "marks_plan": mr["marks_plan"],
-                "sim_plan": sim_rows.get(m, 0),
+                "bldr_proj":  sr["bldr_proj"],
+                "hc_proj":    sr["hc_proj"],
+                "sim_plan":   sr["bldr_proj"] + sr["hc_proj"],  # keep for backward compat
             })
 
         return {"ent_group_id": ent_group_id, "ledger": ledger}
@@ -757,11 +1002,13 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
     cur = dict_cursor(conn)
     try:
         cur.execute(
-            "SELECT tda_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
+            "SELECT tda_id, builder_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
             (tda_id,),
         )
-        if cur.fetchone() is None:
+        tda_row = cur.fetchone()
+        if tda_row is None:
             raise HTTPException(status_code=404, detail=f"TDA {tda_id} not found.")
+        tda_builder_id = tda_row["builder_id"]
 
         # Load checkpoints ordered by date ascending
         cur.execute(
@@ -778,11 +1025,14 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
         if not checkpoints:
             return {"assigned": 0, "unassigned": 0, "message": "No dated checkpoints to assign to."}
 
-        # Load all lots in TDA pool with their effective takedown date
+        # Load lots in TDA pool filtered by builder_id (same logic as engine).
+        # D-087: HC dates also count toward effective date — include them.
         cur.execute(
             """
             SELECT l.lot_id,
-                   COALESCE(l.date_td, l.date_td_projected) AS effective_td
+                   COALESCE(l.date_td, l.date_td_projected,
+                            l.date_td_hold, l.date_td_hold_projected) AS effective_td,
+                   COALESCE(l.builder_id_override, l.builder_id) AS resolved_builder_id
             FROM devdb.sim_takedown_agreement_lots tal
             JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
             WHERE tal.tda_id = %s
@@ -805,7 +1055,12 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
 
         assigned = 0
         unassigned = 0
+        skipped_builder = 0
         for lot in lots:
+            # Skip lots whose resolved builder doesn't match the TDA's builder
+            if tda_builder_id is not None and lot["resolved_builder_id"] != tda_builder_id:
+                skipped_builder += 1
+                continue
             td = lot["effective_td"]
             if td is None:
                 unassigned += 1
@@ -832,7 +1087,12 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
             assigned += 1
 
         conn.commit()
-        return {"tda_id": tda_id, "assigned": assigned, "unassigned": unassigned}
+        return {
+            "tda_id": tda_id,
+            "assigned": assigned,
+            "unassigned": unassigned,
+            "skipped_builder_mismatch": skipped_builder,
+        }
 
     except HTTPException:
         conn.rollback()

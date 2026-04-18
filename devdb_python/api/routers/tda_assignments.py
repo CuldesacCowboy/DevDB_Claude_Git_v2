@@ -198,10 +198,11 @@ def add_lot_to_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
     cur = dict_cursor(conn)
     try:
         cur.execute(
-            "SELECT tda_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
+            "SELECT tda_id, bank_id FROM devdb.sim_takedown_agreements WHERE tda_id = %s",
             (tda_id,),
         )
-        if cur.fetchone() is None:
+        tda_row = cur.fetchone()
+        if tda_row is None:
             raise HTTPException(status_code=404, detail=f"TDA {tda_id} not found.")
 
         cur.execute(
@@ -210,6 +211,19 @@ def add_lot_to_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
         )
         if cur.fetchone() is None:
             raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found.")
+
+        # If this TDA has a bank, validate the lot belongs to that bank
+        if tda_row["bank_id"] is not None:
+            cur.execute(
+                "SELECT 1 FROM devdb.sim_tda_lot_bank_members WHERE bank_id = %s AND lot_id = %s",
+                (tda_row["bank_id"], lot_id),
+            )
+            if cur.fetchone() is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Lot {lot_id} is not a member of bank {tda_row['bank_id']}. "
+                           "Add the lot to the bank first.",
+                )
 
         # Idempotent insert
         cur.execute(
@@ -252,6 +266,19 @@ def remove_lot_from_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
         cur.execute(
             "DELETE FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
             (tda_id, lot_id),
+        )
+        # Clear stale sim-projected HC date — engine pre-clear only runs for lots
+        # still in active TDAs, so removed lots would otherwise retain stale values.
+        # Locked (user-override) HC dates are preserved.
+        cur.execute(
+            """
+            UPDATE devdb.sim_lots
+            SET date_td_hold_projected = NULL
+            WHERE lot_id = %s
+              AND date_td_hold IS NULL
+              AND date_td_hold_is_locked IS NOT TRUE
+            """,
+            (lot_id,),
         )
 
         conn.commit()
@@ -314,6 +341,19 @@ def move_lots_to_tda(tda_id: int, body: MoveLotRequest, conn=Depends(get_db_conn
                 "DELETE FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
                 (tda_id, lot_id),
             )
+            # Clear stale sim-projected HC date — the source TDA's engine pre-clear
+            # only runs for lots still in active TDAs; removed lots would otherwise
+            # carry the old projection into the target TDA. Mirrors remove_lot_from_pool.
+            cur.execute(
+                """
+                UPDATE devdb.sim_lots
+                SET date_td_hold_projected = NULL
+                WHERE lot_id = %s
+                  AND date_td_hold IS NULL
+                  AND date_td_hold_is_locked IS NOT TRUE
+                """,
+                (lot_id,),
+            )
             # Add to target pool (no assignment — user can auto-assign later)
             cur.execute(
                 "INSERT INTO devdb.sim_takedown_agreement_lots (tda_id, lot_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
@@ -345,6 +385,12 @@ def update_lot_assignment_dates(assignment_id: int, body: UpdateDatesRequest, co
             raise HTTPException(status_code=422, detail="At least one date field must be provided.")
 
         db_updates = {_DATE_COL[k]: v for k, v in api_updates.items()}
+        # Mirror the automatic-lock behaviour of the direct-dates endpoint:
+        # setting HC locks it so the engine won't overwrite; clearing unlocks it.
+        if 'hc_projected_date' in api_updates:
+            db_updates['date_td_hold_is_locked'] = api_updates['hc_projected_date'] is not None
+        if 'bldr_projected_date' in api_updates:
+            db_updates['date_td_is_locked'] = api_updates['bldr_projected_date'] is not None
 
         cur.execute(
             "SELECT assignment_id, checkpoint_id, lot_id FROM devdb.sim_takedown_lot_assignments WHERE assignment_id = %s",
@@ -518,9 +564,15 @@ def update_tda_lot_dates_direct(lot_id: int, body: UpdateLotTdaDatesRequest, con
         if "hc_projected_date" in body.model_fields_set:
             updates.append("date_td_hold_projected = %s")
             values.append(body.hc_projected_date)
+            # Lock when a date is set; unlock when cleared so engine can reassign
+            updates.append("date_td_hold_is_locked = %s")
+            values.append(body.hc_projected_date is not None)
         if "bldr_projected_date" in body.model_fields_set:
             updates.append("date_td_projected = %s")
             values.append(body.bldr_projected_date)
+            # Lock when a date is set; unlock when cleared so engine can reassign
+            updates.append("date_td_is_locked = %s")
+            values.append(body.bldr_projected_date is not None)
         if not updates:
             raise HTTPException(status_code=422, detail="No date fields provided.")
         updates.append("updated_at = now()")
