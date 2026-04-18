@@ -835,8 +835,6 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
               const perRequired  = required - prevRequired
               const cpLots       = lotsByCp[cp.checkpoint_id] || []
               const gap          = perRequired - cpLots.length
-              const isFirst      = idx === 0
-              const isLast       = idx === tda.checkpoints.length - 1
 
               const rowBg = perRequired === 0 ? '#fff'
                 : gap === 0 ? '#f0fdf4'
@@ -877,7 +875,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                     {/* Status — amber when slots are full but Sim Plan is short */}
                     {(() => {
                       const slotsFull = perRequired > 0 && gap <= 0
-                      const simShort  = cp.sim_plan != null && cp.sim_plan < required
+                      const simShort  = cp.sim_plan != null && cp.checkpoint_date != null && cp.sim_plan < required
                       const conflict  = slotsFull && simShort
                       return (
                         <td style={{ ...TD, background: conflict ? '#fef3c7' : undefined }}
@@ -896,7 +894,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                     })()}
                     {/* Sim Plan */}
                     <td style={{ ...TD, fontVariantNumeric: 'tabular-nums' }}>
-                      {cp.sim_plan != null ? (() => {
+                      {(cp.sim_plan != null && cp.checkpoint_date != null) ? (() => {
                         const simOk = cp.sim_plan >= required
                         const contributing = (tda.lots || []).filter(lot => {
                           if (tda.builder_id != null && lot.resolved_builder_id !== tda.builder_id) return false
