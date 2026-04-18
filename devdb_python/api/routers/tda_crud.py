@@ -961,9 +961,17 @@ def get_tda_checklist(show_test: bool = False, conn=Depends(get_db_conn)):
             if r["date_td"] is not None:
                 status = "closed"
                 display_date = r["date_td"].isoformat()
+            elif r["date_td_hold"] is not None:
+                # Per D-087: actual HC hold also satisfies checkpoint fulfillment
+                status = "closed"
+                display_date = r["date_td_hold"].isoformat()
             elif r["date_td_projected"] is not None:
                 status = "projected"
                 display_date = r["date_td_projected"].isoformat()
+            elif r["date_td_hold_projected"] is not None:
+                # HC sim projection — lot is on HC path, projected to fulfill
+                status = "projected"
+                display_date = r["date_td_hold_projected"].isoformat()
             else:
                 status = "pending"
                 display_date = None

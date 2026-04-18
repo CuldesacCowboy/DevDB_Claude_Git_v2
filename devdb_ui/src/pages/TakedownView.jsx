@@ -907,9 +907,11 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                           // and then compared against a local-timezone T23:59:59 boundary.
                           return (effBldr && effBldr <= cp.checkpoint_date) || (effHc && effHc <= cp.checkpoint_date)
                         })
-                        const simTip = contributing.length > 0
-                          ? `Contributing lots: ${contributing.map(l => pillLotNum(l.lot_number).trim()).join(', ')}`
-                          : 'No lots with dates on or before this checkpoint'
+                        const simTip = !cp.checkpoint_date
+                          ? 'Checkpoint has no date — set a checkpoint date to enable projection'
+                          : contributing.length > 0
+                            ? `Contributing lots: ${contributing.map(l => pillLotNum(l.lot_number).trim()).join(', ')}`
+                            : 'No lots with dates on or before this checkpoint'
                         return (
                           <span title={simTip} style={{ color: simOk ? '#15803d' : '#dc2626', fontWeight: 600, cursor: 'help' }}>
                             {cp.sim_plan}/{required}
@@ -2058,6 +2060,8 @@ function ChecklistTab({ showTestCommunities }) {
       cg.set(cpKey, {
         ent_group_id: item.ent_group_id,
         ent_group_name: item.ent_group_name,
+        tda_id: item.tda_id,
+        tda_name: item.tda_name,
         checkpoint_date: item.checkpoint_date,
         checkpoint_id: item.checkpoint_id,
         lots_required_cumulative: item.lots_required_cumulative,
@@ -2156,6 +2160,11 @@ function ChecklistTab({ showTestCommunities }) {
                       >
                         <span style={{ fontSize: 12, fontWeight: 700, color: '#1e293b' }}>
                           {group.ent_group_name}
+                          {group.tda_name && (
+                            <span style={{ fontSize: 10, fontWeight: 500, color: '#475569', marginLeft: 6 }}>
+                              · {group.tda_name}
+                            </span>
+                          )}
                         </span>
                         <span style={{ fontSize: 10, color: TEXT_MUTED }}>
                           {closedCount} of {slotCount} closed
