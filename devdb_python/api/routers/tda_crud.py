@@ -247,10 +247,11 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     SELECT
                         cp.checkpoint_id,
                         -- D-087: both date_td AND date_td_hold count toward fulfillment.
-                        -- Cumulative actuals on or before this checkpoint's date (not today).
+                        -- taken_down_to_date: actuals on or before today (lots already completed).
+                        -- marks_plan: actuals on or before this checkpoint's date (past + future).
                         COUNT(CASE WHEN cp.checkpoint_date IS NOT NULL AND (
-                            (l.date_td IS NOT NULL AND l.date_td <= cp.checkpoint_date)
-                            OR (l.date_td_hold IS NOT NULL AND l.date_td_hold <= cp.checkpoint_date
+                            (l.date_td IS NOT NULL AND l.date_td <= LEAST(cp.checkpoint_date, CURRENT_DATE))
+                            OR (l.date_td_hold IS NOT NULL AND l.date_td_hold <= LEAST(cp.checkpoint_date, CURRENT_DATE)
                                 AND l.date_td IS NULL)
                           ) THEN 1 END)
                             AS taken_down_to_date,
@@ -1038,12 +1039,14 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
             return {"assigned": 0, "unassigned": 0, "message": "No dated checkpoints to assign to."}
 
         # Load lots in TDA pool filtered by builder_id (same logic as engine).
-        # D-087: HC dates also count toward effective date — include them.
+        # D-087: both BLDR and HC paths satisfy independently. Fetch each effective
+        # date separately so we can pick the MINIMUM — assigning the lot to the earliest
+        # checkpoint it can satisfy rather than always preferring the BLDR path.
         cur.execute(
             """
             SELECT l.lot_id,
-                   COALESCE(l.date_td, l.date_td_projected,
-                            l.date_td_hold, l.date_td_hold_projected) AS effective_td,
+                   COALESCE(l.date_td, l.date_td_projected) AS eff_bldr,
+                   COALESCE(l.date_td_hold, l.date_td_hold_projected) AS eff_hc,
                    COALESCE(l.builder_id_override, l.builder_id) AS resolved_builder_id
             FROM devdb.sim_takedown_agreement_lots tal
             JOIN devdb.sim_lots l ON l.lot_id = tal.lot_id
@@ -1073,7 +1076,15 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
             if tda_builder_id is not None and lot["resolved_builder_id"] != tda_builder_id:
                 skipped_builder += 1
                 continue
-            td = lot["effective_td"]
+            # D-087: use the earliest of the two independent paths (BLDR vs HC).
+            # When both are set, pick min so the lot lands in the earliest checkpoint
+            # it can satisfy. When only one is set, use whichever is available.
+            eff_bldr = lot["eff_bldr"]
+            eff_hc   = lot["eff_hc"]
+            if eff_bldr is not None and eff_hc is not None:
+                td = min(eff_bldr, eff_hc)
+            else:
+                td = eff_bldr or eff_hc
             if td is None:
                 unassigned += 1
                 continue
