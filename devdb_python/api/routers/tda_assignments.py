@@ -556,33 +556,55 @@ def update_lot_assignment_lock(assignment_id: int, body: UpdateLockRequest, conn
 @router.patch("/tda-lots/{lot_id}/dates")
 def update_tda_lot_dates_direct(lot_id: int, body: UpdateLotTdaDatesRequest, conn=Depends(get_db_conn)):
     """Update HC and/or BLDR projected dates directly on sim_lots.
-    Works for pool lots that have no assignment_id yet."""
+    Works for pool lots that have no assignment_id yet.
+    Propagates to building-group siblings within the same TDA(s), mirroring
+    update_lot_assignment_dates behaviour."""
     cur = dict_cursor(conn)
     try:
         updates = []
-        values = []
+        set_values = []
         if "hc_projected_date" in body.model_fields_set:
             updates.append("date_td_hold_projected = %s")
-            values.append(body.hc_projected_date)
+            set_values.append(body.hc_projected_date)
             # Lock when a date is set; unlock when cleared so engine can reassign
             updates.append("date_td_hold_is_locked = %s")
-            values.append(body.hc_projected_date is not None)
+            set_values.append(body.hc_projected_date is not None)
         if "bldr_projected_date" in body.model_fields_set:
             updates.append("date_td_projected = %s")
-            values.append(body.bldr_projected_date)
+            set_values.append(body.bldr_projected_date)
             # Lock when a date is set; unlock when cleared so engine can reassign
             updates.append("date_td_is_locked = %s")
-            values.append(body.bldr_projected_date is not None)
+            set_values.append(body.bldr_projected_date is not None)
         if not updates:
             raise HTTPException(status_code=422, detail="No date fields provided.")
         updates.append("updated_at = now()")
-        values.append(lot_id)
+        set_clause = ", ".join(updates)
         cur.execute(
-            f"UPDATE devdb.sim_lots SET {', '.join(updates)} WHERE lot_id = %s RETURNING lot_id",
-            values,
+            f"UPDATE devdb.sim_lots SET {set_clause} WHERE lot_id = %s RETURNING lot_id, building_group_id",
+            set_values + [lot_id],
         )
-        if cur.fetchone() is None:
+        row = cur.fetchone()
+        if row is None:
             raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found.")
+        building_group_id = row["building_group_id"]
+        # Propagate to building-group siblings within the same TDA(s)
+        if building_group_id is not None:
+            cur.execute(
+                "SELECT DISTINCT tda_id FROM devdb.sim_takedown_agreement_lots WHERE lot_id = %s",
+                (lot_id,),
+            )
+            for r in cur.fetchall():
+                cur.execute(
+                    f"""
+                    UPDATE devdb.sim_lots SET {set_clause}
+                    WHERE lot_id != %s
+                      AND building_group_id = %s
+                      AND lot_id IN (
+                          SELECT lot_id FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s
+                      )
+                    """,
+                    set_values + [lot_id, building_group_id, r["tda_id"]],
+                )
         conn.commit()
         return {"lot_id": lot_id}
     except HTTPException:

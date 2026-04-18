@@ -820,7 +820,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                 { h: 'Assigned', tip: 'Lots manually slotted into this checkpoint — independent of engine date projections' },
                 { h: 'Status', tip: 'Manual slot fill vs per-checkpoint delta (✓ full, +N surplus, −N short). Amber = slots full but Sim Plan is short — engine and slots disagree.' },
                 { h: 'Sim Plan', tip: 'Engine projection: lots with projected or actual dates on or before this checkpoint date — cumulative (per D-087: both HC and BLDR count). Run sim to update.' },
-                { h: 'To Date', tip: 'Cumulative lots actually taken down (actuals only) through this checkpoint date' },
+                { h: 'To Date', tip: 'Cumulative lots actually taken down (actuals only) through today, or through the checkpoint date if it has already passed' },
                 { h: '', tip: '' },
               ].map(({ h, tip }, i) => (
                 <th key={i} style={TH} title={tip}>{h}</th>
