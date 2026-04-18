@@ -658,9 +658,9 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
               Cumulative through checkpoint date
             </td>
             <td colSpan={2} style={{ ...STD_D, fontSize: 10 }}>
-              <span style={{ color: TEXT_MUTED }} title="Lots with actual MARKS takedown or HC hold dates on or before this checkpoint date">MARKS: <strong>{marksplan ?? '—'}</strong></span>
+              <span style={{ color: TEXT_MUTED }} title="Lots with actual MARKS takedown or HC hold dates on or before this checkpoint date">MARKS: <strong>{checkpoint.checkpoint_date ? (marksplan ?? '—') : '—'}</strong></span>
               <span style={{ color: TEXT_MUTED }}> · </span>
-              <span style={{ color: '#2563eb' }} title="Lots with sim-projected dates on or before this checkpoint date">Sim: <strong>{simplan ?? '—'}</strong></span>
+              <span style={{ color: '#2563eb' }} title="Lots with sim-projected dates on or before this checkpoint date">Sim: <strong>{checkpoint.checkpoint_date ? (simplan ?? '—') : '—'}</strong></span>
             </td>
             <td />
           </tr>
@@ -918,7 +918,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                       })() : <span style={{ color: TEXT_MUTED }}>—</span>}
                     </td>
                     {/* To Date */}
-                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.taken_down_to_date ?? 0}</td>
+                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.checkpoint_date ? (cp.taken_down_to_date ?? 0) : '—'}</td>
                     {/* Delete */}
                     <td style={{ ...TD, textAlign: 'right', paddingRight: 4 }}>
                       {confirmDelete === cp.checkpoint_id ? (
