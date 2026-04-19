@@ -39,6 +39,7 @@ def build_frozen_input(
     lot_snapshot: pd.DataFrame,
     demand_series,
     sim_run_id: int,
+    td_to_str_lag: int = 1,
 ) -> FrozenInput:
     """
     Assemble a FrozenInput for one development run.
@@ -78,6 +79,7 @@ def build_frozen_input(
         phase_building_config=phase_building_config,
         sim_run_id=sim_run_id,
         dev_id=dev_id,
+        td_to_str_lag=td_to_str_lag,
     )
 
 

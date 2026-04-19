@@ -6,7 +6,8 @@ Writes:  nothing — returns temp lot records list (not yet persisted)
 Input:   unmet_demand_series: list, phase_capacity: list, sim_run_id: int,
          phase_building_config: dict (optional) {phase_id: [(building_count, units_per_building)]}
 Rules:   date_str = demand slot month always, independent of date_dev (D-137).
-         date_td = date_str for all sim lots (D-142). Hard stop at phase capacity (D-068).
+         date_td = date_str - td_to_str_lag months (D-142 revised: lag now configurable
+         per community, default 1 month). Hard stop at phase capacity (D-068).
          date_cmp and date_cls are NOT set here — the shell timing expansion stage
          (coordinator._expand_timing) derives them after plan() returns using empirical
          build lag curves. This is the kernel boundary: the kernel owns assignment
@@ -35,7 +36,8 @@ _DEFAULT_LAG_CLS_FROM_CMP = 45
 
 def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
                        sim_run_id: int,
-                       phase_building_config: dict | None = None) -> list:
+                       phase_building_config: dict | None = None,
+                       td_to_str_lag: int = 1) -> list:
     """
     Generate temp lot records for each unmet demand slot.
 
@@ -151,6 +153,8 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
                     state["template_idx"] += 1
                     state["slots_in_building"] = 0
 
+        date_td = _add_months_local(date_str, -td_to_str_lag) if td_to_str_lag else date_str
+
         temp_lots.append({
             "lot_id":            None,
             "dev_id":            dev_id,
@@ -163,7 +167,7 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
             "building_group_id": bg_id,
             "date_ent":          None,
             "date_dev":          delivery,
-            "date_td":           date_str,
+            "date_td":           date_td,
             "date_td_hold":      None,
             "date_str":          date_str,
             "date_str_source":   "engine_filled",

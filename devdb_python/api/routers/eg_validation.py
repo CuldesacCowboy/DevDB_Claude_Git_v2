@@ -28,6 +28,8 @@ class DeliveryConfigPutRequest(BaseModel):
     feed_starts_mode: bool | None = None
     # Scheduling horizon
     scheduling_horizon_days: int | None = None
+    # BLDR-to-DIG lag
+    td_to_str_lag: int | None = None
 
 
 class LedgerConfigPutRequest(BaseModel):
@@ -131,7 +133,8 @@ def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
                    max_deliveries_per_year, min_gap_months, auto_schedule_enabled,
                    default_cmp_lag_days, default_cls_lag_days,
                    feed_starts_mode,
-                   scheduling_horizon_days
+                   scheduling_horizon_days,
+                   td_to_str_lag
             FROM sim_entitlement_delivery_config
             WHERE ent_group_id = %s
             """,
@@ -149,6 +152,7 @@ def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
                 "default_cmp_lag_days": None, "default_cls_lag_days": None,
                 "feed_starts_mode": False,
                 "scheduling_horizon_days": None,
+                "td_to_str_lag": None,
             }
         return dict(row)
     finally:
@@ -178,9 +182,9 @@ def put_delivery_config(
                  delivery_months,
                  max_deliveries_per_year, auto_schedule_enabled,
                  default_cmp_lag_days, default_cls_lag_days,
-                 feed_starts_mode, scheduling_horizon_days,
+                 feed_starts_mode, scheduling_horizon_days, td_to_str_lag,
                  updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, FALSE), %s, current_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, FALSE), %s, %s, current_timestamp)
             ON CONFLICT (ent_group_id) DO UPDATE
                 SET min_d_count              = COALESCE(EXCLUDED.min_d_count,              sim_entitlement_delivery_config.min_d_count),
                     min_p_count              = COALESCE(EXCLUDED.min_p_count,              sim_entitlement_delivery_config.min_p_count),
@@ -195,13 +199,14 @@ def put_delivery_config(
                     default_cls_lag_days     = COALESCE(EXCLUDED.default_cls_lag_days,     sim_entitlement_delivery_config.default_cls_lag_days),
                     feed_starts_mode         = COALESCE(%s,                                sim_entitlement_delivery_config.feed_starts_mode),
                     scheduling_horizon_days  = EXCLUDED.scheduling_horizon_days,
+                    td_to_str_lag            = EXCLUDED.td_to_str_lag,
                     updated_at               = current_timestamp
             RETURNING ent_group_id, min_d_count, min_p_count, min_e_count,
                       min_u_count, min_uc_count, min_c_count,
                       delivery_months,
                       max_deliveries_per_year, auto_schedule_enabled,
                       default_cmp_lag_days, default_cls_lag_days,
-                      feed_starts_mode, scheduling_horizon_days
+                      feed_starts_mode, scheduling_horizon_days, td_to_str_lag
             """,
             (
                 ent_group_id,
@@ -218,6 +223,7 @@ def put_delivery_config(
                 body.default_cls_lag_days,
                 body.feed_starts_mode,       # INSERT: COALESCE(%s, FALSE) — new rows default to FALSE
                 body.scheduling_horizon_days,
+                body.td_to_str_lag,
                 body.feed_starts_mode,       # ON CONFLICT UPDATE: COALESCE(%s, existing) — preserves existing when not set
             ),
         )

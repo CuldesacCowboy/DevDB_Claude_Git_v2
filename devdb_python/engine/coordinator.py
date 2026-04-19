@@ -28,6 +28,7 @@ from .s0400_chronology_validator import chronology_validator, persist_violations
 from .s0500_takedown_engine import takedown_engine
 from .s0600_demand_generator import demand_generator
 from .s0760_hc_bldr_date_projector import hc_bldr_date_projector
+from .s0770_d_bldr_date_projector import d_bldr_date_projector
 from .s0820_post_generation_chronology_guard import post_generation_chronology_guard
 from .s0850_timing_expansion import load_build_lag_curves, timing_expansion
 from .s0900_builder_assignment import builder_assignment, assign_real_lot_builders
@@ -92,11 +93,11 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
         logger.warning(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
         demand_series = pd.DataFrame(columns=["year", "month", "slots"])
 
-    # S-0760
-    snapshot = hc_bldr_date_projector(conn, snapshot, demand_series)
+    td_to_str_lag = build_lag_curves.get("_td_to_str_lag", 1)
 
     # S-07 through S-0820: kernel planning pass
-    frozen = build_frozen_input(conn, dev_id, snapshot, demand_series, sim_run_id)
+    frozen = build_frozen_input(conn, dev_id, snapshot, demand_series, sim_run_id,
+                                td_to_str_lag=td_to_str_lag)
     proposal = plan(frozen)
     if proposal.warnings:
         for w in proposal.warnings:
@@ -107,6 +108,12 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
 
     # S-0820 (shell stage): discard temp lots with chronology violations post-expansion
     temp_lots, discarded_lots, guard_warnings = post_generation_chronology_guard(temp_lots)
+
+    # S-0760: project date_td_projected for HC-held lots (runs after kernel — correct order)
+    snapshot = hc_bldr_date_projector(conn, snapshot, demand_series, td_to_str_lag)
+
+    # S-0770: project date_td_projected for D-status real lots (H-lots drain first per allocator)
+    snapshot = d_bldr_date_projector(conn, snapshot, demand_series, td_to_str_lag)
     for w in guard_warnings:
         logger.info(f"  {w}")
     if discarded_lots:
@@ -232,6 +239,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         _cfg = load_delivery_config(conn, ent_group_id)
         build_lag_curves["_default_cmp"] = _cfg["default_cmp_lag_days"]
         build_lag_curves["_default_cls"] = _cfg["default_cls_lag_days"]
+        build_lag_curves["_td_to_str_lag"] = _cfg["td_to_str_lag"]
 
         # Apply scheduling horizon floor to run_start_date.
         _horizon_days = _cfg["scheduling_horizon_days"]

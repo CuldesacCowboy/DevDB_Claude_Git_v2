@@ -296,6 +296,12 @@ export function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettin
     ? edits.scheduling_horizon_days !== null
     : communityHorizon !== null && communityHorizon !== undefined
 
+  const communityTdLag = deliveryConfig?.td_to_str_lag
+  const globalTdLag    = globalSettings?.td_to_str_lag ?? 1
+  const hasTdLagOverride = edits.td_to_str_lag !== undefined
+    ? edits.td_to_str_lag !== null
+    : communityTdLag !== null && communityTdLag !== undefined
+
   function valFor(key) { return edits[key] !== undefined ? edits[key] : (deliveryConfig?.[key] ?? '') }
   function setVal(key, v) { setEdits(p => ({ ...p, [key]: v })) }
 
@@ -343,6 +349,11 @@ export function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettin
     if (edits.scheduling_horizon_days !== undefined) {
       body.scheduling_horizon_days = edits.scheduling_horizon_days === null ? null
         : parseInt(edits.scheduling_horizon_days, 10)
+    }
+
+    if (edits.td_to_str_lag !== undefined) {
+      body.td_to_str_lag = edits.td_to_str_lag === null ? null
+        : parseInt(edits.td_to_str_lag, 10)
     }
 
     try {
@@ -477,6 +488,27 @@ export function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettin
         )}
         <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
           No dates will be projected prior to today + this many days.
+        </div>
+      </div>
+
+      <div>
+        {sectionHead('BLDR → DIG lag')}
+        {!hasTdLagOverride ? (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: '#6b7280' }}>
+              Using global ({globalTdLag} {globalTdLag === 1 ? 'month' : 'months'})
+            </span>
+            {textLink('Set override', () => setEdits(p => ({ ...p, td_to_str_lag: String(communityTdLag ?? globalTdLag) })))}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {numInput('td_to_str_lag', 48, String(globalTdLag))}
+            <span style={{ fontSize: 12, color: '#6b7280' }}>months</span>
+            {textLink('Revert to global', () => setEdits(p => ({ ...p, td_to_str_lag: null })), '#dc2626')}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+          Months between builder takedown (U) and construction start (DIG).
         </div>
       </div>
 

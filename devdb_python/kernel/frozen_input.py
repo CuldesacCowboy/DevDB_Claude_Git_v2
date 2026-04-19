@@ -19,3 +19,4 @@ class FrozenInput:
     phase_building_config: dict  # {phase_id: [(building_count, units_per_building)]} for multi-family phases
     sim_run_id: int
     dev_id: int
+    td_to_str_lag: int = 1       # months between BLDR date (date_td) and DIG date (date_str)
