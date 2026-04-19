@@ -27,6 +27,7 @@ from .s0300_gap_fill_engine import gap_fill_engine, load_phase_delivery_dates
 from .s0400_chronology_validator import chronology_validator, persist_violations
 from .s0500_takedown_engine import takedown_engine
 from .s0600_demand_generator import demand_generator
+from .s0760_hc_bldr_date_projector import hc_bldr_date_projector
 from .s0820_post_generation_chronology_guard import post_generation_chronology_guard
 from .s0850_timing_expansion import load_build_lag_curves, timing_expansion
 from .s0900_builder_assignment import builder_assignment, assign_real_lot_builders
@@ -54,10 +55,10 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
                         sim_run_id: int, run_start_date: date,
                         builder_splits: dict,
                         build_lag_curves: dict,
-                        rng: random.Random) -> tuple[list, bool]:
+                        rng: random.Random) -> tuple[list, bool, list]:
     """
     Run all starts pipeline modules in order for one development.
-    Returns (temp_lots list, needs_config bool).
+    Returns (temp_lots list, needs_config bool, residual_gaps list).
     """
     # S-01
     snapshot = lot_loader(conn, dev_id)
@@ -91,6 +92,9 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
         logger.warning(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
         demand_series = pd.DataFrame(columns=["year", "month", "slots"])
 
+    # S-0760
+    snapshot = hc_bldr_date_projector(conn, snapshot, demand_series)
+
     # S-07 through S-0820: kernel planning pass
     frozen = build_frozen_input(conn, dev_id, snapshot, demand_series, sim_run_id)
     proposal = plan(frozen)
@@ -123,7 +127,7 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     # S-12
     ledger_aggregator(conn)
 
-    return temp_lots, needs_config
+    return temp_lots, needs_config, residual_gaps
 
 
 def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
@@ -253,6 +257,9 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         rng = random.Random(_seed)
 
         missing_params_devs: set[int] = set()
+        # Residual gaps from S-0500 — overwritten each iteration; final value
+        # reflects the converged state and is returned to the caller.
+        latest_residual_gaps: list[dict] = []
 
         for iteration in range(1, max_iterations + 1):
             logger.info(f"\n--- Iteration {iteration} ---")
@@ -268,12 +275,16 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
             )
 
             # Step 1: Run starts pipeline for ALL developments
+            iter_gaps: list[dict] = []
             for dev_id in dev_ids:
                 logger.info(f"  Running starts pipeline for dev {dev_id}...")
-                _, needs_config = run_starts_pipeline(conn, dev_id, sim_run_id, run_start_date,
-                                    builder_splits, build_lag_curves, rng)
+                _, needs_config, dev_gaps = run_starts_pipeline(
+                    conn, dev_id, sim_run_id, run_start_date,
+                    builder_splits, build_lag_curves, rng,
+                )
                 if needs_config:
                     missing_params_devs.add(dev_id)
+                iter_gaps.extend(dev_gaps)
                 # Re-stamp date_ent on all lots for this dev from their phase.
                 # S-1100 inserts fresh sim lots with date_ent=None; this restores
                 # the phase-level Entitlements Date (migration 023).
@@ -288,6 +299,8 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
                     """,
                     (dev_id,),
                 )
+
+            latest_residual_gaps = iter_gaps
 
             # S-0950: assign is_spec to all NULL lots after S-1100 flushes sim lots
             spec_assignment(conn, ent_group_id)
@@ -314,9 +327,9 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
 
             if _date_list(pre_df) == _date_list(post_df):
                 logger.info(f"\nConvergence reached after {iteration} iteration(s).")
-                return iteration, missing_params_devs
+                return iteration, missing_params_devs, latest_residual_gaps
 
             logger.info(f"  Schedule changed. Re-running.")
 
     logger.warning(f"WARNING: Max iterations ({max_iterations}) reached without convergence.")
-    return max_iterations, missing_params_devs
+    return max_iterations, missing_params_devs, latest_residual_gaps

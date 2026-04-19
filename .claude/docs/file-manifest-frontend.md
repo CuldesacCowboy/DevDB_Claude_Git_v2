@@ -89,11 +89,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-16
 
 ### devdb_ui/src/components/simulation/LotLedger.jsx
-- Owns: Lot-level ledger table component; SD column with click-to-edit inline select (amber underline when sd_is_lot_exception=true); SD dropdown fetches all school districts (no county filter since migration 072); onRefreshLots callback after SD save
+- Owns: Lot-level ledger table component; SD column with click-to-edit inline select (amber underline when sd_is_lot_exception=true); SD dropdown fetches all school districts (no county filter since migration 072); onRefreshLots callback after SD save; HC cell projectedValue uses l.date_td_hold_projected; BLDR cell projectedValue uses l.date_td_projected (were hardcoded null); CSV export includes projected fallback values for HC and BLDR columns
 - Imports: react (useState, useRef), config (API_BASE)
 - Imported by: SimulationView.jsx
 - Tables: none (API calls via /ref/school-districts, PATCH /admin/lot/{id}/school-district)
-- Last commit: 2026-04-16
+- Last commit: 2026-04-19
 
 ### devdb_ui/src/components/simulation/SimSettings.jsx
 - Owns: Simulation community settings modal components; LocationSection (county + SD dropdowns for ent_group community-level assignment); StartsTargetsSection; SD list fetched once on mount (no county filtering since migration 072)
@@ -110,11 +110,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-03-28
 
 ### devdb_ui/src/pages/TakedownView.jsx
-- Owns: Standalone TDA management page (route /takedown); pill tab switcher (TdaPillTabs — one pill per TDA per community, click to switch, one AgreementCard visible at a time); CheckpointsSection with ▶/▼ expandable slot list per checkpoint (SlotList — one slot per required takedown, filled with lot data or "— open slot —", MARKS dates italic/muted); LotsSection shows only unassigned pool lots (checkbox-based bulk move/remove); Add Lots picker uses pill grid; moveLots mutation via POST /takedown-agreements/{id}/lots/move; activeTdaId state auto-selects first active TDA on load; community picker with showTestCommunities support
+- Owns: Standalone TDA management page (route /takedown); pill tab switcher (TdaPillTabs — one pill per TDA per community, click to switch, one AgreementCard visible at a time); CheckpointsSection with ▶/▼ expandable slot list per checkpoint (SlotList — one slot per required takedown, filled with lot data or "— open slot —", MARKS dates italic/muted); LotsSection shows only unassigned pool lots (checkbox-based bulk move/remove); Add Lots picker uses pill grid; moveLots mutation via POST /takedown-agreements/{id}/lots/move; activeTdaId state auto-selects first active TDA on load; community picker with showTestCommunities support; MARKS footer tooltip corrected in CheckpointSlotTable
 - Imports: react (useState, useEffect, useCallback, useMemo), config (API_BASE)
 - Imported by: App.jsx (via /takedown route)
 - Tables: none (API calls via /api/takedown-agreements, /api/entitlement-groups, POST /takedown-agreements/{id}/lots/move, DELETE pool, POST pool)
-- Last commit: 2026-04-17
+- Last commit: 2026-04-19
 
 ### devdb_ui/src/pages/TakedownAgreementsView.jsx
 - Owns: Takedown agreement management view orchestrator; wires TdaNavBar, TdaPageHeader, UnassignedBank, TdaCard, CheckpointBand, TdaDragOverlay, ContextMenu; manages context menu state; threads dragLot for landing zone highlights; contextMenuItems is useMemo([contextMenu, detail, agreements, ...callbacks]); handleContextMenu is useCallback

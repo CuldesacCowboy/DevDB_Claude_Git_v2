@@ -75,18 +75,18 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-03-27
 
 ### devdb_python/api/routers/tda_crud.py
-- Owns: TDA list, create, rename, detail view (GET/POST/PATCH on /takedown-agreements); INSERT uses RETURNING tda_id (sequence-backed via migration 027, no MAX query); dev_id joins use developments directly (no dim_development bridge)
+- Owns: TDA list, create, rename, detail view (GET/POST/PATCH on /takedown-agreements); INSERT uses RETURNING tda_id (sequence-backed via migration 027, no MAX query); dev_id joins use developments directly (no dim_development bridge); builder_eligible_count pre-initialized to 0 so "0 matching lots" case is surfaced (not hidden as KeyError)
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments, sim_lots, sim_entitlement_groups, developments
-- Last commit: 2026-04-17
+- Last commit: 2026-04-19
 
 ### devdb_python/api/routers/tda_checkpoints.py
-- Owns: Checkpoint create (POST /takedown-agreements/{tda_id}/checkpoints)
+- Owns: Checkpoint create/update (POST/PATCH /takedown-agreements/{tda_id}/checkpoints); patch_checkpoint includes updated_at = now() in UPDATE SET clause
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_takedown_agreements, sim_takedown_checkpoints
-- Last commit: 2026-04-02
+- Last commit: 2026-04-19
 
 ### devdb_python/api/routers/tda_assignments.py
 - Owns: Lot assignment/unassignment, pool management, HC/BLDR/DIG date and lock editing with building-group fan-out; POST /takedown-agreements/{tda_id}/lots/move (moves lots between TDAs within same ent_group — clears source assignments, removes from source pool, adds to target pool)
@@ -187,11 +187,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-14
 
 ### devdb_python/api/routers/ledger.py
-- Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars + spec_count/build_count/undet_count per phase); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates + building_group_id + is_spec; ORDER BY real-before-sim then building_group_id ASC NULLS LAST so building groups are contiguous); GET /ledger/{id}/delivery-schedule (one row per event+dev: date, source, phases, units, D/U/UC inventory at delivery month)
+- Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars + spec_count/build_count/undet_count per phase); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates including date_td_projected + date_td_hold_projected + building_group_id + is_spec; ORDER BY real-before-sim then building_group_id ASC NULLS LAST so building groups are contiguous); GET /ledger/{id}/delivery-schedule (one row per event+dev: date, source, phases, units, D/U/UC inventory at delivery month)
 - Imports: api.deps, psycopg2.extras, fastapi
 - Imported by: api/main.py
 - Tables: v_sim_ledger_monthly, sim_ent_group_developments, developments, sim_dev_phases, sim_delivery_events, sim_delivery_event_phases, sim_lots, sim_legal_instruments, sim_phase_product_splits, ref_lot_types
-- Last commit: 2026-04-15
+- Last commit: 2026-04-19
 
 ### devdb_python/api/db.py
 - Owns: Database utility helpers shared across routers; dict_cursor(conn) replaces repeated conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) boilerplate
