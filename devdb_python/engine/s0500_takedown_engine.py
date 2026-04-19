@@ -22,7 +22,7 @@ Rules:   Per D-087: COALESCE(date_td, date_td_projected) and COALESCE(date_td_ho
 """
 
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from collections import defaultdict
 
 import pandas as pd
@@ -65,14 +65,18 @@ def _available(lot: dict) -> bool:
     )
 
 
-def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int):
+def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
+                    scheduling_horizon_days: int = 0):
     """
     Enforce TDA checkpoint obligations.
     Writes date_td_hold_projected only — never actuals.
+    HC hold dates are floored to today + scheduling_horizon_days.
     Returns (updated_snapshot, residual_gaps).
     """
     if lot_snapshot.empty:
         return lot_snapshot, []
+
+    hc_floor = date.today() + timedelta(days=scheduling_horizon_days)
 
     snapshot_lot_ids = lot_snapshot["lot_id"].dropna().astype(int).tolist()
     if not snapshot_lot_ids:
@@ -256,7 +260,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int)
                 )
                 continue
             required = int(raw_req)
-            hold_date = (cp_date - timedelta(days=lead)).date()
+            hold_date = max((cp_date - timedelta(days=lead)).date(), hc_floor)
 
             count_taken = sum(
                 1 for lot in tda_snapshot_lots.values() if _fulfills(lot, cp_date)
@@ -315,7 +319,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int)
         # across checkpoint hold dates in round-robin order so excess absorption
         # tracks the checkpoint cadence rather than piling on a single date.
         cp_hold_dates = [
-            (pd.Timestamp(cp["checkpoint_date"]) - timedelta(days=lead)).date()
+            max((pd.Timestamp(cp["checkpoint_date"]) - timedelta(days=lead)).date(), hc_floor)
             for _, cp in checkpoints.iterrows()
             if cp["checkpoint_date"] is not None and pd.notna(cp["checkpoint_date"])
         ]

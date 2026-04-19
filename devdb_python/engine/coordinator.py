@@ -85,7 +85,9 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     persist_violations(conn, violations, dev_id, sim_run_id)
 
     # S-05
-    snapshot, residual_gaps = takedown_engine(conn, snapshot, dev_id)
+    horizon_days = build_lag_curves.get("_scheduling_horizon_days", 0)
+    snapshot, residual_gaps = takedown_engine(conn, snapshot, dev_id,
+                                              scheduling_horizon_days=horizon_days)
 
     # S-06
     demand_series, needs_config = demand_generator(conn, dev_id, run_start_date)
@@ -242,6 +244,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         build_lag_curves["_default_cmp"] = _cfg["default_cmp_lag_days"]
         build_lag_curves["_default_cls"] = _cfg["default_cls_lag_days"]
         build_lag_curves["_td_to_str_lag"] = _cfg["td_to_str_lag"]
+        build_lag_curves["_scheduling_horizon_days"] = _cfg["scheduling_horizon_days"]
 
         # Apply scheduling horizon floor to run_start_date.
         _horizon_days = _cfg["scheduling_horizon_days"]
