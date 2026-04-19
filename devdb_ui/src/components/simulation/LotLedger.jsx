@@ -132,8 +132,8 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
             return [
               l.dev_name, l.lot_number ?? '', l.lot_type_short ?? '', l.phase_name, bgLabel,
               l.lot_source, specLabel, l.status,
-              l.date_ent ?? '', l.date_dev ?? '', l.date_td_hold ?? '',
-              l.date_td ?? '', l.date_str ?? l.date_str_projected ?? '',
+              l.date_ent ?? '', l.date_dev ?? '', l.date_td_hold ?? l.date_td_hold_projected ?? '',
+              l.date_td ?? l.date_td_projected ?? '', l.date_str ?? l.date_str_projected ?? '',
               l.date_cmp ?? l.date_cmp_projected ?? '', l.date_cls ?? l.date_cls_projected ?? '',
             ]
           })
@@ -210,7 +210,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                 </td>
                 <td style={tdS()}>
                   <OverrideDateCell lotId={l.lot_id} dateField="date_td_hold" label="HC"
-                    marksValue={l.date_td_hold} projectedValue={null}
+                    marksValue={l.date_td_hold} projectedValue={l.date_td_hold_projected}
                     overrideValue={l.ov_date_td_hold}
                     onApply={onApplyOverride} onClear={onClearOverride}
                     disabled={!overrideable(l)} />
@@ -218,7 +218,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                 <td style={tdS()}>
                   <span style={{ display: 'inline-flex', alignItems: 'center' }}>
                     <OverrideDateCell lotId={l.lot_id} dateField="date_td" label="BLDR"
-                      marksValue={l.date_td} projectedValue={null}
+                      marksValue={l.date_td} projectedValue={l.date_td_projected}
                       overrideValue={l.ov_date_td}
                       onApply={onApplyOverride} onClear={onClearOverride}
                       disabled={!overrideable(l)} />
