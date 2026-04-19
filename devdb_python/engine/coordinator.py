@@ -110,10 +110,12 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     temp_lots, discarded_lots, guard_warnings = post_generation_chronology_guard(temp_lots)
 
     # S-0760: project date_td_projected for HC-held lots (runs after kernel — correct order)
-    snapshot = hc_bldr_date_projector(conn, snapshot, demand_series, td_to_str_lag)
+    snapshot = hc_bldr_date_projector(conn, snapshot, demand_series,
+                                      dev_id, run_start_date, td_to_str_lag)
 
     # S-0770: project date_td_projected for D-status real lots (H-lots drain first per allocator)
-    snapshot = d_bldr_date_projector(conn, snapshot, demand_series, td_to_str_lag)
+    snapshot = d_bldr_date_projector(conn, snapshot, demand_series,
+                                     dev_id, run_start_date, td_to_str_lag)
     for w in guard_warnings:
         logger.info(f"  {w}")
     if discarded_lots:
