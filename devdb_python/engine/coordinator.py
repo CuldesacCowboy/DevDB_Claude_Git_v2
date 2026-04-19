@@ -174,15 +174,7 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
     phase_date_propagator(conn, resolved_events)
 
     # P-07
-    child_phases = []
-    for event_id, projected in resolved_events:
-        phases_df = conn.read_df(
-            "SELECT phase_id FROM sim_delivery_event_phases WHERE delivery_event_id = %s",
-            (event_id,),
-        )
-        for _, r in phases_df.iterrows():
-            child_phases.append((int(r["phase_id"]), projected))
-    lot_date_propagator(conn, child_phases)
+    lot_date_propagator(conn, resolved_events)
 
     # S-12 (final refresh): rebuild ledger now that P-07 has written date_dev to lots
     ledger_aggregator(conn)
@@ -285,20 +277,6 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
                 if needs_config:
                     missing_params_devs.add(dev_id)
                 iter_gaps.extend(dev_gaps)
-                # Re-stamp date_ent on all lots for this dev from their phase.
-                # S-1100 inserts fresh sim lots with date_ent=None; this restores
-                # the phase-level Entitlements Date (migration 023).
-                conn.execute(
-                    """
-                    UPDATE sim_lots sl
-                    SET date_ent = sdp.date_ent
-                    FROM sim_dev_phases sdp
-                    WHERE sl.phase_id = sdp.phase_id
-                      AND sl.dev_id   = %s
-                      AND sdp.date_ent IS NOT NULL
-                    """,
-                    (dev_id,),
-                )
 
             latest_residual_gaps = iter_gaps
 

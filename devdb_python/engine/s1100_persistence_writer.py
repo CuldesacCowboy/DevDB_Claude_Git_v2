@@ -71,6 +71,21 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
 
             conn.executemany_insert("sim_lots", rows_to_insert)
 
+        # Step 3: Stamp date_ent from sim_dev_phases onto newly-inserted sim lots.
+        # INSERT above writes date_ent=None; phase-level date_ent is restored here (migration 023).
+        conn.execute(
+            """
+            UPDATE sim_lots sl
+            SET date_ent = sdp.date_ent
+            FROM sim_dev_phases sdp
+            WHERE sl.phase_id = sdp.phase_id
+              AND sl.dev_id   = %s
+              AND sl.lot_source = 'sim'
+              AND sdp.date_ent IS NOT NULL
+            """,
+            (dev_id,),
+        )
+
         logger.info(f"S-11: Wrote {len(temp_lots)} temp lots for "
                     f"dev_id={dev_id}, sim_run_id={sim_run_id}.")
 
