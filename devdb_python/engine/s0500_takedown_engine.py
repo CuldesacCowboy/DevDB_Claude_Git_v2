@@ -235,7 +235,8 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int)
                 )
                 continue
             cp_id    = int(cp["checkpoint_id"])
-            cp_num   = int(cp["checkpoint_number"])
+            raw_num  = cp["checkpoint_number"]
+            cp_num   = int(raw_num) if (raw_num is not None and pd.notna(raw_num)) else cp_id
             cp_date  = pd.Timestamp(cp["checkpoint_date"])
             raw_req  = cp["lots_required_cumulative"]
             if raw_req is None or pd.isna(raw_req):
