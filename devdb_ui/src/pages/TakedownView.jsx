@@ -2472,9 +2472,17 @@ export default function TakedownView({ showTestCommunities }) {
   }
 
   async function addCheckpoint(tdaId) {
+    // Default to the current max lots_required_cumulative so the new checkpoint
+    // starts at the same level as the previous one. Without this, a new CP
+    // gets lots_required_cumulative=0, producing a negative perRequired delta
+    // (prev_cumulative - 0) and rendering all assigned lots as overflow.
+    const tda = data?.agreements?.find(a => a.tda_id === tdaId)
+    const currentMax = tda?.checkpoints?.length > 0
+      ? Math.max(...tda.checkpoints.map(cp => cp.lots_required_cumulative || 0))
+      : 0
     await fetch(`${API_BASE}/takedown-agreements/${tdaId}/checkpoints`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ checkpoint_date: null, lots_required_cumulative: 0 }),
+      body: JSON.stringify({ checkpoint_date: null, lots_required_cumulative: currentMax }),
     })
     load()
   }

@@ -1010,8 +1010,10 @@ def get_tda_checklist(show_test: bool = False, conn=Depends(get_db_conn)):
 @router.post("/takedown-agreements/{tda_id}/auto-assign")
 def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
     """Assign each TDA lot to the earliest checkpoint whose date >= the lot's
-    COALESCE(date_td, date_td_projected). Lots with no applicable date or no
-    matching checkpoint remain unassigned. Existing assignments are cleared first."""
+    effective takedown date (min of D-087 BLDR and HC paths). Lots with no
+    applicable date are left unassigned. Lots whose effective date falls after
+    all checkpoint dates are assigned to the last (latest) checkpoint as a
+    catch-all. Existing assignments are cleared first."""
     cur = dict_cursor(conn)
     try:
         cur.execute(
