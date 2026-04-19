@@ -1,6 +1,6 @@
 # DevDB Decision Log
 
-Task-specific reference. Load when: investigating why something was built a certain way, debugging TDA/delivery/scheduling behavior, or any question about a specific D-number decision. D-001 through D-165 | Next ID: D-166
+Task-specific reference. Load when: investigating why something was built a certain way, debugging TDA/delivery/scheduling behavior, or any question about a specific D-number decision. D-001 through D-166 | Next ID: D-167
 
 ---
 
@@ -16,6 +16,7 @@ Task-specific reference. Load when: investigating why something was built a cert
 - **D-107** -- UI target was React + FastAPI. Revised by D-149.
 - **D-149** -- React + FastAPI downgraded to long-term possible idea. Streamlit is the active UI. No committed timeline.
 - **D-108** -- S-02 (date_actualizer) is the exclusive module that writes actual milestone dates from schedhousedetail back to sim_lots. resolve_marks_date() priority applies. No other module reads schedhousedetail.
+- **D-166** -- MARKS data sync-to-local pattern: MARKSConnection exists for live MySQL queries but is NEVER used in the engine hot path. Engine always reads devdb_ext (local Postgres clone). sync_marks.py pulls schedhousedetail + housemaster on demand before a session. Supersedes D-031.
 - **D-109** -- Lot Inventory section reads end-of-period lot counts from v_sim_ledger_monthly, not directly from sim_lots.
 - **D-110** -- v_sim_ledger_monthly D_end bucket: date_dev <= calendar_month AND (date_td IS NULL OR date_td > calendar_month) AND (date_td_hold IS NULL OR date_td_hold > calendar_month). Prior date_str guard was wrong once sim lots set date_td = date_str — it excluded all sim lots from D_end.
 - **D-111** -- month_spine start date uses GREATEST('2020-01-01', COALESCE(MIN(LEAST(date_str, date_cmp, date_cls, date_dev)), '2020-01-01')) over real lots only. Fixed end '2046-01-01'.
@@ -80,9 +81,34 @@ Task-specific reference. Load when: investigating why something was built a cert
 - **D-006** -- Pipeline status derived from dates, never stored.
 
 Flagged Revisit before go-live:
-- **D-031** -- MARKsystems sync automation (currently manual CSV)
+- **D-031** -- MARKsystems sync automation — RESOLVED by D-166 (sync_marks.py on-demand script)
 - **D-034** -- Lot type hierarchy flattening
 - **D-086** -- lot_id IDENTITY column behavior
+
+---
+
+## Decision Log -- D-166
+
+D-166: MARKS data sync-to-local pattern
+
+`MARKSConnection` (mysql-connector-python) connects to the MARKS MySQL replication database
+(`ms-replication-e.ihmsweb.com:3306`, database `jth_ihms`) but is never used in the engine
+hot path. The simulation engine always reads from `devdb_ext` (local Postgres), which is a
+strict read-only clone of MARKS tables.
+
+`scripts/sync_marks.py` pulls `schedhousedetail` and `housemaster` from `MARKSConnection`
+into `devdb_ext` via full DELETE+INSERT. Run manually before a simulation session when fresh
+MARKS data is needed. No scheduled background sync — on-demand only.
+
+**Why:** Engine runtime is 0.5s reading from local Postgres. Live MySQL queries over the
+network would add 3–10s per engine run. MARKS data changes daily but simulation runs don't
+require real-time freshness — syncing once at the start of a session is sufficient. Engine
+also remains functional when the MARKS server is unreachable (home network, VPN down,
+server maintenance). Supersedes D-031 (manual CSV sync).
+
+**Rule for new code:** Never open `MARKSConnection` inside an engine module or coordinator.
+Only `sync_marks.py` (and future sync scripts) may use `MARKSConnection`. All engine modules
+read from `devdb_ext` via `PGConnection`.
 
 ---
 

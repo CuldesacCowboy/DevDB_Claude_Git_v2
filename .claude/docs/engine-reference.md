@@ -21,6 +21,24 @@ Task-specific reference. Load when working on: simulation engine, coordinator, d
 
 ---
 
+## MARKS Data Flow (D-166)
+
+The engine reads MARKS data from `devdb_ext` (local Postgres), never from MySQL directly.
+
+| Layer | What it is | Who uses it |
+|---|---|---|
+| `MARKSConnection` | Live MySQL read-only connector | `sync_marks.py` only |
+| `devdb_ext.schedhousedetail` | Local Postgres clone (266K rows) | S-0200 date_actualizer |
+| `devdb_ext.housemaster` | Local Postgres clone | S-0050 marks_builder_sync |
+
+**Sync:** Run `python scripts/sync_marks.py` before a session to pull fresh data.
+Full DELETE+INSERT per table. Takes ~10–30s. On-demand only — no scheduled sync.
+
+**Rule:** Never open `MARKSConnection` inside an engine module or coordinator.
+Only sync scripts may use it. All engine modules use `PGConnection` against `devdb_ext`.
+
+---
+
 ## Gap-Fill Rules (D-084, D-085 -- CRITICAL)
 
 gap_fill_engine fills a missing date **only when a known date exists on both sides of it** -- a true gap. A lot with only `date_dev` set and no downstream dates has **no gap**. It is a D-status lot waiting for allocation. gap_fill must NOT fill date_td, date_str, date_cmp, or date_cls on such a lot.

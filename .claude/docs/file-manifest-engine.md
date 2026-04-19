@@ -7,11 +7,11 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 #### Engine (devdb_python/engine/)
 
 ### devdb_python/engine/connection.py
-- Owns: PGConnection wrapper -- connects to local Postgres with search_path=devdb; used by all engine modules
-- Imports: psycopg2, dotenv
-- Imported by: coordinator.py, all engine modules
+- Owns: DBConnection (Databricks, legacy), PGConnection (local Postgres, engine target), MARKSConnection (MARKS MySQL replica, read-only -- used by sync scripts only, never by engine modules per D-166)
+- Imports: psycopg2, mysql.connector, databricks.sql, dotenv
+- Imported by: coordinator.py, all engine modules, scripts/sync_marks.py
 - Tables: none (connection factory)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-19
 
 ### devdb_python/engine/config_loader.py
 - Owns: load_delivery_config(conn, ent_group_id) — merges community row → global row → hardcoded defaults; returns fully-resolved dict with auto_schedule_enabled, max_deliveries_per_year, min_gap_months, delivery_months, min_d/u/uc/c_count, default_cmp_lag_days, default_cls_lag_days, feed_starts_mode; called by coordinator (for build lag defaults) and by P-0000 and P-0400
@@ -294,6 +294,12 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 ---
 
 #### Scripts (devdb_python/scripts/)
+
+### devdb_python/scripts/sync_marks.py
+- Owns: On-demand sync of MARKS MySQL replica tables into devdb_ext (local Postgres) per D-166; syncs schedhousedetail and housemaster via full TRUNCATE+INSERT; column intersection handles schema drift; --dry-run and --tables flags; prints row counts and elapsed time; raises clearly if MARKS server unreachable
+- Imports: engine.connection.MARKSConnection, psycopg2, dotenv, argparse
+- Tables: devdb_ext.schedhousedetail (TRUNCATE+INSERT), devdb_ext.housemaster (TRUNCATE+INSERT)
+- Last commit: 2026-04-19
 
 ### devdb_python/scripts/import_housemaster_builder.py
 - Owns: One-time import — reads housemaster.csv (MARKS export), joins on DEVELOPMENTCODE+HOUSENUMBER, sets sim_lots.builder_id (MARKS tier); dry-run by default (--apply to write); scoped by --dev flag; MARKS wins on conflict with existing builder_id
