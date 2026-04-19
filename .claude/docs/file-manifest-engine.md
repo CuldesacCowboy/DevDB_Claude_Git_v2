@@ -93,7 +93,7 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Owns: S-0700 -- allocates demand slots to real/sim lots; building-group-aware: groups are atomic units (all lots in a group consume N demand slots and share the first slot's month); positional merge; no carry-forward; empty lot_snapshot does NOT short-circuit
 - Imported by: kernel/planning_kernel.py
 - Tables: none (pure DataFrame transform)
-- Last commit: 2026-04-14
+- Last commit: 2026-04-19
 
 ### devdb_python/engine/s0800_temp_lot_generator.py
 - Owns: S-0800 -- generates sim lots for unmet demand; date_str = demand slot month (or deferred); date_td = date_str per D-137/D-142; deferred-start logic; building group generation: when phase_building_config is provided, generates lots in groups using bg_templates; synthetic negative building_group_id values assigned (no DB FK); all units in a building share first slot's date_str
@@ -124,6 +124,12 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Imported by: coordinator.py
 - Tables: sim_dev_phases (UPDATE date_dev_projected)
 - Last commit: 2026-03-25
+
+### devdb_python/engine/s1050_real_lot_projections.py
+- Owns: S-1050 -- writes projected STR/CMP/CLS dates to real P lots at annual_starts_target pace from sim_dev_params; clears stale projections before writing; applies str_to_cmp and cmp_to_cls lag curves per unit; skips locked lots; independent of kernel capacity logic
+- Imported by: coordinator.py
+- Tables: sim_lots (UPDATE date_str_projected, date_cmp_projected, date_cls_projected), sim_dev_params (SELECT)
+- Last commit: 2026-04-19
 
 ### devdb_python/engine/s1100_persistence_writer.py
 - Owns: S-1100 -- atomic DELETE+INSERT of sim lots; assigns lot_id via MAX(lot_id)+offset per D-086; _LOCKED_COLS frozenset defaults NOT NULL boolean columns (locked flags + excluded) to False for sim lots; Step 3 re-stamps date_ent from sim_dev_phases onto newly-inserted sim lots (INSERT writes date_ent=None; phase-level value restored here per migration 023)
@@ -207,7 +213,7 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Imports: engine.connection, frozen_input
 - Imported by: coordinator.py
 - Tables: sim_lots, sim_dev_phases, sim_phase_product_splits, sim_phase_building_config (SELECT)
-- Last commit: 2026-04-14
+- Last commit: 2026-04-19
 
 ### devdb_python/kernel/planning_kernel.py
 - Owns: plan() entry point -- wires S-0700 → S-0800 → S-0810 sequentially; passes phase_building_config from FrozenInput to S-0800; pure function (no DB access)

@@ -1,6 +1,6 @@
 # DevDB -- Claude Code Reference
 *Last updated: April 2026 (2026-04-19) | Architecture v20 | Decision Log: D-001 through D-166 | Next ID: D-167 | Migrations: 001–074*
-<!-- session 2026-04-19: Coordinator discipline — date_ent re-stamp moved to S-1100, child_phases SQL moved to P-07 -->
+<!-- session 2026-04-19b: MARKSConnection + sync_marks.py (D-166); coordinator domain-logic cleanup -->
 <!-- session 2026-04-15: Abbey Farms pipeline fixed (5 cascading bugs); feed_starts_mode per-community toggle added -->
 
 ---

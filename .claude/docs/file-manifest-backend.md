@@ -184,7 +184,14 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: engine.coordinator, fastapi, pydantic, time, traceback, psycopg2.extras
 - Imported by: api/main.py
 - Tables: developments (for dev_name lookup on missing params)
-- Last commit: 2026-04-14
+- Last commit: 2026-04-19
+
+### devdb_python/api/routers/tda_banks.py
+- Owns: CRUD for TDA lot banks (sim_tda_lot_banks + sim_tda_lot_bank_members) per D-159; phase-scoped eligible lot pools shared across TDAs; POST/GET/DELETE banks; add/remove lot members
+- Imports: api.deps, api.db, fastapi, pydantic
+- Imported by: api/main.py
+- Tables: sim_tda_lot_banks, sim_tda_lot_bank_members
+- Last commit: 2026-04-19
 
 ### devdb_python/api/routers/ledger.py
 - Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars + spec_count/build_count/undet_count per phase); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates including date_td_projected + date_td_hold_projected + building_group_id + is_spec; ORDER BY real-before-sim then building_group_id ASC NULLS LAST so building groups are contiguous); GET /ledger/{id}/delivery-schedule (one row per event+dev: date, source, phases, units, D/U/UC inventory at delivery month)
