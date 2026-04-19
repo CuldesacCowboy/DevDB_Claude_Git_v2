@@ -312,8 +312,12 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                 if tid in agreements_map:
                     agreements_map[tid]["ineligible_lot_count"] = int(r["ineligible_lot_count"])
 
-        # Count builder-eligible lots for TDAs that have builder_id set
+        # Count builder-eligible lots for TDAs that have builder_id set.
+        # Pre-initialize to 0 so that TDAs with builder_id but 0 matching lots
+        # still show the "Builder match: 0" stat (rather than silently hiding it).
         builder_tda_ids = [tid for tid, tda in agreements_map.items() if tda["builder_id"] is not None]
+        for tid in builder_tda_ids:
+            agreements_map[tid]["builder_eligible_count"] = 0
         if builder_tda_ids:
             cur.execute(
                 """

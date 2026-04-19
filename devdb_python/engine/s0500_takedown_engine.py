@@ -78,13 +78,19 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int)
     if not snapshot_lot_ids:
         return lot_snapshot, []
 
-    # ── Pre-clear stale date_td_hold_projected for this dev's active TDA lots ─
+    # ── Pre-clear stale projected dates for this dev's active TDA lots ─────────
     # Each run recomputes from scratch so stale values from prior runs don't
-    # interfere. Locked lots and lots with actual hold dates are preserved.
+    # interfere. Also clears date_td_projected written by S-0760 so that
+    # _available() sees a clean lot and HC re-assignment works correctly on
+    # every iteration. Locked lots and lots with actual dates are preserved.
     conn.execute(
         """
         UPDATE sim_lots
-        SET date_td_hold_projected = NULL
+        SET date_td_hold_projected = NULL,
+            date_td_projected = CASE
+                WHEN date_td IS NULL AND date_td_is_locked IS NOT TRUE THEN NULL
+                ELSE date_td_projected
+            END
         WHERE dev_id = %s
           AND date_td_hold IS NULL
           AND date_td_hold_is_locked IS NOT TRUE
@@ -131,6 +137,9 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int)
         if lot.get("date_td_hold") is not None and pd.notna(lot.get("date_td_hold")):
             continue
         lots_dict[lid]["date_td_hold_projected"] = None
+        # Also clear stale date_td_projected written by S-0760 (mirrors DB pre-clear)
+        if (lot.get("date_td") is None or pd.isna(lot.get("date_td"))) and not lot.get("date_td_is_locked"):
+            lots_dict[lid]["date_td_projected"] = None
 
     # lot_id → new hold date assigned this run (for batch DB persistence)
     updated_lot_ids: dict[int, object] = {}
@@ -150,7 +159,8 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int)
         if tda_row.empty:
             continue
 
-        lead = int(tda_row.iloc[0]["checkpoint_lead_days"] or _DEFAULT_LEAD_DAYS)
+        raw_lead = tda_row.iloc[0]["checkpoint_lead_days"]
+        lead = _DEFAULT_LEAD_DAYS if (raw_lead is None or pd.isna(raw_lead)) else int(raw_lead)
         raw_builder = tda_row.iloc[0]["builder_id"]
         tda_builder_id = (
             None if (raw_builder is None or pd.isna(raw_builder))

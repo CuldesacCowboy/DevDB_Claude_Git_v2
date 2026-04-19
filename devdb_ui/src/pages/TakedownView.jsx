@@ -658,7 +658,7 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
               Cumulative through checkpoint date
             </td>
             <td colSpan={2} style={{ ...STD_D, fontSize: 10 }}>
-              <span style={{ color: TEXT_MUTED }} title="Lots with actual MARKS takedown or HC hold dates on or before this checkpoint date">MARKS: <strong>{checkpoint.checkpoint_date ? (marksplan ?? '—') : '—'}</strong></span>
+              <span style={{ color: TEXT_MUTED }} title="Lots with actual MARKS takedown date, or actual HC hold date (when no takedown date), on or before this checkpoint date">MARKS: <strong>{checkpoint.checkpoint_date ? (marksplan ?? '—') : '—'}</strong></span>
               <span style={{ color: TEXT_MUTED }}> · </span>
               <span style={{ color: '#2563eb' }} title="Lots with sim-projected dates on or before this checkpoint date">Sim: <strong>{checkpoint.checkpoint_date ? (simplan ?? '—') : '—'}</strong></span>
             </td>
@@ -2304,6 +2304,14 @@ function TdaPillTabs({ agreements, activeId, onSelect }) {
         const isActive = tda.tda_id === activeId
         const ss = AGREEMENT_STATUS_STYLE[tda.status] || AGREEMENT_STATUS_STYLE.active
         const nLots = tda.lots?.length ?? 0
+        // When a builder filter is set, use builder_eligible_count for the lot count shown
+        // vs quota. Total lots includes builder-mismatched lots that the engine ignores —
+        // showing "10/6" for a TDA with 6 eligible lots and quota=6 would falsely imply
+        // the quota is exceeded. Fall back to total lots when builder_eligible_count is null
+        // (TDA has no builder filter, all lots count).
+        const displayLots = (tda.builder_id != null && tda.builder_eligible_count != null)
+          ? tda.builder_eligible_count
+          : nLots
         return (
           <button
             key={tda.tda_id}
@@ -2332,13 +2340,14 @@ function TdaPillTabs({ agreements, activeId, onSelect }) {
               {tda.status}
             </span>
             {tda.lot_quota != null && (
-              <span style={{ fontSize: 10, color: isActive ? '#3b82f6' : TEXT_MUTED }}>
-                {nLots}/{tda.lot_quota}
+              <span style={{ fontSize: 10, color: isActive ? '#3b82f6' : TEXT_MUTED }}
+                    title={tda.builder_id != null ? 'Builder-eligible lots / quota' : 'Total lots / quota'}>
+                {displayLots}/{tda.lot_quota}
               </span>
             )}
-            {tda.lot_quota == null && nLots > 0 && (
+            {tda.lot_quota == null && displayLots > 0 && (
               <span style={{ fontSize: 10, color: isActive ? '#3b82f6' : TEXT_MUTED }}>
-                {nLots}
+                {displayLots}
               </span>
             )}
           </button>

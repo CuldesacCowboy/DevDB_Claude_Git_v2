@@ -267,16 +267,20 @@ def remove_lot_from_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
             "DELETE FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
             (tda_id, lot_id),
         )
-        # Clear stale sim-projected HC date — engine pre-clear only runs for lots
-        # still in active TDAs, so removed lots would otherwise retain stale values.
-        # Locked (user-override) HC dates are preserved.
+        # Clear stale HC projected date and lock when removing from TDA.
+        # The lock guard is intentionally removed here: a user who locked an HC
+        # override on a pool lot and then removes the lot from the TDA expects a
+        # clean slate — the override was TDA-scoped. Preserving the lock would cause
+        # the stale projected date to persist, and if the lot is re-added to any TDA
+        # the locked projection would inflate the quota count and block engine
+        # re-assignment. Actual HC dates (date_td_hold) are always preserved.
         cur.execute(
             """
             UPDATE devdb.sim_lots
-            SET date_td_hold_projected = NULL
+            SET date_td_hold_projected = NULL,
+                date_td_hold_is_locked = FALSE
             WHERE lot_id = %s
               AND date_td_hold IS NULL
-              AND date_td_hold_is_locked IS NOT TRUE
             """,
             (lot_id,),
         )
@@ -341,16 +345,17 @@ def move_lots_to_tda(tda_id: int, body: MoveLotRequest, conn=Depends(get_db_conn
                 "DELETE FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
                 (tda_id, lot_id),
             )
-            # Clear stale sim-projected HC date — the source TDA's engine pre-clear
-            # only runs for lots still in active TDAs; removed lots would otherwise
-            # carry the old projection into the target TDA. Mirrors remove_lot_from_pool.
+            # Clear stale HC projected date and lock when moving between TDAs.
+            # Mirrors remove_lot_from_pool: the lock guard is removed intentionally
+            # so a locked projected override from the source TDA doesn't carry into
+            # the target TDA and inflate its quota or block engine re-assignment.
             cur.execute(
                 """
                 UPDATE devdb.sim_lots
-                SET date_td_hold_projected = NULL
+                SET date_td_hold_projected = NULL,
+                    date_td_hold_is_locked = FALSE
                 WHERE lot_id = %s
                   AND date_td_hold IS NULL
-                  AND date_td_hold_is_locked IS NOT TRUE
                 """,
                 (lot_id,),
             )
