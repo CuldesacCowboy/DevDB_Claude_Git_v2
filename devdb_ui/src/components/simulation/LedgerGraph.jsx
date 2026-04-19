@@ -19,6 +19,7 @@ function PipelineTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
   const rowData = payload[0]?.payload
   const deliveries = rowData?._deliveries
+  const cumCls = rowData?.cls_cumulative
   const seriesPayload = payload.filter(p => p.dataKey !== '_pinY')
   return (
     <div style={{ fontSize: 11, border: '1px solid #e5e7eb', background: '#fff',
@@ -30,6 +31,14 @@ function PipelineTooltip({ active, payload, label }) {
           <span style={{ fontWeight: 600, color: '#374151' }}>{p.value > 0 ? p.value : '—'}</span>
         </div>
       ))}
+      {cumCls > 0 && (
+        <div style={{ borderTop: '1px solid #e5e7eb', marginTop: 6, paddingTop: 6 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+            <span style={{ color: STATUS_COLOR.OUT }}>Closed to date</span>
+            <span style={{ fontWeight: 600, color: '#374151' }}>{cumCls}</span>
+          </div>
+        </div>
+      )}
       {deliveries?.length > 0 && (
         <div style={{ borderTop: '1px solid #e5e7eb', marginTop: 6, paddingTop: 6 }}>
           <div style={{ fontWeight: 600, color: '#b45309', marginBottom: 4 }}>Phase deliveries:</div>
@@ -62,24 +71,35 @@ export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevId
   const [panel, setPanel] = useState('pipeline')
 
   const enrichedRows = useMemo(() => {
-    if (!deliverySchedule.length) return rows
-    const filtered = selectedDevIds
-      ? deliverySchedule.filter(d => selectedDevIds.includes(d.dev_id))
-      : deliverySchedule
-    const map = new Map()
-    for (const d of filtered) {
-      if (!d.delivery_date) continue
-      const monthFirst = d.delivery_date.slice(0, 7) + '-01'
-      const pk = periodKey(monthFirst, period)
-      if (!map.has(pk)) map.set(pk, [])
-      map.get(pk).push({ phases: d.phases, units: d.units_delivered, devName: d.dev_name })
+    // Step 1: enrich with delivery pin markers
+    let withDeliveries = rows
+    if (deliverySchedule.length) {
+      const filtered = selectedDevIds
+        ? deliverySchedule.filter(d => selectedDevIds.includes(d.dev_id))
+        : deliverySchedule
+      const map = new Map()
+      for (const d of filtered) {
+        if (!d.delivery_date) continue
+        const monthFirst = d.delivery_date.slice(0, 7) + '-01'
+        const pk = periodKey(monthFirst, period)
+        if (!map.has(pk)) map.set(pk, [])
+        map.get(pk).push({ phases: d.phases, units: d.units_delivered, devName: d.dev_name })
+      }
+      if (map.size) {
+        withDeliveries = rows.map(r => {
+          const delivs = map.get(r.calendar_month)
+          if (!delivs?.length) return r
+          const stackTop = (r.h_end||0) + (r.u_end||0) + (r.uc_end||0) + (r.c_end||0) + (r.d_end||0)
+          return { ...r, _deliveries: delivs, _pinY: stackTop }
+        })
+      }
     }
-    if (!map.size) return rows
-    return rows.map(r => {
-      const delivs = map.get(r.calendar_month)
-      if (!delivs?.length) return r
-      const stackTop = (r.h_end||0) + (r.u_end||0) + (r.uc_end||0) + (r.c_end||0) + (r.d_end||0)
-      return { ...r, _deliveries: delivs, _pinY: stackTop }
+
+    // Step 2: add cumulative closings (running sum of cls_plan)
+    let cumCls = 0
+    return withDeliveries.map(r => {
+      cumCls += (r.cls_plan || 0)
+      return { ...r, cls_cumulative: cumCls }
     })
   }, [rows, deliverySchedule, selectedDevIds, period])
 
@@ -123,22 +143,42 @@ export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevId
       </div>
 
       {panel === 'pipeline' && (
-        <ResponsiveContainer width="100%" height={280}>
-          <AreaChart data={enrichedRows} {...chartProps}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-            <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
-            <YAxis {...axisProps} width={34} />
-            <Tooltip content={<PipelineTooltip />} />
-            <Legend {...legendProps} />
-            <Area type="linear" dataKey="h_end"  stackId="s" stroke={STATUS_COLOR.H}  fill={STATUS_COLOR.H}  fillOpacity={0.80} name={`${STATUS_CFG.H.shape} H`}  />
-            <Area type="linear" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name={`${STATUS_CFG.U.shape} U`}  />
-            <Area type="linear" dataKey="uc_end" stackId="s" stroke={STATUS_COLOR.UC} fill={STATUS_COLOR.UC} fillOpacity={0.85} name={`${STATUS_CFG.UC.shape} UC`} />
-            <Area type="linear" dataKey="c_end"  stackId="s" stroke={STATUS_COLOR.C}  fill={STATUS_COLOR.C}  fillOpacity={0.85} name={`${STATUS_CFG.C.shape} C`}  />
-            <Area type="linear" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.75} name={`${STATUS_CFG.D.shape} D`}  />
-            <Line dataKey="_pinY" stroke="none" strokeWidth={0} dot={renderPinDot} activeDot={false}
-                  isAnimationActive={false} legendType="none" connectNulls={false} />
-          </AreaChart>
-        </ResponsiveContainer>
+        <>
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={enrichedRows} {...chartProps} syncId="ledger-pipeline">
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+              <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
+              <YAxis {...axisProps} width={34} />
+              <Tooltip content={<PipelineTooltip />} />
+              <Legend {...legendProps} />
+              <Area type="linear" dataKey="h_end"  stackId="s" stroke={STATUS_COLOR.H}  fill={STATUS_COLOR.H}  fillOpacity={0.80} name={`${STATUS_CFG.H.shape} H`}  />
+              <Area type="linear" dataKey="u_end"  stackId="s" stroke={STATUS_COLOR.U}  fill={STATUS_COLOR.U}  fillOpacity={0.85} name={`${STATUS_CFG.U.shape} U`}  />
+              <Area type="linear" dataKey="uc_end" stackId="s" stroke={STATUS_COLOR.UC} fill={STATUS_COLOR.UC} fillOpacity={0.85} name={`${STATUS_CFG.UC.shape} UC`} />
+              <Area type="linear" dataKey="c_end"  stackId="s" stroke={STATUS_COLOR.C}  fill={STATUS_COLOR.C}  fillOpacity={0.85} name={`${STATUS_CFG.C.shape} C`}  />
+              <Area type="linear" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.75} name={`${STATUS_CFG.D.shape} D`}  />
+              <Line dataKey="_pinY" stroke="none" strokeWidth={0} dot={renderPinDot} activeDot={false}
+                    isAnimationActive={false} legendType="none" connectNulls={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+
+          <div style={{ marginTop: 6 }}>
+            <div style={{ fontSize: 10, color: '#9ca3af', paddingLeft: 38, marginBottom: 2 }}>
+              Cumulative closings
+            </div>
+            <ResponsiveContainer width="100%" height={110}>
+              <AreaChart data={enrichedRows} {...chartProps} syncId="ledger-pipeline">
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
+                <YAxis {...axisProps} width={34} />
+                <Tooltip cursor={{ stroke: '#94a3b8', strokeWidth: 1 }} content={() => null} />
+                <Area type="monotone" dataKey="cls_cumulative"
+                      stroke={STATUS_COLOR.OUT} fill={STATUS_COLOR.OUT}
+                      fillOpacity={0.25} strokeWidth={1.5}
+                      dot={false} isAnimationActive={false} legendType="none" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </>
       )}
 
       {panel === 'backlog' && (
