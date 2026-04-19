@@ -237,7 +237,14 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int)
             cp_id    = int(cp["checkpoint_id"])
             cp_num   = int(cp["checkpoint_number"])
             cp_date  = pd.Timestamp(cp["checkpoint_date"])
-            required = int(cp["lots_required_cumulative"])
+            raw_req  = cp["lots_required_cumulative"]
+            if raw_req is None or pd.isna(raw_req):
+                logger.warning(
+                    f"  TDA {tda_id} CP{cp_num}: "
+                    "skipping — lots_required_cumulative is NULL"
+                )
+                continue
+            required = int(raw_req)
             hold_date = (cp_date - timedelta(days=lead)).date()
 
             count_taken = sum(
