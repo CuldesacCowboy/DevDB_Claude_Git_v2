@@ -1,7 +1,8 @@
 # connection.py
 # Database connection wrappers.
-# DBConnection  -- Databricks SQL connector (migration source, legacy)
-# PGConnection  -- local PostgreSQL (simulation engine target)
+# DBConnection    -- Databricks SQL connector (migration source, legacy)
+# PGConnection    -- local PostgreSQL (simulation engine target)
+# MARKSConnection -- MARKsystems MySQL read replica (READ ONLY — never write)
 #
 # Required env vars for Databricks:
 #   DATABRICKS_HOST      -- e.g. adb-xxxx.azuredatabricks.net
@@ -12,11 +13,19 @@
 #   PG_USER     -- default: postgres
 #   PG_PASSWORD -- default: (empty)
 #   PG_PORT     -- default: 5432
+#
+# Required env vars for MARKS MySQL replica:
+#   MARKS_HOST     -- default: ms-replication-e.ihmsweb.com
+#   MARKS_PORT     -- default: 3306
+#   MARKS_DATABASE -- default: jth_ihms
+#   MARKS_USER     -- default: ms_jth
+#   MARKS_PASSWORD -- no default; must be set
 
 import os
 import pandas as pd
 import psycopg2
 import psycopg2.extras
+import mysql.connector
 from databricks import sql
 from dotenv import load_dotenv
 
@@ -106,6 +115,67 @@ class DBConnection:
     def __exit__(self, *args):
         self.close()
 
+
+class MARKSConnection:
+    """
+    READ-ONLY connection to the MARKsystems MySQL replication database.
+
+    Only read_df() is available. Any attempt to call execute() or
+    executemany_insert() raises PermissionError immediately — no writes
+    to the MARKS replica under any circumstances.
+
+        with MARKSConnection() as marks:
+            df = marks.read_df(
+                "SELECT * FROM schedhousedetail WHERE developmentcode = %s", ("WS",)
+            )
+
+    Requires env vars (set in devdb_python/.env):
+        MARKS_HOST, MARKS_PORT, MARKS_DATABASE, MARKS_USER, MARKS_PASSWORD
+    """
+
+    def __init__(self):
+        self._conn = mysql.connector.connect(
+            host=os.getenv("MARKS_HOST", "ms-replication-e.ihmsweb.com"),
+            port=int(os.getenv("MARKS_PORT", 3306)),
+            database=os.getenv("MARKS_DATABASE", "jth_ihms"),
+            user=os.getenv("MARKS_USER", "ms_jth"),
+            password=os.environ["MARKS_PASSWORD"],
+            connection_timeout=15,
+        )
+
+    def read_df(self, query: str, params=None) -> pd.DataFrame:
+        """Execute a SELECT query and return results as a pandas DataFrame.
+
+        Use %s placeholders and pass params tuple to avoid SQL injection.
+        Example: marks.read_df("SELECT * FROM schedhousedetail WHERE developmentcode = %s", ("WS",))
+        """
+        cur = self._conn.cursor()
+        cur.execute(query, params)
+        columns = [desc[0] for desc in cur.description]
+        rows = cur.fetchall()
+        cur.close()
+        return pd.DataFrame(rows, columns=columns)
+
+    def execute(self, *args, **kwargs):
+        raise PermissionError(
+            "MARKSConnection is read-only. "
+            "Writes to the MARKS replication database are forbidden."
+        )
+
+    def executemany_insert(self, *args, **kwargs):
+        raise PermissionError(
+            "MARKSConnection is read-only. "
+            "Writes to the MARKS replication database are forbidden."
+        )
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
 
 class PGConnection:
     """
