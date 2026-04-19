@@ -21,10 +21,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-15
 
 ### devdb_python/engine/coordinator.py
-- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates (not event_id-keyed dicts, since P-0000 and p_pre create new sequence IDs every run); _write_real_lot_projections writes date_str/cmp/cls_projected to real P lots at annual pace from sim_dev_params; _apply_lot_date_overrides applies sim_lot_date_overrides between S-02 and S-03; _load_builder_splits loads sim_instrument_builder_splits and expands to {phase_id: [...]} via join to sim_dev_phases; returns (iterations, missing_params_devs); calls S-0760 hc_bldr_date_projector between S-06 and kernel pass
+- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates; no domain logic — all logic lives in pipeline modules; passes resolved_events directly to P-07; returns (iterations, missing_params_devs, residual_gaps)
 - Imports: engine modules s0100-s1200 (including s0760), p0000-p0800, p_pre_locked_event_rebuilder, config_loader, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
 - Imported by: routers/simulations.py, tests/test_coordinator.py
-- Tables: reads/writes via all pipeline modules; sim_lots (projected date columns), sim_dev_params, sim_lot_date_overrides, sim_lot_date_violations, sim_instrument_builder_splits
+- Tables: reads/writes via all pipeline modules; sim_dev_params, sim_lot_date_overrides, sim_lot_date_violations, sim_instrument_builder_splits (coordinator itself does no direct sim_lots writes)
 - Last commit: 2026-04-19
 
 ### devdb_python/engine/p_pre_locked_event_rebuilder.py
@@ -126,10 +126,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/s1100_persistence_writer.py
-- Owns: S-1100 -- atomic DELETE+INSERT of sim lots; assigns lot_id via MAX(lot_id)+offset per D-086; _LOCKED_COLS frozenset defaults NOT NULL boolean columns (locked flags + excluded) to False for sim lots
+- Owns: S-1100 -- atomic DELETE+INSERT of sim lots; assigns lot_id via MAX(lot_id)+offset per D-086; _LOCKED_COLS frozenset defaults NOT NULL boolean columns (locked flags + excluded) to False for sim lots; Step 3 re-stamps date_ent from sim_dev_phases onto newly-inserted sim lots (INSERT writes date_ent=None; phase-level value restored here per migration 023)
 - Imported by: coordinator.py
-- Tables: sim_lots (DELETE sim rows, INSERT new sim rows)
-- Last commit: 2026-04-08
+- Tables: sim_lots (DELETE sim rows, INSERT new sim rows, UPDATE date_ent), sim_dev_phases (SELECT date_ent)
+- Last commit: 2026-04-19
 
 ### devdb_python/engine/s1200_ledger_aggregator.py
 - Owns: S-1200 -- creates/replaces v_sim_ledger_monthly view; COUNT-based pipeline stage counts; sawtooth stacked area shape with D and H layers; WHERE excluded IS NOT TRUE filter
@@ -180,10 +180,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/p0700_lot_date_propagator.py
-- Owns: P-0700 -- propagates phase date_dev_projected to sim lots and real lots where date_dev IS NULL per D-113
+- Owns: P-0700 -- accepts resolved_events list of (event_id, projected_date); queries sim_delivery_event_phases to find child phases; propagates date_dev_projected to sim lots and real lots where date_dev IS NULL per D-113
 - Imported by: coordinator.py
-- Tables: sim_lots (UPDATE date_dev)
-- Last commit: 2026-03-25
+- Tables: sim_delivery_event_phases (SELECT phase_id), sim_lots (UPDATE date_dev)
+- Last commit: 2026-04-19
 
 ### devdb_python/engine/p0800_sync_flag_writer.py
 - Owns: P-0800 -- writes needs_rerun and sync status flags to sim_dev_phases

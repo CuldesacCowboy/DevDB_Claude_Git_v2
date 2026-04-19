@@ -23,11 +23,23 @@ class SimulationRunRequest(BaseModel):
     ent_group_id: int
 
 
+class ResidualGap(BaseModel):
+    tda_id: int
+    tda_name: str
+    checkpoint_id: int
+    checkpoint_number: int
+    checkpoint_date: str
+    required: int
+    projected: int
+    gap: int
+
+
 class SimulationRunResponse(BaseModel):
     status: str
     iterations: int
     elapsed_ms: int
     errors: list[str]
+    tda_gaps: list[ResidualGap]
 
 
 @router.post("/run", response_model=SimulationRunResponse)
@@ -41,7 +53,9 @@ def run_simulation(req: SimulationRunRequest, conn=Depends(get_db_conn)):
     try:
         future = _executor.submit(convergence_coordinator, req.ent_group_id)
         try:
-            iterations, missing_params_devs = future.result(timeout=_SIMULATION_TIMEOUT_S)
+            iterations, missing_params_devs, residual_gaps = future.result(
+                timeout=_SIMULATION_TIMEOUT_S
+            )
         except FuturesTimeoutError:
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             raise HTTPException(
@@ -52,9 +66,9 @@ def run_simulation(req: SimulationRunRequest, conn=Depends(get_db_conn)):
         elapsed_ms = int((time.monotonic() - t0) * 1000)
 
         errors: list[str] = []
-        if missing_params_devs:
-            cur = dict_cursor(conn)
-            try:
+        cur = dict_cursor(conn)
+        try:
+            if missing_params_devs:
                 ids = list(missing_params_devs)
                 cur.execute(
                     "SELECT dev_id, dev_name FROM developments WHERE dev_id = ANY(%s) ORDER BY dev_name",
@@ -64,14 +78,30 @@ def run_simulation(req: SimulationRunRequest, conn=Depends(get_db_conn)):
                     errors.append(
                         f"{r['dev_name']}: no starts target — add annual_starts_target in sim_dev_params to generate projected lots"
                     )
-            finally:
-                cur.close()
+
+            # Enrich residual gaps with tda_name
+            enriched_gaps: list[ResidualGap] = []
+            if residual_gaps:
+                tda_ids = list({g["tda_id"] for g in residual_gaps})
+                cur.execute(
+                    "SELECT tda_id, tda_name FROM devdb.sim_takedown_agreements WHERE tda_id = ANY(%s)",
+                    (tda_ids,),
+                )
+                name_map = {r["tda_id"]: r["tda_name"] for r in cur.fetchall()}
+                for g in residual_gaps:
+                    enriched_gaps.append(ResidualGap(
+                        tda_name=name_map.get(g["tda_id"], f"TDA {g['tda_id']}"),
+                        **g,
+                    ))
+        finally:
+            cur.close()
 
         return SimulationRunResponse(
             status="ok",
             iterations=iterations,
             elapsed_ms=elapsed_ms,
             errors=errors,
+            tda_gaps=enriched_gaps,
         )
     except Exception as exc:
         elapsed_ms = int((time.monotonic() - t0) * 1000)

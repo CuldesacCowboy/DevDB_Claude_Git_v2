@@ -29,6 +29,7 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   const [entGroups, setEntGroups]   = useState([])
   const [runStatus, setRunStatus]   = useState(null)
   const [runErrors, setRunErrors]   = useState([])
+  const [tdaGaps, setTdaGaps]       = useState([])
   const [byDev, setByDev]           = useState([])
   const [utilization, setUtilization] = useState([])
   const [loading, setLoading]       = useState(false)
@@ -152,6 +153,7 @@ const loadLedger = useCallback((id) => {
     loadDeliverySchedule(entGroupId)
     loadLots(entGroupId)
     setRunErrors([])
+    setTdaGaps([])
     setSelectedDevIds(null)
     setCountyFilter(null)
     setSdFilter(null)
@@ -169,6 +171,7 @@ const loadLedger = useCallback((id) => {
       const data = await res.json()
       setRunStatus({ ok: true, iterations: data.iterations, elapsed_ms: data.elapsed_ms })
       setRunErrors(data.errors || [])
+      setTdaGaps(data.tda_gaps || [])
       setLastRunAt(new Date())
       setLoadError(null)
       loadLedger(entGroupId)
@@ -347,6 +350,29 @@ const loadLedger = useCallback((id) => {
           <div style={{ fontWeight: 600, color: '#92400e', marginBottom: 4 }}>Simulation ran with warnings:</div>
           <ul style={{ margin: 0, paddingLeft: 18, color: '#78350f', lineHeight: 1.7 }}>
             {runErrors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* ── TDA checkpoint gaps ── */}
+      {tdaGaps.length > 0 && (
+        <div style={{ marginBottom: 12, padding: '8px 14px', background: '#fef2f2',
+                      border: '1px solid #fca5a5', borderRadius: 6, fontSize: 12 }}>
+          <div style={{ fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>
+            {tdaGaps.length} TDA checkpoint{tdaGaps.length !== 1 ? 's' : ''} at risk after simulation:
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, color: '#7f1d1d', lineHeight: 1.8 }}>
+            {tdaGaps.map((g, i) => (
+              <li key={i}>
+                <b>{g.tda_name}</b> CP{g.checkpoint_number} ({g.checkpoint_date})
+                {' — '}
+                {g.projected}/{g.required} lots projected
+                <span style={{ marginLeft: 6, background: '#fee2e2', color: '#991b1b',
+                               borderRadius: 10, padding: '0 6px', fontWeight: 700, fontSize: 11 }}>
+                  gap {g.gap}
+                </span>
+              </li>
+            ))}
           </ul>
         </div>
       )}

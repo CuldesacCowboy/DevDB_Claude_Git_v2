@@ -1,6 +1,6 @@
 # DevDB Decision Log
 
-Task-specific reference. Load when: investigating why something was built a certain way, debugging TDA/delivery/scheduling behavior, or any question about a specific D-number decision.
+Task-specific reference. Load when: investigating why something was built a certain way, debugging TDA/delivery/scheduling behavior, or any question about a specific D-number decision. D-001 through D-165 | Next ID: D-166
 
 ---
 
@@ -50,6 +50,13 @@ Task-specific reference. Load when: investigating why something was built a cert
 - **D-143** -- P-0000 phase sort: phases sorted by sequence_number ascending, not demand_date. Demand dates are a signal only; sequence_number is the authoritative delivery order within a dev.
 - **D-154** -- (previously last entry — see below)
 - **D-158** -- Ranch Condos segd dual-row pattern: `sim_ent_group_developments` holds two rows for Abbey Farms Ranch Condos — dev_id=101 (modern developments space, used by engine `egd.dev_id = sdp.dev_id` join) and dev_id=106 (legacy dim_development space, used by setup-tree `sli.dev_id = segd.dev_id` and `dd.development_id = segd.dev_id` joins). Neither row is wrong; they serve different join paths. Migration 047.
+- **D-159** -- TDA lot bank: phase-scoped eligible lot pools (`sim_tda_lot_banks` + `sim_tda_lot_bank_members`) shared across multiple TDAs. Banks define which lots are eligible for a phase; `sim_takedown_agreement_lots` records which lots are actually committed to each TDA. Enables dual-builder (e.g. JTB + Interra sharing a pool) and no-builder scenarios. Bank membership enforced at pool-add time in tda_assignments.py. Constraint: D-025 (one active TDA per lot) unchanged.
+- **D-160** -- builder_id on TDA: `sim_takedown_agreements.builder_id` (FK to `dim_builders`, nullable) records the legal counterparty. Separate from `sim_instrument_builder_splits` (simulation parameters). Null = no legal builder counterparty (e.g., externally developed projects). Added in migration 074.
+- **D-161** -- lot_quota on TDA: `sim_takedown_agreements.lot_quota` stores the contractual lot quantity from the purchase agreement, independent of how many lots are actually in the pool. Enables tracking of over/under commitment. Added in migration 074.
+- **D-162** -- Stonewater TDA rebuild: replaced 5 legacy TDAs (7041, 7054, 7055, 7056, 7059) with 10 properly structured TDAs split by builder and phase. 7 lot banks created (one per phase). Closed phases seeded with pool lots. Active phases (SF Ph3, SF Ph4, Condos Ph3) left with empty pools for user population.
+- **D-163** -- S-0500 writes date_td_hold_projected, not date_td_hold. Fulfillment counting uses COALESCE(actual, projected) for both td and td_hold. S-0500 persists assignments via execute_values and clears stale date_td_hold_projected at run start for unlocked lots in active TDA pools.
+- **D-164** -- S-0500 builder-routing: candidate lots filtered by resolved builder_id (COALESCE(builder_id_override, builder_id)) matching TDA's builder_id. Null builder_id on TDA = no filter. Excess push: remaining pool lots with no td/hold/str pushed to HC just before next unsatisfied checkpoint after gap fill.
+- **D-165** -- Residual gaps surface through coordinator to API: run_starts_pipeline returns (temp_lots, needs_config, residual_gaps); convergence_coordinator returns (iterations, missing_params_devs, residual_gaps); /simulations/run response includes tda_gaps: list[ResidualGap] with tda_id, checkpoint_id, checkpoint_number, checkpoint_date, required, projected, gap.
 - **D-157** -- SetupView load() r.ok guard: all four `fetch().then(r => r.json())` calls now check `r.ok` first and throw with the status code. Previously a 500 from `/admin/phase-config` with a valid JSON body (FastAPI error format) silently set `cfg.rows = undefined`, causing `setPhases([])` to wipe all phase state on every onRefresh(). Frontend restart needed.
 - **D-156** -- Delivery tiers: `delivery_tier INTEGER NULL` on `sim_dev_phases` (migration 046). Strict cross-tier rule: ALL tier N-1 phases must be delivered before ANY tier N phase. Enforced by P-0000 Step 7b writing cross-tier predecessor rows in `sim_delivery_event_predecessors`. UI: indigo tier badge in PhaseRow, click-to-edit. Backend: `delivery_tier` in PATCH /admin/phase/{id} and in /admin/phase-config response.
 - **D-155** -- S-0050 run_context_builder formally deferred. D-136 specified it as a first-pass module to query all parameter tables once per run and build a context object. In practice, the coordinator already pre-loads shared config (_load_builder_splits, _load_build_lag_curves) and injects it into the pipeline. Per-dev params (demand_generator, s0600) are loaded inside their respective modules and are fast local PG queries. The overhead of the current pattern is negligible at 0.5s total run time. Implementing S-0050 would require refactoring all module signatures to accept a context object — high churn, no measurable benefit at current scale. Defer until run time exceeds 5s or module count exceeds 20. S-0050 remains on the module map as NOT IMPLEMENTED.
@@ -76,6 +83,92 @@ Flagged Revisit before go-live:
 - **D-031** -- MARKsystems sync automation (currently manual CSV)
 - **D-034** -- Lot type hierarchy flattening
 - **D-086** -- lot_id IDENTITY column behavior
+
+---
+
+## Decision Log -- D-165
+
+D-165: Residual gaps surface through coordinator to API
+
+`run_starts_pipeline` now returns `(temp_lots, needs_config, residual_gaps)`. The convergence
+coordinator collects gaps across all dev_ids each iteration, retaining only the final
+(converged) iteration's gaps. `convergence_coordinator` returns
+`(iterations, missing_params_devs, residual_gaps)`. The `/simulations/run` API response now
+includes `tda_gaps: list[ResidualGap]` alongside `errors`. Each gap entry includes tda_id,
+checkpoint_id, checkpoint_number, checkpoint_date, required, projected, gap.
+
+---
+
+## Decision Log -- D-164
+
+D-164: S-0500 builder-routing and excess push
+
+S-0500 now filters candidate lots by resolved builder_id
+(`COALESCE(builder_id_override, builder_id)`) matching the TDA's `builder_id`. Null
+`builder_id` on TDA = no filter (any builder). This routes lots to the correct TDA in
+dual-builder phases (e.g. JTB lots to JTB TDA, Interra lots to Interra TDA).
+Additionally: after filling checkpoint gaps, any remaining pool lots with no td/hold/str
+are pushed to HC just before the next unsatisfied checkpoint (excess push). This makes the
+TDA a floor on absorption — excess committed lots never sit idle.
+
+---
+
+## Decision Log -- D-163
+
+D-163: S-0500 writes date_td_hold_projected, not date_td_hold
+
+Engine assigns hold dates to `date_td_hold_projected` (sim-computed projection) not to
+`date_td_hold` (actual, reserved for real events recorded from MARKS or user). Fulfillment
+counting uses `COALESCE(actual, projected)` for both td and td_hold, matching the pattern
+used by every other pipeline date. Previous code wrote to `date_td_hold` and the change
+was never persisted to DB. S-0500 now also persists assignments via `execute_values` at
+the end of each run, and clears stale `date_td_hold_projected` values at run start (for
+unlocked lots in active TDA pools).
+
+---
+
+## Decision Log -- D-162
+
+D-162: Stonewater TDA rebuild
+
+Replaced 5 legacy TDAs (7041, 7054, 7055, 7056, 7059) with 10 properly structured TDAs
+split by builder and phase. 7 lot banks created (one per phase). Closed phases seeded with
+pool lots. Active phases (SF Ph3, SF Ph4, Condos Ph3) left with empty pools for user
+population.
+
+---
+
+## Decision Log -- D-161
+
+D-161: lot_quota on TDA
+
+`sim_takedown_agreements.lot_quota` stores the contractual lot quantity from the purchase
+agreement, independent of how many lots are actually in the pool. Enables tracking of
+over/under commitment. Added in migration 074.
+
+---
+
+## Decision Log -- D-160
+
+D-160: builder_id on TDA
+
+`sim_takedown_agreements.builder_id` (FK to `dim_builders`, nullable) records the legal
+counterparty. Separate from `sim_instrument_builder_splits` (simulation parameters).
+Null = no legal builder counterparty (e.g., externally developed projects). Added in
+migration 074.
+
+---
+
+## Decision Log -- D-159
+
+D-159: TDA lot bank
+
+Phase-scoped eligible lot pools (`sim_tda_lot_banks` + `sim_tda_lot_bank_members`) shared
+across multiple TDAs. Banks define which lots are eligible for a phase;
+`sim_takedown_agreement_lots` records which lots are actually committed to each TDA.
+Enables dual-builder (e.g. JTB + Interra sharing a pool) and no-builder scenarios. Bank
+membership enforced at pool-add time in tda_assignments.py. Constraint: D-025 (one active
+TDA per lot) unchanged.
 
 ---
 

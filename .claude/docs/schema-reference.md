@@ -72,8 +72,28 @@ anchor_date           DATE
 status                STRING           -- 'active', 'archived'
 checkpoint_lead_days  INT              -- default 16; days before checkpoint to schedule hold
 notes                 STRING
+bank_id               BIGINT FK NULLABLE  -- -> sim_tda_lot_banks
+lot_quota             INT NULLABLE     -- contractual lot quantity from purchase agreement
+builder_id            INT FK NULLABLE  -- -> dim_builders; legal counterparty
 created_at            TIMESTAMP
 updated_at            TIMESTAMP
+```
+
+### sim_tda_lot_banks
+```sql
+bank_id               BIGINT PK        -- sequence starts at 1000
+ent_group_id          INT FK           -- -> sim_entitlement_groups
+bank_name             TEXT NOT NULL
+notes                 TEXT
+created_at            TIMESTAMPTZ
+updated_at            TIMESTAMPTZ
+```
+
+### sim_tda_lot_bank_members
+```sql
+bank_id               BIGINT FK        -- -> sim_tda_lot_banks
+lot_id                BIGINT FK        -- -> sim_lots
+-- PK: (bank_id, lot_id)
 ```
 
 ---

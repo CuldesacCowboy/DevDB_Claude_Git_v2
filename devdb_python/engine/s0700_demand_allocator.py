@@ -40,9 +40,16 @@ def demand_allocator(lot_snapshot: pd.DataFrame, demand_df):
         demand_df = demand_df[demand_df["slots"] > 0].reset_index(drop=True)
 
     # Step 1: Available lots -- U, then H, then D (pull order).
+    # H includes both actual date_td_hold and engine-projected date_td_hold_projected
+    # so that TDA-committed lots drain before plain D lots (D-164 drain-HC-first).
+    has_tdh_proj = "date_td_hold_projected" in lot_snapshot.columns
+
     u_mask = lot_snapshot["date_td"].notna() & lot_snapshot["date_str"].isna()
     h_mask = (
-        lot_snapshot["date_td_hold"].notna()
+        (
+            lot_snapshot["date_td_hold"].notna()
+            | (lot_snapshot["date_td_hold_projected"].notna() if has_tdh_proj else False)
+        )
         & lot_snapshot["date_td"].isna()
         & lot_snapshot["date_str"].isna()
     )
@@ -50,11 +57,23 @@ def demand_allocator(lot_snapshot: pd.DataFrame, demand_df):
         lot_snapshot["date_dev"].notna()
         & lot_snapshot["date_td"].isna()
         & lot_snapshot["date_td_hold"].isna()
+        & (lot_snapshot["date_td_hold_projected"].isna() if has_tdh_proj else True)
         & lot_snapshot["date_str"].isna()
     )
+
+    # H lots sorted by effective hold date: actual wins, fall back to projected
+    h_lots = lot_snapshot[h_mask].copy()
+    if has_tdh_proj:
+        h_lots["_eff_hold"] = h_lots["date_td_hold"].combine_first(
+            h_lots["date_td_hold_projected"]
+        )
+    else:
+        h_lots["_eff_hold"] = h_lots["date_td_hold"]
+    h_lots = h_lots.sort_values("_eff_hold").drop(columns=["_eff_hold"])
+
     available = pd.concat([
         lot_snapshot[u_mask].sort_values("date_td"),
-        lot_snapshot[h_mask].sort_values("date_td_hold"),
+        h_lots,
         lot_snapshot[d_mask].sort_values("date_dev"),
     ], ignore_index=True)
 

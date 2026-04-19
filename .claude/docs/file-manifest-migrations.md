@@ -393,3 +393,8 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Adds status VARCHAR(20) with CHECK constraint to sim_entitlement_groups (allowed: Active, Prospective, Sold Out, Unlikely, Abandoned, OFFSITE, OTHER); seeds all 78 communities from JTB reference list; OFFSITE and OTHER communities set to their respective sentinel values
 - Tables: sim_entitlement_groups (ADD COLUMN status + UPDATE 78 rows)
 - Last commit: 2026-04-16
+
+### devdb_python/migrations/074_lot_banks.sql
+- Owns: Lot banks — creates `sim_tda_lot_banks` and `sim_tda_lot_bank_members`; adds `bank_id`, `lot_quota`, `builder_id` to `sim_takedown_agreements`
+- Tables: sim_tda_lot_banks (CREATE TABLE), sim_tda_lot_bank_members (CREATE TABLE), sim_takedown_agreements (ADD COLUMN bank_id, ADD COLUMN lot_quota, ADD COLUMN builder_id)
+- Last commit: 2026-04-17

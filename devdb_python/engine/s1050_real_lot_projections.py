@@ -49,9 +49,10 @@ def write_real_lot_projections(
             date_cls_projected = NULL
         WHERE lot_source = 'real'
           AND dev_id = %s
-          AND date_str_is_locked IS NOT TRUE
-          AND date_cmp_is_locked IS NOT TRUE
-          AND date_cls_is_locked IS NOT TRUE
+          AND date_str_is_locked        IS NOT TRUE
+          AND date_cmp_is_locked        IS NOT TRUE
+          AND date_cls_is_locked        IS NOT TRUE
+          AND date_td_hold_projected    IS NULL
         """,
         (dev_id,),
     )
@@ -61,12 +62,13 @@ def write_real_lot_projections(
         SELECT lot_id, lot_type_id
         FROM sim_lots
         WHERE lot_source = 'real'
-          AND dev_id             = %s
-          AND date_str           IS NULL
-          AND date_td            IS NULL
-          AND date_td_hold       IS NULL
-          AND excluded           IS NOT TRUE
-          AND date_str_is_locked IS NOT TRUE
+          AND dev_id                    = %s
+          AND date_str                  IS NULL
+          AND date_td                   IS NULL
+          AND date_td_hold              IS NULL
+          AND date_td_hold_projected    IS NULL
+          AND excluded                  IS NOT TRUE
+          AND date_str_is_locked        IS NOT TRUE
         ORDER BY lot_id
         """,
         (dev_id,),

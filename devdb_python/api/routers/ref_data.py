@@ -33,6 +33,19 @@ def list_counties(conn=Depends(get_db_conn)):
         cur.close()
 
 
+@router.get("/builders")
+def list_builders(conn=Depends(get_db_conn)):
+    """Active builders for dropdowns."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT builder_id, builder_name FROM devdb.dim_builders WHERE active = true ORDER BY builder_name"
+        )
+        return [{"builder_id": r["builder_id"], "builder_name": r["builder_name"]} for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+
 @router.get("/school-districts")
 def list_school_districts(conn=Depends(get_db_conn)):
     """All school districts, ordered alphabetically."""

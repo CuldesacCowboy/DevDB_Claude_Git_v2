@@ -55,10 +55,15 @@ def build_frozen_input(
         if pd.notna(row.get('building_group_id'))
     }
 
+    # Include lots with actual OR projected hold date (D-164 drain-HC-first).
+    has_tdh_proj = "date_td_hold_projected" in lot_snapshot.columns
+    _hold_mask = lot_snapshot["date_td_hold"].notna()
+    if has_tdh_proj:
+        _hold_mask = _hold_mask | lot_snapshot["date_td_hold_projected"].notna()
     tda_hold_lot_ids = set(
         lot_snapshot.loc[
-            lot_snapshot['date_td_hold'].notna() & lot_snapshot['date_td'].isna(),
-            'lot_id'
+            _hold_mask & lot_snapshot["date_td"].isna(),
+            "lot_id"
         ]
     )
 
