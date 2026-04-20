@@ -116,7 +116,7 @@ export function formatLotNum(s) {
   if (!m) return s
   const numStr = String(parseInt(m[2], 10))
   const pad = '\u00a0'.repeat(Math.max(0, 3 - numStr.length))
-  return `${m[1]}_${pad}${numStr}`
+  return `${m[1]}\u00a0${pad}${numStr}`
 }
 
 // Extract the sequence string from a lot number given its dev code.

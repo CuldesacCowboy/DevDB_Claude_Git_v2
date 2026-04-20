@@ -15,7 +15,7 @@ export function shortLot(lotNumber) {
   if (!match) return lotNumber
   const numStr = String(parseInt(match[2], 10))
   const pad = '\u00a0'.repeat(Math.max(0, 3 - numStr.length))
-  return `${match[1]}_${pad}${numStr}`
+  return `${match[1]}\u00a0${pad}${numStr}`
 }
 
 // ── Parse lot into { code, seq } ─────────────────────────────────
