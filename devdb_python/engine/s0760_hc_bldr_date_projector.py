@@ -118,11 +118,26 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
     if hc_allocations.empty:
         return lot_snapshot
 
-    # Build {lot_id: date} map — apply td_to_str_lag offset
+    # Build {lot_id: date} map — apply td_to_str_lag offset.
+    # Skip lots where the demand-allocated BLDR date would precede the hold date —
+    # a lot cannot drain from H before it enters H.
+    snap_idx = {int(r["lot_id"]): r for _, r in lot_snapshot.iterrows()}
     hc_dates: dict[int, date] = {}
     for _, row in hc_allocations.iterrows():
+        lid = int(row["lot_id"])
         demand_month_first = date(int(row["assigned_year"]), int(row["assigned_month"]), 1)
-        hc_dates[int(row["lot_id"])] = _sub_months(demand_month_first, td_to_str_lag)
+        bldr_date = _sub_months(demand_month_first, td_to_str_lag)
+        # Resolve hold date: actual wins over projected
+        snap = snap_idx.get(lid, {})
+        raw_hold = snap.get("date_td_hold")
+        raw_hold_proj = snap.get("date_td_hold_projected")
+        hold = (raw_hold if (raw_hold is not None and pd.notna(raw_hold))
+                else raw_hold_proj if (raw_hold_proj is not None and pd.notna(raw_hold_proj))
+                else None)
+        if hold is not None and pd.Timestamp(bldr_date) < pd.Timestamp(hold):
+            logger.debug(f"  S-0760: lot {lid} BLDR {bldr_date} < hold {hold} — skipping.")
+            continue
+        hc_dates[lid] = bldr_date
 
     # Persist to DB
     updates = [(d, lid) for lid, d in hc_dates.items()]
