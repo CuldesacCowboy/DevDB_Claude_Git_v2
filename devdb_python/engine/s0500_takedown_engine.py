@@ -260,8 +260,8 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                 )
                 continue
             required = int(raw_req)
-            natural_hold = (cp_date - timedelta(days=lead)).date()
-            hold_date = max(natural_hold, hc_floor) if natural_hold >= date.today() else natural_hold
+            today    = date.today()
+            is_past  = cp_date.date() < today
 
             count_taken = sum(
                 1 for lot in tda_snapshot_lots.values() if _fulfills(lot, cp_date)
@@ -271,10 +271,29 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                 logger.info(f"  TDA {tda_id} CP{cp_num}: Met ({count_taken}/{required})")
                 continue
 
+            gap = required - count_taken
+
+            if is_past:
+                # Past unmet checkpoint — obligation was missed; no HC assignment possible.
+                # Record the gap for visibility and move on.
+                logger.warning(f"  TDA {tda_id} CP{cp_num}: Failed (past, gap={gap})")
+                residual_gaps.append({
+                    "tda_id":            tda_id,
+                    "checkpoint_id":     cp_id,
+                    "checkpoint_number": cp_num,
+                    "checkpoint_date":   str(cp_date.date()),
+                    "required":          required,
+                    "projected":         count_taken,
+                    "gap":               gap,
+                })
+                continue
+
+            # Future unmet checkpoint — assign HC hold dates.
+            hold_date = max((cp_date - timedelta(days=lead)).date(), hc_floor)
+
             if first_unsatisfied_hold is None:
                 first_unsatisfied_hold = hold_date
 
-            gap       = required - count_taken
             available = sorted(
                 (lot for lot in tda_snapshot_lots.values() if _available(lot)),
                 key=lambda l: (
@@ -324,8 +343,10 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
         for _, cp in checkpoints.iterrows():
             if cp["checkpoint_date"] is None or pd.isna(cp["checkpoint_date"]):
                 continue
+            if pd.Timestamp(cp["checkpoint_date"]).date() < today:
+                continue  # past checkpoints excluded from excess push
             n = (pd.Timestamp(cp["checkpoint_date"]) - timedelta(days=lead)).date()
-            cp_hold_dates.append(max(n, hc_floor) if n >= today else n)
+            cp_hold_dates.append(max(n, hc_floor))
         if not cp_hold_dates:
             continue  # no dated checkpoints — nothing to push excess lots toward
         if first_unsatisfied_hold is not None:
