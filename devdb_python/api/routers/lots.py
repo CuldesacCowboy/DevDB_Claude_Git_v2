@@ -170,3 +170,41 @@ async def set_lot_excluded(lot_id: int, body: LotExcludeRequest, conn=Depends(ge
         raise
     finally:
         cur.close()
+
+
+@router.get("/search")
+def search_lots(q: str = Query(..., min_length=1), exclude_tda: int = Query(None), conn=Depends(get_db_conn)):
+    """Search real lots by lot_number prefix across all communities.
+    Optionally exclude lots already in a given TDA (exclude_tda=tda_id)."""
+    cur = dict_cursor(conn)
+    try:
+        if exclude_tda is not None:
+            cur.execute(
+                """
+                SELECT l.lot_id, l.lot_number
+                FROM devdb.sim_lots l
+                WHERE l.lot_source = 'real'
+                  AND l.lot_number ILIKE %s
+                  AND l.lot_id NOT IN (
+                      SELECT lot_id FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s
+                  )
+                ORDER BY l.lot_number
+                LIMIT 100
+                """,
+                (q.upper() + '%', exclude_tda),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT l.lot_id, l.lot_number
+                FROM devdb.sim_lots l
+                WHERE l.lot_source = 'real'
+                  AND l.lot_number ILIKE %s
+                ORDER BY l.lot_number
+                LIMIT 100
+                """,
+                (q.upper() + '%',),
+            )
+        return [{"lot_id": r["lot_id"], "lot_number": r["lot_number"]} for r in cur.fetchall()]
+    finally:
+        cur.close()

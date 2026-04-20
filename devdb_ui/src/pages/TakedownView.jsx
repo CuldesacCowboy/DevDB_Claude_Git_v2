@@ -1401,17 +1401,41 @@ function AddLotsSection({ tda, allTdas, unassignedLots, onAddLots, onMoveLots })
   const [addSelected, setAddSelected] = useState(new Map()) // lot_id → { lot, isMove, tdaId }
   const [confirmPending, setConfirmPending] = useState(null)
   const [applying, setApplying]       = useState(false)
+  const [search, setSearch]           = useState('')
+  const [searchResults, setSearchResults] = useState(null) // null = not searched
+  const [searching, setSearching]     = useState(false)
   const lastClickedRef                = useRef({}) // keyed by groupKey
+  const searchTimerRef                = useRef(null)
 
   // Available = all community lots not already in this TDA's pool
   const inThisTda = new Set((tda.lots || []).map(l => l.lot_id))
-  const available = unassignedLots.filter(l => !inThisTda.has(l.lot_id))
+  const communityLots = unassignedLots.filter(l => !inThisTda.has(l.lot_id))
+
+  // When search is active, use search results (also filtered to exclude this TDA)
+  const displayLots = searchResults !== null
+    ? searchResults.filter(l => !inThisTda.has(l.lot_id))
+    : communityLots
+
   const sourceGroups = []
-  if (available.length > 0) {
-    sourceGroups.push({ key: 'unassigned', label: 'Not in this agreement', lots: available, isMove: false, tdaId: null })
+  if (displayLots.length > 0) {
+    sourceGroups.push({ key: 'unassigned', label: 'Not in this agreement', lots: displayLots, isMove: false, tdaId: null })
   }
 
-  const totalAvailable = sourceGroups.reduce((s, g) => s + g.lots.length, 0)
+  function handleSearchChange(e) {
+    const q = e.target.value
+    setSearch(q)
+    clearTimeout(searchTimerRef.current)
+    if (!q.trim()) { setSearchResults(null); return }
+    searchTimerRef.current = setTimeout(() => {
+      setSearching(true)
+      fetch(`${API_BASE}/lots/search?q=${encodeURIComponent(q.trim())}&exclude_tda=${tda.tda_id}`)
+        .then(r => r.json())
+        .then(d => { setSearchResults(Array.isArray(d) ? d : []); setSearching(false) })
+        .catch(() => setSearching(false))
+    }, 300)
+  }
+
+  const totalAvailable = communityLots.length  // show community count on collapsed button
 
   function handleGroupPillClick(lotId, lot, groupKey, groupLots, isMove, tdaId, e) {
     const idx = groupLots.findIndex(l => l.lot_id === lotId)
@@ -1488,13 +1512,26 @@ function AddLotsSection({ tda, allTdas, unassignedLots, onAddLots, onMoveLots })
 
   return (
     <div style={{ marginTop: 10, padding: 10, border: `1px solid ${PANEL_BORDER}`, borderRadius: 4, background: '#f9fafb' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: TEXT_PRIMARY }}>Add lots to agreement</span>
         <button
-          onClick={() => { setShowAdd(false); setAddSelected(new Map()); setConfirmPending(null) }}
+          onClick={() => { setShowAdd(false); setAddSelected(new Map()); setConfirmPending(null); setSearch(''); setSearchResults(null) }}
           style={{ fontSize: 12, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}
         >Cancel</button>
       </div>
+      <input
+        type="text"
+        value={search}
+        onChange={handleSearchChange}
+        placeholder="Search by lot prefix to find lots from other communities…"
+        style={{ width: '100%', fontSize: 11, padding: '4px 8px', borderRadius: 4, border: '1px solid #d1d5db', marginBottom: 8, boxSizing: 'border-box' }}
+      />
+      {searching && <div style={{ fontSize: 11, color: TEXT_MUTED, marginBottom: 6 }}>Searching…</div>}
+      {searchResults !== null && !searching && (
+        <div style={{ fontSize: 11, color: TEXT_MUTED, marginBottom: 6 }}>
+          {searchResults.length === 0 ? 'No lots found.' : `${displayLots.length} result${displayLots.length !== 1 ? 's' : ''} across all communities`}
+        </div>
+      )}
 
       {confirmPending ? (
         <div style={{ padding: '8px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 5, marginBottom: 8 }}>
