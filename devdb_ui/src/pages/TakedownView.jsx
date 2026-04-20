@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { API_BASE } from '../config'
+import { fmtLot } from '../components/simulation/simShared'
 import {
   PANEL_BORDER, PANEL_HEADER_BG,
   TEXT_MUTED, TEXT_PRIMARY,
@@ -1379,7 +1380,7 @@ function ManageBankSection({ bankId, bankName, onAddLotsToBank }) {
                         fontWeight: sel ? 600 : 400,
                       }}
                     >
-                      {l.lot_number ?? '—'}
+                      {fmtLot(l.lot_number)}
                     </span>
                   )
                 })}
