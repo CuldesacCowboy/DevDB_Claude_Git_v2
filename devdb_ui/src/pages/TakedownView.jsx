@@ -1373,7 +1373,7 @@ function ManageBankSection({ bankId, bankName, onAddLotsToBank }) {
                       key={l.lot_id}
                       onClick={e => handlePillClick(l.lot_id, e)}
                       style={{
-                        padding: '2px 7px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none',
+                        width: 56, textAlign: 'center', padding: '2px 0', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none',
                         background: sel ? '#6366f1' : '#ede9fe',
                         color: sel ? '#fff' : '#4338ca',
                         border: `1px solid ${sel ? '#6366f1' : '#c4b5fd'}`,
