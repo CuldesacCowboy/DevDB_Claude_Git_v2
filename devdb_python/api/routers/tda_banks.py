@@ -115,6 +115,41 @@ def get_bank_available_lots(bank_id: int, conn=Depends(get_db_conn)):
         cur.close()
 
 
+# ── Non-members: community real lots not yet in this bank ─────────────────
+
+@router.get("/tda-lot-banks/{bank_id}/non-members")
+def get_bank_non_members(bank_id: int, conn=Depends(get_db_conn)):
+    """Community real lots not yet in this bank — eligible to be added."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            "SELECT ent_group_id FROM devdb.sim_tda_lot_banks WHERE bank_id = %s",
+            (bank_id,),
+        )
+        bank = cur.fetchone()
+        if bank is None:
+            raise HTTPException(status_code=404, detail=f"Bank {bank_id} not found.")
+
+        cur.execute(
+            """
+            SELECT DISTINCT l.lot_id, l.lot_number
+            FROM devdb.sim_lots l
+            JOIN devdb.sim_dev_phases p ON p.phase_id = l.phase_id
+            JOIN devdb.developments d ON d.dev_id = p.dev_id
+            WHERE d.community_id = %s
+              AND l.lot_source = 'real'
+              AND l.lot_id NOT IN (
+                  SELECT lot_id FROM devdb.sim_tda_lot_bank_members WHERE bank_id = %s
+              )
+            ORDER BY l.lot_number
+            """,
+            (bank["ent_group_id"], bank_id),
+        )
+        return [{"lot_id": r["lot_id"], "lot_number": r["lot_number"]} for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+
 # ── Create bank ────────────────────────────────────────────────────────────
 
 @router.post("/tda-lot-banks")

@@ -996,7 +996,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
 }
 
 // ── Lots section (pool management) ────────────────────────────────
-function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, onMoveLots, onAutoAssign }) {
+function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, onMoveLots, onAutoAssign, onAddLotsToBank }) {
   const poolLots  = (tda.lots || []).filter(l => !l.checkpoint_id)
   const otherTdas = allTdas.filter(t => t.tda_id !== tda.tda_id)
 
@@ -1264,6 +1264,11 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
         </>
       )}
 
+      {/* Manage bank lots — only shown when TDA has a bank */}
+      {tda.bank_id != null && (
+        <ManageBankSection bankId={tda.bank_id} bankName={tda.bank_name} onAddLotsToBank={onAddLotsToBank} />
+      )}
+
       {/* Add Lots section */}
       <AddLotsSection
         tda={tda}
@@ -1272,6 +1277,122 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
         onAddLots={onAddLots}
         onMoveLots={onMoveLots}
       />
+    </div>
+  )
+}
+
+// ── Manage bank section ────────────────────────────────────────────
+function ManageBankSection({ bankId, bankName, onAddLotsToBank }) {
+  const [open, setOpen]           = useState(false)
+  const [lots, setLots]           = useState([])
+  const [fetching, setFetching]   = useState(false)
+  const [selected, setSelected]   = useState(new Set())
+  const [applying, setApplying]   = useState(false)
+  const lastClickedRef            = useRef(null)
+
+  function fetchNonMembers() {
+    setFetching(true)
+    fetch(`${API_BASE}/tda-lot-banks/${bankId}/non-members`)
+      .then(r => r.json())
+      .then(d => { setLots(Array.isArray(d) ? d : []); setFetching(false) })
+      .catch(() => setFetching(false))
+  }
+
+  function toggle() {
+    if (!open) { fetchNonMembers(); setSelected(new Set()) }
+    setOpen(o => !o)
+  }
+
+  function handlePillClick(lotId, e) {
+    const idx = lots.findIndex(l => l.lot_id === lotId)
+    if (e.shiftKey && lastClickedRef.current !== null) {
+      const lo = Math.min(lastClickedRef.current, idx)
+      const hi = Math.max(lastClickedRef.current, idx)
+      setSelected(prev => {
+        const n = new Set(prev)
+        lots.slice(lo, hi + 1).forEach(l => n.add(l.lot_id))
+        return n
+      })
+    } else {
+      setSelected(prev => {
+        const n = new Set(prev)
+        n.has(lotId) ? n.delete(lotId) : n.add(lotId)
+        return n
+      })
+      lastClickedRef.current = idx
+    }
+  }
+
+  async function handleAdd() {
+    if (!selected.size || applying) return
+    setApplying(true)
+    await onAddLotsToBank(bankId, [...selected])
+    setApplying(false)
+    setSelected(new Set())
+    fetchNonMembers()
+  }
+
+  const nSel = selected.size
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button
+        onClick={toggle}
+        style={{ fontSize: 11, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontWeight: 500 }}
+      >
+        {open ? '▾' : '▸'} Manage bank lots ({bankName || `Bank ${bankId}`})
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 8, padding: 10, border: '1px solid #e0e7ff', borderRadius: 4, background: '#f5f3ff' }}>
+          {fetching ? (
+            <span style={{ fontSize: 11, color: TEXT_MUTED }}>Loading…</span>
+          ) : lots.length === 0 ? (
+            <span style={{ fontSize: 11, color: TEXT_MUTED }}>All community lots are already in this bank.</span>
+          ) : (
+            <>
+              <div style={{ fontSize: 11, color: '#4338ca', marginBottom: 6 }}>
+                {lots.length} community lot{lots.length !== 1 ? 's' : ''} not in bank — click to select, Shift+click to range
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                <button
+                  onClick={() => setSelected(new Set(lots.map(l => l.lot_id)))}
+                  style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, border: '1px solid #a5b4fc', background: '#fff', cursor: 'pointer', color: '#4338ca' }}
+                >All</button>
+                <button
+                  onClick={() => setSelected(new Set())}
+                  style={{ fontSize: 10, padding: '1px 6px', borderRadius: 3, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', color: TEXT_MUTED }}
+                >None</button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                {lots.map(l => {
+                  const sel = selected.has(l.lot_id)
+                  return (
+                    <span
+                      key={l.lot_id}
+                      onClick={e => handlePillClick(l.lot_id, e)}
+                      style={{
+                        padding: '2px 7px', borderRadius: 10, fontSize: 11, cursor: 'pointer', userSelect: 'none',
+                        background: sel ? '#6366f1' : '#ede9fe',
+                        color: sel ? '#fff' : '#4338ca',
+                        border: `1px solid ${sel ? '#6366f1' : '#c4b5fd'}`,
+                        fontWeight: sel ? 600 : 400,
+                      }}
+                    >
+                      {fmtLot(l.lot_number)}
+                    </span>
+                  )
+                })}
+              </div>
+              {nSel > 0 && (
+                <Btn variant="primary" onClick={handleAdd} disabled={applying} style={{ fontSize: 11, padding: '3px 10px' }}>
+                  {applying ? 'Adding…' : `Add ${nSel} lot${nSel !== 1 ? 's' : ''} to bank`}
+                </Btn>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -1472,7 +1593,7 @@ function AddLotsSection({ tda, allTdas, unassignedLots, onAddLots, onMoveLots })
 }
 
 // ── Agreement card ─────────────────────────────────────────────────
-function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign, onAssignLot, buildingUnitCounts, onPatchLotDate }) {
+function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign, onAssignLot, buildingUnitCounts, onPatchLotDate, onAddLotsToBank }) {
   const ss = AGREEMENT_STATUS_STYLE[tda.status] || AGREEMENT_STATUS_STYLE.active
 
   const totalLots        = tda.lots?.length ?? 0
@@ -1625,6 +1746,7 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
         onRemoveLots={onRemoveLots}
         onMoveLots={onMoveLots}
         onAutoAssign={onAutoAssign}
+        onAddLotsToBank={onAddLotsToBank}
       />
     </div>
   )
@@ -2496,6 +2618,13 @@ export default function TakedownView({ showTestCommunities }) {
     load()
   }
 
+  async function addLotsToBank(bankId, lotIds) {
+    await Promise.all(lotIds.map(id =>
+      fetch(`${API_BASE}/tda-lot-banks/${bankId}/lots/${id}`, { method: 'POST' })
+    ))
+    load()
+  }
+
   async function patchCheckpoint(cpId, patch) {
     await fetch(`${API_BASE}/tda-checkpoints/${cpId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -2793,6 +2922,7 @@ export default function TakedownView({ showTestCommunities }) {
                   onAssignLot={assignLot}
                   buildingUnitCounts={data.building_unit_counts || {}}
                   onPatchLotDate={load}
+                  onAddLotsToBank={addLotsToBank}
                 />
               )}
 
