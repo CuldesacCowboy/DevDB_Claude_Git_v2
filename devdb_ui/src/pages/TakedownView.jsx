@@ -997,7 +997,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
 }
 
 // ── Lots section (pool management) ────────────────────────────────
-function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, onMoveLots, onAutoAssign, onAddLotsToBank }) {
+function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, onMoveLots, onAutoAssign }) {
   const poolLots  = (tda.lots || []).filter(l => !l.checkpoint_id)
   const otherTdas = allTdas.filter(t => t.tda_id !== tda.tda_id)
 
@@ -1265,14 +1265,6 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
         </>
       )}
 
-      {/* Manage bank lots — only shown when TDA has a bank */}
-      {tda.bank_id != null && (
-        <ManageBankSection
-          bankId={tda.bank_id} bankName={tda.bank_name}
-          tdaId={tda.tda_id} onAddLotsToBank={onAddLotsToBank} onAddLots={onAddLots}
-        />
-      )}
-
       {/* Add Lots section */}
       <AddLotsSection
         tda={tda}
@@ -1411,21 +1403,12 @@ function AddLotsSection({ tda, allTdas, unassignedLots, onAddLots, onMoveLots })
   const [applying, setApplying]       = useState(false)
   const lastClickedRef                = useRef({}) // keyed by groupKey
 
+  // Available = all community lots not already in this TDA's pool
+  const inThisTda = new Set((tda.lots || []).map(l => l.lot_id))
+  const available = unassignedLots.filter(l => !inThisTda.has(l.lot_id))
   const sourceGroups = []
-  const bankAvailable = tda.bank_id != null ? (tda.bank_available_lots || []) : unassignedLots
-  const unassignedLabel = tda.bank_id != null ? 'Available in bank' : 'Not in any agreement'
-  if (bankAvailable.length > 0) {
-    sourceGroups.push({ key: 'unassigned', label: unassignedLabel, lots: bankAvailable, isMove: false, tdaId: null })
-  }
-  // When TDA has a bank, only show its own bank lots — suppress cross-TDA moves
-  // to avoid showing lots from a different dev/type (e.g. DC lots in a TH picker).
-  if (tda.bank_id == null) {
-    for (const otherTda of allTdas.filter(t => t.tda_id !== tda.tda_id)) {
-      const lots = otherTda.lots || []
-      if (lots.length > 0) {
-        sourceGroups.push({ key: `tda_${otherTda.tda_id}`, label: otherTda.tda_name, lots, isMove: true, tdaId: otherTda.tda_id })
-      }
-    }
+  if (available.length > 0) {
+    sourceGroups.push({ key: 'unassigned', label: 'Not in this agreement', lots: available, isMove: false, tdaId: null })
   }
 
   const totalAvailable = sourceGroups.reduce((s, g) => s + g.lots.length, 0)
@@ -1603,7 +1586,7 @@ function AddLotsSection({ tda, allTdas, unassignedLots, onAddLots, onMoveLots })
 }
 
 // ── Agreement card ─────────────────────────────────────────────────
-function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign, onAssignLot, buildingUnitCounts, onPatchLotDate, onAddLotsToBank }) {
+function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign, onAssignLot, buildingUnitCounts, onPatchLotDate }) {
   const ss = AGREEMENT_STATUS_STYLE[tda.status] || AGREEMENT_STATUS_STYLE.active
 
   const totalLots        = tda.lots?.length ?? 0
@@ -1756,7 +1739,6 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
         onRemoveLots={onRemoveLots}
         onMoveLots={onMoveLots}
         onAutoAssign={onAutoAssign}
-        onAddLotsToBank={onAddLotsToBank}
       />
     </div>
   )
@@ -2932,7 +2914,6 @@ export default function TakedownView({ showTestCommunities }) {
                   onAssignLot={assignLot}
                   buildingUnitCounts={data.building_unit_counts || {}}
                   onPatchLotDate={load}
-                  onAddLotsToBank={addLotsToBank}
                 />
               )}
 

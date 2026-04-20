@@ -366,7 +366,7 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
             bid = tda["bank_id"]
             tda["bank_available_lots"] = bank_available_map.get(bid, []) if bid else []
 
-        # Fetch lots not yet in any TDA for this community (community-wide fallback, no bank)
+        # All community real lots — frontend filters per-TDA (lots can appear in multiple pools)
         cur.execute(
             """
             SELECT DISTINCT l.lot_id, l.lot_number
@@ -375,15 +375,9 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
             JOIN devdb.developments d ON d.dev_id = p.dev_id
             WHERE d.community_id = %s
               AND l.lot_source = 'real'
-              AND l.lot_id NOT IN (
-                  SELECT tal.lot_id
-                  FROM devdb.sim_takedown_agreement_lots tal
-                  JOIN devdb.sim_takedown_agreements tda ON tda.tda_id = tal.tda_id
-                  WHERE tda.ent_group_id = %s
-              )
             ORDER BY l.lot_number
             """,
-            (ent_group_id, ent_group_id),
+            (ent_group_id,),
         )
         unassigned_lots = [{"lot_id": r["lot_id"], "lot_number": r["lot_number"]} for r in cur.fetchall()]
 
