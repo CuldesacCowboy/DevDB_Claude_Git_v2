@@ -1379,7 +1379,7 @@ function ManageBankSection({ bankId, bankName, onAddLotsToBank }) {
                         fontWeight: sel ? 600 : 400,
                       }}
                     >
-                      {fmtLot(l.lot_number)}
+                      {l.lot_number ?? '—'}
                     </span>
                   )
                 })}
