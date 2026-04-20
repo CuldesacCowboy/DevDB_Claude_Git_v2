@@ -24,10 +24,51 @@ const VIOLATION_LABELS = {
   cmp_after_cls: 'Completed after closed — completion date is later than the closing date',
 }
 
+function sortVal(l, col, bgLabelMap) {
+  switch (col) {
+    case 'dev_name':       return l.dev_name ?? ''
+    case 'lot_number':     return l.lot_number ?? ''
+    case 'lot_type_short': return l.lot_type_short ?? ''
+    case 'phase_name':     return l.phase_name ?? ''
+    case 'bldg': {
+      const k = l.building_group_id != null ? `${l.phase_name}::${l.building_group_id}` : null
+      return k ? (bgLabelMap[k] ?? '') : ''
+    }
+    case 'lot_source':     return l.lot_source ?? ''
+    case 'is_spec':        return l.is_spec === true ? 0 : l.is_spec === false ? 1 : 2
+    case 'status':         return l.status ?? ''
+    case 'date_ent':       return l.date_ent ?? null
+    case 'date_dev':       return l.date_dev ?? null
+    case 'date_hc':        return l.date_td_hold ?? l.date_td_hold_projected ?? null
+    case 'date_bldr':      return l.date_td   ?? l.date_td_projected   ?? null
+    case 'date_dig':       return l.date_str  ?? l.date_str_projected  ?? null
+    case 'date_cmp':       return l.date_cmp  ?? l.date_cmp_projected  ?? null
+    case 'date_cls':       return l.date_cls  ?? l.date_cls_projected  ?? null
+    case 'sd':             return l.resolved_sd_name ?? ''
+    default:               return ''
+  }
+}
+
+function applySortedOrder(rows, col, dir, bgLabelMap) {
+  if (!col) return rows
+  return [...rows].sort((a, b) => {
+    const av = sortVal(a, col, bgLabelMap)
+    const bv = sortVal(b, col, bgLabelMap)
+    // nulls last regardless of direction
+    if (av === null && bv === null) return 0
+    if (av === null) return 1
+    if (bv === null) return -1
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0
+    return dir === 'desc' ? -cmp : cmp
+  })
+}
+
 export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onRefreshLots }) {
   const [devFilter,  setDevFilter]  = useState('all')
   const [srcFilter,  setSrcFilter]  = useState('all')
   const [specFilter, setSpecFilter] = useState('all')
+  const [sortCol,    setSortCol]    = useState(null)
+  const [sortDir,    setSortDir]    = useState('asc')
   const [sdEditing,  setSdEditing]  = useState(null)    // lot_id being edited
   const [sdOptions,  setSdOptions]  = useState([])      // loaded when edit opens
   const [sdSaving,   setSdSaving]   = useState(false)
@@ -66,6 +107,11 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
      (specFilter === 'undet' && l.is_spec == null))
   )
 
+  function handleSort(col) {
+    if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortCol(col); setSortDir('asc') }
+  }
+
   const overrideable = l => l.lot_source === 'real'
 
   const bgLabelMap = (() => {
@@ -83,6 +129,8 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
     }
     return map
   })()
+
+  const sortedFiltered = applySortedOrder(filtered, sortCol, sortDir, bgLabelMap)
 
   const violatedFields = l => {
     const fields = new Set()
@@ -125,7 +173,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
         <span style={{ fontSize: 11, color: '#92400e', marginLeft: 6 }}>amber = override (click to edit)</span>
         <button onClick={() => {
           const headers = ['Development','Lot #','Type','Phase','Bldg','Source','Spec','Status','ENT','DEV','HC','BLDR','DIG','CMP','CLS']
-          const csvRows = filtered.map(l => {
+          const csvRows = sortedFiltered.map(l => {
             const bgKey = l.building_group_id != null ? `${l.phase_name}::${l.building_group_id}` : null
             const bgLabel = bgKey ? bgLabelMap[bgKey] : ''
             const specLabel = l.is_spec === true ? 'Spec' : l.is_spec === false ? 'Build' : ''
@@ -148,26 +196,47 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
         <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
             <tr style={{ background: '#f9fafb' }}>
-              {devFilter === 'all' && <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Development</th>}
-              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Lot #</th>
-              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Type</th>
-              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Phase</th>
-              <th style={{ ...thS('center'), position: 'sticky', top: 0, zIndex: 2, color: '#0d9488' }}>Bldg</th>
-              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Src</th>
-              <th style={{ ...thS('center'), position: 'sticky', top: 0, zIndex: 2, color: '#0d9488' }}>Spec</th>
-              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>Status</th>
-              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>ENT</th>
-              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>DEV</th>
-              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>HC</th>
-              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>BLDR</th>
-              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>DIG</th>
-              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>CMP</th>
-              <th style={{ ...thS(), position: 'sticky', top: 0, zIndex: 2 }}>CLS</th>
-              <th style={{ ...thS('left'), position: 'sticky', top: 0, zIndex: 2 }}>SD</th>
+              {[
+                devFilter === 'all' && ['dev_name',       'left',   'Development'],
+                                       ['lot_number',     'left',   'Lot #'],
+                                       ['lot_type_short', 'left',   'Type'],
+                                       ['phase_name',     'left',   'Phase'],
+                                       ['bldg',           'center', 'Bldg',   { color: '#0d9488' }],
+                                       ['lot_source',     'left',   'Src'],
+                                       ['is_spec',        'center', 'Spec',   { color: '#0d9488' }],
+                                       ['status',         'left',   'Status'],
+                                       ['date_ent',       'center', 'ENT'],
+                                       ['date_dev',       'center', 'DEV'],
+                                       ['date_hc',        'center', 'HC'],
+                                       ['date_bldr',      'center', 'BLDR'],
+                                       ['date_dig',       'center', 'DIG'],
+                                       ['date_cmp',       'center', 'CMP'],
+                                       ['date_cls',       'center', 'CLS'],
+                                       ['sd',             'left',   'SD'],
+              ].filter(Boolean).map(([col, align, label, extra]) => {
+                const active = sortCol === col
+                return (
+                  <th key={col}
+                    onClick={() => handleSort(col)}
+                    style={{
+                      ...thS(align), ...extra,
+                      position: 'sticky', top: 0, zIndex: 2,
+                      cursor: 'pointer', userSelect: 'none',
+                      background: active ? '#eef2ff' : '#f9fafb',
+                    }}>
+                    {label}
+                    {active
+                      ? <span style={{ marginLeft: 3, fontSize: 9, color: '#4f46e5' }}>
+                          {sortDir === 'asc' ? '▲' : '▼'}
+                        </span>
+                      : <span style={{ marginLeft: 3, fontSize: 9, color: '#d1d5db' }}>⇅</span>}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
-            {filtered.map((l, idx) => {
+            {sortedFiltered.map((l, idx) => {
               const vf = violatedFields(l)
               const vTip = violationTip(l)
               const VDot = ({ field }) => vf.has(field) ? <ViolationDot title={vTip} /> : null
@@ -175,7 +244,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
               const bgLabel = bgKey ? bgLabelMap[bgKey] : null
               const bgIndex = bgLabel ? parseInt(bgLabel.slice(1)) - 1 : 0
               const rowTint = bgLabel ? BG_ROW_PALETTE[bgIndex % BG_ROW_PALETTE.length] : null
-              const prevLot = idx > 0 ? filtered[idx - 1] : null
+              const prevLot = idx > 0 ? sortedFiltered[idx - 1] : null
               const isGroupStart = l.building_group_id != null && (
                 !prevLot || prevLot.building_group_id !== l.building_group_id || prevLot.phase_name !== l.phase_name
               )
