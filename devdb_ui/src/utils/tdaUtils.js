@@ -7,21 +7,26 @@ export function fmt(dateStr) {
   return `${m}/${d}/${y.slice(2)}`
 }
 
-// ── Short lot number: "WS00000001" → "WS · 001", "4300000001" → "43 · 001" ──
+// ── Short lot number: "ST00000064" → "ST_ 64" ──────────────────────────────
+// XX = dev code, _ = separator, NNN = 3-char right-justified (non-breaking spaces).
 export function shortLot(lotNumber) {
   if (!lotNumber) return '—'
   const match = lotNumber.match(/^([A-Za-z]+|\d{2})0*(\d+)$/)
   if (!match) return lotNumber
-  const seq = parseInt(match[2], 10)
-  return `${match[1]} · ${String(seq).padStart(3, '0')}`
+  const numStr = String(parseInt(match[2], 10))
+  const pad = '\u00a0'.repeat(Math.max(0, 3 - numStr.length))
+  return `${match[1]}_${pad}${numStr}`
 }
 
 // ── Parse lot into { code, seq } ─────────────────────────────────
+// seq is 3-char right-justified with non-breaking spaces (no leading zeros).
 export function parseLot(lotNumber) {
   if (!lotNumber) return { code: '—', seq: '—' }
   const match = lotNumber.match(/^([A-Za-z]+|\d{2})0*(\d+)$/)
   if (!match) return { code: lotNumber, seq: '' }
-  return { code: match[1], seq: String(parseInt(match[2], 10)).padStart(3, '0') }
+  const numStr = String(parseInt(match[2], 10))
+  const pad = '\u00a0'.repeat(Math.max(0, 3 - numStr.length))
+  return { code: match[1], seq: `${pad}${numStr}` }
 }
 
 // ── Group lots by building_group_id, preserving first-appearance order ─

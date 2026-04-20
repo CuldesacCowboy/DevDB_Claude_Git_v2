@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { API_BASE } from '../config'
 import { useOverrides } from '../hooks/useOverrides'
+import { fmtLot } from '../components/simulation/simShared'
 import OverrideDateCell from '../components/overrides/OverrideDateCell'
 import OverridesPanel from '../components/overrides/OverridesPanel'
 import SyncReconciliationModal from '../components/overrides/SyncReconciliationModal'
@@ -75,7 +76,7 @@ function LotRow({ lot, onApply, onClear }) {
     <tr style={{ borderBottom: '1px solid #f3f4f6' }}>
       <td style={{ padding: '3px 8px', fontFamily: 'monospace', fontSize: 12,
         color: isSim ? '#9ca3af' : '#111827', whiteSpace: 'nowrap' }}>
-        {lot.lot_number ?? <span style={{ color: '#d1d5db' }}>—</span>}
+        {fmtLot(lot.lot_number)}
       </td>
       <td style={{ padding: '3px 8px', fontSize: 11, color: '#6b7280' }}>
         {lot.lot_type_short ?? ''}

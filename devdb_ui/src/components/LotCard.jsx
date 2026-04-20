@@ -13,7 +13,11 @@ function pillStyle(status) {
 function parseLotNumber(lotNumber, fallbackId) {
   if (!lotNumber) return { code: 'lot', num: String(fallbackId) }
   const match = lotNumber.match(/^([A-Za-z]+)0*(\d+)$/)
-  if (match) return { code: match[1].toUpperCase(), num: String(parseInt(match[2])) }
+  if (match) {
+    const numStr = String(parseInt(match[2], 10))
+    const pad = '\u00a0'.repeat(Math.max(0, 3 - numStr.length))
+    return { code: match[1].toUpperCase(), num: `${pad}${numStr}` }
+  }
   return { code: lotNumber, num: '' }
 }
 

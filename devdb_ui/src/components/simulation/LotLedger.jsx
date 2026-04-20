@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { API_BASE } from '../../config'
 import { StatusBadge } from '../../utils/statusConfig'
 import OverrideDateCell from '../overrides/OverrideDateCell'
-import { thS, tdS, fmt, exportToCsv } from './simShared'
+import { thS, tdS, fmt, exportToCsv, fmtLot, PROV_SIM } from './simShared'
 
 const BG_ROW_PALETTE = [
   '#eff6ff','#f0fdf4','#fefce8','#fff1f2',
@@ -201,9 +201,9 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                                        ['lot_number',     'left',   'Lot #'],
                                        ['lot_type_short', 'left',   'Type'],
                                        ['phase_name',     'left',   'Phase'],
-                                       ['bldg',           'center', 'Bldg',   { color: '#0d9488' }],
+                                       ['bldg',           'center', 'Bldg'],
                                        ['lot_source',     'left',   'Src'],
-                                       ['is_spec',        'center', 'Spec',   { color: '#0d9488' }],
+                                       ['is_spec',        'center', 'Spec'],
                                        ['status',         'left',   'Status'],
                                        ['date_ent',       'center', 'ENT'],
                                        ['date_dev',       'center', 'DEV'],
@@ -251,18 +251,17 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
               return (
               <tr key={l.lot_id} style={{ background: rowTint ?? '' }}>
                 {devFilter === 'all' && <td style={tdS('left')}>{l.dev_name}</td>}
-                <td style={tdS('left')}>{l.lot_number ?? '—'}</td>
+                <td style={tdS('left')}>{fmtLot(l.lot_number)}</td>
                 <td style={tdS('left')}>{l.lot_type_short ?? '—'}</td>
                 <td style={tdS('left')}>{l.phase_name}</td>
                 <td style={tdS('center', {
-                  color: '#0d9488', fontWeight: 600, fontSize: 11, letterSpacing: '0.02em',
-                  borderTop: isGroupStart ? '2px solid #0d9488' : undefined,
+                  borderTop: isGroupStart ? '2px solid #e5e7eb' : undefined,
                 })}>{bgLabel ?? ''}</td>
                 <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>{l.lot_source}</td>
                 <td style={tdS('center')}>
-                  {l.is_spec === true  && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 5px', borderRadius: 3, background: '#f0fdfa', color: '#0d9488', border: '1px solid #99f6e4' }}>S</span>}
-                  {l.is_spec === false && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 5px', borderRadius: 3, background: '#f9fafb', color: '#6b7280', border: '1px solid #e5e7eb' }}>B</span>}
-                  {l.is_spec == null  && <span style={{ fontSize: 10, color: '#d1d5db' }}>—</span>}
+                  {l.is_spec === true  && <span style={{ ...PROV_SIM, fontSize: 12 }}>S</span>}
+                  {l.is_spec === false && <span style={{ ...PROV_SIM, fontSize: 12 }}>B</span>}
+                  {l.is_spec == null   && <span style={{ color: '#d1d5db' }}>—</span>}
                 </td>
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>

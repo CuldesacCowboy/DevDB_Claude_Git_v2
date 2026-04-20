@@ -114,6 +114,24 @@ export function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate
 
 // ─── Shared table styles ──────────────────────────────────────────────────────
 
+// ─── Provenance style tokens ──────────────────────────────────────────────────
+// Use these everywhere a value can be MARKS-actual, engine-projected, or user-overridden.
+export const PROV_MARKS = { color: '#111827' }
+export const PROV_SIM   = { color: '#93c5fd', fontStyle: 'italic' }
+export const PROV_OV    = { color: '#92400e', background: '#fef3c7', fontWeight: 600 }
+
+// ─── Lot number display ───────────────────────────────────────────────────────
+// Converts raw DB lot_number ("ST00000064") → display format ("ST_ 64").
+// XX = dev code, _ = literal separator, NNN = 3-char right-justified with non-breaking spaces.
+export function fmtLot(lotNumber) {
+  if (!lotNumber) return '—'
+  const m = lotNumber.match(/^([A-Za-z]+|\d{2})0*(\d+)$/)
+  if (!m) return lotNumber
+  const numStr = String(parseInt(m[2], 10))
+  const pad = '\u00a0'.repeat(Math.max(0, 3 - numStr.length))
+  return `${m[1]}_${pad}${numStr}`
+}
+
 export const thS = (align = 'right', extra = {}) => ({
   padding: '4px 8px', textAlign: align, fontWeight: 600,
   borderBottom: '2px solid #e5e7eb', color: '#6b7280', fontSize: 12,

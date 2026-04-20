@@ -108,11 +108,15 @@ export function SortHeader({ label, sortKey, sort, onSort, style = {} }) {
 
 // ─── Lot number formatters ────────────────────────────────────────────────────
 
-// Strip leading zeros from the numeric suffix: "WS083" → "WS83", "083" → "83"
+// Format lot number as "XX_NNN": "ST00000064" → "ST_ 64", "WS083" → "WS_ 83"
+// NNN is 3-char right-justified with non-breaking spaces (no leading zeros).
 export function formatLotNum(s) {
   if (!s) return s ?? ''
   const m = s.match(/^([A-Za-z]*)(\d+)$/)
-  return m ? `${m[1]}${parseInt(m[2], 10)}` : s
+  if (!m) return s
+  const numStr = String(parseInt(m[2], 10))
+  const pad = '\u00a0'.repeat(Math.max(0, 3 - numStr.length))
+  return `${m[1]}_${pad}${numStr}`
 }
 
 // Extract the sequence string from a lot number given its dev code.
@@ -128,25 +132,10 @@ export function lotSeqStr(lotNumber, devCode = '') {
   return lotNumber
 }
 
-// Fixed-width display: "WS1" → "WS   1", "4300000001" (devCode="43") → "43   1"
-// Always ≥1 non-breaking space between prefix and number, monospace font required.
+// Fixed-width display: same XX_NNN format as formatLotNum.
+// maxDigits and devCode params kept for backwards compat but NNN is always 3 chars.
 export function formatLotNumPadded(s, maxDigits, devCode = '') {
-  if (!s) return s ?? ''
-  const m = s.match(/^([A-Za-z]+)(\d+)$/)
-  if (m) {
-    const numStr = String(parseInt(m[2], 10))
-    const spaces = Math.max(1, maxDigits - numStr.length + 1)
-    return `${m[1]}${'\u00a0'.repeat(spaces)}${numStr}`
-  }
-  if (devCode && s.startsWith(devCode)) {
-    const seq = parseInt(s.slice(devCode.length), 10)
-    if (!isNaN(seq)) {
-      const numStr = String(seq)
-      const spaces = Math.max(1, maxDigits - numStr.length + 1)
-      return `${devCode}${'\u00a0'.repeat(spaces)}${numStr}`
-    }
-  }
-  return s
+  return formatLotNum(s)
 }
 
 export function ChevronIcon({ open }) {

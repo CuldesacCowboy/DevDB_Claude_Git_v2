@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { API_BASE } from '../config'
+import { fmtLot } from '../components/simulation/simShared'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -146,7 +147,7 @@ function PromotableSection({ onRefresh }) {
                         }}
                       />
                     </td>
-                    <td style={{ padding: '3px 8px', fontFamily: 'monospace' }}>{lot.lot_number}</td>
+                    <td style={{ padding: '3px 8px', fontFamily: 'monospace' }}>{fmtLot(lot.lot_number)}</td>
                     <td style={{ padding: '3px 8px' }}><StatusPill lot={lot} /></td>
                     <td style={{ padding: '3px 8px', color: '#6b7280' }}>{lot.date_str ?? '—'}</td>
                     <td style={{ padding: '3px 8px', color: '#6b7280' }}>{lot.date_cmp ?? '—'}</td>
@@ -320,7 +321,7 @@ function ImportPanel({ devCode, onDone }) {
                 <td style={{ padding: '3px 8px' }}>
                   <input type="checkbox" readOnly checked={selected.has(lot.housenumber)} />
                 </td>
-                <td style={{ padding: '3px 8px', fontFamily: 'monospace', fontWeight: 500 }}>{lot.lot_number}</td>
+                <td style={{ padding: '3px 8px', fontFamily: 'monospace', fontWeight: 500 }}>{fmtLot(lot.lot_number)}</td>
                 <td style={{ padding: '3px 8px' }}><StatusPill lot={lot} /></td>
                 <td style={{ padding: '3px 8px', color: '#6b7280' }}>{lot.date_td ?? '—'}</td>
                 <td style={{ padding: '3px 8px', color: '#6b7280' }}>{lot.date_str ?? '—'}</td>
