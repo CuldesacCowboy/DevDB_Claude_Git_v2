@@ -802,7 +802,6 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
         {autoAssignResult && !assigning && (
           <span style={{ fontSize: 10, color: '#0d9488', fontStyle: 'italic', animation: 'tda-fadeout 0.5s ease 3.5s forwards' }}>
             {autoAssignResult.assigned} assigned
-            {autoAssignResult.unassigned > 0 ? `, ${autoAssignResult.unassigned} without dates` : ''}
             {autoAssignResult.skipped_builder_mismatch > 0 ? `, ${autoAssignResult.skipped_builder_mismatch} skipped (builder mismatch)` : ''}
           </span>
         )}
@@ -817,11 +816,11 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
               <th style={{ ...TH, width: 44, padding: '3px 4px' }}></th>
               {[
                 { h: 'Checkpoint', tip: 'Cumulative lots required by this date' },
-                { h: 'Required', tip: 'Lots needed for this checkpoint slot (delta from previous)' },
-                { h: 'Assigned', tip: 'Lots manually slotted into this checkpoint — independent of engine date projections' },
-                { h: 'Status', tip: 'Manual slot fill vs per-checkpoint delta (✓ full, +N surplus, −N short). Amber = slots full but Sim Plan is short — engine and slots disagree.' },
-                { h: 'Sim Plan', tip: 'Engine projection: lots with projected or actual dates on or before this checkpoint date — cumulative (per D-087: both HC and BLDR count). Run sim to update.' },
-                { h: 'To Date', tip: 'Cumulative lots actually taken down (actuals only) through today, or through the checkpoint date if it has already passed' },
+                { h: 'To Date', tip: 'Actual takedowns (MARKS actuals only) on or before today and this checkpoint date, vs cumulative required' },
+                { h: 'On Time', tip: 'Assigned lots whose effective date (earliest of BLDR/HC actual or projected) is on or before this checkpoint date, vs per-checkpoint slots required' },
+                { h: 'Marks', tip: 'Assigned lots that have at least one actual MARKS takedown date (date_td or date_td_hold), vs per-checkpoint slots required' },
+                { h: 'Sim', tip: 'Assigned lots with only engine-projected dates (no MARKS actual) on or before this checkpoint date, vs per-checkpoint slots required' },
+                { h: 'Late', tip: 'Assigned lots whose effective date is after this checkpoint date, or has no date — assigned to this slot as a late/undated catch-all, vs per-checkpoint slots required' },
                 { h: '', tip: '' },
               ].map(({ h, tip }, i) => (
                 <th key={i} style={TH} title={tip}>{h}</th>
@@ -835,12 +834,42 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
               const prevRequired = idx > 0 ? (tda.checkpoints[idx - 1].lots_required_cumulative || 0) : 0
               const perRequired  = required - prevRequired
               const cpLots       = lotsByCp[cp.checkpoint_id] || []
-              const gap          = perRequired - cpLots.length
+
+              // Per-checkpoint slot stats (computed from assigned lots)
+              const cpStats = (() => {
+                if (!cp.checkpoint_date) return null
+                let onTime = 0, marks = 0, sim = 0, late = 0
+                for (const lot of cpLots) {
+                  const effBldr = lot.bldr_marks_date || lot.bldr_projected_date
+                  const effHc   = lot.hc_marks_date   || lot.hc_projected_date
+                  const dates   = [effBldr, effHc].filter(Boolean)
+                  const eff     = dates.length > 0 ? dates.reduce((a, b) => (a < b ? a : b)) : null
+                  const hasMarksActual = !!(lot.bldr_marks_date || lot.hc_marks_date)
+                  const hasProjected   = !hasMarksActual && !!(lot.bldr_projected_date || lot.hc_projected_date)
+                  if (eff && eff <= cp.checkpoint_date) onTime++; else late++
+                  if (hasMarksActual) marks++
+                  else if (hasProjected) sim++
+                  // else: no date at all — counted in late already
+                }
+                return { onTime, marks, sim, late }
+              })()
 
               const rowBg = perRequired === 0 ? '#fff'
-                : gap === 0 ? '#f0fdf4'
-                : gap < 0   ? '#f0fdf4'
-                : '#fef2f2'
+                : (cpStats ? cpStats.late === 0 && cpLots.length >= perRequired : cpLots.length >= perRequired)
+                  ? '#f0fdf4'
+                  : '#fef2f2'
+
+              function cpStat(n, d, tipLabel) {
+                if (!cp.checkpoint_date) return <span style={{ color: TEXT_MUTED }}>—</span>
+                const ok = d > 0 && n >= d
+                const color = ok ? '#15803d' : n > 0 ? '#d97706' : TEXT_MUTED
+                return (
+                  <span style={{ color, fontVariantNumeric: 'tabular-nums', fontWeight: ok ? 600 : 400 }}
+                        title={`${tipLabel}: ${n} of ${d}`}>
+                    {n}/{d}
+                  </span>
+                )
+              }
 
               return (
                 <Fragment key={cp.checkpoint_id}>
@@ -869,57 +898,35 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                           onSave={v => onPatchCheckpoint(cp.checkpoint_id, { checkpoint_date: v })} />
                       </span>
                     </td>
-                    {/* Required (per-cp) */}
-                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{perRequired}</td>
-                    {/* Assigned */}
-                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cpLots.length}</td>
-                    {/* Status — amber when slots are full but Sim Plan is short */}
-                    {(() => {
-                      const slotsFull = perRequired > 0 && gap <= 0
-                      const simShort  = cp.sim_plan != null && cp.checkpoint_date != null && cp.sim_plan < required
-                      const conflict  = slotsFull && simShort
-                      return (
-                        <td style={{ ...TD, background: conflict ? '#fef3c7' : undefined }}
-                            title={conflict ? 'Slots full but engine projection is short — check lot dates or run sim' : undefined}>
-                          {perRequired === 0 ? (
-                            <span style={{ color: TEXT_MUTED }}>—</span>
-                          ) : gap === 0 ? (
-                            <span style={{ color: conflict ? '#92400e' : '#16a34a', fontWeight: 700, fontSize: 13 }}>✓</span>
-                          ) : gap < 0 ? (
-                            <span style={{ color: '#15803d', fontWeight: 700 }}>+{Math.abs(gap)}</span>
-                          ) : (
-                            <span style={{ color: '#dc2626', fontWeight: 700 }}>−{gap}</span>
-                          )}
-                        </td>
-                      )
-                    })()}
-                    {/* Sim Plan */}
+                    {/* To Date: MARKS actuals only, cumulative */}
                     <td style={{ ...TD, fontVariantNumeric: 'tabular-nums' }}>
-                      {(cp.sim_plan != null && cp.checkpoint_date != null) ? (() => {
-                        const simOk = cp.sim_plan >= required
-                        const contributing = (tda.lots || []).filter(lot => {
-                          if (tda.builder_id != null && lot.resolved_builder_id !== tda.builder_id) return false
-                          const effBldr = lot.bldr_marks_date || lot.bldr_projected_date
-                          const effHc   = lot.hc_marks_date   || lot.hc_projected_date
-                          // Compare ISO date strings directly — avoids timezone shifts
-                          // that occur when new Date('YYYY-MM-DD') is parsed as UTC midnight
-                          // and then compared against a local-timezone T23:59:59 boundary.
-                          return (effBldr && effBldr <= cp.checkpoint_date) || (effHc && effHc <= cp.checkpoint_date)
-                        })
-                        const simTip = !cp.checkpoint_date
-                          ? 'Checkpoint has no date — set a checkpoint date to enable projection'
-                          : contributing.length > 0
-                            ? `Contributing lots: ${contributing.map(l => pillLotNum(l.lot_number).trim()).join(', ')}`
-                            : 'No lots with dates on or before this checkpoint'
+                      {cp.checkpoint_date ? (() => {
+                        const n = cp.taken_down_to_date ?? 0
+                        const ok = required > 0 && n >= required
                         return (
-                          <span title={simTip} style={{ color: simOk ? '#15803d' : '#dc2626', fontWeight: 600, cursor: 'help' }}>
-                            {cp.sim_plan}/{required}
+                          <span style={{ color: ok ? '#15803d' : n > 0 ? '#d97706' : TEXT_MUTED, fontWeight: ok ? 600 : 400 }}>
+                            {n}/{required}
                           </span>
                         )
                       })() : <span style={{ color: TEXT_MUTED }}>—</span>}
                     </td>
-                    {/* To Date */}
-                    <td style={{ ...TD, color: TEXT_MUTED, fontVariantNumeric: 'tabular-nums' }}>{cp.checkpoint_date ? (cp.taken_down_to_date ?? 0) : '—'}</td>
+                    {/* On Time: assigned lots with eff date <= checkpoint date */}
+                    <td style={TD}>{cpStat(cpStats?.onTime ?? 0, perRequired, 'On time')}</td>
+                    {/* Marks: assigned lots with MARKS actual dates */}
+                    <td style={TD}>{cpStat(cpStats?.marks ?? 0, perRequired, 'Has MARKS actual')}</td>
+                    {/* Sim: assigned lots with only projected dates */}
+                    <td style={TD}>{cpStat(cpStats?.sim ?? 0, perRequired, 'Engine projected only')}</td>
+                    {/* Late: assigned lots with no date or date after checkpoint */}
+                    <td style={{ ...TD, fontVariantNumeric: 'tabular-nums' }}>
+                      {cp.checkpoint_date ? (() => {
+                        const n = cpStats?.late ?? 0
+                        return (
+                          <span style={{ color: n > 0 ? '#dc2626' : TEXT_MUTED, fontWeight: n > 0 ? 600 : 400 }}>
+                            {n}/{perRequired}
+                          </span>
+                        )
+                      })() : <span style={{ color: TEXT_MUTED }}>—</span>}
+                    </td>
                     {/* Delete */}
                     <td style={{ ...TD, textAlign: 'right', paddingRight: 4 }}>
                       {confirmDelete === cp.checkpoint_id ? (
