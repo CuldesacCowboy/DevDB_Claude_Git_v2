@@ -260,7 +260,8 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                 )
                 continue
             required = int(raw_req)
-            hold_date = max((cp_date - timedelta(days=lead)).date(), hc_floor)
+            natural_hold = (cp_date - timedelta(days=lead)).date()
+            hold_date = max(natural_hold, hc_floor) if natural_hold >= date.today() else natural_hold
 
             count_taken = sum(
                 1 for lot in tda_snapshot_lots.values() if _fulfills(lot, cp_date)
@@ -318,11 +319,13 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
         # Pool lots with no td/hold/str that weren't scheduled above are spread
         # across checkpoint hold dates in round-robin order so excess absorption
         # tracks the checkpoint cadence rather than piling on a single date.
-        cp_hold_dates = [
-            max((pd.Timestamp(cp["checkpoint_date"]) - timedelta(days=lead)).date(), hc_floor)
-            for _, cp in checkpoints.iterrows()
-            if cp["checkpoint_date"] is not None and pd.notna(cp["checkpoint_date"])
-        ]
+        today = date.today()
+        cp_hold_dates = []
+        for _, cp in checkpoints.iterrows():
+            if cp["checkpoint_date"] is None or pd.isna(cp["checkpoint_date"]):
+                continue
+            n = (pd.Timestamp(cp["checkpoint_date"]) - timedelta(days=lead)).date()
+            cp_hold_dates.append(max(n, hc_floor) if n >= today else n)
         if not cp_hold_dates:
             continue  # no dated checkpoints — nothing to push excess lots toward
         if first_unsatisfied_hold is not None:
