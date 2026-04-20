@@ -1009,9 +1009,9 @@ def get_tda_checklist(show_test: bool = False, conn=Depends(get_db_conn)):
 def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
     """Assign each TDA lot to the earliest checkpoint whose date >= the lot's
     effective takedown date (min of D-087 BLDR and HC paths). Lots with no
-    applicable date are left unassigned. Lots whose effective date falls after
-    all checkpoint dates are assigned to the last (latest) checkpoint as a
-    catch-all. Existing assignments are cleared first."""
+    effective date, or whose date falls after all checkpoint dates, are assigned
+    to the last checkpoint as a late/undated catch-all. Existing assignments
+    are cleared first."""
     cur = dict_cursor(conn)
     try:
         cur.execute(
@@ -1069,7 +1069,6 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
         )
 
         assigned = 0
-        unassigned = 0
         skipped_builder = 0
         for lot in lots:
             # Skip lots whose resolved builder doesn't match the TDA's builder
@@ -1086,17 +1085,18 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
             else:
                 td = eff_bldr or eff_hc
             if td is None:
-                unassigned += 1
-                continue
-            # Find first checkpoint whose date >= lot's effective_td
-            target_cp = None
-            for cp in checkpoints:
-                if cp["checkpoint_date"] is not None and cp["checkpoint_date"] >= td:
-                    target_cp = cp
-                    break
-            if target_cp is None:
-                # No checkpoint covers this lot's date; assign to last checkpoint
+                # No effective date — assign to last checkpoint as a late/undated slot
                 target_cp = checkpoints[-1]
+            else:
+                # Find first checkpoint whose date >= lot's effective_td
+                target_cp = None
+                for cp in checkpoints:
+                    if cp["checkpoint_date"] is not None and cp["checkpoint_date"] >= td:
+                        target_cp = cp
+                        break
+                if target_cp is None:
+                    # Effective date falls after all checkpoint dates; assign to last
+                    target_cp = checkpoints[-1]
 
             cur.execute(
                 """
@@ -1113,7 +1113,6 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
         return {
             "tda_id": tda_id,
             "assigned": assigned,
-            "unassigned": unassigned,
             "skipped_builder_mismatch": skipped_builder,
         }
 
