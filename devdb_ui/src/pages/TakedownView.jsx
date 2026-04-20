@@ -1267,7 +1267,10 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
 
       {/* Manage bank lots — only shown when TDA has a bank */}
       {tda.bank_id != null && (
-        <ManageBankSection bankId={tda.bank_id} bankName={tda.bank_name} onAddLotsToBank={onAddLotsToBank} />
+        <ManageBankSection
+          bankId={tda.bank_id} bankName={tda.bank_name}
+          tdaId={tda.tda_id} onAddLotsToBank={onAddLotsToBank} onAddLots={onAddLots}
+        />
       )}
 
       {/* Add Lots section */}
@@ -1283,7 +1286,7 @@ function LotsSection({ tda, allTdas, unassignedLots, onAddLots, onRemoveLots, on
 }
 
 // ── Manage bank section ────────────────────────────────────────────
-function ManageBankSection({ bankId, bankName, onAddLotsToBank }) {
+function ManageBankSection({ bankId, bankName, tdaId, onAddLotsToBank, onAddLots }) {
   const [open, setOpen]           = useState(false)
   const [lots, setLots]           = useState([])
   const [fetching, setFetching]   = useState(false)
@@ -1327,7 +1330,9 @@ function ManageBankSection({ bankId, bankName, onAddLotsToBank }) {
   async function handleAdd() {
     if (!selected.size || applying) return
     setApplying(true)
-    await onAddLotsToBank(bankId, [...selected])
+    const ids = [...selected]
+    await onAddLotsToBank(bankId, ids)
+    await onAddLots(tdaId, ids)
     setApplying(false)
     setSelected(new Set())
     fetchNonMembers()
@@ -1387,7 +1392,7 @@ function ManageBankSection({ bankId, bankName, onAddLotsToBank }) {
               </div>
               {nSel > 0 && (
                 <Btn variant="primary" onClick={handleAdd} disabled={applying} style={{ fontSize: 11, padding: '3px 10px' }}>
-                  {applying ? 'Adding…' : `Add ${nSel} lot${nSel !== 1 ? 's' : ''} to bank`}
+                  {applying ? 'Adding…' : `Add ${nSel} lot${nSel !== 1 ? 's' : ''} to agreement`}
                 </Btn>
               )}
             </>
@@ -1412,10 +1417,14 @@ function AddLotsSection({ tda, allTdas, unassignedLots, onAddLots, onMoveLots })
   if (bankAvailable.length > 0) {
     sourceGroups.push({ key: 'unassigned', label: unassignedLabel, lots: bankAvailable, isMove: false, tdaId: null })
   }
-  for (const otherTda of allTdas.filter(t => t.tda_id !== tda.tda_id)) {
-    const lots = otherTda.lots || []
-    if (lots.length > 0) {
-      sourceGroups.push({ key: `tda_${otherTda.tda_id}`, label: otherTda.tda_name, lots, isMove: true, tdaId: otherTda.tda_id })
+  // When TDA has a bank, only show its own bank lots — suppress cross-TDA moves
+  // to avoid showing lots from a different dev/type (e.g. DC lots in a TH picker).
+  if (tda.bank_id == null) {
+    for (const otherTda of allTdas.filter(t => t.tda_id !== tda.tda_id)) {
+      const lots = otherTda.lots || []
+      if (lots.length > 0) {
+        sourceGroups.push({ key: `tda_${otherTda.tda_id}`, label: otherTda.tda_name, lots, isMove: true, tdaId: otherTda.tda_id })
+      }
     }
   }
 
