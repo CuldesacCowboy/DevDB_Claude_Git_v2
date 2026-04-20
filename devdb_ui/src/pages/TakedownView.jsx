@@ -339,7 +339,7 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
   const [bulkDate, setBulkDate]         = useState('')
   const [bulkApplying, setBulkApplying] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
-  const [overflowOpen, setOverflowOpen] = useState(false)
+  const [overflowOpen, setOverflowOpen] = useState(true)
 
   const STD_H = {
     padding: '3px 6px', fontSize: 10, fontWeight: 600,
@@ -675,8 +675,8 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
             onClick={() => setOverflowOpen(v => !v)}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: '#fefce8', cursor: 'pointer', userSelect: 'none' }}
           >
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#92400e' }}>OVERFLOW ({overflowLots.length})</span>
-            <span style={{ fontSize: 10, color: '#a16207' }}>lots beyond required count</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#92400e' }}>+{overflowLots.length} EXTRA</span>
+            <span style={{ fontSize: 10, color: '#a16207' }}>beyond required count (late/undated lots land here)</span>
             <span style={{ fontSize: 9, color: '#92400e', marginLeft: 'auto' }}>{overflowOpen ? '▼' : '▶'}</span>
           </div>
           {overflowOpen && (
