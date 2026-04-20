@@ -212,19 +212,6 @@ def add_lot_to_pool(tda_id: int, lot_id: int, conn=Depends(get_db_conn)):
         if cur.fetchone() is None:
             raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found.")
 
-        # If this TDA has a bank, validate the lot belongs to that bank
-        if tda_row["bank_id"] is not None:
-            cur.execute(
-                "SELECT 1 FROM devdb.sim_tda_lot_bank_members WHERE bank_id = %s AND lot_id = %s",
-                (tda_row["bank_id"], lot_id),
-            )
-            if cur.fetchone() is None:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Lot {lot_id} is not a member of bank {tda_row['bank_id']}. "
-                           "Add the lot to the bank first.",
-                )
-
         # Idempotent insert
         cur.execute(
             "SELECT 1 FROM devdb.sim_takedown_agreement_lots WHERE tda_id = %s AND lot_id = %s",
