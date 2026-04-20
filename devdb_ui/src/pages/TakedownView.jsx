@@ -1646,21 +1646,6 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
           <option value="">— any builder —</option>
           {(builders || []).map(b => <option key={b.builder_id} value={b.builder_id}>{b.builder_name.replace(' Homes', '')}</option>)}
         </select>
-        {/* Bank — editable dropdown */}
-        {banks && banks.length > 0 && (
-          <>
-            <span style={{ fontSize: 11, color: TEXT_MUTED }}>Bank:</span>
-            <select
-              value={tda.bank_id ?? ''}
-              onChange={e => onPatch({ bank_id: e.target.value ? Number(e.target.value) : null })}
-              style={{ ...SEL_STYLE, color: tda.bank_id ? '#6366f1' : TEXT_MUTED }}
-              title="Lot bank — restricts which lots can be added to this agreement"
-            >
-              <option value="">— no bank —</option>
-              {banks.map(b => <option key={b.bank_id} value={b.bank_id}>{b.bank_name}</option>)}
-            </select>
-          </>
-        )}
         {/* Lot quota — editable; null means unlimited */}
         <span style={{ fontSize: 11, color: TEXT_MUTED }}
               title="Max HC hold assignments the engine will make. Counts actual HC holds, actual BLDR TDs, and locked projected HC dates. Lots with only a BLDR sim projection (date_td_projected) do not count against quota — they travel the BLDR path and need no HC hold.">Quota:</span>
