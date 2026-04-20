@@ -21,11 +21,11 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-15
 
 ### devdb_python/engine/coordinator.py
-- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates; no domain logic — all logic lives in pipeline modules; passes resolved_events directly to P-07; returns (iterations, missing_params_devs, residual_gaps)
+- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates; no domain logic — all logic lives in pipeline modules; passes resolved_events directly to P-07; returns (iterations, missing_params_devs, residual_gaps); injects _scheduling_horizon_days into build_lag_curves dict (alongside _td_to_str_lag, _default_cmp, _default_cls) so S-0500 can floor HC hold dates without a new signature param
 - Imports: engine modules s0100-s1200 (including s0760), p0000-p0800, p_pre_locked_event_rebuilder, config_loader, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
 - Imported by: routers/simulations.py, tests/test_coordinator.py
 - Tables: reads/writes via all pipeline modules; sim_dev_params, sim_lot_date_overrides, sim_lot_date_violations, sim_instrument_builder_splits (coordinator itself does no direct sim_lots writes)
-- Last commit: 2026-04-19
+- Last commit: 2026-04-20
 
 ### devdb_python/engine/p_pre_locked_event_rebuilder.py
 - Owns: Pre-supply-pipeline module — deletes all delivery events whose date_dev_actual IS NOT NULL and rebuilds them from sim_dev_phases.date_dev_actual; groups phases by date and INSERTs one event per date; returns count of new events created; locked_event_rebuilder(conn, ent_group_id) signature
@@ -59,10 +59,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/s0500_takedown_engine.py
-- Owns: S-0500 -- TDA checkpoint enforcement; writes date_td_hold_projected per D-087 using checkpoint_lead_days; DB+in-memory pre-clear wipes both date_td_hold_projected and date_td_projected (stale S-0760 output) before recomputing each run; NULL guards for checkpoint_number (falls back to checkpoint_id for logging) and lots_required_cumulative (skips checkpoint with warning); excess push spreads pool lots round-robin across checkpoint hold dates; respects lot_quota cap and date_td_hold_is_locked; never writes actuals
+- Owns: S-0500 -- TDA checkpoint enforcement; writes date_td_hold_projected per D-087 using checkpoint_lead_days; DB+in-memory pre-clear wipes both date_td_hold_projected and date_td_projected (stale S-0760 output) before recomputing each run; NULL guards for checkpoint_number and lots_required_cumulative; past checkpoints (checkpoint_date < today) — count fulfillment for cumulative tracking, record residual gap, but NO HC assignment (obligation was missed, cannot be fulfilled retroactively); future checkpoints — apply scheduling_horizon_days floor: hold_date = max(natural_hold, today + horizon); excess push cycles only over future checkpoint hold dates; respects lot_quota cap and date_td_hold_is_locked; never writes actuals; accepts scheduling_horizon_days param (default 0) injected by coordinator via build_lag_curves
 - Imported by: coordinator.py
 - Tables: sim_lots (UPDATE date_td_hold_projected, date_td_projected), sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_agreement_lots
-- Last commit: 2026-04-19
+- Last commit: 2026-04-20
 
 ### devdb_python/engine/seasonal_weights.py
 - Owns: Shared seasonal weight sets (month→fractional weight, sums to 1.0) used by S-0600 and P-0000 for monthly demand/pace allocation
@@ -71,11 +71,11 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-03
 
 ### devdb_python/engine/s0760_hc_bldr_date_projector.py
-- Owns: S-0760 -- writes date_td_projected for HC-held lots based on demand allocation order; identifies HC lots (date_td_hold or date_td_hold_projected set, no date_td, no date_str, not locked); calls demand_allocator over full snapshot; filters allocation to HC lot_ids; writes date_td_projected = first-of-month for each allocated HC lot to DB and snapshot; never writes date_td actual; runs between S-06 and kernel pass
+- Owns: S-0760 -- writes date_td_projected for HC-held lots based on demand allocation order; identifies HC lots (date_td_hold or date_td_hold_projected set, no date_td, no date_str, not locked); calls demand_allocator over full snapshot; filters allocation to HC lot_ids; writes date_td_projected = first-of-month - td_to_str_lag for each allocated HC lot; after writing, clears date_td_hold_projected for any lot where bldr_date < hold_date (demand path covers lot before HC would be entered — HC hold not needed); never writes date_td actual; runs between S-06 and kernel pass
 - Imports: engine.s0700_demand_allocator, pandas, datetime
 - Imported by: coordinator.py
-- Tables: sim_lots (UPDATE date_td_projected)
-- Last commit: 2026-04-19
+- Tables: sim_lots (UPDATE date_td_projected, UPDATE date_td_hold_projected)
+- Last commit: 2026-04-20
 
 ### devdb_python/engine/s0600_demand_generator.py
 - Owns: S-0600 -- generates monthly demand series for each phase; vectorized; capacity-capped per D-138

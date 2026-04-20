@@ -40,11 +40,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-17
 
 ### devdb_ui/src/components/setup/setupShared.jsx
-- Owns: All shared hooks, utilities, and UI atoms for the Setup tree; exports LotRefreshContext, ExpandAllContext, useLocalOpen, SUB (column widths), SUB_LABELS, phaseTotal, fmtRelative, SubCell, SortHeader, formatLotNum, lotSeqStr, formatLotNumPadded, ChevronIcon, InlineEdit, EditableCount, AddForm, useAddForm, ROW (padding 5px), AddButton; ROW padding increased 3→5px
+- Owns: All shared hooks, utilities, and UI atoms for the Setup tree; exports LotRefreshContext, ExpandAllContext, useLocalOpen, SUB (column widths), SUB_LABELS, phaseTotal, fmtRelative, SubCell, SortHeader, formatLotNum, lotSeqStr, formatLotNumPadded, ChevronIcon, InlineEdit, EditableCount, AddForm, useAddForm, ROW (padding 5px), AddButton; ROW padding increased 3→5px; formatLotNum/formatLotNumPadded updated to XX NNN format (space-separated, 3-char space-padded number, non-breaking spaces)
 - Imports: react (useState, useEffect, useRef, useCallback, createContext, useContext)
 - Imported by: SetupView.jsx, PhaseRow.jsx, LotPillGroup.jsx, BuildingsTab.jsx
 - Tables: none
-- Last commit: 2026-04-14
+- Last commit: 2026-04-20
 
 ### devdb_ui/src/components/setup/PhaseRow.jsx
 - Owns: PhaseRow (expandable phase header with Lots/Buildings tab bar) and LotTypeRow (one table row + lot pill detail expand); lot type table: Product/Total/Active/Pending/Sim/Excl columns; inline lot pill expand via LotPillGroup; silent re-fetch on LotRefreshContext tick; inline delivery date badge in phase header (teal 'del. date', click-to-edit date input, blur/Enter saves, PATCH /admin/phase/{id} with date_dev_actual); county/SD read-only badges (amber border = phase override, gray = inherited from community, ↗ suffix when inherited); Ranch Condos phases fixed (disappearing phase bug)
@@ -88,12 +88,19 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Tables: none (API calls via /admin/phase-config, PATCH /admin/phase/{id}, /ref/counties, /ref/school-districts)
 - Last commit: 2026-04-16
 
+### devdb_ui/src/components/simulation/simShared.jsx
+- Owns: Shared utilities and style tokens for simulation components; exports thS, tdS, fmt (date formatter), exportToCsv, fmtLot (XX NNN lot format — 2-char dev code + non-breaking space + 3-char space-padded number), PROV_MARKS ({color:'#111827'}), PROV_SIM ({color:'#93c5fd', fontStyle:'italic'}), PROV_OV ({color:'#92400e', background:'#fef3c7', fontWeight:600})
+- Imports: none (pure utilities)
+- Imported by: LotLedger.jsx, SimulationView.jsx, MarksView.jsx, PlanningView.jsx
+- Tables: none
+- Last commit: 2026-04-20
+
 ### devdb_ui/src/components/simulation/LotLedger.jsx
-- Owns: Lot-level ledger table component; SD column with click-to-edit inline select (amber underline when sd_is_lot_exception=true); SD dropdown fetches all school districts (no county filter since migration 072); onRefreshLots callback after SD save; HC cell projectedValue uses l.date_td_hold_projected; BLDR cell projectedValue uses l.date_td_projected (were hardcoded null); CSV export includes projected fallback values for HC and BLDR columns
-- Imports: react (useState, useRef), config (API_BASE)
+- Owns: Lot-level ledger table component; SD column with click-to-edit inline select (amber underline when sd_is_lot_exception=true); column header sorting (Access-style — click to sort asc, click again desc, ⇅/▲/▼ indicators, active column indigo-tinted, nulls last, CSV export respects sort); fmtLot applied to lot number column; Bldg column plain black (no bold, gray group separator); S/B (is_spec) uses PROV_SIM (blue italic, engine-assigned); PROV_SIM/MARKS/OV tokens imported from simShared
+- Imports: react (useState, useRef), config (API_BASE), simShared (thS, tdS, fmt, exportToCsv, fmtLot, PROV_SIM)
 - Imported by: SimulationView.jsx
 - Tables: none (API calls via /ref/school-districts, PATCH /admin/lot/{id}/school-district)
-- Last commit: 2026-04-19
+- Last commit: 2026-04-20
 
 ### devdb_ui/src/components/simulation/SimSettings.jsx
 - Owns: Simulation community settings modal components; LocationSection (county + SD dropdowns for ent_group community-level assignment); StartsTargetsSection; SD list fetched once on mount (no county filtering since migration 072)
@@ -201,11 +208,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-03-29
 
 ### devdb_ui/src/components/LotCard.jsx
-- Owns: Draggable lot pill (icon mode) and list-view card (lot number + status); updated to use unified pipeline status visual identity system (shape + color per status)
+- Owns: Draggable lot pill (icon mode) and list-view card (lot number + status); updated to use unified pipeline status visual identity system (shape + color per status); parseLotNumber uses space-padded 3-char seq with non-breaking spaces (XX NNN format)
 - Imports: dnd-kit (useDraggable), statusConfig
 - Imported by: LotTypePill.jsx, UnassignedColumn.jsx
 - Tables: none
-- Last commit: 2026-04-04
+- Last commit: 2026-04-20
 
 ### devdb_ui/src/components/ProjectionGroupContainer.jsx
 - Owns: Development-level wrapper for all instruments; equalized row heights; aggregate counts; warm neutral card chrome (#F0EEE8 header, #F7F6F3 body) matching TDA aesthetic
@@ -250,11 +257,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-01
 
 ### devdb_ui/src/components/LotPill.jsx
-- Owns: Assigned lot pill (expanded + condensed modes); PlaceholderPill (expanded + condensed); StitchConnector; LockIcon; LockBtn; ProjectedDateField; isSelected highlight; onContextMenu passthrough; condensed view: 8px teal "S" badge above seq number when assignment.is_spec === true
+- Owns: Assigned lot pill (expanded + condensed modes); PlaceholderPill (expanded + condensed); StitchConnector; LockIcon; LockBtn; ProjectedDateField; isSelected highlight; onContextMenu passthrough; condensed view: "S" spec indicator uses PROV_SIM style (blue italic) when assignment.is_spec === true
 - Imports: dnd-kit (useDraggable), react, tdaUtils (fmt, shortLot, parseLot)
 - Imported by: CheckpointBand.jsx
 - Tables: none
-- Last commit: 2026-04-15
+- Last commit: 2026-04-20
 
 ### devdb_ui/src/components/TdaCard.jsx
 - Owns: TDA card shell; EditableTdaName (green dashed inline editor, PATCH on save); PoolSection (inline In Agreement droppable with pool lot pills, landing zone highlight); add-checkpoint form
@@ -348,11 +355,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-03-27
 
 ### devdb_ui/src/utils/tdaUtils.js
-- Owns: TDA domain utility functions extracted from TakedownAgreementsView (formatting, status helpers, etc.)
+- Owns: TDA domain utility functions; fmt (date formatter), shortLot (XX NNN format — 2-char dev code + non-breaking space + 3-char space-padded number, no leading zeros), parseLot ({code, seq} where seq is space-padded 3-char with non-breaking spaces), buildClusters (groups lots by building_group_id preserving insertion order)
 - Imports: none
-- Imported by: TakedownAgreementsView.jsx and TDA components
+- Imported by: TakedownAgreementsView.jsx and TDA components (CheckpointBand, LeftPanel, TdaCard, LotPill)
 - Tables: none
-- Last commit: 2026-03-31
+- Last commit: 2026-04-20
 
 ### devdb_ui/src/utils/tdaContextMenu.js
 - Owns: Context menu policy for TDA view — pure helper: (type, lotIds, detail, agreements, callbacks) → items[]; extracted from TakedownAgreementsView to keep the page as orchestration/wiring only
@@ -417,12 +424,19 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Tables: none (API calls via /api/*)
 - Last commit: 2026-04-14
 
+### devdb_ui/src/pages/MarksView.jsx
+- Owns: MARKS actuals view; lot number displays use fmtLot (XX NNN format)
+- Imports: react (useState, useEffect), config (API_BASE), fmtLot from simShared
+- Imported by: App.jsx
+- Tables: none (API calls via /api/*)
+- Last commit: 2026-04-20
+
 ### devdb_ui/src/pages/PlanningView.jsx
-- Owns: Production planning workbench — override MARKS dates per lot to test schedule changes before entering into ITK; uses override system
-- Imports: react (useState, useEffect, useCallback), config (API_BASE), useOverrides, OverrideDateCell, OverridesPanel, SyncReconciliationModal
+- Owns: Production planning workbench — override MARKS dates per lot to test schedule changes before entering into ITK; uses override system; lot number displays use fmtLot (XX NNN format)
+- Imports: react (useState, useEffect, useCallback), config (API_BASE), useOverrides, OverrideDateCell, OverridesPanel, SyncReconciliationModal, fmtLot from simShared
 - Imported by: App.jsx
 - Tables: none (API calls via /api/overrides/*)
-- Last commit: 2026-04-14
+- Last commit: 2026-04-20
 
 ### devdb_ui/src/hooks/useBoundaryManager.js
 - Owns: Phase boundary state and topology operations for SitePlanView; manages boundaries, selectedBoundaryId, undoStack; handles split, merge, delete, cleanup, phase assignment, undo
