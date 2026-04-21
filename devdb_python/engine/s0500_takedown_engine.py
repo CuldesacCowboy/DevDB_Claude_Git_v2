@@ -9,8 +9,10 @@ Rules:   Per D-087: COALESCE(date_td, date_td_projected) and COALESCE(date_td_ho
          Writes date_td_hold_projected only — never date_td or date_td_hold (actuals).
          Respects date_td_hold_is_locked: locked lots counted but not reassigned.
          Filters candidate lots by builder_id to match TDA's builder_id (null TDA = any).
-         Excess push: pool lots with no str/td/any-hold/bldr-projected are spread across
-         checkpoint hold dates in round-robin (sorted by date_dev asc) before next checkpoint.
+         HC is a last resort: for each future checkpoint, effective_gap = required -
+         actual_fulfilled - projected_natural (where projected_natural = min(eligible_unstarted,
+         round(monthly_rate × months_to_checkpoint))). HC is only assigned to lots that demand
+         pace genuinely cannot reach before the deadline; the rest flow D→U naturally.
          Clears stale date_td_hold_projected for active TDA lots (unlocked, builder-matched)
          before recomputing.
          Multi-TDA lots: if a lot is in multiple active TDAs, the first TDA processed claims it
@@ -150,6 +152,17 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
 
     residual_gaps = []
 
+    # Load pace from sim_dev_params so we can project how much natural demand will
+    # satisfy each checkpoint before assigning HC holds.  HC is a last resort —
+    # if demand at the configured annual pace will cover the checkpoint obligation
+    # naturally, no HC hold should be written.
+    _params_df = conn.read_df(
+        "SELECT annual_starts_target FROM sim_dev_params WHERE dev_id = %s LIMIT 1",
+        (dev_id,),
+    )
+    monthly_rate = (float(_params_df.iloc[0]["annual_starts_target"]) / 12.0
+                    if not _params_df.empty else 1.0)
+
     for tda_id, covered_lot_ids in tda_lot_map.items():
         # Load TDA config including builder_id
         tda_row = conn.read_df(
@@ -213,9 +226,6 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
             updated_lot_ids[lid] = hold_date
 
 
-        # Track the first unsatisfied checkpoint's hold date for the excess push
-        first_unsatisfied_hold: object = None
-
         for _, cp in checkpoints.iterrows():
             if cp["checkpoint_date"] is None or pd.isna(cp["checkpoint_date"]):
                 logger.warning(
@@ -266,9 +276,6 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
             # Future unmet checkpoint — assign HC hold dates.
             hold_date = max((cp_date - timedelta(days=lead)).date(), hc_floor)
 
-            if first_unsatisfied_hold is None:
-                first_unsatisfied_hold = hold_date
-
             available = sorted(
                 (lot for lot in tda_snapshot_lots.values() if _available(lot)),
                 key=lambda l: (
@@ -277,7 +284,16 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                 ),
             )
 
-            effective_gap = gap
+            # Project how many unstarted lots will be naturally covered by demand
+            # before this checkpoint.  HC is only assigned to the true residual —
+            # lots that demand pace cannot reach in time.
+            months_to_cp = max(
+                0,
+                (cp_date.year - today.year) * 12 + (cp_date.month - today.month),
+            )
+            eligible_unstarted = sum(1 for lot in tda_snapshot_lots.values() if _available(lot))
+            projected_natural  = min(eligible_unstarted, round(monthly_rate * months_to_cp))
+            effective_gap      = max(0, gap - projected_natural)
 
             scheduled = 0
             for lot in available:
@@ -288,13 +304,18 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                 count_taken += 1
                 scheduled   += 1
 
-            if scheduled >= gap:
+            if effective_gap == 0:
+                logger.info(
+                    f"  TDA {tda_id} CP{cp_num}: Demand covers gap "
+                    f"(gap={gap}, projected_natural={projected_natural}) — no HC assigned"
+                )
+            elif scheduled >= effective_gap:
                 logger.info(
                     f"  TDA {tda_id} CP{cp_num}: Managed "
-                    f"({scheduled} scheduled, hold {hold_date})"
+                    f"({scheduled} HC scheduled, hold {hold_date})"
                 )
             else:
-                residual = gap - scheduled
+                residual = effective_gap - scheduled
                 logger.warning(f"  TDA {tda_id} CP{cp_num}: At Risk (gap={residual})")
                 residual_gaps.append({
                     "tda_id":            tda_id,
@@ -306,52 +327,9 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                     "gap":               residual,
                 })
 
-        # ── Excess push ───────────────────────────────────────────────────────
-        # Pool lots with no td/hold/str that weren't scheduled above are spread
-        # across checkpoint hold dates in round-robin order so excess absorption
-        # tracks the checkpoint cadence rather than piling on a single date.
-        today = date.today()
-        cp_hold_dates = []
-        for _, cp in checkpoints.iterrows():
-            if cp["checkpoint_date"] is None or pd.isna(cp["checkpoint_date"]):
-                continue
-            if pd.Timestamp(cp["checkpoint_date"]).date() < today:
-                continue  # past checkpoints excluded from excess push
-            n = (pd.Timestamp(cp["checkpoint_date"]) - timedelta(days=lead)).date()
-            cp_hold_dates.append(max(n, hc_floor))
-        if not cp_hold_dates:
-            continue  # no dated checkpoints — nothing to push excess lots toward
-        if first_unsatisfied_hold is not None:
-            # Start cycling from the first unsatisfied checkpoint
-            start_idx = next(
-                (i for i, d in enumerate(cp_hold_dates) if d == first_unsatisfied_hold),
-                0,
-            )
-            cp_hold_dates = cp_hold_dates[start_idx:] + cp_hold_dates[:start_idx]
-        # If all satisfied, cycle across all hold dates (starting from first)
-
-        excess_lots = sorted(
-            (lot for lot in tda_snapshot_lots.values()
-             if int(lot["lot_id"]) not in updated_lot_ids and _available(lot)),
-            key=lambda l: (
-                pd.Timestamp(l["date_dev"]) if l.get("date_dev") is not None and pd.notna(l.get("date_dev"))
-                else pd.Timestamp.max
-            ),
-        )
-        excess_budget = len(excess_lots)
-        excess_count = 0
-        for i, lot in enumerate(excess_lots):
-            if excess_count >= excess_budget:
-                break
-            hold_date = cp_hold_dates[i % len(cp_hold_dates)]
-            lid = int(lot["lot_id"])
-            _assign_hold(lid, hold_date)
-            excess_count += 1
-
-        if excess_count:
-            logger.info(
-                f"  TDA {tda_id}: excess push → {excess_count} lot(s) spread across {len(cp_hold_dates)} checkpoint hold date(s)"
-            )
+        # No excess push: HC is a last resort.  Lots not needed to fill a genuine
+        # demand-gap checkpoint are left to flow naturally D→U via demand.  Forcing
+        # them into H when demand would cover them produces misleading projections.
 
     # ── Persist date_td_hold_projected to DB ──────────────────────────────────
     if updated_lot_ids:
