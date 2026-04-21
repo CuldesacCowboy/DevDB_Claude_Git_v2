@@ -212,7 +212,6 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
             lots_dict[lid]["date_td_hold_projected"] = hold_date
             updated_lot_ids[lid] = hold_date
 
-        hc_assigned_this_run = 0
 
         # Track the first unsatisfied checkpoint's hold date for the excess push
         first_unsatisfied_hold: object = None
@@ -288,7 +287,6 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                 _assign_hold(lid, hold_date)
                 count_taken += 1
                 scheduled   += 1
-                hc_assigned_this_run += 1
 
             if scheduled >= gap:
                 logger.info(
@@ -340,7 +338,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                 else pd.Timestamp.max
             ),
         )
-        excess_budget = max(0, (hc_budget - hc_assigned_this_run)) if hc_budget is not None else len(excess_lots)
+        excess_budget = len(excess_lots)
         excess_count = 0
         for i, lot in enumerate(excess_lots):
             if excess_count >= excess_budget:
