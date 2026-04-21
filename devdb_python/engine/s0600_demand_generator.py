@@ -5,8 +5,10 @@ Reads:   sim_dev_params (DB, WHERE dev_id = ?)
 Writes:  nothing — returns demand DataFrame
 Input:   conn: DBConnection, dev_id: int, run_start_date: date, lot_snapshot: DataFrame
 Rules:   Translates annual_starts_target + seasonal weights into monthly demand slots.
-         Applies max_starts_per_month cap. available_capacity = total_capacity - real
-         lots not yet started. Vectorized — no loops, no carry-forward, integers only.
+         Applies max_starts_per_month cap. available_capacity = total_capacity - real lots.
+         Demand starts from run_start_date with no floor on locked delivery dates — lot
+         availability (P/E status lots excluded from kernel pool) enforces supply timing.
+         Vectorized — no loops, no carry-forward, integers only.
          Returns (demand_df, missing_params: bool).
          Not Own: reading lot data directly, determining supply availability.
 """
@@ -84,29 +86,14 @@ def demand_generator(conn: DBConnection, dev_id: int,
         logger.info(f"S-06: Dev {dev_id} available_capacity=0. No demand generated.")
         return pd.DataFrame(columns=["year", "month", "slots"]), False
 
-    # Step 2a: Demand starts no earlier than the last locked delivery date.
-    locked_df = conn.read_df(
-        """
-        SELECT MAX(date_dev_actual) AS last_locked_date
-        FROM sim_delivery_events
-        WHERE ent_group_id = (
-            SELECT ent_group_id FROM sim_ent_group_developments
-            WHERE dev_id = %s
-            LIMIT 1
-        )
-        AND date_dev_actual IS NOT NULL
-        """,
-        (dev_id,),
-    )
-    last_locked = locked_df.iloc[0]["last_locked_date"]
-    if last_locked is not None:
-        ll = last_locked.date() if hasattr(last_locked, "date") else last_locked
-        first_of_next_month = ll.replace(day=1) + relativedelta(months=1)
-        demand_start = max(run_start_date, first_of_next_month)
-    else:
-        demand_start = run_start_date
+    # Step 2: Build month spine from run_start_date.
+    # Lot availability naturally enforces the supply constraint: a lot whose phase
+    # has not yet delivered (P/E status) is not in the kernel's available pool and
+    # cannot absorb a demand slot. No artificial demand floor is needed here — the
+    # P-pipeline (locked delivery events) controls when lots become available.
+    demand_start = run_start_date
 
-    # Step 2b: Build month spine from demand_start
+    # Build month spine from demand_start
     months = []
     current = demand_start
     for _ in range(horizon_months):
