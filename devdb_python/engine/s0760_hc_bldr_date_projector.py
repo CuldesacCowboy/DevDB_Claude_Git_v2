@@ -152,8 +152,10 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
 
     # Build {lot_id: (bldr, str, cmp, cls)} map.
     # BLDR date is clamped to first month on/after the lot's HC hold date.
-    # When multiple lots share the same hold_floor (common for a checkpoint batch),
-    # they are spread 1 month apart rather than all landing on the same date.
+    # Building groups: all lots in a group must share the same BLDR date (D-022).
+    # We clamp to MAX(hold_floor) across all group mates so no lot in the building
+    # starts before any mate's hold is released.  Non-grouped lots that share the
+    # same effective_floor are spread 1 month apart to avoid piling up.
     # STR  = BLDR + td_to_str_lag months.
     # CMP/CLS derived via empirical lag curves (same logic as S-1050).
     # Writing all four columns here overwrites any stale pace-based values that
@@ -164,12 +166,46 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
     hc_cmp_dates: dict[int, date] = {}
     hc_cls_dates: dict[int, date] = {}
 
-    # Tracks the next available bldr_date for each hold_floor bucket so that lots
-    # clamped to the same checkpoint spread 1/month instead of piling up.
+    # Tracks the next available bldr_date for each hold_floor bucket so that
+    # non-grouped clamped lots spread 1/month instead of piling up.
     hold_floor_next: dict[date, date] = {}
 
     lot_type_idx = {int(r["lot_id"]): r.get("lot_type_id") for _, r in lot_snapshot.iterrows()
                     if pd.notna(r.get("lot_type_id"))}
+
+    # Building-group index: lot_id → building_group_id (None for ungrouped lots)
+    bg_idx: dict[int, int | None] = {}
+    for _, r in lot_snapshot.iterrows():
+        lid = int(r["lot_id"])
+        if lid in hc_lot_ids:
+            raw_bg = r.get("building_group_id")
+            bg_idx[lid] = int(raw_bg) if raw_bg is not None and pd.notna(raw_bg) else None
+
+    # Pre-compute MAX hold_floor per building group so every mate in a building
+    # is clamped to the same floor (the latest hold constraint among group mates).
+    def _hold_floor_for(lid: int):
+        hold = _hold_date_for(lid)
+        if hold is None:
+            return None
+        hold_ts = pd.Timestamp(hold)
+        return (date(hold_ts.year, hold_ts.month, 1)
+                if hold_ts.day == 1
+                else _add_months(date(hold_ts.year, hold_ts.month, 1), 1))
+
+    bg_max_hold_floor: dict[int, date] = {}
+    for lid in hc_lot_ids:
+        bg_id = bg_idx.get(lid)
+        if bg_id is None:
+            continue
+        floor = _hold_floor_for(lid)
+        if floor is None:
+            continue
+        if bg_id not in bg_max_hold_floor or floor > bg_max_hold_floor[bg_id]:
+            bg_max_hold_floor[bg_id] = floor
+
+    # First lot in each building group that needs clamping claims a bldr_date;
+    # subsequent mates reuse it (ensuring the whole building starts together).
+    bg_bldr_dates: dict[int, date] = {}
 
     for _, row in hc_allocations.iterrows():
         lid = int(row["lot_id"])
@@ -179,16 +215,27 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
         hold = _hold_date_for(lid)
         if hold is not None:
             hold_ts = pd.Timestamp(hold)
-            # First day of month that is >= hold date
+            # First day of month that is >= hold date (individual lot floor)
             hold_floor = (date(hold_ts.year, hold_ts.month, 1)
                           if hold_ts.day == 1
                           else _add_months(date(hold_ts.year, hold_ts.month, 1), 1))
-            if bldr_date < hold_floor:
-                # Spread clamped lots: each successive lot in the same checkpoint
-                # batch gets a bldr_date 1 month later than the previous.
-                next_avail = hold_floor_next.get(hold_floor, hold_floor)
-                bldr_date = next_avail
-                hold_floor_next[hold_floor] = _add_months(next_avail, 1)
+
+            bg_id = bg_idx.get(lid)
+            # Use MAX hold_floor across building group mates as the effective constraint
+            effective_floor = (bg_max_hold_floor.get(bg_id, hold_floor)
+                               if bg_id is not None else hold_floor)
+
+            if bldr_date < effective_floor:
+                if bg_id is not None and bg_id in bg_bldr_dates:
+                    # Reuse the bldr_date already claimed by a group mate
+                    bldr_date = bg_bldr_dates[bg_id]
+                else:
+                    # First lot in this group (or ungrouped): claim next available slot
+                    next_avail = hold_floor_next.get(effective_floor, effective_floor)
+                    bldr_date = next_avail
+                    hold_floor_next[effective_floor] = _add_months(next_avail, 1)
+                    if bg_id is not None:
+                        bg_bldr_dates[bg_id] = bldr_date
 
         str_date = _add_months(bldr_date, td_to_str_lag) if td_to_str_lag else bldr_date
 

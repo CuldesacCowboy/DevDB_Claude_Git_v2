@@ -59,7 +59,7 @@ def write_real_lot_projections(
 
     p_lots_df = conn.read_df(
         """
-        SELECT lot_id, lot_type_id
+        SELECT lot_id, lot_type_id, building_group_id
         FROM sim_lots
         WHERE lot_source = 'real'
           AND dev_id                    = %s
@@ -69,7 +69,7 @@ def write_real_lot_projections(
           AND date_td_hold_projected    IS NULL
           AND excluded                  IS NOT TRUE
           AND date_str_is_locked        IS NOT TRUE
-        ORDER BY lot_id
+        ORDER BY building_group_id NULLS LAST, lot_id
         """,
         (dev_id,),
     )
@@ -96,43 +96,87 @@ def write_real_lot_projections(
         if max_per_month_raw is not None and pd.notna(max_per_month_raw)
         else None
     )
-    monthly_rate = annual_target / 12.0
 
-    n_needed = len(p_lots_df)
-    date_slots: list[date] = []
+    annual_target_int = max(1, int(round(annual_target)))
+
+    # Count actual MARKS starts per calendar year so pace cap accounts for
+    # homes already started — projected lots only fill remaining capacity.
+    starts_df = conn.read_df(
+        """
+        SELECT EXTRACT(YEAR FROM date_str)::int AS yr, COUNT(*) AS n
+        FROM sim_lots
+        WHERE lot_source = 'real'
+          AND dev_id = %s
+          AND date_str IS NOT NULL
+        GROUP BY yr
+        """,
+        (dev_id,),
+    )
+    year_consumed: dict[int, int] = {
+        int(r["yr"]): int(r["n"]) for _, r in starts_df.iterrows()
+    }
+
+    # Build scheduling units — lots in the same building group start together (D-022).
+    # Each unit is a list of lot rows; ungrouped lots are singleton units.
+    units: list[list] = []
+    seen_bgs: set[int] = set()
+    for _, lot in p_lots_df.iterrows():
+        raw_bg = lot.get("building_group_id")
+        if raw_bg is not None and pd.notna(raw_bg):
+            bg_id = int(raw_bg)
+            if bg_id in seen_bgs:
+                continue  # already included as part of the group
+            seen_bgs.add(bg_id)
+            mates = p_lots_df[
+                p_lots_df["building_group_id"].apply(
+                    lambda x, _bg=bg_id: x is not None and pd.notna(x) and int(x) == _bg
+                )
+            ].to_dict("records")
+            units.append(mates)
+        else:
+            units.append([lot.to_dict()])
+
+    # Assign one start date per scheduling unit, consuming group_size slots,
+    # skipping to the next year when annual cap is exhausted.
     current = run_start_date.replace(day=1)
-    while len(date_slots) < n_needed:
-        slots_this_month = max(1, round(monthly_rate))
-        if max_per_month is not None:
-            slots_this_month = min(slots_this_month, int(max_per_month))
-        for _ in range(slots_this_month):
-            date_slots.append(current)
-            if len(date_slots) >= n_needed:
-                break
-        current = current + relativedelta(months=1)
+    unit_dates: list[date] = []
 
-    if not date_slots:
+    for unit in units:
+        group_size = len(unit)
+        while True:
+            yr = current.year
+            consumed = year_consumed.get(yr, 0)
+            remaining = annual_target_int - consumed
+            if remaining >= group_size:
+                unit_dates.append(current)
+                year_consumed[yr] = consumed + group_size
+                current = current + relativedelta(months=1)
+                break
+            else:
+                # Capacity exhausted for this year — advance to January next year
+                current = date(yr + 1, 1, 1)
+
+    if not unit_dates:
         return 0
 
     DEFAULT_CMP_LAG = build_lag_curves.get("_default_cmp", 270)
     DEFAULT_CLS_LAG = build_lag_curves.get("_default_cls", 45)
 
     updates = []
-    for i, (_, lot) in enumerate(p_lots_df.iterrows()):
-        if i >= len(date_slots):
-            break
-        str_date = date_slots[i]
-        lt_id = int(lot["lot_type_id"]) if pd.notna(lot["lot_type_id"]) else None
+    for unit, str_date in zip(units, unit_dates):
+        for lot in unit:
+            raw_lt = lot.get("lot_type_id")
+            lt_id = int(raw_lt) if raw_lt is not None and pd.notna(raw_lt) else None
 
-        str_cmp_curve = curves_for(build_lag_curves, "str_to_cmp", lt_id)
-        cmp_cls_curve = curves_for(build_lag_curves, "cmp_to_cls", lt_id)
+            str_cmp_curve = curves_for(build_lag_curves, "str_to_cmp", lt_id)
+            cmp_cls_curve = curves_for(build_lag_curves, "cmp_to_cls", lt_id)
 
-        lag_str_cmp = sample_lag(rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
-        lag_cmp_cls = sample_lag(rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+            lag_str_cmp = sample_lag(rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
+            lag_cmp_cls = sample_lag(rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
 
-        cmp_date = str_date + timedelta(days=lag_str_cmp)
-        cls_date = cmp_date + timedelta(days=lag_cmp_cls)
-        updates.append((int(lot["lot_id"]), str_date, cmp_date, cls_date))
+            cmp_date = str_date + timedelta(days=lag_str_cmp)
+            cls_date = cmp_date + timedelta(days=lag_cmp_cls)
+            updates.append((int(lot["lot_id"]), str_date, cmp_date, cls_date))
 
     if not updates:
         return 0
