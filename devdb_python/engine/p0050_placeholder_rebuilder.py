@@ -322,6 +322,11 @@ def _run_scheduling_loop(
             lot_filter_sql    = "AND sl.lot_source = 'real'"
             lot_filter_params = []
 
+        # Drain uses COALESCE(actual, projected) for both td and td_hold so that
+        # real lots with projected-only takedown dates (written by S-0760) correctly
+        # drain from the balance on iteration 2+.  Without this, real D-status lots
+        # that have no actual date_td never drain, _find_violation_month never fires,
+        # and the schedule falls through to the stale date_dev_demand_derived anchor.
         d_proj_df = conn.read_df(
             f"""
             WITH future AS (
@@ -339,8 +344,10 @@ def _run_scheduling_loop(
                 ON  sl.dev_id = sl_devs.dev_id
                 AND sl.date_dev IS NOT NULL
                 AND sl.date_dev <= f.m
-                AND (sl.date_td     IS NULL OR sl.date_td     > f.m)
-                AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
+                AND (COALESCE(sl.date_td, sl.date_td_projected)           IS NULL
+                     OR COALESCE(sl.date_td, sl.date_td_projected)        > f.m)
+                AND (COALESCE(sl.date_td_hold, sl.date_td_hold_projected) IS NULL
+                     OR COALESCE(sl.date_td_hold, sl.date_td_hold_projected) > f.m)
                 {lot_filter_sql}
             GROUP BY sl_devs.dev_id, f.m
             ORDER BY sl_devs.dev_id, f.m
