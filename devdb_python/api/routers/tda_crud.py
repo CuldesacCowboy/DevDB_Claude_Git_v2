@@ -279,7 +279,9 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                 for tda in agreements_map.values():
                     for cp in tda["checkpoints"]:
                         agg = agg_map.get(cp["checkpoint_id"])
-                        cp["covered"] = int(agg["covered"]) if agg else 0
+                        required_cum = cp.get("lots_required_cumulative") or 0
+                        raw_covered  = int(agg["covered"]) if agg else 0
+                        cp["covered"] = min(raw_covered, required_cum)
                         cp["marks_plan"] = int(agg["marks_plan"]) if agg else 0
                         cp["sim_plan"] = int(agg["sim_plan"]) if agg else 0
 
