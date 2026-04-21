@@ -242,12 +242,17 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                         -- D-087: both date_td AND date_td_hold count toward fulfillment.
                         -- taken_down_to_date: actuals on or before today (lots already completed).
                         -- marks_plan: actuals on or before this checkpoint's date (past + future).
-                        COUNT(CASE WHEN (
-                            (l.date_td IS NOT NULL AND l.date_td <= CURRENT_DATE)
-                            OR (l.date_td_hold IS NOT NULL AND l.date_td_hold <= CURRENT_DATE
-                                AND l.date_td IS NULL)
+                        -- covered: actual MARKS takedowns (any date, even late) OR
+                        -- projected-only lots whose sim date is on/before cp_date.
+                        COUNT(CASE WHEN cp.checkpoint_date IS NOT NULL AND (
+                            l.date_td IS NOT NULL
+                            OR (l.date_td_hold IS NOT NULL AND l.date_td IS NULL)
+                            OR (l.date_td IS NULL AND l.date_td_hold IS NULL AND (
+                                (l.date_td_projected IS NOT NULL AND l.date_td_projected <= cp.checkpoint_date)
+                                OR (l.date_td_hold_projected IS NOT NULL AND l.date_td_hold_projected <= cp.checkpoint_date)
+                            ))
                           ) THEN 1 END)
-                            AS taken_down_to_date,
+                            AS covered,
                         COUNT(CASE WHEN cp.checkpoint_date IS NOT NULL AND (
                             (l.date_td IS NOT NULL AND l.date_td <= cp.checkpoint_date)
                             OR (l.date_td_hold IS NOT NULL AND l.date_td_hold <= cp.checkpoint_date
@@ -274,7 +279,7 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                 for tda in agreements_map.values():
                     for cp in tda["checkpoints"]:
                         agg = agg_map.get(cp["checkpoint_id"])
-                        cp["taken_down_to_date"] = int(agg["taken_down_to_date"]) if agg else 0
+                        cp["covered"] = int(agg["covered"]) if agg else 0
                         cp["marks_plan"] = int(agg["marks_plan"]) if agg else 0
                         cp["sim_plan"] = int(agg["sim_plan"]) if agg else 0
 

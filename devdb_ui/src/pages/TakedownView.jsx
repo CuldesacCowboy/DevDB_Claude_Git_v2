@@ -816,7 +816,7 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
               <th style={{ ...TH, width: 44, padding: '3px 4px' }}></th>
               {[
                 { h: 'Checkpoint', tip: 'Cumulative lots required by this date' },
-                { h: 'To Date', tip: 'Actual takedowns (MARKS actuals only) on or before today and this checkpoint date, vs cumulative required' },
+                { h: 'Sched/Done', tip: 'Lots covered by this checkpoint: actual MARKS takedowns (any date, even if late) + sim-projected lots scheduled on or before this checkpoint date, vs cumulative required' },
                 { h: 'On Time', tip: 'Assigned lots whose effective date (earliest of BLDR/HC actual or projected) is on or before this checkpoint date, vs per-checkpoint slots required' },
                 { h: 'Marks', tip: 'Assigned lots that have at least one actual MARKS takedown date (date_td or date_td_hold), vs per-checkpoint slots required' },
                 { h: 'Sim', tip: 'Assigned lots with only engine-projected dates (no MARKS actual) on or before this checkpoint date, vs per-checkpoint slots required' },
@@ -898,10 +898,10 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                           onSave={v => onPatchCheckpoint(cp.checkpoint_id, { checkpoint_date: v })} />
                       </span>
                     </td>
-                    {/* To Date: MARKS actuals only, cumulative */}
+                    {/* Sched/Done: actuals (any date) + projected-only lots by cp_date, cumulative */}
                     <td style={{ ...TD, fontVariantNumeric: 'tabular-nums' }}>
                       {cp.checkpoint_date ? (() => {
-                        const n = cp.taken_down_to_date ?? 0
+                        const n = cp.covered ?? 0
                         const ok = required > 0 && n >= required
                         return (
                           <span style={{ color: ok ? '#15803d' : n > 0 ? '#d97706' : TEXT_MUTED, fontWeight: ok ? 600 : 400 }}>
