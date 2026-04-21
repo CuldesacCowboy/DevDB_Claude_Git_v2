@@ -30,8 +30,6 @@ from .connection import DBConnection
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_LEAD_DAYS = 16
-
 
 def _fulfills(lot: dict, cp_date) -> bool:
     """Return True if this lot counts toward checkpoint fulfillment on or before cp_date.
@@ -66,11 +64,13 @@ def _available(lot: dict) -> bool:
 
 
 def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
-                    scheduling_horizon_days: int = 0):
+                    scheduling_horizon_days: int = 0,
+                    hc_to_bldr_lag_days: int = 16):
     """
     Enforce TDA checkpoint obligations.
     Writes date_td_hold_projected only — never actuals.
     HC hold dates are floored to today + scheduling_horizon_days.
+    hc_to_bldr_lag_days: days before checkpoint date that HC holds are scheduled.
     Returns (updated_snapshot, residual_gaps).
     """
     if lot_snapshot.empty:
@@ -154,7 +154,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
         # Load TDA config including builder_id
         tda_row = conn.read_df(
             """
-            SELECT tda_id, anchor_date, status, checkpoint_lead_days, builder_id
+            SELECT tda_id, anchor_date, status, builder_id
             FROM sim_takedown_agreements
             WHERE tda_id = %s
             """,
@@ -163,8 +163,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
         if tda_row.empty:
             continue
 
-        raw_lead = tda_row.iloc[0]["checkpoint_lead_days"]
-        lead = _DEFAULT_LEAD_DAYS if (raw_lead is None or pd.isna(raw_lead)) else int(raw_lead)
+        lead = hc_to_bldr_lag_days
         raw_builder = tda_row.iloc[0]["builder_id"]
         tda_builder_id = (
             None if (raw_builder is None or pd.isna(raw_builder))

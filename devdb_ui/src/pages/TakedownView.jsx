@@ -1641,7 +1641,6 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
     : 0
   const ineligibleCount        = tda.ineligible_lot_count ?? 0
   const builderEligibleCount   = tda.builder_eligible_count ?? null
-  const leadDays               = tda.checkpoint_lead_days ?? 16
 
   const datedCps    = tda.checkpoints.filter(cp => cp.checkpoint_date != null)
   const simAtRisk   = datedCps.length > 0 && datedCps.some(cp => cp.sim_plan < (cp.lots_required_cumulative || 0))
@@ -1691,26 +1690,6 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
           {(builders || []).map(b => <option key={b.builder_id} value={b.builder_id}>{b.builder_name.replace(' Homes', '')}</option>)}
         </select>
         {/* Checkpoint lead days — editable with next-hold preview */}
-        <span style={{ fontSize: 11, color: TEXT_MUTED }} title="Days before each checkpoint date that HC hold dates are scheduled">Lead days:</span>
-        <EditNumber value={leadDays} onSave={v => onPatch({ checkpoint_lead_days: v })} />
-        {tda.checkpoints.length > 0 && (() => {
-          const _now = new Date()
-          const today = _now.getFullYear() + '-' + String(_now.getMonth() + 1).padStart(2, '0') + '-' + String(_now.getDate()).padStart(2, '0')
-          const next  = tda.checkpoints.find(cp => cp.checkpoint_date && cp.checkpoint_date >= today)
-            || tda.checkpoints[tda.checkpoints.length - 1]
-          if (!next?.checkpoint_date) return null
-          // Use date-component arithmetic (not ms subtraction) to avoid DST off-by-one
-          // when the lead-days window crosses a daylight-saving time boundary.
-          const [_cy, _cm, _cd] = next.checkpoint_date.split('-').map(Number)
-          const _hd = new Date(_cy, _cm - 1, _cd - leadDays)
-          const holdDate = _hd.getFullYear() + '-' + String(_hd.getMonth() + 1).padStart(2, '0') + '-' + String(_hd.getDate()).padStart(2, '0')
-          return (
-            <span style={{ fontSize: 10, color: TEXT_MUTED, fontStyle: 'italic' }}
-                  title={`Next checkpoint ${next.checkpoint_date} → HC hold ${holdDate}`}>
-              → {holdDate}
-            </span>
-          )
-        })()}
       </div>
 
       {/* Summary stats */}

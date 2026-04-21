@@ -25,6 +25,7 @@ _DEFAULTS = {
     "feed_starts_mode":            False,
     "scheduling_horizon_days":     14,
     "td_to_str_lag":               1,
+    "hc_to_bldr_lag_days":         16,
 }
 
 
@@ -44,7 +45,8 @@ def load_delivery_config(conn, ent_group_id: int) -> dict:
                default_cmp_lag_days, default_cls_lag_days,
                feed_starts_mode,
                scheduling_horizon_days,
-               td_to_str_lag
+               td_to_str_lag,
+               hc_to_bldr_lag_days
         FROM sim_entitlement_delivery_config
         WHERE ent_group_id = %s
         """,
@@ -88,4 +90,5 @@ def load_delivery_config(conn, ent_group_id: int) -> dict:
         "feed_starts_mode":            bool(merge("feed_starts_mode") or False),
         "scheduling_horizon_days":     int(merge("scheduling_horizon_days")),
         "td_to_str_lag":               int(merge("td_to_str_lag")),
+        "hc_to_bldr_lag_days":         int(merge("hc_to_bldr_lag_days")),
     }

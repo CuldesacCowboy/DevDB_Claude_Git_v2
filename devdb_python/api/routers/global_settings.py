@@ -25,6 +25,8 @@ class GlobalSettingsPutRequest(BaseModel):
     scheduling_horizon_days: int | None = None
     # BLDR-to-DIG lag
     td_to_str_lag: int | None = None
+    # HC-to-BLDR lead days
+    hc_to_bldr_lag_days: int | None = None
 
 
 @router.get("")
@@ -54,9 +56,9 @@ def put_global_settings(body: GlobalSettingsPutRequest, conn=Depends(get_db_conn
                 (id, delivery_months, max_deliveries_per_year,
                  default_cmp_lag_days, default_cls_lag_days,
                  min_d_count, min_u_count, min_uc_count, min_c_count,
-                 scheduling_horizon_days, td_to_str_lag,
+                 scheduling_horizon_days, td_to_str_lag, hc_to_bldr_lag_days,
                  updated_at)
-            VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT (id) DO UPDATE SET
                 delivery_months         = COALESCE(EXCLUDED.delivery_months,         sim_global_settings.delivery_months),
                 max_deliveries_per_year = COALESCE(EXCLUDED.max_deliveries_per_year, sim_global_settings.max_deliveries_per_year),
@@ -68,6 +70,7 @@ def put_global_settings(body: GlobalSettingsPutRequest, conn=Depends(get_db_conn
                 min_c_count             = EXCLUDED.min_c_count,
                 scheduling_horizon_days = COALESCE(EXCLUDED.scheduling_horizon_days, sim_global_settings.scheduling_horizon_days),
                 td_to_str_lag           = COALESCE(EXCLUDED.td_to_str_lag,           sim_global_settings.td_to_str_lag),
+                hc_to_bldr_lag_days     = COALESCE(EXCLUDED.hc_to_bldr_lag_days,     sim_global_settings.hc_to_bldr_lag_days),
                 updated_at              = NOW()
             RETURNING *
             """,
@@ -82,6 +85,7 @@ def put_global_settings(body: GlobalSettingsPutRequest, conn=Depends(get_db_conn
                 body.min_c_count,
                 body.scheduling_horizon_days,
                 body.td_to_str_lag,
+                body.hc_to_bldr_lag_days,
             ),
         )
         conn.commit()

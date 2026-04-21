@@ -85,12 +85,14 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     persist_violations(conn, violations, dev_id, sim_run_id)
 
     # S-05
-    horizon_days = build_lag_curves.get("_scheduling_horizon_days", 0)
+    horizon_days      = build_lag_curves.get("_scheduling_horizon_days", 0)
+    hc_to_bldr_lag    = build_lag_curves.get("_hc_to_bldr_lag_days", 16)
     snapshot, residual_gaps = takedown_engine(conn, snapshot, dev_id,
-                                              scheduling_horizon_days=horizon_days)
+                                              scheduling_horizon_days=horizon_days,
+                                              hc_to_bldr_lag_days=hc_to_bldr_lag)
 
     # S-06
-    demand_series, needs_config = demand_generator(conn, dev_id, run_start_date)
+    demand_series, needs_config, sim_floor_date = demand_generator(conn, dev_id, run_start_date)
     if needs_config:
         logger.warning(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
         demand_series = pd.DataFrame(columns=["year", "month", "slots"])
@@ -99,7 +101,8 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
 
     # S-07 through S-0820: kernel planning pass
     frozen = build_frozen_input(conn, dev_id, snapshot, demand_series, sim_run_id,
-                                td_to_str_lag=td_to_str_lag)
+                                td_to_str_lag=td_to_str_lag,
+                                sim_floor_date=sim_floor_date)
     proposal = plan(frozen)
     if proposal.warnings:
         for w in proposal.warnings:
@@ -245,6 +248,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         build_lag_curves["_default_cls"] = _cfg["default_cls_lag_days"]
         build_lag_curves["_td_to_str_lag"] = _cfg["td_to_str_lag"]
         build_lag_curves["_scheduling_horizon_days"] = _cfg["scheduling_horizon_days"]
+        build_lag_curves["_hc_to_bldr_lag_days"]    = _cfg["hc_to_bldr_lag_days"]
 
         # Apply scheduling horizon floor to run_start_date.
         _horizon_days = _cfg["scheduling_horizon_days"]

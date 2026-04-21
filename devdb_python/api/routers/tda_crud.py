@@ -26,7 +26,6 @@ class PatchTdaRequest(BaseModel):
     anchor_date: Optional[date_type] = None
     bank_id: Optional[int] = None
     builder_id: Optional[int] = None
-    checkpoint_lead_days: Optional[int] = None
 
 
 router = APIRouter(tags=["takedown-agreements"])
@@ -107,7 +106,6 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                 tda.anchor_date,
                 tda.bank_id,
                 tda.builder_id,
-                tda.checkpoint_lead_days,
                 b.bank_name,
                 db.builder_name,
                 cp.checkpoint_id,
@@ -122,7 +120,7 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
             LEFT JOIN devdb.sim_takedown_lot_assignments a ON a.checkpoint_id = cp.checkpoint_id
             WHERE tda.ent_group_id = %s
             GROUP BY tda.tda_id, tda.tda_name, tda.status, tda.anchor_date,
-                     tda.bank_id, tda.builder_id, tda.checkpoint_lead_days,
+                     tda.bank_id, tda.builder_id,
                      b.bank_name, db.builder_name,
                      cp.checkpoint_id, cp.checkpoint_number, cp.checkpoint_date,
                      cp.lots_required_cumulative
@@ -146,7 +144,6 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     "bank_name": r["bank_name"],
                     "builder_id": r["builder_id"],
                     "builder_name": r["builder_name"],
-                    "checkpoint_lead_days": r["checkpoint_lead_days"],
                     "checkpoints": [],
                     "lots": [],
                     "ineligible_lot_count": 0,
@@ -517,10 +514,10 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
         cur.execute(
             """
             INSERT INTO devdb.sim_takedown_agreements
-                (tda_name, ent_group_id, anchor_date, status, checkpoint_lead_days,
+                (tda_name, ent_group_id, anchor_date, status,
                  bank_id, builder_id, created_at, updated_at)
-            VALUES (%s, %s, %s, 'active', 16, %s, %s, now(), now())
-            RETURNING tda_id, tda_name, status, anchor_date, bank_id, builder_id, checkpoint_lead_days
+            VALUES (%s, %s, %s, 'active', %s, %s, now(), now())
+            RETURNING tda_id, tda_name, status, anchor_date, bank_id, builder_id
             """,
             (body.tda_name.strip(), body.ent_group_id, body.anchor_date,
              body.bank_id, body.builder_id),
@@ -534,7 +531,6 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
             "anchor_date": row["anchor_date"].isoformat() if row["anchor_date"] else None,
             "bank_id": row["bank_id"],
             "builder_id": row["builder_id"],
-            "checkpoint_lead_days": row["checkpoint_lead_days"],
         }
     except HTTPException:
         conn.rollback()
@@ -573,18 +569,13 @@ def patch_takedown_agreement(tda_id: int, body: PatchTdaRequest, conn=Depends(ge
         if body.builder_id is not None or "builder_id" in body.model_fields_set:
             updates.append("builder_id = %s")
             values.append(body.builder_id)
-        if body.checkpoint_lead_days is not None:
-            if body.checkpoint_lead_days < 0:
-                raise HTTPException(status_code=422, detail="checkpoint_lead_days must be non-negative.")
-            updates.append("checkpoint_lead_days = %s")
-            values.append(body.checkpoint_lead_days)
         if not updates:
             raise HTTPException(status_code=422, detail="No fields provided to update.")
         updates.append("updated_at = now()")
         values.append(tda_id)
         cur.execute(
             f"UPDATE devdb.sim_takedown_agreements SET {', '.join(updates)} WHERE tda_id = %s"
-            " RETURNING tda_id, tda_name, status, anchor_date, bank_id, builder_id, checkpoint_lead_days",
+            " RETURNING tda_id, tda_name, status, anchor_date, bank_id, builder_id",
             values,
         )
         row = cur.fetchone()
@@ -638,7 +629,6 @@ def patch_takedown_agreement(tda_id: int, body: PatchTdaRequest, conn=Depends(ge
             "anchor_date": row["anchor_date"].isoformat() if row["anchor_date"] else None,
             "bank_id": row["bank_id"],
             "builder_id": row["builder_id"],
-            "checkpoint_lead_days": row["checkpoint_lead_days"],
         }
     except HTTPException:
         conn.rollback()
