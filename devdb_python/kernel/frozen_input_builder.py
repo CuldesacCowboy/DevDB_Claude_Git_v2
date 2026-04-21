@@ -40,6 +40,7 @@ def build_frozen_input(
     demand_series,
     sim_run_id: int,
     td_to_str_lag: int = 1,
+    sim_floor_date=None,
 ) -> FrozenInput:
     """
     Assemble a FrozenInput for one development run.
@@ -47,9 +48,18 @@ def build_frozen_input(
     DB queries (phase capacity) are performed here.
     building_group_memberships and tda_hold_lot_ids are derived from lot_snapshot.
     No simulation logic. Returns FrozenInput only.
+
+    lot_snapshot passed to the kernel is restricted to U-status (date_td set, no date_str)
+    and H-status (HC hold set, no date_td) lots only (D-167).  D-status lots have
+    date_dev but no date_td; they get projected dates from S-0760 and must not absorb
+    demand slots from the sim planning pool — if they did, S-0800 would under-generate
+    sim lots for later phases because D-status lots are concentrated in early
+    (already-full-of-real-lots) phases.
     """
     phase_capacity = _load_phase_capacity(conn, dev_id)
 
+    # building_group_memberships and tda_hold_lot_ids use full snapshot so all real
+    # lot group associations and HC holds are captured regardless of pipeline status.
     building_group_memberships = {
         int(row['lot_id']): row['building_group_id']
         for _, row in lot_snapshot.iterrows()
@@ -70,8 +80,21 @@ def build_frozen_input(
 
     phase_building_config = _load_phase_building_config(conn, dev_id)
 
+    # Kernel snapshot: U-status and H-status lots only (D-167).
+    # U-status: committed for takedown (date_td actual), not yet started.
+    # H-status: HC hold set (actual or projected), not yet taken down.
+    # D-status lots (date_dev but no date_td) are excluded — S-0760 projects their
+    # dates independently; including them here steals demand from the sim pool.
+    _u_mask = lot_snapshot["date_td"].notna() & lot_snapshot["date_str"].isna()
+    _h_mask = (
+        _hold_mask
+        & lot_snapshot["date_td"].isna()
+        & lot_snapshot["date_str"].isna()
+    )
+    kernel_snapshot = lot_snapshot[_u_mask | _h_mask].reset_index(drop=True)
+
     return FrozenInput(
-        lot_snapshot=lot_snapshot,
+        lot_snapshot=kernel_snapshot,
         demand_series=demand_series,
         phase_capacity=phase_capacity,
         building_group_memberships=building_group_memberships,
@@ -80,6 +103,7 @@ def build_frozen_input(
         sim_run_id=sim_run_id,
         dev_id=dev_id,
         td_to_str_lag=td_to_str_lag,
+        sim_floor_date=sim_floor_date,
     )
 
 

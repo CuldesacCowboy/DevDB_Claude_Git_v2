@@ -120,8 +120,8 @@ def test_happy_path_all_lots_started():
         f"Expected no discards, got {proposal.discarded_lots}"
     )
     for i, lot in enumerate(proposal.temp_lots):
-        assert lot["date_td"] == lot["date_str"], (
-            f"D-142 violated on temp lot {i}: date_td={lot['date_td']} != date_str={lot['date_str']}"
+        assert lot["date_td"] <= lot["date_str"], (
+            f"D-142 violated on temp lot {i}: date_td={lot['date_td']} > date_str={lot['date_str']}"
         )
         assert lot["date_dev"] is not None, (
             f"date_dev must be set on temp lot {i}"

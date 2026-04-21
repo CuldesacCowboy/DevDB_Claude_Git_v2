@@ -120,9 +120,11 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
 
         date_str = date(year, month, 1)
 
-        # Defer start if demand slot precedes phase delivery date.
+        # Defer start if demand slot is on or before phase delivery date (D-167).
+        # date_str <= delivery defers delivery-month slots to delivery+1 so sim lots
+        # never start in the same month land is delivered.
         delivery = slot["date_dev"]
-        if delivery is not None and date_str < delivery:
+        if delivery is not None and date_str <= delivery:
             n_deferred = phase_deferred_count.get(phase_id, 0)
             date_str = _add_months_local(delivery, 1 + n_deferred)
             phase_deferred_count[phase_id] = n_deferred + 1

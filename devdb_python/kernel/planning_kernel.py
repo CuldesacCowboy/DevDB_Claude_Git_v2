@@ -36,6 +36,12 @@ def plan(frozen_input: FrozenInput) -> Proposal:
         frozen_input.demand_series,
     )
 
+    # Note: sim_floor_date is no longer used to gate unmet demand here (D-167).
+    # S-0800's deferred-start logic already handles pre-delivery demand slots by
+    # pushing date_str to after phase delivery.  The old gate was preventing pre-floor
+    # demand from reaching S-0800, causing under-generation for later phases when
+    # D-status real lots were excluded from the kernel snapshot.
+
     # S-0800: generate temp lots for each unmet demand slot (assignment decisions only)
     temp_lots_raw = temp_lot_generator(
         unmet_demand_series,
