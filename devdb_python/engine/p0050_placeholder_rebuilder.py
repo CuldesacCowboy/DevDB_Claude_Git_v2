@@ -327,6 +327,8 @@ def _run_scheduling_loop(
         # drain from the balance on iteration 2+.  Without this, real D-status lots
         # that have no actual date_td never drain, _find_violation_month never fires,
         # and the schedule falls through to the stale date_dev_demand_derived anchor.
+        # Effective dates are pre-computed in a CTE so the planner sees plain column
+        # comparisons in the outer join rather than inline COALESCE expressions.
         d_proj_df = conn.read_df(
             f"""
             WITH future AS (
@@ -335,20 +337,24 @@ def _run_scheduling_loop(
                     (DATE_TRUNC('MONTH', CURRENT_DATE) + INTERVAL '30 years')::DATE,
                     INTERVAL '1 month'
                 )::DATE AS m
+            ),
+            lot_drain AS (
+                SELECT lot_id, dev_id, date_dev, lot_source, phase_id,
+                       COALESCE(date_td,      date_td_projected)      AS eff_td,
+                       COALESCE(date_td_hold, date_td_hold_projected) AS eff_hold
+                FROM sim_lots
+                WHERE date_dev IS NOT NULL
             )
             SELECT sl_devs.dev_id, f.m AS calendar_month,
-                   COUNT(sl.lot_id) AS d_end
+                   COUNT(ld.lot_id) AS d_end
             FROM future f
             CROSS JOIN (SELECT UNNEST(%s::int[]) AS dev_id) AS sl_devs
-            LEFT JOIN sim_lots sl
-                ON  sl.dev_id = sl_devs.dev_id
-                AND sl.date_dev IS NOT NULL
-                AND sl.date_dev <= f.m
-                AND (COALESCE(sl.date_td, sl.date_td_projected)           IS NULL
-                     OR COALESCE(sl.date_td, sl.date_td_projected)        > f.m)
-                AND (COALESCE(sl.date_td_hold, sl.date_td_hold_projected) IS NULL
-                     OR COALESCE(sl.date_td_hold, sl.date_td_hold_projected) > f.m)
-                {lot_filter_sql}
+            LEFT JOIN lot_drain ld
+                ON  ld.dev_id    =  sl_devs.dev_id
+                AND ld.date_dev  <= f.m
+                AND (ld.eff_td   IS NULL OR ld.eff_td   > f.m)
+                AND (ld.eff_hold IS NULL OR ld.eff_hold > f.m)
+                {lot_filter_sql.replace('sl.lot_source', 'ld.lot_source').replace('sl.phase_id', 'ld.phase_id')}
             GROUP BY sl_devs.dev_id, f.m
             ORDER BY sl_devs.dev_id, f.m
             """,
