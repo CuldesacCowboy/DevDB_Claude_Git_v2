@@ -721,17 +721,12 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [assigning, setAssigning] = useState(false)
   const [autoAssignResult, setAutoAssignResult] = useState(null)
-  const [expanded, setExpanded] = useState({})
-
   const lotsByCp = {}
   for (const lot of tda.lots || []) {
     if (lot.checkpoint_id) {
       if (!lotsByCp[lot.checkpoint_id]) lotsByCp[lot.checkpoint_id] = []
       lotsByCp[lot.checkpoint_id].push(lot)
     }
-  }
-  function toggleExpand(cpId) {
-    setExpanded(prev => ({ ...prev, [cpId]: !prev[cpId] }))
   }
 
   async function handleAutoAssign() {
@@ -802,7 +797,6 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
           <tbody>
             {tda.checkpoints.map((cp, idx) => {
               const required     = cp.lots_required_cumulative || 0
-              const isOpen       = !!expanded[cp.checkpoint_id]
               const prevRequired = idx > 0 ? (tda.checkpoints[idx - 1].lots_required_cumulative || 0) : 0
               const perRequired  = required - prevRequired
               const cpLots       = lotsByCp[cp.checkpoint_id] || []
@@ -845,19 +839,12 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
 
               return (
                 <Fragment key={cp.checkpoint_id}>
-                  <tr style={{ borderBottom: isOpen ? 'none' : `1px solid ${PANEL_BORDER}`, background: rowBg }}>
-                    {/* CP# + expand toggle */}
+                  <tr style={{ borderBottom: 'none', background: rowBg }}>
+                    {/* CP# */}
                     <td style={{ ...TD, padding: '6px 4px', width: 44, whiteSpace: 'nowrap' }}>
-                      <span style={{ fontSize: 10, color: TEXT_MUTED, fontWeight: 700, marginRight: 2 }}>
+                      <span style={{ fontSize: 10, color: TEXT_MUTED, fontWeight: 700 }}>
                         CP{idx + 1}
                       </span>
-                      <button
-                        onClick={() => toggleExpand(cp.checkpoint_id)}
-                        title={isOpen ? 'Collapse slots' : 'Expand slots'}
-                        style={{ fontSize: 10, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', lineHeight: 1 }}
-                      >
-                        {isOpen ? '▼' : '▶'}
-                      </button>
                     </td>
                     {/* Checkpoint editable */}
                     <td style={TD}>
@@ -917,23 +904,21 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                     </td>
                   </tr>
 
-                  {/* Slot list row */}
-                  {isOpen && (
-                    <tr style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
-                      <td colSpan={8} style={{ padding: 0, paddingLeft: 28 }}>
-                        <CheckpointSlotTable
-                          checkpoint={cp}
-                          lots={cpLots}
-                          perRequired={perRequired}
-                          marksplan={cp.marks_plan}
-                          simplan={cp.sim_plan}
-                          buildingUnitCounts={buildingUnitCounts}
-                          onPatchLotDate={onPatchLotDate}
-                          onRemoveLots={onRemoveLots ? lotIds => onRemoveLots(tda.tda_id, lotIds) : undefined}
-                        />
-                      </td>
-                    </tr>
-                  )}
+                  {/* Slot table — always visible */}
+                  <tr style={{ borderBottom: `1px solid ${PANEL_BORDER}` }}>
+                    <td colSpan={8} style={{ padding: 0, paddingLeft: 28 }}>
+                      <CheckpointSlotTable
+                        checkpoint={cp}
+                        lots={cpLots}
+                        perRequired={perRequired}
+                        marksplan={cp.marks_plan}
+                        simplan={cp.sim_plan}
+                        buildingUnitCounts={buildingUnitCounts}
+                        onPatchLotDate={onPatchLotDate}
+                        onRemoveLots={onRemoveLots ? lotIds => onRemoveLots(tda.tda_id, lotIds) : undefined}
+                      />
+                    </td>
+                  </tr>
                 </Fragment>
               )
             })}
