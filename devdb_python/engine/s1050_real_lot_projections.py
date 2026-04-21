@@ -82,132 +82,123 @@ def write_real_lot_projections(
         (dev_id,),
     )
 
-    if p_lots_df.empty:
-        return 0
-
-    params_df = conn.read_df(
-        """
-        SELECT annual_starts_target, max_starts_per_month
-        FROM sim_dev_params
-        WHERE dev_id = %s
-        LIMIT 1
-        """,
-        (dev_id,),
-    )
-    if params_df.empty:
-        return 0
-
-    annual_target = float(params_df.iloc[0]["annual_starts_target"])
-    max_per_month_raw = params_df.iloc[0]["max_starts_per_month"]
-    max_per_month = (
-        float(max_per_month_raw)
-        if max_per_month_raw is not None and pd.notna(max_per_month_raw)
-        else None
-    )
-
-    annual_target_int = max(1, int(round(annual_target)))
-
-    # Count actual MARKS starts per calendar year so pace cap accounts for
-    # homes already started — projected lots only fill remaining capacity.
-    starts_df = conn.read_df(
-        """
-        SELECT EXTRACT(YEAR FROM date_str)::int AS yr, COUNT(*) AS n
-        FROM sim_lots
-        WHERE lot_source = 'real'
-          AND dev_id = %s
-          AND date_str IS NOT NULL
-        GROUP BY yr
-        """,
-        (dev_id,),
-    )
-    year_consumed: dict[int, int] = {
-        int(r["yr"]): int(r["n"]) for _, r in starts_df.iterrows()
-    }
-
-    # Build scheduling units — lots in the same building group start together (D-022).
-    # Each unit is a list of lot rows; ungrouped lots are singleton units.
-    units: list[list] = []
-    seen_bgs: set[int] = set()
-    for _, lot in p_lots_df.iterrows():
-        raw_bg = lot.get("building_group_id")
-        if raw_bg is not None and pd.notna(raw_bg):
-            bg_id = int(raw_bg)
-            if bg_id in seen_bgs:
-                continue  # already included as part of the group
-            seen_bgs.add(bg_id)
-            mates = p_lots_df[
-                p_lots_df["building_group_id"].apply(
-                    lambda x, _bg=bg_id: x is not None and pd.notna(x) and int(x) == _bg
-                )
-            ].to_dict("records")
-            units.append(mates)
-        else:
-            units.append([lot.to_dict()])
-
-    # Assign one start date per scheduling unit, consuming group_size slots,
-    # skipping to the next year when annual cap is exhausted.
-    current = run_start_date.replace(day=1)
-    unit_dates: list[date] = []
-
-    for unit in units:
-        group_size = len(unit)
-        while True:
-            yr = current.year
-            consumed = year_consumed.get(yr, 0)
-            remaining = annual_target_int - consumed
-            if remaining >= group_size:
-                unit_dates.append(current)
-                year_consumed[yr] = consumed + group_size
-                current = current + relativedelta(months=1)
-                break
-            else:
-                # Capacity exhausted for this year — advance to January next year
-                current = date(yr + 1, 1, 1)
-
-    if not unit_dates:
-        return 0
-
     DEFAULT_CMP_LAG = build_lag_curves.get("_default_cmp", 270)
     DEFAULT_CLS_LAG = build_lag_curves.get("_default_cls", 45)
 
-    updates = []
-    for unit, str_date in zip(units, unit_dates):
-        for lot in unit:
-            raw_lt = lot.get("lot_type_id")
-            lt_id = int(raw_lt) if raw_lt is not None and pd.notna(raw_lt) else None
+    pace_count = 0
 
-            str_cmp_curve = curves_for(build_lag_curves, "str_to_cmp", lt_id)
-            cmp_cls_curve = curves_for(build_lag_curves, "cmp_to_cls", lt_id)
+    if not p_lots_df.empty:
+        params_df = conn.read_df(
+            """
+            SELECT annual_starts_target, max_starts_per_month
+            FROM sim_dev_params
+            WHERE dev_id = %s
+            LIMIT 1
+            """,
+            (dev_id,),
+        )
+        if not params_df.empty:
+            annual_target = float(params_df.iloc[0]["annual_starts_target"])
+            max_per_month_raw = params_df.iloc[0]["max_starts_per_month"]
+            max_per_month = (
+                float(max_per_month_raw)
+                if max_per_month_raw is not None and pd.notna(max_per_month_raw)
+                else None
+            )
+            annual_target_int = max(1, int(round(annual_target)))
 
-            lag_str_cmp = sample_lag(rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
-            lag_cmp_cls = sample_lag(rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+            # Count actual MARKS starts per calendar year so pace cap accounts for
+            # homes already started — projected lots only fill remaining capacity.
+            starts_df = conn.read_df(
+                """
+                SELECT EXTRACT(YEAR FROM date_str)::int AS yr, COUNT(*) AS n
+                FROM sim_lots
+                WHERE lot_source = 'real'
+                  AND dev_id = %s
+                  AND date_str IS NOT NULL
+                GROUP BY yr
+                """,
+                (dev_id,),
+            )
+            year_consumed: dict[int, int] = {
+                int(r["yr"]): int(r["n"]) for _, r in starts_df.iterrows()
+            }
 
-            cmp_date = str_date + timedelta(days=lag_str_cmp)
-            cls_date = cmp_date + timedelta(days=lag_cmp_cls)
-            updates.append((int(lot["lot_id"]), str_date, cmp_date, cls_date))
+            # Build scheduling units — lots in the same building group start together (D-022).
+            # Each unit is a list of lot rows; ungrouped lots are singleton units.
+            units: list[list] = []
+            seen_bgs: set[int] = set()
+            for _, lot in p_lots_df.iterrows():
+                raw_bg = lot.get("building_group_id")
+                if raw_bg is not None and pd.notna(raw_bg):
+                    bg_id = int(raw_bg)
+                    if bg_id in seen_bgs:
+                        continue
+                    seen_bgs.add(bg_id)
+                    mates = p_lots_df[
+                        p_lots_df["building_group_id"].apply(
+                            lambda x, _bg=bg_id: x is not None and pd.notna(x) and int(x) == _bg
+                        )
+                    ].to_dict("records")
+                    units.append(mates)
+                else:
+                    units.append([lot.to_dict()])
 
-    if not updates:
-        return 0
+            # Assign one start date per scheduling unit, consuming group_size slots,
+            # skipping to the next year when annual cap is exhausted.
+            current = run_start_date.replace(day=1)
+            unit_dates: list[date] = []
 
-    conn.execute_values(
-        """
-        UPDATE sim_lots AS sl
-        SET date_str_projected = v.str_p::date,
-            date_cmp_projected = v.cmp_p::date,
-            date_cls_projected = v.cls_p::date
-        FROM (VALUES %s) AS v(lot_id, str_p, cmp_p, cls_p)
-        WHERE sl.lot_id = v.lot_id::bigint
-        """,
-        updates,
-    )
+            for unit in units:
+                group_size = len(unit)
+                while True:
+                    yr = current.year
+                    consumed = year_consumed.get(yr, 0)
+                    remaining = annual_target_int - consumed
+                    if remaining >= group_size:
+                        unit_dates.append(current)
+                        year_consumed[yr] = consumed + group_size
+                        current = current + relativedelta(months=1)
+                        break
+                    else:
+                        current = date(yr + 1, 1, 1)
 
-    logger.info(f"  S-1050: Projected dates written to {len(updates)} real P lot(s) for dev {dev_id}.")
+            updates = []
+            for unit, str_date in zip(units, unit_dates):
+                for lot in unit:
+                    raw_lt = lot.get("lot_type_id")
+                    lt_id = int(raw_lt) if raw_lt is not None and pd.notna(raw_lt) else None
+                    str_cmp_curve = curves_for(build_lag_curves, "str_to_cmp", lt_id)
+                    cmp_cls_curve = curves_for(build_lag_curves, "cmp_to_cls", lt_id)
+                    lag_str_cmp = sample_lag(rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
+                    lag_cmp_cls = sample_lag(rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+                    cmp_date = str_date + timedelta(days=lag_str_cmp)
+                    cls_date = cmp_date + timedelta(days=lag_cmp_cls)
+                    updates.append((int(lot["lot_id"]), str_date, cmp_date, cls_date))
 
-    # Building-group HC sync: a D-status lot may share a building group with HC-held
-    # mates whose STR is constrained to after the hold release.  The D-lot takes down
-    # earlier per S-0770 but cannot start until the whole building is released.
-    # Copy the HC mates' date_str/cmp/cls_projected to any co-grouped lot that still
-    # has no date_str_projected (D-lots excluded from pace above, not touched yet).
+            if updates:
+                conn.execute_values(
+                    """
+                    UPDATE sim_lots AS sl
+                    SET date_str_projected = v.str_p::date,
+                        date_cmp_projected = v.cmp_p::date,
+                        date_cls_projected = v.cls_p::date
+                    FROM (VALUES %s) AS v(lot_id, str_p, cmp_p, cls_p)
+                    WHERE sl.lot_id = v.lot_id::bigint
+                    """,
+                    updates,
+                )
+                pace_count = len(updates)
+                logger.info(
+                    f"  S-1050: Projected dates written to {pace_count} real P lot(s) for dev {dev_id}."
+                )
+
+    # Building-group HC sync — always runs, even when there are no pure P/E lots.
+    # A D-status lot may share a building group with HC-held mates whose STR is
+    # constrained to after the hold release.  The D-lot takes down earlier per
+    # S-0770 but cannot start until the whole building is released.
+    # Copies the HC mates' date_str/cmp/cls_projected to any co-grouped lot that
+    # still has no date_str_projected (D-lots excluded from pace above).
     synced = conn.execute(
         """
         UPDATE sim_lots sl
@@ -240,4 +231,4 @@ def write_real_lot_projections(
     if synced:
         logger.info(f"  S-1050: Synced date_str_projected to {synced} D-lot(s) from HC group mates.")
 
-    return len(updates)
+    return pace_count
