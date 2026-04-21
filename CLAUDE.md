@@ -1,5 +1,6 @@
 # DevDB -- Claude Code Reference
-*Last updated: April 2026 (2026-04-20) | Architecture v20 | Decision Log: D-001 through D-166 | Next ID: D-167 | Migrations: 001–074*
+*Last updated: April 2026 (2026-04-21) | Architecture v20 | Decision Log: D-001 through D-167 | Next ID: D-168 | Migrations: 001–074*
+<!-- session 2026-04-21: D-167 sim lot under-generation fix — kernel D-status exclusion + sim_floor_date gate removal + S-0800 deferred-start <= delivery; DC Meadows now 80/80 lots; 6/6 kernel tests pass -->
 <!-- session 2026-04-20: HC scheduling horizon rule; S-0500 past-checkpoint skip; S-0760 HC/BLDR conflict resolution; LotLedger column sort; UI provenance styles + XX NNN lot format -->
 <!-- session 2026-04-19b: MARKSConnection + sync_marks.py (D-166); coordinator domain-logic cleanup -->
 <!-- session 2026-04-15: Abbey Farms pipeline fixed (5 cascading bugs); feed_starts_mode per-community toggle added -->
