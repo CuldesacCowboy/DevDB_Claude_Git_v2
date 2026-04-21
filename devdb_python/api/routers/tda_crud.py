@@ -242,9 +242,9 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                         -- D-087: both date_td AND date_td_hold count toward fulfillment.
                         -- taken_down_to_date: actuals on or before today (lots already completed).
                         -- marks_plan: actuals on or before this checkpoint's date (past + future).
-                        COUNT(CASE WHEN cp.checkpoint_date IS NOT NULL AND (
-                            (l.date_td IS NOT NULL AND l.date_td <= LEAST(cp.checkpoint_date, CURRENT_DATE))
-                            OR (l.date_td_hold IS NOT NULL AND l.date_td_hold <= LEAST(cp.checkpoint_date, CURRENT_DATE)
+                        COUNT(CASE WHEN (
+                            (l.date_td IS NOT NULL AND l.date_td <= CURRENT_DATE)
+                            OR (l.date_td_hold IS NOT NULL AND l.date_td_hold <= CURRENT_DATE
                                 AND l.date_td IS NULL)
                           ) THEN 1 END)
                             AS taken_down_to_date,

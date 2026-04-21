@@ -94,7 +94,6 @@ def patch_checkpoint(checkpoint_id: int, body: PatchCheckpointRequest, conn=Depe
             values.append(body.checkpoint_number)
         if not updates:
             raise HTTPException(status_code=422, detail="No fields provided to update.")
-        updates.append("updated_at = now()")
         values.append(checkpoint_id)
         cur.execute(
             f"UPDATE devdb.sim_takedown_checkpoints SET {', '.join(updates)} WHERE checkpoint_id = %s"
