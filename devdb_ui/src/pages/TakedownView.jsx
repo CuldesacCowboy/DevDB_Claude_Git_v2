@@ -328,10 +328,9 @@ function TdaDateEditor({ lot, field, onApplied, onClose }) {
 const SLOT_COLS = { num: 28, lot: 80, type: 42, bldg: 44, bldgType: 66, hc: 92, bldr: 92, fulfill: 112 }
 
 // ── Checkpoint slot table ──────────────────────────────────────────
-function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssignSlot, marksplan, simplan, buildingUnitCounts, onPatchLotDate, onRemoveLots }) {
+function CheckpointSlotTable({ checkpoint, lots, perRequired, marksplan, simplan, buildingUnitCounts, onPatchLotDate, onRemoveLots }) {
   const [sortCol, setSortCol]           = useState('fulfill')
   const [sortDir, setSortDir]           = useState(1)
-  const [pickerSlot, setPickerSlot]     = useState(null)
   const [editingDate, setEditingDate]   = useState(null) // { lot_id, field, lot }
   const [selected, setSelected]         = useState(new Set())
   const lastClickedRef                  = useRef(null)
@@ -614,42 +613,17 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, poolLots, onAssign
         <tbody>
           {satisfyLots.flatMap((lot, i) => renderLotRow(lot, i, false))}
 
-          {/* Open slots */}
+          {/* Open slots — read-only; run Auto-Assign to fill */}
           {Array.from({ length: openSlotCount }, (_, i) => {
-            const slotIdx    = satisfyLots.length + i
-            const showPicker = pickerSlot === slotIdx
-            return [
+            const slotIdx = satisfyLots.length + i
+            return (
               <tr key={`open_${i}`} style={{ borderTop: `1px solid ${PANEL_BORDER}`, background: '#f9fafb' }}>
                 <td style={{ ...STD_D, color: TEXT_MUTED, textAlign: 'center' }}>{slotIdx + 1}</td>
-                <td colSpan={7} style={{ ...STD_D, fontFamily: 'monospace' }}>
-                  <button onClick={() => setPickerSlot(showPicker ? null : slotIdx)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: showPicker ? '#2563eb' : '#cbd5e1', fontSize: 11, fontFamily: 'monospace', padding: 0 }}>
-                    — open slot —
-                  </button>
+                <td colSpan={7} style={{ ...STD_D, fontFamily: 'monospace', color: '#cbd5e1', fontSize: 11 }}>
+                  — open slot —
                 </td>
-              </tr>,
-              showPicker && (
-                <tr key={`picker_${slotIdx}`} style={{ background: '#eff6ff' }}>
-                  <td colSpan={8} style={{ padding: '5px 8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 11, color: '#1d4ed8', fontWeight: 600 }}>Assign lot to slot:</span>
-                      {poolLots.length === 0 ? (
-                        <span style={{ fontSize: 11, color: TEXT_MUTED, fontStyle: 'italic' }}>No lots in pool</span>
-                      ) : (
-                        <select defaultValue=""
-                          onChange={e => { if (e.target.value) { onAssignSlot(Number(e.target.value), checkpoint.checkpoint_id); setPickerSlot(null) } }}
-                          style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, border: '1px solid #93c5fd', background: '#fff' }}>
-                          <option value="">— select lot —</option>
-                          {poolLots.map(l => <option key={l.lot_id} value={l.lot_id}>{pillLotNum(l.lot_number)}</option>)}
-                        </select>
-                      )}
-                      <button onClick={() => setPickerSlot(null)}
-                        style={{ fontSize: 11, color: TEXT_MUTED, background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
-                    </div>
-                  </td>
-                </tr>
-              ),
-            ].filter(Boolean)
+              </tr>
+            )
           })}
 
           {/* Footer: MARKS Plan / Sim Plan */}
@@ -743,7 +717,7 @@ function CheckpointTimeline({ pins }) {
 }
 
 // ── Checkpoints section ────────────────────────────────────────────
-function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteCheckpoint, onAutoAssign, onAssignLot, buildingUnitCounts, onPatchLotDate, onRemoveLots }) {
+function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteCheckpoint, onAutoAssign, buildingUnitCounts, onPatchLotDate, onRemoveLots }) {
   const [confirmDelete, setConfirmDelete] = useState(null)
   const [assigning, setAssigning] = useState(false)
   const [autoAssignResult, setAutoAssignResult] = useState(null)
@@ -756,8 +730,6 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
       lotsByCp[lot.checkpoint_id].push(lot)
     }
   }
-  const poolLots = (tda.lots || []).filter(l => !l.checkpoint_id)
-
   function toggleExpand(cpId) {
     setExpanded(prev => ({ ...prev, [cpId]: !prev[cpId] }))
   }
@@ -953,8 +925,6 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
                           checkpoint={cp}
                           lots={cpLots}
                           perRequired={perRequired}
-                          poolLots={poolLots}
-                          onAssignSlot={onAssignLot}
                           marksplan={cp.marks_plan}
                           simplan={cp.sim_plan}
                           buildingUnitCounts={buildingUnitCounts}
@@ -1630,7 +1600,7 @@ function AddLotsSection({ tda, allTdas, unassignedLots, onAddLots, onMoveLots })
 }
 
 // ── Agreement card ─────────────────────────────────────────────────
-function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign, onAssignLot, buildingUnitCounts, onPatchLotDate }) {
+function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch, onAddCheckpoint, onPatchCheckpoint, onDeleteCheckpoint, onAddLots, onRemoveLots, onMoveLots, onEditLotDates, onAutoAssign, buildingUnitCounts, onPatchLotDate }) {
   const ss = AGREEMENT_STATUS_STYLE[tda.status] || AGREEMENT_STATUS_STYLE.active
 
   const totalLots        = tda.lots?.length ?? 0
@@ -1725,7 +1695,6 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
         onAddCheckpoint={() => onAddCheckpoint(tda.tda_id)}
         onDeleteCheckpoint={onDeleteCheckpoint}
         onAutoAssign={onAutoAssign}
-        onAssignLot={(lotId, cpId) => onAssignLot(tda.tda_id, lotId, cpId)}
         buildingUnitCounts={buildingUnitCounts}
         onPatchLotDate={onPatchLotDate}
         onRemoveLots={onRemoveLots}
@@ -2659,14 +2628,6 @@ export default function TakedownView({ showTestCommunities }) {
     load()
   }
 
-  async function assignLot(tdaId, lotId, checkpointId) {
-    await fetch(`${API_BASE}/takedown-agreements/${tdaId}/lots/${lotId}/assign`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ checkpoint_id: checkpointId }),
-    })
-    load()
-  }
-
   // ── Filtered community list ────────────────────────────────────────
   const visibleCommunities = search
     ? communities.filter(c => c.ent_group_name.toLowerCase().includes(search.toLowerCase()))
@@ -2895,7 +2856,6 @@ export default function TakedownView({ showTestCommunities }) {
                   onMoveLots={moveLots}
                   onEditLotDates={editLotDates}
                   onAutoAssign={autoAssign}
-                  onAssignLot={assignLot}
                   buildingUnitCounts={data.building_unit_counts || {}}
                   onPatchLotDate={load}
                 />
