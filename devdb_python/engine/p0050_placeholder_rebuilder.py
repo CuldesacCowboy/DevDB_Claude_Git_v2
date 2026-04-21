@@ -337,10 +337,16 @@ def _run_scheduling_loop(
             CROSS JOIN (SELECT UNNEST(%s::int[]) AS dev_id) AS sl_devs
             LEFT JOIN sim_lots sl
                 ON  sl.dev_id = sl_devs.dev_id
+                -- Use projected takedown dates so real D-lots with no MARKS actual
+                -- takedown still drain at the engine-projected pace.  Without this,
+                -- real lots with date_td IS NULL are treated as permanently in D,
+                -- which prevents the balance-violation trigger from ever firing.
                 AND sl.date_dev IS NOT NULL
                 AND sl.date_dev <= f.m
-                AND (sl.date_td     IS NULL OR sl.date_td     > f.m)
-                AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
+                AND (COALESCE(sl.date_td, sl.date_td_projected) IS NULL
+                     OR COALESCE(sl.date_td, sl.date_td_projected) > f.m)
+                AND (COALESCE(sl.date_td_hold, sl.date_td_hold_projected) IS NULL
+                     OR COALESCE(sl.date_td_hold, sl.date_td_hold_projected) > f.m)
                 {lot_filter_sql}
             GROUP BY sl_devs.dev_id, f.m
             ORDER BY sl_devs.dev_id, f.m
