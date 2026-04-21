@@ -82,15 +82,19 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
     if not snapshot_lot_ids:
         return lot_snapshot, []
 
-    # ── Pre-clear stale HC hold projections for this dev's active TDA lots ──────
-    # Resets date_td_hold_projected only — never touches date_td_projected.
-    # Lots already on the demand path (date_td_projected set by S-0760) keep
-    # that assignment; _available() will correctly exclude them, and _fulfills()
-    # will count them toward checkpoint obligations if they land before the date.
+    # ── Pre-clear stale projected dates for this dev's active TDA lots ─────────
+    # Each run recomputes from scratch so stale values from prior runs don't
+    # interfere. Also clears date_td_projected written by S-0760 so that
+    # _available() sees a clean lot and HC re-assignment works correctly on
+    # every iteration. Locked lots and lots with actual dates are preserved.
     conn.execute(
         """
         UPDATE sim_lots
-        SET date_td_hold_projected = NULL
+        SET date_td_hold_projected = NULL,
+            date_td_projected = CASE
+                WHEN date_td IS NULL AND date_td_is_locked IS NOT TRUE THEN NULL
+                ELSE date_td_projected
+            END
         WHERE dev_id = %s
           AND date_td_hold IS NULL
           AND date_td_hold_is_locked IS NOT TRUE
@@ -129,13 +133,17 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
     df = lot_snapshot.copy()
     lots_dict = {int(row["lot_id"]): row.to_dict() for _, row in df.iterrows()}
 
-    # Mirror the DB pre-clear in-memory (date_td_hold_projected only).
+    # Mirror the DB pre-clear in the in-memory snapshot so subsequent logic
+    # operates on a clean slate (no stale projected hold dates from prior runs).
     for lid, lot in lots_dict.items():
         if lot.get("date_td_hold_is_locked"):
             continue
         if lot.get("date_td_hold") is not None and pd.notna(lot.get("date_td_hold")):
             continue
         lots_dict[lid]["date_td_hold_projected"] = None
+        # Also clear stale date_td_projected written by S-0760 (mirrors DB pre-clear)
+        if (lot.get("date_td") is None or pd.isna(lot.get("date_td"))) and not lot.get("date_td_is_locked"):
+            lots_dict[lid]["date_td_projected"] = None
 
     # lot_id → new hold date assigned this run (for batch DB persistence)
     updated_lot_ids: dict[int, object] = {}
@@ -298,8 +306,52 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                     "gap":               residual,
                 })
 
-        # HC dates are only assigned to satisfy checkpoint obligations.
-        # Pool lots beyond checkpoint requirements drain via the demand path — no excess push.
+        # ── Excess push ───────────────────────────────────────────────────────
+        # Pool lots with no td/hold/str that weren't scheduled above are spread
+        # across checkpoint hold dates in round-robin order so excess absorption
+        # tracks the checkpoint cadence rather than piling on a single date.
+        today = date.today()
+        cp_hold_dates = []
+        for _, cp in checkpoints.iterrows():
+            if cp["checkpoint_date"] is None or pd.isna(cp["checkpoint_date"]):
+                continue
+            if pd.Timestamp(cp["checkpoint_date"]).date() < today:
+                continue  # past checkpoints excluded from excess push
+            n = (pd.Timestamp(cp["checkpoint_date"]) - timedelta(days=lead)).date()
+            cp_hold_dates.append(max(n, hc_floor))
+        if not cp_hold_dates:
+            continue  # no dated checkpoints — nothing to push excess lots toward
+        if first_unsatisfied_hold is not None:
+            # Start cycling from the first unsatisfied checkpoint
+            start_idx = next(
+                (i for i, d in enumerate(cp_hold_dates) if d == first_unsatisfied_hold),
+                0,
+            )
+            cp_hold_dates = cp_hold_dates[start_idx:] + cp_hold_dates[:start_idx]
+        # If all satisfied, cycle across all hold dates (starting from first)
+
+        excess_lots = sorted(
+            (lot for lot in tda_snapshot_lots.values()
+             if int(lot["lot_id"]) not in updated_lot_ids and _available(lot)),
+            key=lambda l: (
+                pd.Timestamp(l["date_dev"]) if l.get("date_dev") is not None and pd.notna(l.get("date_dev"))
+                else pd.Timestamp.max
+            ),
+        )
+        excess_budget = len(excess_lots)
+        excess_count = 0
+        for i, lot in enumerate(excess_lots):
+            if excess_count >= excess_budget:
+                break
+            hold_date = cp_hold_dates[i % len(cp_hold_dates)]
+            lid = int(lot["lot_id"])
+            _assign_hold(lid, hold_date)
+            excess_count += 1
+
+        if excess_count:
+            logger.info(
+                f"  TDA {tda_id}: excess push → {excess_count} lot(s) spread across {len(cp_hold_dates)} checkpoint hold date(s)"
+            )
 
     # ── Persist date_td_hold_projected to DB ──────────────────────────────────
     if updated_lot_ids:
@@ -320,122 +372,3 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
     updated_df = pd.DataFrame(list(lots_dict.values()))
     updated_df = updated_df[lot_snapshot.columns.tolist()]
     return updated_df, residual_gaps
-
-
-def refresh_tda_assignments(conn: DBConnection, ent_group_id: int) -> int:
-    """
-    Re-derive and persist sim_takedown_lot_assignments for all active TDAs in
-    an entitlement group.  Called post-convergence by the coordinator so the
-    slot cache always reflects the latest projected dates.
-
-    Mirrors the auto-assign logic in the API layer:
-      - Sort TDA lots by effective date (min of D-087 BLDR/HC paths), nulls last.
-      - Fill checkpoints sequentially by per-delta capacity; last CP absorbs overflow.
-    Returns total assignments written.
-    """
-    tda_df = conn.read_df(
-        """
-        SELECT ta.tda_id, ta.builder_id
-        FROM sim_takedown_agreements ta
-        JOIN sim_entitlement_groups eg ON eg.ent_group_id = ta.ent_group_id
-        WHERE ta.status = 'active'
-          AND eg.ent_group_id = %s
-        """,
-        (ent_group_id,),
-    )
-    if tda_df.empty:
-        return 0
-
-    total_assigned = 0
-
-    for _, tda_row in tda_df.iterrows():
-        tda_id         = int(tda_row["tda_id"])
-        raw_builder    = tda_row["builder_id"]
-        tda_builder_id = None if (raw_builder is None or pd.isna(raw_builder)) else int(raw_builder)
-
-        cp_df = conn.read_df(
-            """
-            SELECT checkpoint_id, lots_required_cumulative
-            FROM sim_takedown_checkpoints
-            WHERE tda_id = %s AND checkpoint_date IS NOT NULL
-            ORDER BY checkpoint_date ASC
-            """,
-            (tda_id,),
-        )
-        if cp_df.empty:
-            continue
-
-        checkpoints = cp_df.to_dict("records")
-        prev_cum = 0
-        cp_capacity = []
-        for cp in checkpoints:
-            cum = int(cp["lots_required_cumulative"] or 0)
-            cp_capacity.append(max(0, cum - prev_cum))
-            prev_cum = cum
-
-        lot_df = conn.read_df(
-            """
-            SELECT l.lot_id,
-                   COALESCE(l.date_td, l.date_td_projected)           AS eff_bldr,
-                   COALESCE(l.date_td_hold, l.date_td_hold_projected) AS eff_hc,
-                   COALESCE(l.builder_id_override, l.builder_id)      AS resolved_builder_id
-            FROM sim_takedown_agreement_lots tal
-            JOIN sim_lots l ON l.lot_id = tal.lot_id
-            WHERE tal.tda_id = %s
-            """,
-            (tda_id,),
-        )
-        if lot_df.empty:
-            continue
-
-        eligible = []
-        for _, lr in lot_df.iterrows():
-            if tda_builder_id is not None:
-                rb = lr["resolved_builder_id"]
-                if rb is None or pd.isna(rb) or int(rb) != tda_builder_id:
-                    continue
-            eb = lr["eff_bldr"]
-            eh = lr["eff_hc"]
-            eb = None if (eb is None or pd.isna(eb)) else pd.Timestamp(eb).date()
-            eh = None if (eh is None or pd.isna(eh)) else pd.Timestamp(eh).date()
-            if eb is not None and eh is not None:
-                td = min(eb, eh)
-            else:
-                td = eb or eh
-            eligible.append((td, int(lr["lot_id"])))
-
-        eligible.sort(key=lambda x: (x[0] is None, x[0]))
-
-        # Clear existing assignments for this TDA
-        conn.execute(
-            """
-            DELETE FROM sim_takedown_lot_assignments
-            WHERE checkpoint_id IN (
-                SELECT checkpoint_id FROM sim_takedown_checkpoints WHERE tda_id = %s
-            )
-            """,
-            (tda_id,),
-        )
-
-        lot_iter = iter(eligible)
-        for i, (cp, capacity) in enumerate(zip(checkpoints, cp_capacity)):
-            is_last      = (i == len(checkpoints) - 1)
-            slots_to_fill = capacity if not is_last else None
-            filled       = 0
-            cp_id        = int(cp["checkpoint_id"])
-            for _, lot_id in lot_iter:
-                conn.execute(
-                    """
-                    INSERT INTO sim_takedown_lot_assignments (checkpoint_id, lot_id, assigned_at)
-                    VALUES (%s, %s, now())
-                    ON CONFLICT DO NOTHING
-                    """,
-                    (cp_id, lot_id),
-                )
-                total_assigned += 1
-                filled         += 1
-                if slots_to_fill is not None and filled >= slots_to_fill:
-                    break
-
-    logger.info(f"  S-0500: refresh_tda_assignments → {total_assigned} assignment(s) written for ent_group {ent_group_id}.")
-    return total_assigned

@@ -322,13 +322,6 @@ def _run_scheduling_loop(
             lot_filter_sql    = "AND sl.lot_source = 'real'"
             lot_filter_params = []
 
-        # Drain uses COALESCE(actual, projected) for both td and td_hold so that
-        # real lots with projected-only takedown dates (written by S-0760) correctly
-        # drain from the balance on iteration 2+.  Without this, real D-status lots
-        # that have no actual date_td never drain, _find_violation_month never fires,
-        # and the schedule falls through to the stale date_dev_demand_derived anchor.
-        # Effective dates are pre-computed in a CTE so the planner sees plain column
-        # comparisons in the outer join rather than inline COALESCE expressions.
         d_proj_df = conn.read_df(
             f"""
             WITH future AS (
@@ -337,24 +330,18 @@ def _run_scheduling_loop(
                     (DATE_TRUNC('MONTH', CURRENT_DATE) + INTERVAL '30 years')::DATE,
                     INTERVAL '1 month'
                 )::DATE AS m
-            ),
-            lot_drain AS (
-                SELECT lot_id, dev_id, date_dev, lot_source, phase_id,
-                       COALESCE(date_td,      date_td_projected)      AS eff_td,
-                       COALESCE(date_td_hold, date_td_hold_projected) AS eff_hold
-                FROM sim_lots
-                WHERE date_dev IS NOT NULL
             )
             SELECT sl_devs.dev_id, f.m AS calendar_month,
-                   COUNT(ld.lot_id) AS d_end
+                   COUNT(sl.lot_id) AS d_end
             FROM future f
             CROSS JOIN (SELECT UNNEST(%s::int[]) AS dev_id) AS sl_devs
-            LEFT JOIN lot_drain ld
-                ON  ld.dev_id    =  sl_devs.dev_id
-                AND ld.date_dev  <= f.m
-                AND (ld.eff_td   IS NULL OR ld.eff_td   > f.m)
-                AND (ld.eff_hold IS NULL OR ld.eff_hold > f.m)
-                {lot_filter_sql.replace('sl.lot_source', 'ld.lot_source').replace('sl.phase_id', 'ld.phase_id')}
+            LEFT JOIN sim_lots sl
+                ON  sl.dev_id = sl_devs.dev_id
+                AND sl.date_dev IS NOT NULL
+                AND sl.date_dev <= f.m
+                AND (sl.date_td     IS NULL OR sl.date_td     > f.m)
+                AND (sl.date_td_hold IS NULL OR sl.date_td_hold > f.m)
+                {lot_filter_sql}
             GROUP BY sl_devs.dev_id, f.m
             ORDER BY sl_devs.dev_id, f.m
             """,
@@ -454,34 +441,6 @@ def _run_scheduling_loop(
                 last_locked_date = d
 
     dev_last_delivery_lots: dict[int, int] = {}
-
-    # Initialize from locked delivery lot counts so the exhaustion fallback
-    # correctly predicts when locked-phase lots drain.  Without this, last_lots
-    # stays 0 and the fallback falls through to next_window_month_from(today),
-    # which then gets pushed out by min_gap — causing phases to be scheduled
-    # far later than the D-balance actually requires.
-    if last_locked_per_dev:
-        for _dev_id, _locked_date in last_locked_per_dev.items():
-            _cnt_df = conn.read_df(
-                """
-                SELECT COUNT(sl.lot_id) AS cnt
-                FROM sim_lots sl
-                JOIN sim_delivery_event_phases dep ON dep.phase_id = sl.phase_id
-                JOIN sim_delivery_events sde
-                     ON sde.delivery_event_id = dep.delivery_event_id
-                WHERE sde.ent_group_id = %s
-                  AND sde.date_dev_actual = %s
-                  AND sl.dev_id = %s
-                """,
-                (cfg["ent_group_id"], _locked_date, _dev_id),
-            )
-            _cnt = int(_cnt_df.iloc[0]["cnt"]) if not _cnt_df.empty else 0
-            if _cnt > 0:
-                dev_last_delivery_lots[_dev_id] = _cnt
-                logger.info(
-                    f"P-00: Dev {_dev_id}: last_locked_lots={_cnt} "
-                    f"(delivery {_locked_date}, initialized for exhaustion fallback)"
-                )
 
     # ── Closures used by the scheduling loop ─────────────────────────────────
 

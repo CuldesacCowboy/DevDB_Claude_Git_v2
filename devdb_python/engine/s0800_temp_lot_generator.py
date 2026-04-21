@@ -99,17 +99,9 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
     next_bg_id = -1  # Negative counters for synthetic group IDs (no DB FK needed)
     bg_id_map: dict[tuple, int] = {}  # (phase_id, building_idx) → synthetic bg_id
 
-    # Per-dev deferred-slot counter (D-167): shared across all phases of the same dev
-    # so that buildings from different phases can't land in the same month.
-    # Advances by 1 per building (not per unit) so the cadence is 1 building/month.
-    dev_deferred_count: dict[int, int] = {}
-
-    # Per-dev minimum date for next grouped building start (D-167).
-    # Ensures that when natural demand (post-delivery) resumes after a run of
-    # deferred buildings, the natural buildings don't land BEFORE the last
-    # deferred one (which would produce out-of-sequence, backward date jumps).
-    # Only applied to phases in bg_templates (building-grouped phases).
-    dev_grouped_min_date: dict[int, date | None] = {}
+    # Per-phase deferred-slot counter: when a demand slot < phase delivery date,
+    # defer start to 1/month after delivery at pace of 1 per slot.
+    phase_deferred_count: dict[int, int] = {}
 
     def _add_months_local(d: date, n: int) -> date:
         m = d.month + n
@@ -128,44 +120,19 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
 
         date_str = date(year, month, 1)
 
-        # Resolve building group state first so we know if this is the first unit
-        # of a new building before deciding whether to advance the deferred counter.
+        # Defer start if demand slot precedes phase delivery date.
+        delivery = slot["date_dev"]
+        if delivery is not None and date_str < delivery:
+            n_deferred = phase_deferred_count.get(phase_id, 0)
+            date_str = _add_months_local(delivery, 1 + n_deferred)
+            phase_deferred_count[phase_id] = n_deferred + 1
+
+        # Resolve building group for this lot.
         bg_id = None
-        is_first_in_building = True   # True for non-grouped phases
         if phase_id in bg_templates:
             template = bg_templates[phase_id]
             if phase_id not in bg_state:
                 bg_state[phase_id] = {"template_idx": 0, "slots_in_building": 0}
-            state = bg_state[phase_id]
-            is_first_in_building = (state["slots_in_building"] == 0)
-
-        # Defer start if demand slot is on or before phase delivery date (D-167).
-        # date_str <= delivery defers delivery-month slots to delivery+1 so sim lots
-        # never start in the same month land is delivered.
-        # The counter is per-dev (not per-phase) so buildings across phases of the
-        # same dev don't coincide.  It advances only once per building (not per unit).
-        delivery = slot["date_dev"]
-        if delivery is not None and date_str <= delivery:
-            n_deferred = dev_deferred_count.get(dev_id, 0)
-            date_str = _add_months_local(delivery, 1 + n_deferred)
-            if is_first_in_building:
-                dev_deferred_count[dev_id] = n_deferred + 1
-
-        # For grouped phases: enforce a per-dev minimum date on the first unit of
-        # each building so that natural-demand buildings (post-delivery demand slots)
-        # cannot land BEFORE a previously deferred building.  Without this, the
-        # deferred sequence (Jul, Aug, Sep…) can be followed by a natural building
-        # whose demand slot month is earlier than the last deferred month, producing
-        # a backward date jump and a spike when multiple buildings coincide.
-        if phase_id in bg_templates and is_first_in_building:
-            min_date = dev_grouped_min_date.get(dev_id)
-            if min_date is not None and date_str < min_date:
-                date_str = min_date
-            dev_grouped_min_date[dev_id] = _add_months_local(date_str, 1)
-
-        # Resolve building group for this lot (complete the assignment started above).
-        if phase_id in bg_templates:
-            template = bg_templates[phase_id]
             state = bg_state[phase_id]
 
             if state["template_idx"] < len(template):

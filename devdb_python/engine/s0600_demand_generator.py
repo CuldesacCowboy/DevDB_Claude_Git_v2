@@ -41,7 +41,7 @@ def demand_generator(conn: DBConnection, dev_id: int,
     )
 
     if params_df.empty:
-        return pd.DataFrame(columns=["year", "month", "slots"]), True, None
+        return pd.DataFrame(columns=["year", "month", "slots"]), True
 
     row = params_df.iloc[0]
     annual_target = float(row["annual_starts_target"])
@@ -82,12 +82,9 @@ def demand_generator(conn: DBConnection, dev_id: int,
 
     if available_capacity == 0:
         logger.info(f"S-06: Dev {dev_id} available_capacity=0. No demand generated.")
-        return pd.DataFrame(columns=["year", "month", "slots"]), False, None
+        return pd.DataFrame(columns=["year", "month", "slots"]), False
 
-    # Step 2a: Compute sim_floor_date from the last locked delivery event.
-    # sim_floor_date is the first month after that event — sim lots may not be placed
-    # before this date, but real lots can still absorb pre-floor demand freely.
-    # demand_start always equals run_start_date so real lot absorption is unaffected.
+    # Step 2a: Demand starts no earlier than the last locked delivery date.
     locked_df = conn.read_df(
         """
         SELECT MAX(date_dev_actual) AS last_locked_date
@@ -102,12 +99,12 @@ def demand_generator(conn: DBConnection, dev_id: int,
         (dev_id,),
     )
     last_locked = locked_df.iloc[0]["last_locked_date"]
-    sim_floor_date = None
     if last_locked is not None:
         ll = last_locked.date() if hasattr(last_locked, "date") else last_locked
-        sim_floor_date = ll.replace(day=1) + relativedelta(months=1)
-
-    demand_start = run_start_date
+        first_of_next_month = ll.replace(day=1) + relativedelta(months=1)
+        demand_start = max(run_start_date, first_of_next_month)
+    else:
+        demand_start = run_start_date
 
     # Step 2b: Build month spine from demand_start
     months = []
@@ -140,6 +137,6 @@ def demand_generator(conn: DBConnection, dev_id: int,
     logger.info(f"S-06: Dev {dev_id} demand={available_capacity} slots "
                f"across {len(df)} months "
                f"(total_capacity={total_capacity}, real_lots={real_lots}, "
-               f"demand_start={demand_start}, sim_floor_date={sim_floor_date}).")
+               f"demand_start={demand_start}).")
 
-    return df[["year", "month", "slots"]], False, sim_floor_date
+    return df[["year", "month", "slots"]], False

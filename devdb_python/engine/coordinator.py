@@ -25,14 +25,16 @@ from .s0205_building_group_sync import building_group_sync
 from .s0250_lot_date_overrides import apply_lot_date_overrides
 from .s0300_gap_fill_engine import gap_fill_engine, load_phase_delivery_dates
 from .s0400_chronology_validator import chronology_validator, persist_violations
-from .s0500_takedown_engine import takedown_engine, refresh_tda_assignments
+from .s0500_takedown_engine import takedown_engine
 from .s0600_demand_generator import demand_generator
-from .s0760_lot_date_projector import lot_date_projector
+from .s0760_hc_bldr_date_projector import hc_bldr_date_projector
+from .s0770_d_bldr_date_projector import d_bldr_date_projector
 from .s0820_post_generation_chronology_guard import post_generation_chronology_guard
 from .s0850_timing_expansion import load_build_lag_curves, timing_expansion
 from .s0900_builder_assignment import builder_assignment, assign_real_lot_builders
 from .s0950_spec_assignment import spec_assignment
 from .s1000_demand_derived_date_writer import demand_derived_date_writer
+from .s1050_real_lot_projections import write_real_lot_projections
 from .s1100_persistence_writer import persistence_writer
 from .s1200_ledger_aggregator import ledger_aggregator
 from .p0050_placeholder_rebuilder import placeholder_rebuilder
@@ -48,23 +50,6 @@ from .p_pre_locked_event_rebuilder import locked_event_rebuilder
 from kernel import plan, FrozenInput
 from kernel.frozen_input_builder import build_frozen_input, load_builder_splits
 import pandas as pd
-
-# ---------------------------------------------------------------------------
-# Field ownership registry
-# Each sim_lots projected field must appear exactly once in this table.
-# If you are writing a new module that writes a projected date, add it here.
-# If two modules claim the same field, that is a bug — fix the writer, not the table.
-# ---------------------------------------------------------------------------
-FIELD_OWNERS = {
-    # Field                      Module
-    "date_td_projected":         "s0760_lot_date_projector",   # HC + D-status lots
-    "date_str_projected":        "s0760_lot_date_projector",   # D-status (demand) + P-status (pace)
-    "date_cmp_projected":        "s0760_lot_date_projector",   # P-status lots only
-    "date_cls_projected":        "s0760_lot_date_projector",   # P-status lots only
-    "date_td_hold_projected":    "s0500_takedown_engine",      # written + cleared by S-0500 / S-0760
-    "date_frm_projected":        "(unassigned)",
-    "date_dev_projected":        "(unassigned)",
-}
 
 
 def run_starts_pipeline(conn: DBConnection, dev_id: int,
@@ -100,14 +85,14 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     persist_violations(conn, violations, dev_id, sim_run_id)
 
     # S-05
-    horizon_days      = build_lag_curves.get("_scheduling_horizon_days", 0)
-    hc_to_bldr_lag    = build_lag_curves.get("_hc_to_bldr_lag_days", 16)
+    horizon_days   = build_lag_curves.get("_scheduling_horizon_days", 0)
+    hc_to_bldr_lag = build_lag_curves.get("_hc_to_bldr_lag_days", 16)
     snapshot, residual_gaps = takedown_engine(conn, snapshot, dev_id,
                                               scheduling_horizon_days=horizon_days,
                                               hc_to_bldr_lag_days=hc_to_bldr_lag)
 
     # S-06
-    demand_series, needs_config, sim_floor_date = demand_generator(conn, dev_id, run_start_date)
+    demand_series, needs_config = demand_generator(conn, dev_id, run_start_date)
     if needs_config:
         logger.warning(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
         demand_series = pd.DataFrame(columns=["year", "month", "slots"])
@@ -116,8 +101,7 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
 
     # S-07 through S-0820: kernel planning pass
     frozen = build_frozen_input(conn, dev_id, snapshot, demand_series, sim_run_id,
-                                td_to_str_lag=td_to_str_lag,
-                                sim_floor_date=sim_floor_date)
+                                td_to_str_lag=td_to_str_lag)
     proposal = plan(frozen)
     if proposal.warnings:
         for w in proposal.warnings:
@@ -129,10 +113,13 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     # S-0820 (shell stage): discard temp lots with chronology violations post-expansion
     temp_lots, discarded_lots, guard_warnings = post_generation_chronology_guard(temp_lots)
 
-    # S-0760: single-pass projected-date writer for HC, D-status, and P-status lots
-    snapshot = lot_date_projector(conn, snapshot, demand_series,
-                                  dev_id, run_start_date, td_to_str_lag,
-                                  build_lag_curves, rng)
+    # S-0760: project date_td_projected for HC-held lots (runs after kernel — correct order)
+    snapshot = hc_bldr_date_projector(conn, snapshot, demand_series,
+                                      dev_id, run_start_date, td_to_str_lag)
+
+    # S-0770: project date_td_projected for D-status real lots (H-lots drain first per allocator)
+    snapshot = d_bldr_date_projector(conn, snapshot, demand_series,
+                                     dev_id, run_start_date, td_to_str_lag)
     for w in guard_warnings:
         logger.info(f"  {w}")
     if discarded_lots:
@@ -146,6 +133,9 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
 
     # S-11
     persistence_writer(conn, temp_lots, dev_id, sim_run_id, _proposal=proposal)
+
+    # S-1050: write projected dates to real P lots at configured annual pace
+    write_real_lot_projections(conn, dev_id, run_start_date, build_lag_curves, rng)
 
     # S-12
     ledger_aggregator(conn)
@@ -257,7 +247,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         build_lag_curves["_default_cls"] = _cfg["default_cls_lag_days"]
         build_lag_curves["_td_to_str_lag"] = _cfg["td_to_str_lag"]
         build_lag_curves["_scheduling_horizon_days"] = _cfg["scheduling_horizon_days"]
-        build_lag_curves["_hc_to_bldr_lag_days"]    = _cfg["hc_to_bldr_lag_days"]
+        build_lag_curves["_hc_to_bldr_lag_days"] = _cfg["hc_to_bldr_lag_days"]
 
         # Apply scheduling horizon floor to run_start_date.
         _horizon_days = _cfg["scheduling_horizon_days"]
@@ -331,11 +321,9 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
 
             if _date_list(pre_df) == _date_list(post_df):
                 logger.info(f"\nConvergence reached after {iteration} iteration(s).")
-                refresh_tda_assignments(conn, ent_group_id)
                 return iteration, missing_params_devs, latest_residual_gaps
 
             logger.info(f"  Schedule changed. Re-running.")
 
     logger.warning(f"WARNING: Max iterations ({max_iterations}) reached without convergence.")
-    refresh_tda_assignments(conn, ent_group_id)
     return max_iterations, missing_params_devs, latest_residual_gaps
