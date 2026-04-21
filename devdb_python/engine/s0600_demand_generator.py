@@ -56,12 +56,15 @@ def demand_generator(conn: DBConnection, dev_id: int,
             f"Supported sets: {sorted(SUPPORTED_WEIGHT_SETS)}. Update sim_dev_params."
         )
 
-    # Step 1: available_capacity = total planned lots minus all real lots.
-    # All real lots reduce capacity regardless of pipeline stage:
-    #   - Unstarted real lots (date_str IS NULL): will absorb demand slots in S-07.
-    #   - Started/closed real lots (date_str IS NOT NULL): phase slot already consumed
-    #     historically; no sim lot can use it.
-    # Both categories must be subtracted so demand never exceeds actual sim slot supply.
+    # Step 1: available_capacity = total planned lots minus real lots that have already
+    # started (date_str IS NOT NULL).
+    #
+    # Started/closed real lots: slot consumed historically; no sim lot can use it.
+    # Unstarted real lots (P/D/H/U status, date_str IS NULL): will absorb demand slots
+    #   in S-0700 just like sim lots would. We must generate demand for them too, so they
+    #   are NOT subtracted here. If they were subtracted, the demand series would be too
+    #   short — S-0700 would allocate those real lots to slots that were never generated,
+    #   starving later phases of sim-slot demand.
     avail_df = conn.read_df(
         """
         SELECT
@@ -71,7 +74,8 @@ def demand_generator(conn: DBConnection, dev_id: int,
                 FROM sim_lots
                 WHERE dev_id = %s
                   AND lot_source = 'real'
-            ), 0) AS real_lots
+                  AND date_str IS NOT NULL
+            ), 0) AS real_started_lots
         FROM sim_phase_product_splits sps
         JOIN sim_dev_phases sdp ON sps.phase_id = sdp.phase_id
         WHERE sdp.dev_id = %s
@@ -79,8 +83,8 @@ def demand_generator(conn: DBConnection, dev_id: int,
         (dev_id, dev_id),
     )
     total_capacity     = int(avail_df.iloc[0]["total_capacity"])
-    real_lots          = int(avail_df.iloc[0]["real_lots"])
-    available_capacity = max(0, total_capacity - real_lots)
+    real_started_lots  = int(avail_df.iloc[0]["real_started_lots"])
+    available_capacity = max(0, total_capacity - real_started_lots)
 
     if available_capacity == 0:
         logger.info(f"S-06: Dev {dev_id} available_capacity=0. No demand generated.")
@@ -123,7 +127,7 @@ def demand_generator(conn: DBConnection, dev_id: int,
 
     logger.info(f"S-06: Dev {dev_id} demand={available_capacity} slots "
                f"across {len(df)} months "
-               f"(total_capacity={total_capacity}, real_lots={real_lots}, "
+               f"(total_capacity={total_capacity}, real_started_lots={real_started_lots}, "
                f"demand_start={demand_start}).")
 
     return df[["year", "month", "slots"]], False

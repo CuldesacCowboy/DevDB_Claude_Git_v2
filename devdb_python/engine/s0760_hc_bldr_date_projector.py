@@ -152,6 +152,8 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
 
     # Build {lot_id: (bldr, str, cmp, cls)} map.
     # BLDR date is clamped to first month on/after the lot's HC hold date.
+    # When multiple lots share the same hold_floor (common for a checkpoint batch),
+    # they are spread 1 month apart rather than all landing on the same date.
     # STR  = BLDR + td_to_str_lag months.
     # CMP/CLS derived via empirical lag curves (same logic as S-1050).
     # Writing all four columns here overwrites any stale pace-based values that
@@ -161,6 +163,10 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
     hc_str_dates: dict[int, date] = {}
     hc_cmp_dates: dict[int, date] = {}
     hc_cls_dates: dict[int, date] = {}
+
+    # Tracks the next available bldr_date for each hold_floor bucket so that lots
+    # clamped to the same checkpoint spread 1/month instead of piling up.
+    hold_floor_next: dict[date, date] = {}
 
     lot_type_idx = {int(r["lot_id"]): r.get("lot_type_id") for _, r in lot_snapshot.iterrows()
                     if pd.notna(r.get("lot_type_id"))}
@@ -178,7 +184,11 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
                           if hold_ts.day == 1
                           else _add_months(date(hold_ts.year, hold_ts.month, 1), 1))
             if bldr_date < hold_floor:
-                bldr_date = hold_floor
+                # Spread clamped lots: each successive lot in the same checkpoint
+                # batch gets a bldr_date 1 month later than the previous.
+                next_avail = hold_floor_next.get(hold_floor, hold_floor)
+                bldr_date = next_avail
+                hold_floor_next[hold_floor] = _add_months(next_avail, 1)
 
         str_date = _add_months(bldr_date, td_to_str_lag) if td_to_str_lag else bldr_date
 
