@@ -130,11 +130,16 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
              else None)
         return h
 
-    # Build {lot_id: date} map — apply td_to_str_lag offset, then clamp to hold date.
+    # Build {lot_id: (bldr_date, str_date)} map.
     # BLDR date must never precede the lot's HC hold date — the lot cannot be taken
     # down before it is released from hold.  If the demand-derived date is earlier,
     # advance to the first full month on or after the hold date.
+    # str_date = bldr_date + td_to_str_lag months — written as date_str_projected so that
+    # the DIG column in the lot ledger shows a coherent projected start date.
+    # Writing date_str_projected here also clears any stale pace-based value that S-1050
+    # may have written in a prior run (before this lot gained its HC hold assignment).
     hc_dates: dict[int, date] = {}
+    hc_str_dates: dict[int, date] = {}
     for _, row in hc_allocations.iterrows():
         lid = int(row["lot_id"])
         demand_month_first = date(int(row["assigned_year"]), int(row["assigned_month"]), 1)
@@ -151,22 +156,25 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
                 bldr_date = hold_floor
 
         hc_dates[lid] = bldr_date
+        hc_str_dates[lid] = _add_months(bldr_date, td_to_str_lag) if td_to_str_lag else bldr_date
 
-    # Persist to DB
-    updates = [(d, lid) for lid, d in hc_dates.items()]
+    # Persist to DB — write both BLDR (date_td_projected) and DIG (date_str_projected).
+    # date_str_projected overrides any stale pace-based value from S-1050 prior runs.
+    updates = [(hc_dates[lid], hc_str_dates[lid], lid) for lid in hc_dates]
     conn.execute_values(
         """
         UPDATE sim_lots AS sl
-        SET date_td_projected = v.projected_date::date,
+        SET date_td_projected  = v.bldr_date::date,
+            date_str_projected = v.str_date::date,
             updated_at = NOW()
-        FROM (VALUES %s) AS v(projected_date, lot_id)
+        FROM (VALUES %s) AS v(bldr_date, str_date, lot_id)
         WHERE sl.lot_id = v.lot_id::bigint
           AND sl.date_td IS NULL
           AND sl.date_td_is_locked IS NOT TRUE
         """,
         updates,
     )
-    logger.info(f"  S-0760: Wrote date_td_projected for {len(updates)} HC lot(s).")
+    logger.info(f"  S-0760: Wrote date_td_projected + date_str_projected for {len(updates)} HC lot(s).")
 
     # Clear date_td_hold_projected for lots where bldr date still precedes the hold date.
     # With the clamp above this should never fire in normal operation, but keep as a safety net.
@@ -196,8 +204,12 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
 
     # Update snapshot in memory
     df = lot_snapshot.copy()
+    if "date_str_projected" not in df.columns:
+        df["date_str_projected"] = pd.NaT
     for lid, proj_date in hc_dates.items():
         df.loc[df["lot_id"].astype(int) == lid, "date_td_projected"] = pd.Timestamp(proj_date)
+    for lid, str_date in hc_str_dates.items():
+        df.loc[df["lot_id"].astype(int) == lid, "date_str_projected"] = pd.Timestamp(str_date)
     for lid in clear_hold_ids:
         df.loc[df["lot_id"].astype(int) == lid, "date_td_hold_projected"] = pd.NaT
 
