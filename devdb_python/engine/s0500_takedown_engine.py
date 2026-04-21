@@ -259,18 +259,32 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
             gap = required - count_taken
 
             if is_past:
-                # Past unmet checkpoint — obligation was missed; no HC assignment possible.
-                # Record the gap for visibility and move on.
-                logger.warning(f"  TDA {tda_id} CP{cp_num}: Failed (past, gap={gap})")
-                residual_gaps.append({
-                    "tda_id":            tda_id,
-                    "checkpoint_id":     cp_id,
-                    "checkpoint_number": cp_num,
-                    "checkpoint_date":   str(cp_date.date()),
-                    "required":          required,
-                    "projected":         count_taken,
-                    "gap":               gap,
-                })
+                # Past checkpoint, not met on time.  Check if it has been caught up
+                # since the deadline — late is still late, but if the cumulative
+                # obligation has since been satisfied, life goes on: no residual gap.
+                count_now = sum(
+                    1 for lot in tda_snapshot_lots.values()
+                    if _fulfills(lot, pd.Timestamp(today))
+                )
+                if count_now >= required:
+                    logger.info(
+                        f"  TDA {tda_id} CP{cp_num}: Met Late "
+                        f"({count_taken}/{required} by deadline, {count_now} by today)"
+                    )
+                else:
+                    logger.warning(
+                        f"  TDA {tda_id} CP{cp_num}: Failed (past, gap={gap}, "
+                        f"still only {count_now} by today)"
+                    )
+                    residual_gaps.append({
+                        "tda_id":            tda_id,
+                        "checkpoint_id":     cp_id,
+                        "checkpoint_number": cp_num,
+                        "checkpoint_date":   str(cp_date.date()),
+                        "required":          required,
+                        "projected":         count_taken,
+                        "gap":               gap,
+                    })
                 continue
 
             # Future unmet checkpoint — assign HC hold dates.
