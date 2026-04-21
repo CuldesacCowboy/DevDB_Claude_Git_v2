@@ -626,19 +626,6 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, marksplan, simplan
             )
           })}
 
-          {/* Footer: MARKS Plan / Sim Plan */}
-          <tr style={{ borderTop: `2px solid ${PANEL_BORDER}`, background: '#f1f5f9' }}>
-            <td colSpan={5} style={{ ...STD_D, color: TEXT_MUTED, fontStyle: 'italic', fontSize: 10 }}
-                title="Cumulative totals: lots with dates on or before this checkpoint date, across the whole agreement">
-              Cumulative through checkpoint date
-            </td>
-            <td colSpan={2} style={{ ...STD_D, fontSize: 10 }}>
-              <span style={{ color: TEXT_MUTED }} title="Lots with actual MARKS takedown date, or actual HC hold date (when no takedown date), on or before this checkpoint date">MARKS: <strong>{checkpoint.checkpoint_date ? (marksplan ?? '—') : '—'}</strong></span>
-              <span style={{ color: TEXT_MUTED }}> · </span>
-              <span style={{ color: '#2563eb' }} title="Lots with sim-projected dates on or before this checkpoint date">Sim: <strong>{checkpoint.checkpoint_date ? (simplan ?? '—') : '—'}</strong></span>
-            </td>
-            <td />
-          </tr>
         </tbody>
       </table>
 
@@ -778,22 +765,6 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
 
       {tda.checkpoints.length > 0 && (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 0 }}>
-          <thead>
-            <tr>
-              <th style={{ ...TH, width: 44, padding: '3px 4px' }}></th>
-              {[
-                { h: 'Checkpoint', tip: 'Cumulative lots required by this date' },
-                { h: 'Sched/Done', tip: 'Lots covered by this checkpoint: actual MARKS takedowns (any date, even if late) + sim-projected lots scheduled on or before this checkpoint date, vs cumulative required' },
-                { h: 'On Time', tip: 'Assigned lots whose effective date (earliest of BLDR/HC actual or projected) is on or before this checkpoint date, vs per-checkpoint slots required' },
-                { h: 'Marks', tip: 'Assigned lots that have at least one actual MARKS takedown date (date_td or date_td_hold), vs per-checkpoint slots required' },
-                { h: 'Sim', tip: 'Assigned lots with only engine-projected dates (no MARKS actual) on or before this checkpoint date, vs per-checkpoint slots required' },
-                { h: 'Late', tip: 'Assigned lots whose effective date is after this checkpoint date, or has no date — assigned to this slot as a late/undated catch-all, vs per-checkpoint slots required' },
-                { h: '', tip: '' },
-              ].map(({ h, tip }, i) => (
-                <th key={i} style={TH} title={tip}>{h}</th>
-              ))}
-            </tr>
-          </thead>
           <tbody>
             {tda.checkpoints.map((cp, idx) => {
               const required     = cp.lots_required_cumulative || 0
@@ -839,6 +810,21 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
 
               return (
                 <Fragment key={cp.checkpoint_id}>
+                  {/* Repeating column header before each checkpoint */}
+                  <tr style={{ borderTop: idx === 0 ? 'none' : `2px solid ${PANEL_BORDER}` }}>
+                    <th style={{ ...TH, width: 44, padding: '3px 4px' }}></th>
+                    {[
+                      { h: 'Checkpoint', tip: 'Cumulative lots required by this date' },
+                      { h: 'Sched/Done', tip: 'Lots covered by this checkpoint: actual MARKS takedowns (any date, even if late) + sim-projected lots scheduled on or before this checkpoint date, vs cumulative required' },
+                      { h: 'On Time', tip: 'Assigned lots whose effective date (earliest of BLDR/HC actual or projected) is on or before this checkpoint date, vs per-checkpoint slots required' },
+                      { h: 'Marks', tip: 'Assigned lots that have at least one actual MARKS takedown date (date_td or date_td_hold), vs per-checkpoint slots required' },
+                      { h: 'Sim', tip: 'Assigned lots with only engine-projected dates (no MARKS actual) on or before this checkpoint date, vs per-checkpoint slots required' },
+                      { h: 'Late', tip: 'Assigned lots whose effective date is after this checkpoint date, or has no date — assigned to this slot as a late/undated catch-all, vs per-checkpoint slots required' },
+                      { h: '', tip: '' },
+                    ].map(({ h, tip }, i) => (
+                      <th key={i} style={TH} title={tip}>{h}</th>
+                    ))}
+                  </tr>
                   <tr style={{ borderBottom: 'none', background: rowBg }}>
                     {/* CP# */}
                     <td style={{ ...TD, padding: '6px 4px', width: 44, whiteSpace: 'nowrap' }}>
