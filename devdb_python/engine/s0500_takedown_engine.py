@@ -154,7 +154,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
         # Load TDA config including builder_id
         tda_row = conn.read_df(
             """
-            SELECT tda_id, anchor_date, status, checkpoint_lead_days, builder_id, lot_quota
+            SELECT tda_id, anchor_date, status, checkpoint_lead_days, builder_id
             FROM sim_takedown_agreements
             WHERE tda_id = %s
             """,
@@ -170,12 +170,6 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
             None if (raw_builder is None or pd.isna(raw_builder))
             else int(raw_builder)
         )
-        raw_quota = tda_row.iloc[0]["lot_quota"]
-        lot_quota = (
-            None if (raw_quota is None or pd.isna(raw_quota))
-            else int(raw_quota)
-        )
-
         # Load checkpoints in order
         checkpoints = conn.read_df(
             """
@@ -219,23 +213,6 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
             lots_dict[lid]["date_td_hold_projected"] = hold_date
             updated_lot_ids[lid] = hold_date
 
-        # Compute how many new projected HC assignments are allowed this run.
-        # Quota semantics: lot_quota caps HC hold assignments (projected or actual).
-        # Counts against quota: actual date_td_hold, actual date_td, locked projected HC.
-        # Does NOT count: date_td_projected — those lots travel the BLDR path and
-        # need no HC hold; excluding them keeps the quota focused on HC-hold obligations.
-        if lot_quota is not None:
-            already_committed = sum(
-                1 for lot in tda_snapshot_lots.values()
-                if (lot.get("date_td_hold") is not None and pd.notna(lot.get("date_td_hold")))
-                or (lot.get("date_td") is not None and pd.notna(lot.get("date_td")))
-                or (lot.get("date_td_hold_is_locked")
-                    and lot.get("date_td_hold_projected") is not None
-                    and pd.notna(lot.get("date_td_hold_projected")))
-            )
-            hc_budget = max(0, lot_quota - already_committed)
-        else:
-            hc_budget = None  # no cap
         hc_assigned_this_run = 0
 
         # Track the first unsatisfied checkpoint's hold date for the excess push
@@ -302,9 +279,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                 ),
             )
 
-            # Cap to lot_quota budget if set
-            budget_remaining = (hc_budget - hc_assigned_this_run) if hc_budget is not None else gap
-            effective_gap = min(gap, max(0, budget_remaining))
+            effective_gap = gap
 
             scheduled = 0
             for lot in available:

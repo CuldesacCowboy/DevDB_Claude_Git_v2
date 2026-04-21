@@ -1690,14 +1690,6 @@ function AgreementCard({ tda, allTdas, unassignedLots, builders, banks, onPatch,
           <option value="">— any builder —</option>
           {(builders || []).map(b => <option key={b.builder_id} value={b.builder_id}>{b.builder_name.replace(' Homes', '')}</option>)}
         </select>
-        {/* Lot quota — editable; null means unlimited */}
-        <span style={{ fontSize: 11, color: TEXT_MUTED }}
-              title="Max HC hold assignments the engine will make. Counts actual HC holds, actual BLDR TDs, and locked projected HC dates. Lots with only a BLDR sim projection (date_td_projected) do not count against quota — they travel the BLDR path and need no HC hold.">Quota:</span>
-        <EditNumber
-          value={tda.lot_quota ?? null}
-          nullable
-          onSave={v => onPatch({ lot_quota: v != null && v > 0 ? v : null })}
-        />
         {/* Checkpoint lead days — editable with next-hold preview */}
         <span style={{ fontSize: 11, color: TEXT_MUTED }} title="Days before each checkpoint date that HC hold dates are scheduled">Lead days:</span>
         <EditNumber value={leadDays} onSave={v => onPatch({ checkpoint_lead_days: v })} />
@@ -2482,13 +2474,7 @@ function TdaPillTabs({ agreements, activeId, onSelect }) {
             }}>
               {tda.status}
             </span>
-            {tda.lot_quota != null && (
-              <span style={{ fontSize: 10, color: isActive ? '#3b82f6' : TEXT_MUTED }}
-                    title={tda.builder_id != null ? 'Builder-eligible lots / quota' : 'Total lots / quota'}>
-                {displayLots}/{tda.lot_quota}
-              </span>
-            )}
-            {tda.lot_quota == null && displayLots > 0 && (
+            {displayLots > 0 && (
               <span style={{ fontSize: 10, color: isActive ? '#3b82f6' : TEXT_MUTED }}>
                 {displayLots}
               </span>
@@ -2515,7 +2501,6 @@ export default function TakedownView({ showTestCommunities }) {
   const [newName, setNewName]         = useState('')
   const [newBankId, setNewBankId]     = useState('')
   const [newBuilderId, setNewBuilderId] = useState('')
-  const [newLotQuota, setNewLotQuota] = useState('')
   const [simRunning, setSimRunning]   = useState(false)
   const [simLastRunAt, setSimLastRunAt] = useState(null)   // Date.now() after each run
   const [simGaps, setSimGaps]         = useState([])       // residual gaps from last run
@@ -2595,7 +2580,7 @@ export default function TakedownView({ showTestCommunities }) {
   }
 
   function resetNewForm() {
-    setNewName(''); setNewBankId(''); setNewBuilderId(''); setNewLotQuota(''); setShowNewForm(false)
+    setNewName(''); setNewBankId(''); setNewBuilderId(''); setShowNewForm(false)
   }
 
   async function createAgreement() {
@@ -2604,7 +2589,6 @@ export default function TakedownView({ showTestCommunities }) {
     const body = { tda_name: name, ent_group_id: selectedId }
     if (newBankId)    body.bank_id    = Number(newBankId)
     if (newBuilderId) body.builder_id = Number(newBuilderId)
-    if (newLotQuota)  body.lot_quota  = Number(newLotQuota)
     const resp = await fetch(`${API_BASE}/takedown-agreements`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -2899,14 +2883,6 @@ export default function TakedownView({ showTestCommunities }) {
                             <option key={b.bank_id} value={b.bank_id}>{b.bank_name}</option>
                           ))}
                         </select>
-                        <input
-                          type="number"
-                          min={1}
-                          value={newLotQuota}
-                          onChange={e => setNewLotQuota(e.target.value)}
-                          placeholder="Quota"
-                          style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db', width: 70 }}
-                        />
                       </div>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <Btn variant="success" onClick={createAgreement} disabled={!newName.trim()}>Create</Btn>

@@ -17,7 +17,6 @@ class CreateTdaRequest(BaseModel):
     ent_group_id: int
     anchor_date: Optional[date_type] = None
     bank_id: Optional[int] = None
-    lot_quota: Optional[int] = None
     builder_id: Optional[int] = None
 
 
@@ -26,7 +25,6 @@ class PatchTdaRequest(BaseModel):
     status: Optional[str] = None
     anchor_date: Optional[date_type] = None
     bank_id: Optional[int] = None
-    lot_quota: Optional[int] = None
     builder_id: Optional[int] = None
     checkpoint_lead_days: Optional[int] = None
 
@@ -108,7 +106,6 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                 tda.status,
                 tda.anchor_date,
                 tda.bank_id,
-                tda.lot_quota,
                 tda.builder_id,
                 tda.checkpoint_lead_days,
                 b.bank_name,
@@ -125,7 +122,7 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
             LEFT JOIN devdb.sim_takedown_lot_assignments a ON a.checkpoint_id = cp.checkpoint_id
             WHERE tda.ent_group_id = %s
             GROUP BY tda.tda_id, tda.tda_name, tda.status, tda.anchor_date,
-                     tda.bank_id, tda.lot_quota, tda.builder_id, tda.checkpoint_lead_days,
+                     tda.bank_id, tda.builder_id, tda.checkpoint_lead_days,
                      b.bank_name, db.builder_name,
                      cp.checkpoint_id, cp.checkpoint_number, cp.checkpoint_date,
                      cp.lots_required_cumulative
@@ -147,7 +144,6 @@ def get_tda_overview(ent_group_id: int, conn=Depends(get_db_conn)):
                     "anchor_date": r["anchor_date"].isoformat() if r["anchor_date"] else None,
                     "bank_id": r["bank_id"],
                     "bank_name": r["bank_name"],
-                    "lot_quota": r["lot_quota"],
                     "builder_id": r["builder_id"],
                     "builder_name": r["builder_name"],
                     "checkpoint_lead_days": r["checkpoint_lead_days"],
@@ -522,12 +518,12 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
             """
             INSERT INTO devdb.sim_takedown_agreements
                 (tda_name, ent_group_id, anchor_date, status, checkpoint_lead_days,
-                 bank_id, lot_quota, builder_id, created_at, updated_at)
-            VALUES (%s, %s, %s, 'active', 16, %s, %s, %s, now(), now())
-            RETURNING tda_id, tda_name, status, anchor_date, bank_id, lot_quota, builder_id, checkpoint_lead_days
+                 bank_id, builder_id, created_at, updated_at)
+            VALUES (%s, %s, %s, 'active', 16, %s, %s, now(), now())
+            RETURNING tda_id, tda_name, status, anchor_date, bank_id, builder_id, checkpoint_lead_days
             """,
             (body.tda_name.strip(), body.ent_group_id, body.anchor_date,
-             body.bank_id, body.lot_quota, body.builder_id),
+             body.bank_id, body.builder_id),
         )
         row = cur.fetchone()
         conn.commit()
@@ -537,7 +533,6 @@ def create_takedown_agreement(body: CreateTdaRequest, conn=Depends(get_db_conn))
             "status": row["status"],
             "anchor_date": row["anchor_date"].isoformat() if row["anchor_date"] else None,
             "bank_id": row["bank_id"],
-            "lot_quota": row["lot_quota"],
             "builder_id": row["builder_id"],
             "checkpoint_lead_days": row["checkpoint_lead_days"],
         }
@@ -575,9 +570,6 @@ def patch_takedown_agreement(tda_id: int, body: PatchTdaRequest, conn=Depends(ge
         if body.bank_id is not None or "bank_id" in body.model_fields_set:
             updates.append("bank_id = %s")
             values.append(body.bank_id)
-        if body.lot_quota is not None or "lot_quota" in body.model_fields_set:
-            updates.append("lot_quota = %s")
-            values.append(body.lot_quota)
         if body.builder_id is not None or "builder_id" in body.model_fields_set:
             updates.append("builder_id = %s")
             values.append(body.builder_id)
@@ -592,7 +584,7 @@ def patch_takedown_agreement(tda_id: int, body: PatchTdaRequest, conn=Depends(ge
         values.append(tda_id)
         cur.execute(
             f"UPDATE devdb.sim_takedown_agreements SET {', '.join(updates)} WHERE tda_id = %s"
-            " RETURNING tda_id, tda_name, status, anchor_date, bank_id, lot_quota, builder_id, checkpoint_lead_days",
+            " RETURNING tda_id, tda_name, status, anchor_date, bank_id, builder_id, checkpoint_lead_days",
             values,
         )
         row = cur.fetchone()
@@ -645,7 +637,6 @@ def patch_takedown_agreement(tda_id: int, body: PatchTdaRequest, conn=Depends(ge
             "status": row["status"],
             "anchor_date": row["anchor_date"].isoformat() if row["anchor_date"] else None,
             "bank_id": row["bank_id"],
-            "lot_quota": row["lot_quota"],
             "builder_id": row["builder_id"],
             "checkpoint_lead_days": row["checkpoint_lead_days"],
         }
