@@ -207,6 +207,10 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
     # subsequent mates reuse it (ensuring the whole building starts together).
     bg_bldr_dates: dict[int, date] = {}
 
+    # Cache one sampled CMP/CLS lag pair per building group so all mates share
+    # identical completion and closing dates (invariant: same building = same dates).
+    bg_lag_cache: dict[int, tuple[int, int]] = {}
+
     for _, row in hc_allocations.iterrows():
         lid = int(row["lot_id"])
         demand_month_first = date(int(row["assigned_year"]), int(row["assigned_month"]), 1)
@@ -241,10 +245,16 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
 
         lt_id = lot_type_idx.get(lid)
         lt_id = int(lt_id) if lt_id is not None and pd.notna(lt_id) else None
-        str_cmp_curve = curves_for(_curves, "str_to_cmp", lt_id)
-        cmp_cls_curve = curves_for(_curves, "cmp_to_cls", lt_id)
-        lag_str_cmp = sample_lag(_rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
-        lag_cmp_cls = sample_lag(_rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+        bg_id = bg_idx.get(lid)
+        if bg_id is not None and bg_id in bg_lag_cache:
+            lag_str_cmp, lag_cmp_cls = bg_lag_cache[bg_id]
+        else:
+            str_cmp_curve = curves_for(_curves, "str_to_cmp", lt_id)
+            cmp_cls_curve = curves_for(_curves, "cmp_to_cls", lt_id)
+            lag_str_cmp = sample_lag(_rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
+            lag_cmp_cls = sample_lag(_rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+            if bg_id is not None:
+                bg_lag_cache[bg_id] = (lag_str_cmp, lag_cmp_cls)
         cmp_date = str_date + timedelta(days=lag_str_cmp)
         cls_date = cmp_date + timedelta(days=lag_cmp_cls)
 

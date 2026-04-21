@@ -91,12 +91,17 @@ def timing_expansion(temp_lots: list, curves: dict, rng) -> list:
     DEFAULT_CMP_LAG = curves.get("_default_cmp", 270)
     DEFAULT_CLS_LAG = curves.get("_default_cls", 45)
 
+    # Sample one lag per building group so all units share identical CMP and CLS.
     bg_cmp_lag: dict[int, int] = {}
+    bg_cls_lag: dict[int, int] = {}
     for lot in temp_lots:
         bg_id = lot.get("building_group_id")
         if bg_id is not None and bg_id not in bg_cmp_lag:
-            curve = curves_for(curves, "str_to_cmp", lot.get("lot_type_id"))
-            bg_cmp_lag[bg_id] = sample_lag(rng, curve) if curve else DEFAULT_CMP_LAG
+            lt = lot.get("lot_type_id")
+            cmp_curve = curves_for(curves, "str_to_cmp", lt)
+            cls_curve = curves_for(curves, "cmp_to_cls", lt)
+            bg_cmp_lag[bg_id] = sample_lag(rng, cmp_curve) if cmp_curve else DEFAULT_CMP_LAG
+            bg_cls_lag[bg_id] = sample_lag(rng, cls_curve) if cls_curve else DEFAULT_CLS_LAG
 
     result = []
     for lot in temp_lots:
@@ -111,14 +116,14 @@ def timing_expansion(temp_lots: list, curves: dict, rng) -> list:
 
         if bg_id is not None:
             lag_str_cmp = bg_cmp_lag[bg_id]
+            lag_cmp_cls = bg_cls_lag[bg_id]
         else:
-            curve = curves_for(curves, "str_to_cmp", lot_type_id)
-            lag_str_cmp = sample_lag(rng, curve) if curve else DEFAULT_CMP_LAG
+            cmp_curve = curves_for(curves, "str_to_cmp", lot_type_id)
+            cls_curve = curves_for(curves, "cmp_to_cls", lot_type_id)
+            lag_str_cmp = sample_lag(rng, cmp_curve) if cmp_curve else DEFAULT_CMP_LAG
+            lag_cmp_cls = sample_lag(rng, cls_curve) if cls_curve else DEFAULT_CLS_LAG
 
         date_cmp = date_str + timedelta(days=lag_str_cmp)
-
-        cmp_cls_curve = curves_for(curves, "cmp_to_cls", lot_type_id)
-        lag_cmp_cls = sample_lag(rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
         date_cls = date_cmp + timedelta(days=lag_cmp_cls)
 
         lot["date_cmp"] = date_cmp

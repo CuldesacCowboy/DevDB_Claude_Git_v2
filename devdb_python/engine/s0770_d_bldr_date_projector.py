@@ -146,10 +146,22 @@ def d_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
 
     # Build {lot_id: (bldr, str, cmp, cls)} map — apply td_to_str_lag offset for BLDR.
     # STR = demand_month_first (= BLDR + lag); CMP/CLS from empirical curves.
+    # Cache one sampled lag pair per building group so all mates share identical dates.
     d_bldr:  dict[int, date] = {}
     d_str:   dict[int, date] = {}
     d_cmp:   dict[int, date] = {}
     d_cls:   dict[int, date] = {}
+
+    # lot_id → building_group_id for D-status lots (from snapshot)
+    d_bg_idx: dict[int, int | None] = {}
+    for _, r in lot_snapshot.iterrows():
+        lid = int(r["lot_id"])
+        if lid in d_lot_ids:
+            raw_bg = r.get("building_group_id")
+            d_bg_idx[lid] = int(raw_bg) if raw_bg is not None and pd.notna(raw_bg) else None
+
+    bg_lag_cache: dict[int, tuple[int, int]] = {}
+
     for _, row in d_allocations.iterrows():
         lid = int(row["lot_id"])
         demand_month_first = date(int(row["assigned_year"]), int(row["assigned_month"]), 1)
@@ -158,10 +170,16 @@ def d_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
 
         lt_id = lot_type_idx.get(lid)
         lt_id = int(lt_id) if lt_id is not None and pd.notna(lt_id) else None
-        str_cmp_curve = curves_for(_curves, "str_to_cmp", lt_id)
-        cmp_cls_curve = curves_for(_curves, "cmp_to_cls", lt_id)
-        lag_str_cmp = sample_lag(_rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
-        lag_cmp_cls = sample_lag(_rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+        bg_id = d_bg_idx.get(lid)
+        if bg_id is not None and bg_id in bg_lag_cache:
+            lag_str_cmp, lag_cmp_cls = bg_lag_cache[bg_id]
+        else:
+            str_cmp_curve = curves_for(_curves, "str_to_cmp", lt_id)
+            cmp_cls_curve = curves_for(_curves, "cmp_to_cls", lt_id)
+            lag_str_cmp = sample_lag(_rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
+            lag_cmp_cls = sample_lag(_rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+            if bg_id is not None:
+                bg_lag_cache[bg_id] = (lag_str_cmp, lag_cmp_cls)
         cmp_date = str_date + timedelta(days=lag_str_cmp)
         cls_date = cmp_date + timedelta(days=lag_cmp_cls)
 
