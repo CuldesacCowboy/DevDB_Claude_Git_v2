@@ -113,9 +113,10 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     # S-0820 (shell stage): discard temp lots with chronology violations post-expansion
     temp_lots, discarded_lots, guard_warnings = post_generation_chronology_guard(temp_lots)
 
-    # S-0760: project date_td_projected for HC-held lots (runs after kernel — correct order)
+    # S-0760: project BLDR/DIG/CMP/CLS for HC-held lots (runs after kernel — correct order)
     snapshot = hc_bldr_date_projector(conn, snapshot, demand_series,
-                                      dev_id, run_start_date, td_to_str_lag)
+                                      dev_id, run_start_date, td_to_str_lag,
+                                      build_lag_curves=build_lag_curves, rng=rng)
 
     # S-0770: project date_td_projected for D-status real lots (H-lots drain first per allocator)
     snapshot = d_bldr_date_projector(conn, snapshot, demand_series,

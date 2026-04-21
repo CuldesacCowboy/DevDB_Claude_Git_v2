@@ -1,17 +1,26 @@
 """
-S-0760 hc_bldr_date_projector — Write date_td_projected for HC-held lots.
+S-0760 hc_bldr_date_projector — Write projected pipeline dates for HC-held lots.
 
 Reads:   lot snapshot DataFrame, demand_series DataFrame (or sim_dev_params fallback)
-Writes:  sim_lots.date_td_projected (DB), lot snapshot DataFrame (date_td_projected)
+Writes:  sim_lots.date_td_projected, date_str_projected, date_cmp_projected,
+         date_cls_projected (DB); lot snapshot DataFrame (same columns)
 Input:   conn: DBConnection, lot_snapshot: DataFrame, demand_series: DataFrame,
          dev_id: int, run_start_date: date,
-         td_to_str_lag: int (months between BLDR date and DIG date, default 1)
+         td_to_str_lag: int (months between BLDR date and DIG date, default 1),
+         build_lag_curves: dict (str_to_cmp and cmp_to_cls empirical curves),
+         rng: random.Random (for sampling lag curves)
 Rules:   HC lots are those with date_td_hold OR date_td_hold_projected set,
          no date_td, no date_str, not locked.
          When demand_series is empty (available_capacity=0 — fully real community),
          falls back to a pace-based schedule derived from sim_dev_params.annual_starts_target.
          Runs demand_allocator to determine which demand month each HC lot drains.
-         Writes date_td_projected = demand_month_first - td_to_str_lag months.
+         BLDR date (date_td_projected) is clamped to first month on/after hold date.
+         DIG  date (date_str_projected) = BLDR + td_to_str_lag months.
+         CMP  date (date_cmp_projected) derived from DIG via str_to_cmp lag curve.
+         CLS  date (date_cls_projected) derived from CMP via cmp_to_cls lag curve.
+         Writing these four columns also overwrites any stale pace-based values
+         that S-1050 may have written in a prior run before the lot gained its
+         HC hold assignment (S-1050 skips HC lots — it cannot self-correct stale data).
          Never writes date_td (actual) — projected only.
          Lots locked via date_td_is_locked are skipped.
          Returns updated snapshot.
@@ -19,11 +28,13 @@ Rules:   HC lots are those with date_td_hold OR date_td_hold_projected set,
 
 import logging
 import math
-from datetime import date
+import random
+from datetime import date, timedelta
 
 import pandas as pd
 from .connection import DBConnection
 from .s0700_demand_allocator import demand_allocator
+from .s0850_timing_expansion import curves_for, sample_lag
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +78,13 @@ def _pace_demand(conn: DBConnection, dev_id: int, run_start_date: date,
 
 def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
                             demand_series, dev_id: int, run_start_date: date,
-                            td_to_str_lag: int = 1) -> pd.DataFrame:
+                            td_to_str_lag: int = 1,
+                            build_lag_curves: dict | None = None,
+                            rng: random.Random | None = None) -> pd.DataFrame:
     """
-    Assign date_td_projected to HC-held lots based on demand allocation order.
-    date_td_projected = first_of_demand_month - td_to_str_lag months.
+    Assign projected pipeline dates to HC-held lots based on demand allocation order.
+    BLDR = first_of_demand_month - td_to_str_lag (clamped to >= hold date).
+    DIG  = BLDR + td_to_str_lag.  CMP/CLS derived via lag curves.
     Falls back to pace-based demand when demand_series is empty.
     Returns updated snapshot.
     """
@@ -130,16 +144,27 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
              else None)
         return h
 
-    # Build {lot_id: (bldr_date, str_date)} map.
-    # BLDR date must never precede the lot's HC hold date — the lot cannot be taken
-    # down before it is released from hold.  If the demand-derived date is earlier,
-    # advance to the first full month on or after the hold date.
-    # str_date = bldr_date + td_to_str_lag months — written as date_str_projected so that
-    # the DIG column in the lot ledger shows a coherent projected start date.
-    # Writing date_str_projected here also clears any stale pace-based value that S-1050
-    # may have written in a prior run (before this lot gained its HC hold assignment).
+    # Build lag curve defaults from build_lag_curves (same fallbacks as S-1050).
+    _curves = build_lag_curves or {}
+    DEFAULT_CMP_LAG = _curves.get("_default_cmp", 270)
+    DEFAULT_CLS_LAG = _curves.get("_default_cls", 45)
+    _rng = rng or random.Random()
+
+    # Build {lot_id: (bldr, str, cmp, cls)} map.
+    # BLDR date is clamped to first month on/after the lot's HC hold date.
+    # STR  = BLDR + td_to_str_lag months.
+    # CMP/CLS derived via empirical lag curves (same logic as S-1050).
+    # Writing all four columns here overwrites any stale pace-based values that
+    # S-1050 may have left from a prior run before the lot gained its HC hold
+    # assignment (S-1050 skips HC lots and cannot self-correct stale data).
     hc_dates: dict[int, date] = {}
     hc_str_dates: dict[int, date] = {}
+    hc_cmp_dates: dict[int, date] = {}
+    hc_cls_dates: dict[int, date] = {}
+
+    lot_type_idx = {int(r["lot_id"]): r.get("lot_type_id") for _, r in lot_snapshot.iterrows()
+                    if pd.notna(r.get("lot_type_id"))}
+
     for _, row in hc_allocations.iterrows():
         lid = int(row["lot_id"])
         demand_month_first = date(int(row["assigned_year"]), int(row["assigned_month"]), 1)
@@ -155,26 +180,43 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
             if bldr_date < hold_floor:
                 bldr_date = hold_floor
 
-        hc_dates[lid] = bldr_date
-        hc_str_dates[lid] = _add_months(bldr_date, td_to_str_lag) if td_to_str_lag else bldr_date
+        str_date = _add_months(bldr_date, td_to_str_lag) if td_to_str_lag else bldr_date
 
-    # Persist to DB — write both BLDR (date_td_projected) and DIG (date_str_projected).
-    # date_str_projected overrides any stale pace-based value from S-1050 prior runs.
-    updates = [(hc_dates[lid], hc_str_dates[lid], lid) for lid in hc_dates]
+        lt_id = lot_type_idx.get(lid)
+        lt_id = int(lt_id) if lt_id is not None and pd.notna(lt_id) else None
+        str_cmp_curve = curves_for(_curves, "str_to_cmp", lt_id)
+        cmp_cls_curve = curves_for(_curves, "cmp_to_cls", lt_id)
+        lag_str_cmp = sample_lag(_rng, str_cmp_curve) if str_cmp_curve else DEFAULT_CMP_LAG
+        lag_cmp_cls = sample_lag(_rng, cmp_cls_curve) if cmp_cls_curve else DEFAULT_CLS_LAG
+        cmp_date = str_date + timedelta(days=lag_str_cmp)
+        cls_date = cmp_date + timedelta(days=lag_cmp_cls)
+
+        hc_dates[lid]     = bldr_date
+        hc_str_dates[lid] = str_date
+        hc_cmp_dates[lid] = cmp_date
+        hc_cls_dates[lid] = cls_date
+
+    # Persist to DB — write BLDR, DIG, CMP, CLS projected dates.
+    updates = [(hc_dates[lid], hc_str_dates[lid],
+                hc_cmp_dates[lid], hc_cls_dates[lid], lid) for lid in hc_dates]
     conn.execute_values(
         """
         UPDATE sim_lots AS sl
         SET date_td_projected  = v.bldr_date::date,
             date_str_projected = v.str_date::date,
+            date_cmp_projected = v.cmp_date::date,
+            date_cls_projected = v.cls_date::date,
             updated_at = NOW()
-        FROM (VALUES %s) AS v(bldr_date, str_date, lot_id)
+        FROM (VALUES %s) AS v(bldr_date, str_date, cmp_date, cls_date, lot_id)
         WHERE sl.lot_id = v.lot_id::bigint
           AND sl.date_td IS NULL
           AND sl.date_td_is_locked IS NOT TRUE
         """,
         updates,
     )
-    logger.info(f"  S-0760: Wrote date_td_projected + date_str_projected for {len(updates)} HC lot(s).")
+    logger.info(
+        f"  S-0760: Wrote BLDR/DIG/CMP/CLS projected dates for {len(updates)} HC lot(s)."
+    )
 
     # Clear date_td_hold_projected for lots where bldr date still precedes the hold date.
     # With the clamp above this should never fire in normal operation, but keep as a safety net.
@@ -204,12 +246,15 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
 
     # Update snapshot in memory
     df = lot_snapshot.copy()
-    if "date_str_projected" not in df.columns:
-        df["date_str_projected"] = pd.NaT
-    for lid, proj_date in hc_dates.items():
-        df.loc[df["lot_id"].astype(int) == lid, "date_td_projected"] = pd.Timestamp(proj_date)
-    for lid, str_date in hc_str_dates.items():
-        df.loc[df["lot_id"].astype(int) == lid, "date_str_projected"] = pd.Timestamp(str_date)
+    for col in ("date_str_projected", "date_cmp_projected", "date_cls_projected"):
+        if col not in df.columns:
+            df[col] = pd.NaT
+    for lid in hc_dates:
+        mask = df["lot_id"].astype(int) == lid
+        df.loc[mask, "date_td_projected"]  = pd.Timestamp(hc_dates[lid])
+        df.loc[mask, "date_str_projected"] = pd.Timestamp(hc_str_dates[lid])
+        df.loc[mask, "date_cmp_projected"] = pd.Timestamp(hc_cmp_dates[lid])
+        df.loc[mask, "date_cls_projected"] = pd.Timestamp(hc_cls_dates[lid])
     for lid in clear_hold_ids:
         df.loc[df["lot_id"].astype(int) == lid, "date_td_hold_projected"] = pd.NaT
 
