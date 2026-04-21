@@ -194,21 +194,24 @@ def write_real_lot_projections(
                 )
 
     # Building-group HC sync — always runs, even when there are no pure P/E lots.
-    # A D-status lot may share a building group with HC-held mates whose STR is
-    # constrained to after the hold release.  The D-lot takes down earlier per
-    # S-0770 but cannot start until the whole building is released.
-    # Copies the HC mates' date_str/cmp/cls_projected to any co-grouped lot that
-    # still has no date_str_projected (D-lots excluded from pace above).
+    # Invariant: every lot in a building group must have identical BLDR, STR, CMP,
+    # and CLS projected dates.  When some group mates are HC-held (S-0760 owns
+    # their dates) and others are D-status (S-0770 wrote earlier, independent dates),
+    # the HC mates' dates must win unconditionally.  S-0770 may have written an
+    # earlier BLDR for the D-lot (lot can't be taken down before hold releases),
+    # so this override replaces the S-0770 values entirely.
     synced = conn.execute(
         """
         UPDATE sim_lots sl
-        SET date_str_projected = mate.str_date,
+        SET date_td_projected  = mate.bldr_date,
+            date_str_projected = mate.str_date,
             date_cmp_projected = mate.cmp_date,
             date_cls_projected = mate.cls_date,
             updated_at = NOW()
         FROM (
             SELECT DISTINCT ON (sl2.building_group_id)
                    sl2.building_group_id,
+                   sl2.date_td_projected  AS bldr_date,
                    sl2.date_str_projected AS str_date,
                    sl2.date_cmp_projected AS cmp_date,
                    sl2.date_cls_projected AS cls_date
@@ -223,12 +226,15 @@ def write_real_lot_projections(
         WHERE sl.dev_id = %s
           AND sl.lot_source = 'real'
           AND sl.building_group_id = mate.building_group_id
-          AND sl.date_str_projected IS NULL
+          AND sl.date_td_hold_projected IS NULL
+          AND sl.date_str IS NULL
           AND sl.date_str_is_locked IS NOT TRUE
         """,
         (dev_id, dev_id),
     )
     if synced:
-        logger.info(f"  S-1050: Synced date_str_projected to {synced} D-lot(s) from HC group mates.")
+        logger.info(
+            f"  S-1050: Synced BLDR/STR/CMP/CLS to {synced} D-lot(s) from HC group mates."
+        )
 
     return pace_count
