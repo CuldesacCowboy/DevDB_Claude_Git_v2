@@ -117,11 +117,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-03-28
 
 ### devdb_ui/src/pages/TakedownView.jsx
-- Owns: Standalone TDA management page (route /takedown); pill tab switcher (TdaPillTabs — one pill per TDA per community, click to switch, one AgreementCard visible at a time); CheckpointsSection with ▶/▼ expandable slot list per checkpoint (SlotList — one slot per required takedown, filled with lot data or "— open slot —", MARKS dates italic/muted); LotsSection shows only unassigned pool lots (checkbox-based bulk move/remove); Add Lots picker uses pill grid; moveLots mutation via POST /takedown-agreements/{id}/lots/move; activeTdaId state auto-selects first active TDA on load; community picker with showTestCommunities support; MARKS footer tooltip corrected in CheckpointSlotTable
+- Owns: Standalone TDA management page (route /takedown); pill tab switcher (TdaPillTabs — one pill per TDA per community, click to switch, one AgreementCard visible at a time); CheckpointsSection with always-visible inline slots per checkpoint (no ▶/▼ toggle — slots always shown); column headers repeated per checkpoint; no checkpoint footer; SlotList — one slot per required takedown, filled with lot data or "— open slot —", MARKS dates italic/muted; LotsSection shows only unassigned pool lots (checkbox-based bulk move/remove); Add Lots picker uses pill grid; moveLots mutation via POST /takedown-agreements/{id}/lots/move; activeTdaId state auto-selects first active TDA on load; community picker with showTestCommunities support; MARKS footer tooltip corrected in CheckpointSlotTable
 - Imports: react (useState, useEffect, useCallback, useMemo), config (API_BASE)
 - Imported by: App.jsx (via /takedown route)
 - Tables: none (API calls via /api/takedown-agreements, /api/entitlement-groups, POST /takedown-agreements/{id}/lots/move, DELETE pool, POST pool)
-- Last commit: 2026-04-19
+- Last commit: 2026-04-21
 
 ### devdb_ui/src/pages/TakedownAgreementsView.jsx
 - Owns: Takedown agreement management view orchestrator; wires TdaNavBar, TdaPageHeader, UnassignedBank, TdaCard, CheckpointBand, TdaDragOverlay, ContextMenu; manages context menu state; threads dragLot for landing zone highlights; contextMenuItems is useMemo([contextMenu, detail, agreements, ...callbacks]); handleContextMenu is useCallback

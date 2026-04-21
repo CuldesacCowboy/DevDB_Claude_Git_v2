@@ -21,11 +21,11 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-15
 
 ### devdb_python/engine/coordinator.py
-- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates; no domain logic — all logic lives in pipeline modules; passes resolved_events directly to P-07; returns (iterations, missing_params_devs, residual_gaps); injects _scheduling_horizon_days into build_lag_curves dict (alongside _td_to_str_lag, _default_cmp, _default_cls) so S-0500 can floor HC hold dates without a new signature param
-- Imports: engine modules s0100-s1200 (including s0760), p0000-p0800, p_pre_locked_event_rebuilder, config_loader, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
+- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates; no domain logic — all logic lives in pipeline modules; passes resolved_events directly to P-07; returns (iterations, missing_params_devs, residual_gaps); injects _scheduling_horizon_days into build_lag_curves dict (alongside _td_to_str_lag, _default_cmp, _default_cls) so S-0500 can floor HC hold dates without a new signature param; passes build_lag_curves and rng to S-0770
+- Imports: engine modules s0100-s1200 (including s0760, s0770), p0000-p0800, p_pre_locked_event_rebuilder, config_loader, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
 - Imported by: routers/simulations.py, tests/test_coordinator.py
 - Tables: reads/writes via all pipeline modules; sim_dev_params, sim_lot_date_overrides, sim_lot_date_violations, sim_instrument_builder_splits (coordinator itself does no direct sim_lots writes)
-- Last commit: 2026-04-20
+- Last commit: 2026-04-21
 
 ### devdb_python/engine/p_pre_locked_event_rebuilder.py
 - Owns: Pre-supply-pipeline module — deletes all delivery events whose date_dev_actual IS NOT NULL and rebuilds them from sim_dev_phases.date_dev_actual; groups phases by date and INSERTs one event per date; returns count of new events created; locked_event_rebuilder(conn, ent_group_id) signature
@@ -59,10 +59,10 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-03-25
 
 ### devdb_python/engine/s0500_takedown_engine.py
-- Owns: S-0500 -- TDA checkpoint enforcement; writes date_td_hold_projected per D-087 using checkpoint_lead_days; DB+in-memory pre-clear wipes both date_td_hold_projected and date_td_projected (stale S-0760 output) before recomputing each run; NULL guards for checkpoint_number and lots_required_cumulative; past checkpoints (checkpoint_date < today) — count fulfillment for cumulative tracking, record residual gap, but NO HC assignment (obligation was missed, cannot be fulfilled retroactively); future checkpoints — apply scheduling_horizon_days floor: hold_date = max(natural_hold, today + horizon); excess push cycles only over future checkpoint hold dates; respects lot_quota cap and date_td_hold_is_locked; never writes actuals; accepts scheduling_horizon_days param (default 0) injected by coordinator via build_lag_curves
+- Owns: S-0500 -- TDA checkpoint enforcement; writes date_td_hold_projected per D-087 using checkpoint_lead_days; DB+in-memory pre-clear wipes both date_td_hold_projected and date_td_projected (stale S-0760 output) before recomputing each run; extended pre-clear also clears group-mate holds assigned by previous sync; NULL guards for checkpoint_number and lots_required_cumulative; past checkpoints (checkpoint_date < today) — count fulfillment for cumulative tracking, record residual gap, but NO HC assignment; future checkpoints — apply scheduling_horizon_days floor: hold_date = max(natural_hold, today + horizon); post-assign building-group HC sync: propagates MAX(date_td_hold_projected) to all mates in each building group so every lot in a building shares the same HC date (invariant); never writes actuals; accepts scheduling_horizon_days param (default 0) injected by coordinator via build_lag_curves
 - Imported by: coordinator.py
 - Tables: sim_lots (UPDATE date_td_hold_projected, date_td_projected), sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_agreement_lots
-- Last commit: 2026-04-20
+- Last commit: 2026-04-21
 
 ### devdb_python/engine/seasonal_weights.py
 - Owns: Shared seasonal weight sets (month→fractional weight, sums to 1.0) used by S-0600 and P-0000 for monthly demand/pace allocation
@@ -71,11 +71,11 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-03
 
 ### devdb_python/engine/s0760_hc_bldr_date_projector.py
-- Owns: S-0760 -- writes date_td_projected for HC-held lots based on demand allocation order; identifies HC lots (date_td_hold or date_td_hold_projected set, no date_td, no date_str, not locked); calls demand_allocator over full snapshot; filters allocation to HC lot_ids; writes date_td_projected = first-of-month - td_to_str_lag for each allocated HC lot; after writing, clears date_td_hold_projected for any lot where bldr_date < hold_date (demand path covers lot before HC would be entered — HC hold not needed); never writes date_td actual; runs between S-06 and kernel pass
-- Imports: engine.s0700_demand_allocator, pandas, datetime
+- Owns: S-0760 -- writes BLDR/STR/CMP/CLS projected dates for HC-held lots based on demand allocation order; identifies HC lots (date_td_hold or date_td_hold_projected set, no date_td, no date_str, not locked); calls demand_allocator over full snapshot; BLDR = first-of-demand-month - td_to_str_lag, clamped to MAX(hold_floor) across building-group mates; STR = BLDR + lag; CMP/CLS derived via empirical lag curves; caches (lag_str_cmp, lag_cmp_cls) per building_group_id so all mates in a building share identical CMP/CLS dates; clears date_td_hold_projected when demand path covers lot before hold date; never writes actuals; falls back to pace-based demand when demand_series is empty
+- Imports: engine.s0700_demand_allocator, engine.s0850_timing_expansion, pandas, datetime, random
 - Imported by: coordinator.py
-- Tables: sim_lots (UPDATE date_td_projected, UPDATE date_td_hold_projected)
-- Last commit: 2026-04-20
+- Tables: sim_lots (UPDATE date_td_projected, date_str_projected, date_cmp_projected, date_cls_projected, date_td_hold_projected)
+- Last commit: 2026-04-21
 
 ### devdb_python/engine/s0600_demand_generator.py
 - Owns: S-0600 -- generates monthly demand series for each phase; vectorized; capacity-capped per D-138
@@ -125,11 +125,25 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Tables: sim_dev_phases (UPDATE date_dev_projected)
 - Last commit: 2026-03-25
 
-### devdb_python/engine/s1050_real_lot_projections.py
-- Owns: S-1050 -- writes projected STR/CMP/CLS dates to real P lots at annual_starts_target pace from sim_dev_params; clears stale projections before writing; applies str_to_cmp and cmp_to_cls lag curves per unit; skips locked lots; independent of kernel capacity logic
+### devdb_python/engine/s0770_d_bldr_date_projector.py
+- Owns: S-0770 -- writes BLDR/STR/CMP/CLS projected dates for D-status real lots (date_dev set, no hold, no date_td, no date_str, not locked); calls demand_allocator over full snapshot; BLDR = first-of-demand-month - td_to_str_lag; STR = demand_month_first; CMP/CLS via empirical lag curves; caches (lag_str_cmp, lag_cmp_cls) per building_group_id so all mates share identical CMP/CLS; falls back to pace-based demand when demand_series empty; DB write includes all four columns with AND date_td IS NULL + AND date_td_is_locked IS NOT TRUE guards; never writes actuals
+- Imports: engine.s0700_demand_allocator, engine.s0850_timing_expansion, pandas, datetime, random, math
 - Imported by: coordinator.py
-- Tables: sim_lots (UPDATE date_str_projected, date_cmp_projected, date_cls_projected), sim_dev_params (SELECT)
-- Last commit: 2026-04-19
+- Tables: sim_lots (UPDATE date_td_projected, date_str_projected, date_cmp_projected, date_cls_projected)
+- Last commit: 2026-04-21
+
+### devdb_python/engine/s0850_timing_expansion.py
+- Owns: S-0850 -- derives date_cmp and date_cls from date_str for sim lots using empirical lag curves; pre-loop caches one (lag_str_cmp, lag_cmp_cls) pair per building_group_id using first unit's lot_type_id (both CMP and CLS cached per group — all mates share identical dates per D-022); ungrouped lots sample independently; falls back to _default_cmp/_default_cls keys when no curve matches; also exports load_build_lag_curves(), curves_for(), sample_lag() helpers used by S-0760, S-0770, S-1050
+- Imports: engine.connection, pandas, logging
+- Imported by: coordinator.py (via load_build_lag_curves), s0760_hc_bldr_date_projector.py, s0770_d_bldr_date_projector.py, s1050_real_lot_projections.py
+- Tables: sim_build_lag_curves (SELECT via load_build_lag_curves)
+- Last commit: 2026-04-21
+
+### devdb_python/engine/s1050_real_lot_projections.py
+- Owns: S-1050 -- writes projected STR/CMP/CLS dates to real P lots (excludes D-status lots — those are handled by S-0770) at annual_starts_target pace from sim_dev_params; pre-clear excludes D-status lots (AND date_td_projected IS NULL guard); pace block runs only when P lots exist; HC group-mate sync runs unconditionally at end (not gated on pace block) — propagates BLDR/STR/CMP/CLS from HC-assigned real lots to non-HC mates in same building group, overriding any S-0770 value; skips locked lots; independent of kernel capacity logic
+- Imported by: coordinator.py
+- Tables: sim_lots (UPDATE date_td_projected, date_str_projected, date_cmp_projected, date_cls_projected), sim_dev_params (SELECT)
+- Last commit: 2026-04-21
 
 ### devdb_python/engine/s1100_persistence_writer.py
 - Owns: S-1100 -- atomic DELETE+INSERT of sim lots; assigns lot_id via MAX(lot_id)+offset per D-086; _LOCKED_COLS frozenset defaults NOT NULL boolean columns (locked flags + excluded) to False for sim lots; Step 3 re-stamps date_ent from sim_dev_phases onto newly-inserted sim lots (INSERT writes date_ent=None; phase-level value restored here per migration 023)
@@ -142,6 +156,12 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Imported by: coordinator.py
 - Tables: v_sim_ledger_monthly (CREATE OR REPLACE VIEW over sim_lots)
 - Last commit: 2026-04-14
+
+### devdb_python/engine/p0050_placeholder_rebuilder.py
+- Owns: P-0050 -- drains D-status lot balance using COALESCE(date_td, date_td_projected) so that lots with only a projected takedown date are correctly counted as leaving the D bucket; pre-computes drain dates in a CTE for cleaner query plan; called between P-0000 and P-0100 in supply pipeline
+- Imported by: coordinator.py
+- Tables: sim_lots (SELECT), sim_dev_phases (UPDATE d_balance or equivalent)
+- Last commit: 2026-04-21
 
 ### devdb_python/engine/p0000_placeholder_rebuilder.py
 - Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config; uses delivery_months integer[] (frozenset) for window logic — supports arbitrary month sets; Step 7 auto-generates sim_delivery_event_predecessors rows between consecutive events per dev (ordered by sequence_number) so P-0200/P-0400 enforce absolute phase ordering; step 3c uses `date_ent IS NOT NULL` (not `date_dev IS NULL`) to detect real pending lots — survives P-07 multi-iteration write-back; pd.NaT normalized to None at load time; delivery_tier gate in outer loop (tier-N held until all tier-(N-1) scheduled); dev_phases sorted by (tier, seq); tier check in inner co-bundling loop; feed_starts_mode=True bypasses both tier gates while predecessor links still enforce tier ordering
