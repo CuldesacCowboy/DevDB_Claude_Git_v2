@@ -118,9 +118,10 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
                                       dev_id, run_start_date, td_to_str_lag,
                                       build_lag_curves=build_lag_curves, rng=rng)
 
-    # S-0770: project date_td_projected for D-status real lots (H-lots drain first per allocator)
+    # S-0770: project BLDR/STR/CMP/CLS for D-status real lots (H-lots drain first per allocator)
     snapshot = d_bldr_date_projector(conn, snapshot, demand_series,
-                                     dev_id, run_start_date, td_to_str_lag)
+                                     dev_id, run_start_date, td_to_str_lag,
+                                     build_lag_curves=build_lag_curves, rng=rng)
     for w in guard_warnings:
         logger.info(f"  {w}")
     if discarded_lots:

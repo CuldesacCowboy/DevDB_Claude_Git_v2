@@ -41,6 +41,9 @@ def write_real_lot_projections(
     from datetime import timedelta
     from dateutil.relativedelta import relativedelta
 
+    # Pre-clear stale pace projections from prior runs.
+    # Excludes HC lots (date_td_hold_projected IS NOT NULL — cleared by S-0760 pre-clear).
+    # Excludes D-status lots (date_td_projected IS NOT NULL — S-0770 owns those dates).
     conn.execute(
         """
         UPDATE sim_lots
@@ -53,10 +56,14 @@ def write_real_lot_projections(
           AND date_cmp_is_locked        IS NOT TRUE
           AND date_cls_is_locked        IS NOT TRUE
           AND date_td_hold_projected    IS NULL
+          AND date_td_projected         IS NULL
         """,
         (dev_id,),
     )
 
+    # Only pure P/E lots — no pipeline dates at all.
+    # D-status lots (date_td_projected set by S-0770) are excluded so the pace model
+    # cannot overwrite their correctly-computed STR dates with pace-based nonsense.
     p_lots_df = conn.read_df(
         """
         SELECT lot_id, lot_type_id, building_group_id
@@ -67,6 +74,7 @@ def write_real_lot_projections(
           AND date_td                   IS NULL
           AND date_td_hold              IS NULL
           AND date_td_hold_projected    IS NULL
+          AND date_td_projected         IS NULL
           AND excluded                  IS NOT TRUE
           AND date_str_is_locked        IS NOT TRUE
         ORDER BY building_group_id NULLS LAST, lot_id
@@ -194,4 +202,42 @@ def write_real_lot_projections(
     )
 
     logger.info(f"  S-1050: Projected dates written to {len(updates)} real P lot(s) for dev {dev_id}.")
+
+    # Building-group HC sync: a D-status lot may share a building group with HC-held
+    # mates whose STR is constrained to after the hold release.  The D-lot takes down
+    # earlier per S-0770 but cannot start until the whole building is released.
+    # Copy the HC mates' date_str/cmp/cls_projected to any co-grouped lot that still
+    # has no date_str_projected (D-lots excluded from pace above, not touched yet).
+    synced = conn.execute(
+        """
+        UPDATE sim_lots sl
+        SET date_str_projected = mate.str_date,
+            date_cmp_projected = mate.cmp_date,
+            date_cls_projected = mate.cls_date,
+            updated_at = NOW()
+        FROM (
+            SELECT DISTINCT ON (sl2.building_group_id)
+                   sl2.building_group_id,
+                   sl2.date_str_projected AS str_date,
+                   sl2.date_cmp_projected AS cmp_date,
+                   sl2.date_cls_projected AS cls_date
+            FROM sim_lots sl2
+            WHERE sl2.dev_id = %s
+              AND sl2.lot_source = 'real'
+              AND sl2.date_td_hold_projected IS NOT NULL
+              AND sl2.date_str_projected IS NOT NULL
+              AND sl2.building_group_id IS NOT NULL
+            ORDER BY sl2.building_group_id, sl2.lot_id
+        ) mate
+        WHERE sl.dev_id = %s
+          AND sl.lot_source = 'real'
+          AND sl.building_group_id = mate.building_group_id
+          AND sl.date_str_projected IS NULL
+          AND sl.date_str_is_locked IS NOT TRUE
+        """,
+        (dev_id, dev_id),
+    )
+    if synced:
+        logger.info(f"  S-1050: Synced date_str_projected to {synced} D-lot(s) from HC group mates.")
+
     return len(updates)
