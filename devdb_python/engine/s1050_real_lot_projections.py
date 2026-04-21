@@ -49,6 +49,7 @@ def write_real_lot_projections(
             date_cls_projected = NULL
         WHERE lot_source = 'real'
           AND dev_id = %s
+          AND date_dev                  IS NULL
           AND date_str_is_locked        IS NOT TRUE
           AND date_cmp_is_locked        IS NOT TRUE
           AND date_cls_is_locked        IS NOT TRUE
@@ -57,12 +58,17 @@ def write_real_lot_projections(
         (dev_id,),
     )
 
+    # P-status only (date_dev IS NULL): D-status lots already have date_td_projected
+    # from S-0770; writing an independent pace-based date_str_projected to them
+    # produces a DIG date that ignores the projected takedown, creating impossible
+    # chronology (DIG before BLDR).
     p_lots_df = conn.read_df(
         """
         SELECT lot_id, lot_type_id
         FROM sim_lots
         WHERE lot_source = 'real'
           AND dev_id                    = %s
+          AND date_dev                  IS NULL
           AND date_str                  IS NULL
           AND date_td                   IS NULL
           AND date_td_hold              IS NULL
