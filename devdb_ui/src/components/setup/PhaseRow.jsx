@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef, useContext, useCallback } from 'react'
 import { API_BASE } from '../../config'
+import { stripPrefix } from '../simulation/simShared'
 import {
   useLocalOpen, ExpandAllContext, LotRefreshContext,
   SUB, PHASE_COLS, fmtRelative, SubCell, EditableCount,
@@ -127,7 +128,8 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
               : <LotPillGroup lots={lots} targetPhases={targetPhases} onMoveLot={handleLotMoved}
                               phaseId={phaseId} ltId={ltId} onLotAdded={handleLotAdded}
                               lotTypes={lotTypes} onLotsRemoved={handleLotsRemoved}
-                              onLotsUpdated={handleLotsUpdated} onRefresh={onRefresh} />
+                              onLotsUpdated={handleLotsUpdated} onRefresh={onRefresh}
+                              commName={commName} />
             }
           </td>
         </tr>
@@ -138,7 +140,7 @@ function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre,
 
 // ─── PhaseRow ─────────────────────────────────────────────────────────────────
 
-export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, onRefresh }) {
+export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, onRefresh, commName }) {
   // All other phases in the same development — valid move targets
   const targetPhases = (phases || []).filter(
     p => p.dev_id === phase.dev_id && p.phase_id !== phase.phase_id
@@ -275,7 +277,7 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
         <span style={{ color: '#374151', flex: 1 }}>
-          <InlineEdit value={phase.phase_name} onSave={onRename} />
+          <InlineEdit value={phase.phase_name} displayValue={stripPrefix(phase.phase_name, commName)} onSave={onRename} />
         </span>
         {/* Delivery date — fixed column */}
         <div style={{ width: PHASE_COLS.date, flexShrink: 0, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 3 }}>

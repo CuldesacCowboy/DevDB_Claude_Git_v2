@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useContext } from 'react'
 import { API_BASE } from '../config'
+import { stripPrefix } from '../components/simulation/simShared'
 import {
   LotRefreshContext, ExpandAllContext,
   useLocalOpen, SUB, SUB_LABELS, phaseTotal, phaseHasLots,
@@ -25,7 +26,7 @@ const STATUS_STYLE_MAP = {
 
 // ─── Instrument row ───────────────────────────────────────────────────────────
 
-function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onDeleteInstr, onChangeInstrType, onRefresh }) {
+function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onRenamePhase, onDeleteInstr, onChangeInstrType, onRefresh, commName }) {
   const instrPhases = phases.filter(p => p.instrument_id === instr.instrument_id)
   const [open, setOpen] = useLocalOpen(`setup_open_instr_${instr.instrument_id}`)
   const [hovered, setHovered] = useState(false)
@@ -56,7 +57,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
         <span style={{ fontWeight: 500, flex: 1, minWidth: 0 }}>
-          <InlineEdit value={instr.instrument_name} onSave={onRenameInstr} />
+          <InlineEdit value={instr.instrument_name} displayValue={stripPrefix(instr.instrument_name, commName)} onSave={onRenameInstr} />
         </span>
         {editingType ? (
           <select
@@ -127,6 +128,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
               onRename={name => onRenamePhase(p.phase_id, name)}
               onDelete={onRefresh}
               onRefresh={onRefresh}
+              commName={commName}
             />
           ))}
           {instrPhases.length === 0 && !addPhase.open && (
@@ -142,7 +144,7 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
 
 // ─── Development row ──────────────────────────────────────────────────────────
 
-function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onChangeInstrType, onRenamePhase, onDeleteDev, onRefresh }) {
+function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onChangeInstrType, onRenamePhase, onDeleteDev, onRefresh, commName }) {
   const devInstrs = instruments.filter(i => i.dev_id === dev.dev_id)
   const [open, setOpen] = useLocalOpen(`setup_open_dev_${dev.dev_id}`)
   const [hovered, setHovered] = useState(false)
@@ -175,7 +177,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
         tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o) } }}>
         <ChevronIcon open={open} />
         <span style={{ fontWeight: 500, flex: 1, minWidth: 0 }}>
-          <InlineEdit value={dev.dev_name} onSave={onRenameDev} />
+          <InlineEdit value={dev.dev_name} displayValue={stripPrefix(dev.dev_name, commName)} onSave={onRenameDev} />
         </span>
         {dev.marks_code && (
           <span style={{ fontSize: 10, color: '#6b7280', background: '#f9fafb',
@@ -238,6 +240,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
               onRenamePhase={onRenamePhase}
               onDeleteInstr={onRefresh}
               onRefresh={onRefresh}
+              commName={commName}
             />
           ))}
           {devInstrs.length === 0 && !addInstr.open && (
@@ -383,6 +386,7 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
               onRenamePhase={onRenamePhase}
               onDeleteDev={onDeleteDev ? () => onDeleteDev(dev.dev_id) : undefined}
               onRefresh={onRefresh}
+              commName={comm.ent_group_name}
             />
           ))}
           {devs.length === 0 && !addDev.open && (

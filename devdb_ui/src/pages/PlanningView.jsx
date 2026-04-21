@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { API_BASE } from '../config'
 import { useOverrides } from '../hooks/useOverrides'
-import { fmtLot } from '../components/simulation/simShared'
+import { fmtLot, stripPrefix } from '../components/simulation/simShared'
 import OverrideDateCell from '../components/overrides/OverrideDateCell'
 import OverridesPanel from '../components/overrides/OverridesPanel'
 import SyncReconciliationModal from '../components/overrides/SyncReconciliationModal'
@@ -105,7 +105,7 @@ function LotRow({ lot, onApply, onClear }) {
 
 // ─── Phase group ──────────────────────────────────────────────────────────────
 
-function PhaseGroup({ phaseName, lots, onApply, onClear, defaultExpanded = true }) {
+function PhaseGroup({ phaseName, lots, onApply, onClear, defaultExpanded = true, commName }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const ovCount = lots.reduce((n, l) => n + DATE_COLS.filter(c => l[c.ovField]).length, 0)
 
@@ -121,7 +121,7 @@ function PhaseGroup({ phaseName, lots, onApply, onClear, defaultExpanded = true 
         }}
       >
         <span style={{ fontSize: 10, color: '#9ca3af' }}>{expanded ? '▾' : '▸'}</span>
-        <span>{phaseName}</span>
+        <span>{stripPrefix(phaseName, commName)}</span>
         <span style={{ color: '#9ca3af', fontWeight: 400 }}>{lots.length} lots</span>
         {ovCount > 0 && (
           <span style={{
@@ -161,7 +161,7 @@ const thStyle = {
 
 // ─── Dev group ────────────────────────────────────────────────────────────────
 
-function DevGroup({ devName, lots, onApply, onClear }) {
+function DevGroup({ devName, lots, onApply, onClear, commName }) {
   const [expanded, setExpanded] = useState(true)
   const ovCount = lots.reduce((n, l) => n + DATE_COLS.filter(c => l[c.ovField]).length, 0)
 
@@ -185,7 +185,7 @@ function DevGroup({ devName, lots, onApply, onClear }) {
         }}
       >
         <span style={{ fontSize: 11, color: '#64748b' }}>{expanded ? '▾' : '▸'}</span>
-        <span style={{ fontWeight: 700, fontSize: 13, color: '#1e293b' }}>{devName}</span>
+        <span style={{ fontWeight: 700, fontSize: 13, color: '#1e293b' }}>{stripPrefix(devName, commName)}</span>
         <span style={{ fontSize: 12, color: '#94a3b8' }}>{lots.length} lots</span>
         {ovCount > 0 && (
           <span style={{
@@ -202,6 +202,7 @@ function DevGroup({ devName, lots, onApply, onClear }) {
           lots={phaseLots}
           onApply={onApply}
           onClear={onClear}
+          commName={commName}
         />
       ))}
     </div>
@@ -434,6 +435,7 @@ export default function PlanningView({ selectedGroupId, setSelectedGroupId, show
               lots={devLots}
               onApply={handleApply}
               onClear={handleClear}
+              commName={communities.find(c => c.ent_group_id === selectedGroupId)?.ent_group_name ?? ''}
             />
           ))}
         </div>

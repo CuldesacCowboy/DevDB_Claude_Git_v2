@@ -123,6 +123,19 @@ export const PROV_OV    = { color: '#92400e', background: '#fef3c7', fontWeight:
 // ─── Lot number display ───────────────────────────────────────────────────────
 // Converts raw DB lot_number ("ST00000064") → display format ("ST_ 64").
 // XX = dev code, _ = literal separator, NNN = 3-char right-justified with non-breaking spaces.
+// ─── Hierarchy name deduplication ────────────────────────────────────────────
+// Strips a parent name prefix from a child name (case-insensitive).
+// "Stonewater SF Dev 1", parent "Stonewater SF" → "Dev 1"
+// Falls back to full name if stripping produces empty string.
+export function stripPrefix(name, parent) {
+  if (!name || !parent) return name
+  const p = parent.trim()
+  if (name.toLowerCase().startsWith(p.toLowerCase())) {
+    return name.slice(p.length).replace(/^[\s\-–—,/]+/, '').trim() || name
+  }
+  return name
+}
+
 export function fmtLot(lotNumber) {
   if (!lotNumber) return '—'
   const m = lotNumber.match(/^([A-Za-z]+|\d{2})0*(\d+)$/)

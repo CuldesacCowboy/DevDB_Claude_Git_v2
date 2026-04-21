@@ -4,6 +4,8 @@
 # The kernel never queries the database; it reads only from this object.
 
 from dataclasses import dataclass
+from datetime import date as _date
+from typing import Optional
 
 import pandas as pd
 
@@ -20,3 +22,6 @@ class FrozenInput:
     sim_run_id: int
     dev_id: int
     td_to_str_lag: int = 1       # months between BLDR date (date_td) and DIG date (date_str)
+    sim_floor_date: Optional[_date] = None  # first month after last locked delivery event;
+                                            # unmet demand slots before this date are dropped
+                                            # before S-0800 (real lots absorb freely; sim lots cannot)

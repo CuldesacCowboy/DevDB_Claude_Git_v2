@@ -152,7 +152,7 @@ export function ChevronIcon({ open }) {
 // ─── InlineEdit ───────────────────────────────────────────────────────────────
 // Double-click the name (or click the pencil) to edit. Enter/blur saves, Escape cancels.
 
-export function InlineEdit({ value, onSave, style }) {
+export function InlineEdit({ value, displayValue, onSave, style }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft]     = useState(value)
   const [saving, setSaving]   = useState(false)
@@ -202,7 +202,7 @@ export function InlineEdit({ value, onSave, style }) {
       onDoubleClick={start}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 3, cursor: 'default', ...style }}
     >
-      <span>{value}</span>
+      <span>{displayValue ?? value}</span>
       <span
         onClick={start}
         title="Rename"

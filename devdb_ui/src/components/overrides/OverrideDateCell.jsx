@@ -16,6 +16,7 @@ export default function OverrideDateCell({
   onApply,          // async fn(lotId, changes[]) => void
   onClear,          // async fn(lotId, dateField) => void
   disabled = false,
+  isSim = false,    // true for sim lots — dates are engine-set, style as projected
 }) {
   const [open, setOpen] = useState(false)
 
@@ -32,7 +33,7 @@ export default function OverrideDateCell({
     userSelect: 'none',
     ...(hasOverride
       ? { color: '#92400e', background: '#fef3c7', fontWeight: 600 }
-      : isProjected
+      : (isProjected || isSim)
         ? { color: '#93c5fd', fontStyle: 'italic' }
         : { color: '#111827' }
     ),

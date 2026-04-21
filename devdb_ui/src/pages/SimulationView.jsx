@@ -167,7 +167,14 @@ const loadLedger = useCallback((id) => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ent_group_id: entGroupId }),
       })
-      if (!res.ok) { setRunStatus({ ok: false, error: await res.text() }); return }
+      if (!res.ok) {
+        const raw = await res.text()
+        let msg = raw
+        try { const j = JSON.parse(raw); msg = j.detail ?? raw } catch {}
+        setRunStatus({ ok: false, error: msg })
+        setLastRunAt(new Date())
+        return
+      }
       const data = await res.json()
       setRunStatus({ ok: true, iterations: data.iterations, elapsed_ms: data.elapsed_ms })
       setRunErrors(data.errors || [])
@@ -286,9 +293,7 @@ const loadLedger = useCallback((id) => {
               </span>
             )}
             {!runStatus.ok && (
-              <span style={{ color: '#dc2626', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {runStatus.error}
-              </span>
+              <span style={{ color: '#dc2626', fontSize: 11 }}>see details below</span>
             )}
             {lastRunAt && (
               <span style={{ color: '#9ca3af', fontSize: 11 }}>
@@ -304,6 +309,38 @@ const loadLedger = useCallback((id) => {
         )}
 
       </div>
+      {/* ── Run error panel ── */}
+      {runStatus?.ok === false && runStatus.error && (
+        <div style={{
+          margin: '0 0 8px', padding: '10px 14px',
+          background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ fontWeight: 600, fontSize: 12, color: '#dc2626' }}>Run error</span>
+            <button
+              onClick={() => navigator.clipboard.writeText(runStatus.error)}
+              style={{ fontSize: 11, padding: '1px 8px', borderRadius: 4,
+                       border: '1px solid #fca5a5', background: '#fff',
+                       color: '#dc2626', cursor: 'pointer' }}>
+              Copy
+            </button>
+            <span style={{ flex: 1 }} />
+            <button onClick={() => setRunStatus(null)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer',
+                       color: '#9ca3af', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>
+              ×
+            </button>
+          </div>
+          <pre style={{
+            margin: 0, fontSize: 11, color: '#7f1d1d',
+            fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            maxHeight: 300, overflowY: 'auto',
+            background: '#fff5f5', borderRadius: 4, padding: '8px 10px',
+            border: '1px solid #fecaca',
+          }}>{runStatus.error}</pre>
+        </div>
+      )}
+
       {/* ── Data load error banner ── */}
       {loadError && (
         <div style={{
@@ -550,6 +587,7 @@ const loadLedger = useCallback((id) => {
         <LotLedger
           lots={lots}
           loading={lotsLoading}
+          communityName={entGroups.find(g => g.ent_group_id === entGroupId)?.ent_group_name ?? ''}
           onApplyOverride={async (lotId, changes) => {
             await applyOverrides(lotId, changes)
             loadLots(entGroupId)

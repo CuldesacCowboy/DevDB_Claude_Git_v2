@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { API_BASE } from '../../config'
 import { StatusBadge } from '../../utils/statusConfig'
 import OverrideDateCell from '../overrides/OverrideDateCell'
-import { thS, tdS, fmt, exportToCsv, fmtLot, PROV_SIM } from './simShared'
+import { thS, tdS, fmt, exportToCsv, fmtLot, PROV_SIM, PROV_MARKS, stripPrefix } from './simShared'
 
 const BG_ROW_PALETTE = [
   '#eff6ff','#f0fdf4','#fefce8','#fff1f2',
@@ -35,7 +35,9 @@ function sortVal(l, col, bgLabelMap) {
       return k ? (bgLabelMap[k] ?? '') : ''
     }
     case 'lot_source':     return l.lot_source ?? ''
-    case 'is_spec':        return l.is_spec === true ? 0 : l.is_spec === false ? 1 : 2
+    case 'bldg_type':      return bgTypeMap[l.building_group_id] ?? ''
+    case 'is_spec_s':
+    case 'is_spec_b':      return l.is_spec === true ? 0 : l.is_spec === false ? 1 : 2
     case 'status':         return l.status ?? ''
     case 'date_ent':       return l.date_ent ?? null
     case 'date_dev':       return l.date_dev ?? null
@@ -63,7 +65,7 @@ function applySortedOrder(rows, col, dir, bgLabelMap) {
   })
 }
 
-export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onRefreshLots }) {
+export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onRefreshLots, communityName }) {
   const [devFilter,  setDevFilter]  = useState('all')
   const [srcFilter,  setSrcFilter]  = useState('all')
   const [specFilter, setSpecFilter] = useState('all')
@@ -114,6 +116,22 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
 
   const overrideable = l => l.lot_source === 'real'
 
+  const bgTypeMap = (() => {
+    const counts = {}
+    for (const l of lots) {
+      if (l.building_group_id != null) counts[l.building_group_id] = (counts[l.building_group_id] ?? 0) + 1
+    }
+    const labels = {}
+    for (const [id, n] of Object.entries(counts)) {
+      if (n === 1)      labels[id] = 'Villa'
+      else if (n === 2) labels[id] = 'Duplex'
+      else if (n === 3) labels[id] = 'Triplex'
+      else if (n === 4) labels[id] = 'Quad'
+      else              labels[id] = `${n}-plex`
+    }
+    return labels
+  })()
+
   const bgLabelMap = (() => {
     const map = {}
     const counters = {}
@@ -153,7 +171,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
         <select value={devFilter} onChange={e => setDevFilter(e.target.value)}
           style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}>
           <option value="all">All developments</option>
-          {devNames.map(n => <option key={n} value={n}>{n}</option>)}
+          {devNames.map(n => <option key={n} value={n}>{stripPrefix(n, communityName)}</option>)}
         </select>
         <select value={srcFilter} onChange={e => setSrcFilter(e.target.value)}
           style={{ fontSize: 12, padding: '3px 8px', borderRadius: 4, border: '1px solid #d1d5db' }}>
@@ -169,6 +187,13 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
           <option value="undet">Undetermined</option>
         </select>
         <span style={{ fontSize: 11, color: '#6b7280' }}>{filtered.length} lots</span>
+        {sortCol && (
+          <button onClick={() => { setSortCol(null); setSortDir('asc') }}
+            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid #d1d5db',
+                     background: '#fff', color: '#6b7280', cursor: 'pointer' }}>
+            ↺ reset sort
+          </button>
+        )}
         <span style={{ fontSize: 11, color: '#93c5fd', fontStyle: 'italic', marginLeft: 6 }}>italic blue = projected</span>
         <span style={{ fontSize: 11, color: '#92400e', marginLeft: 6 }}>amber = override (click to edit)</span>
         <button onClick={() => {
@@ -202,8 +227,10 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                                        ['lot_type_short', 'left',   'Type'],
                                        ['phase_name',     'left',   'Phase'],
                                        ['bldg',           'center', 'Bldg'],
+                                       ['bldg_type',      'left',   'Bldg Type'],
                                        ['lot_source',     'left',   'Src'],
-                                       ['is_spec',        'center', 'Spec'],
+                                       ['is_spec_s',      'center', 'S'],
+                                       ['is_spec_b',      'center', 'B'],
                                        ['status',         'left',   'Status'],
                                        ['date_ent',       'center', 'ENT'],
                                        ['date_dev',       'center', 'DEV'],
@@ -250,18 +277,22 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
               )
               return (
               <tr key={l.lot_id} style={{ background: rowTint ?? '' }}>
-                {devFilter === 'all' && <td style={tdS('left')}>{l.dev_name}</td>}
+                {devFilter === 'all' && <td style={tdS('left')}>{stripPrefix(l.dev_name, communityName)}</td>}
                 <td style={tdS('left')}>{fmtLot(l.lot_number)}</td>
                 <td style={tdS('left')}>{l.lot_type_short ?? '—'}</td>
-                <td style={tdS('left')}>{l.phase_name}</td>
+                <td style={tdS('left')}>{stripPrefix(l.phase_name, communityName)}</td>
                 <td style={tdS('center', {
                   borderTop: isGroupStart ? '2px solid #e5e7eb' : undefined,
                 })}>{bgLabel ?? ''}</td>
+                <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>
+                  {l.building_group_id != null ? (bgTypeMap[l.building_group_id] ?? '—') : ''}
+                </td>
                 <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>{l.lot_source}</td>
-                <td style={tdS('center')}>
-                  {l.is_spec === true  && <span style={{ ...PROV_SIM, fontSize: 12 }}>S</span>}
-                  {l.is_spec === false && <span style={{ ...PROV_SIM, fontSize: 12 }}>B</span>}
-                  {l.is_spec == null   && <span style={{ color: '#d1d5db' }}>—</span>}
+                <td style={tdS('center', { width: 20 })}>
+                  {l.is_spec === true && <span style={{ ...(l.lot_source === 'sim' ? PROV_SIM : PROV_MARKS), fontSize: 12 }}>S</span>}
+                </td>
+                <td style={tdS('center', { width: 20 })}>
+                  {l.is_spec === false && <span style={{ ...(l.lot_source === 'sim' ? PROV_SIM : PROV_MARKS), fontSize: 12 }}>B</span>}
                 </td>
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>
@@ -281,7 +312,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                     marksValue={l.date_td_hold} projectedValue={l.date_td_hold_projected}
                     overrideValue={l.ov_date_td_hold}
                     onApply={onApplyOverride} onClear={onClearOverride}
-                    disabled={!overrideable(l)} />
+                    disabled={!overrideable(l)} isSim={l.lot_source === 'sim'} />
                 </td>
                 <td style={tdS()}>
                   <span style={{ display: 'inline-flex', alignItems: 'center' }}>
@@ -289,7 +320,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                       marksValue={l.date_td} projectedValue={l.date_td_projected}
                       overrideValue={l.ov_date_td}
                       onApply={onApplyOverride} onClear={onClearOverride}
-                      disabled={!overrideable(l)} />
+                      disabled={!overrideable(l)} isSim={l.lot_source === 'sim'} />
                     <VDot field="date_td" />
                   </span>
                 </td>
@@ -299,7 +330,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                       marksValue={l.date_str} projectedValue={l.date_str_projected}
                       overrideValue={l.ov_date_str}
                       onApply={onApplyOverride} onClear={onClearOverride}
-                      disabled={!overrideable(l)} />
+                      disabled={!overrideable(l)} isSim={l.lot_source === 'sim'} />
                     <VDot field="date_str" />
                   </span>
                 </td>
@@ -309,7 +340,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                       marksValue={l.date_cmp} projectedValue={l.date_cmp_projected}
                       overrideValue={l.ov_date_cmp}
                       onApply={onApplyOverride} onClear={onClearOverride}
-                      disabled={!overrideable(l)} />
+                      disabled={!overrideable(l)} isSim={l.lot_source === 'sim'} />
                     <VDot field="date_cmp" />
                   </span>
                 </td>
@@ -319,7 +350,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                       marksValue={l.date_cls} projectedValue={l.date_cls_projected}
                       overrideValue={l.ov_date_cls}
                       onApply={onApplyOverride} onClear={onClearOverride}
-                      disabled={!overrideable(l)} />
+                      disabled={!overrideable(l)} isSim={l.lot_source === 'sim'} />
                     <VDot field="date_cls" />
                   </span>
                 </td>

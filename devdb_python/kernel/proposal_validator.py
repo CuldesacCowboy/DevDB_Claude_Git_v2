@@ -187,18 +187,20 @@ class ProposalValidator:
 
     def _check_sim_lot_sentinel(self, proposal) -> list:
         """
-        Every temp lot must satisfy date_td == date_str (D-142 sentinel).
-        S-0800 sets date_td = date_str at creation; S-0810 maintains it under
-        building group enforcement. Failure here means a module broke the invariant.
+        Every temp lot must satisfy date_td <= date_str (D-142 sentinel).
+        The engine must never project a takedown date after a start date.
+        Equality is no longer required — a configurable td_to_str_lag means
+        date_td may legitimately precede date_str. MARKS dates on real lots
+        are not checked here; those may legally have date_td > date_str.
         """
         failures = []
         for i, lot in enumerate(proposal.temp_lots):
             date_td  = lot.get("date_td")
             date_str = lot.get("date_str")
-            if date_td != date_str:
+            if date_td is not None and date_str is not None and date_td > date_str:
                 failures.append(
                     f"D-142 sentinel violation on temp lot {i} "
                     f"(phase_id={lot.get('phase_id')}): "
-                    f"date_td={date_td} != date_str={date_str}"
+                    f"date_td={date_td} > date_str={date_str}"
                 )
         return failures

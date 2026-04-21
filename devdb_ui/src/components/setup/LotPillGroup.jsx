@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import { API_BASE } from '../../config'
 import { formatLotNum, formatLotNumPadded, lotSeqStr } from './setupShared'
+import { stripPrefix } from '../simulation/simShared'
 
 export const LOT_PILL = {
   marks: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
@@ -193,7 +194,7 @@ function AddPreLotsPanel({ phaseId, ltId, onAdded }) {
 
 const GROUP_LABEL_COLOR = { marks: '#1d4ed8', pre: '#92400e', sim: '#9ca3af' }
 
-export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded, lotTypes, onLotsRemoved, onLotsUpdated, onRefresh }) {
+export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onLotAdded, lotTypes, onLotsRemoved, onLotsUpdated, onRefresh, commName }) {
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [lastClickedId, setLastClickedId] = useState(null)
   const [actionMode, setActionMode] = useState(null)  // null | 'move' | 'type' | 'delete' | 'exclude'
@@ -335,7 +336,7 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
                   disabled={bulkSaving}
                   style={{ fontSize: 11, padding: '1px 3px', borderRadius: 3, border: '1px solid #d1d5db' }}>
                   <option value="">Phase…</option>
-                  {targetPhases.map(p => <option key={p.phase_id} value={p.phase_id}>{p.instrument_name} · {p.phase_name}</option>)}
+                  {targetPhases.map(p => <option key={p.phase_id} value={p.phase_id}>{stripPrefix(p.instrument_name, commName)} · {stripPrefix(p.phase_name, commName)}</option>)}
                 </select>
                 <button onClick={() => setActionMode(null)} style={ABTN()}>✕</button>
               </span>
