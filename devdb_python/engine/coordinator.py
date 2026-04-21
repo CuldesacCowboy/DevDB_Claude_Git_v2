@@ -25,7 +25,7 @@ from .s0205_building_group_sync import building_group_sync
 from .s0250_lot_date_overrides import apply_lot_date_overrides
 from .s0300_gap_fill_engine import gap_fill_engine, load_phase_delivery_dates
 from .s0400_chronology_validator import chronology_validator, persist_violations
-from .s0500_takedown_engine import takedown_engine
+from .s0500_takedown_engine import takedown_engine, refresh_tda_assignments
 from .s0600_demand_generator import demand_generator
 from .s0760_hc_bldr_date_projector import hc_bldr_date_projector
 from .s0770_d_bldr_date_projector import d_bldr_date_projector
@@ -322,9 +322,11 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
 
             if _date_list(pre_df) == _date_list(post_df):
                 logger.info(f"\nConvergence reached after {iteration} iteration(s).")
+                refresh_tda_assignments(conn, ent_group_id)
                 return iteration, missing_params_devs, latest_residual_gaps
 
             logger.info(f"  Schedule changed. Re-running.")
 
     logger.warning(f"WARNING: Max iterations ({max_iterations}) reached without convergence.")
+    refresh_tda_assignments(conn, ent_group_id)
     return max_iterations, missing_params_devs, latest_residual_gaps

@@ -767,8 +767,8 @@ function CheckpointsSection({ tda, onPatchCheckpoint, onAddCheckpoint, onDeleteC
         </span>
         {tda.checkpoints.length > 0 && (
           <Btn variant="teal" onClick={handleAutoAssign} disabled={assigning} style={{ padding: '1px 7px', fontSize: 11 }}
-               title="Assigns each TDA lot to the earliest checkpoint whose date covers its effective takedown date">
-            {assigning ? 'Assigning…' : 'Auto-Assign Lots'}
+               title="Re-derives checkpoint slot assignments from current lot dates. Also runs automatically after each sim run.">
+            {assigning ? 'Refreshing…' : 'Refresh'}
           </Btn>
         )}
         {autoAssignResult && !assigning && (

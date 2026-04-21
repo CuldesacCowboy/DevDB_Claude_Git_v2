@@ -372,3 +372,122 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
     updated_df = pd.DataFrame(list(lots_dict.values()))
     updated_df = updated_df[lot_snapshot.columns.tolist()]
     return updated_df, residual_gaps
+
+
+def refresh_tda_assignments(conn: DBConnection, ent_group_id: int) -> int:
+    """
+    Re-derive and persist sim_takedown_lot_assignments for all active TDAs in
+    an entitlement group.  Called post-convergence by the coordinator so the
+    slot cache always reflects the latest projected dates.
+
+    Mirrors the auto-assign logic in the API layer:
+      - Sort TDA lots by effective date (min of D-087 BLDR/HC paths), nulls last.
+      - Fill checkpoints sequentially by per-delta capacity; last CP absorbs overflow.
+    Returns total assignments written.
+    """
+    tda_df = conn.read_df(
+        """
+        SELECT ta.tda_id, ta.builder_id
+        FROM sim_takedown_agreements ta
+        JOIN sim_entitlement_groups eg ON eg.ent_group_id = ta.ent_group_id
+        WHERE ta.status = 'active'
+          AND eg.ent_group_id = %s
+        """,
+        (ent_group_id,),
+    )
+    if tda_df.empty:
+        return 0
+
+    total_assigned = 0
+
+    for _, tda_row in tda_df.iterrows():
+        tda_id         = int(tda_row["tda_id"])
+        raw_builder    = tda_row["builder_id"]
+        tda_builder_id = None if (raw_builder is None or pd.isna(raw_builder)) else int(raw_builder)
+
+        cp_df = conn.read_df(
+            """
+            SELECT checkpoint_id, lots_required_cumulative
+            FROM sim_takedown_checkpoints
+            WHERE tda_id = %s AND checkpoint_date IS NOT NULL
+            ORDER BY checkpoint_date ASC
+            """,
+            (tda_id,),
+        )
+        if cp_df.empty:
+            continue
+
+        checkpoints = cp_df.to_dict("records")
+        prev_cum = 0
+        cp_capacity = []
+        for cp in checkpoints:
+            cum = int(cp["lots_required_cumulative"] or 0)
+            cp_capacity.append(max(0, cum - prev_cum))
+            prev_cum = cum
+
+        lot_df = conn.read_df(
+            """
+            SELECT l.lot_id,
+                   COALESCE(l.date_td, l.date_td_projected)           AS eff_bldr,
+                   COALESCE(l.date_td_hold, l.date_td_hold_projected) AS eff_hc,
+                   COALESCE(l.builder_id_override, l.builder_id)      AS resolved_builder_id
+            FROM sim_takedown_agreement_lots tal
+            JOIN sim_lots l ON l.lot_id = tal.lot_id
+            WHERE tal.tda_id = %s
+            """,
+            (tda_id,),
+        )
+        if lot_df.empty:
+            continue
+
+        eligible = []
+        for _, lr in lot_df.iterrows():
+            if tda_builder_id is not None:
+                rb = lr["resolved_builder_id"]
+                if rb is None or pd.isna(rb) or int(rb) != tda_builder_id:
+                    continue
+            eb = lr["eff_bldr"]
+            eh = lr["eff_hc"]
+            eb = None if (eb is None or pd.isna(eb)) else pd.Timestamp(eb).date()
+            eh = None if (eh is None or pd.isna(eh)) else pd.Timestamp(eh).date()
+            if eb is not None and eh is not None:
+                td = min(eb, eh)
+            else:
+                td = eb or eh
+            eligible.append((td, int(lr["lot_id"])))
+
+        eligible.sort(key=lambda x: (x[0] is None, x[0]))
+
+        # Clear existing assignments for this TDA
+        conn.execute(
+            """
+            DELETE FROM sim_takedown_lot_assignments
+            WHERE checkpoint_id IN (
+                SELECT checkpoint_id FROM sim_takedown_checkpoints WHERE tda_id = %s
+            )
+            """,
+            (tda_id,),
+        )
+
+        lot_iter = iter(eligible)
+        for i, (cp, capacity) in enumerate(zip(checkpoints, cp_capacity)):
+            is_last      = (i == len(checkpoints) - 1)
+            slots_to_fill = capacity if not is_last else None
+            filled       = 0
+            cp_id        = int(cp["checkpoint_id"])
+            for _, lot_id in lot_iter:
+                conn.execute(
+                    """
+                    INSERT INTO sim_takedown_lot_assignments (checkpoint_id, lot_id, assigned_at)
+                    VALUES (%s, %s, now())
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (cp_id, lot_id),
+                )
+                total_assigned += 1
+                filled         += 1
+                if slots_to_fill is not None and filled >= slots_to_fill:
+                    break
+
+    logger.info(f"  S-0500: refresh_tda_assignments → {total_assigned} assignment(s) written for ent_group {ent_group_id}.")
+    return total_assigned
