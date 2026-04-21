@@ -1007,11 +1007,12 @@ def get_tda_checklist(show_test: bool = False, conn=Depends(get_db_conn)):
 
 @router.post("/takedown-agreements/{tda_id}/auto-assign")
 def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
-    """Assign each TDA lot to the earliest checkpoint whose date >= the lot's
-    effective takedown date (min of D-087 BLDR and HC paths). Lots with no
-    effective date, or whose date falls after all checkpoint dates, are assigned
-    to the last checkpoint as a late/undated catch-all. Existing assignments
-    are cleared first."""
+    """Fill checkpoints sequentially in date order.
+    Lots are sorted by effective takedown date (min of D-087 BLDR and HC paths),
+    nulls last. Each checkpoint is filled with its per-slot delta (lots_required_cumulative
+    minus previous cumulative) before moving to the next. Remaining lots after the
+    last checkpoint's quota is reached are assigned to the last checkpoint as overflow.
+    Existing assignments are cleared first."""
     cur = dict_cursor(conn)
     try:
         cur.execute(
@@ -1023,10 +1024,10 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
             raise HTTPException(status_code=404, detail=f"TDA {tda_id} not found.")
         tda_builder_id = tda_row["builder_id"]
 
-        # Load checkpoints ordered by date ascending
+        # Load checkpoints ordered by date ascending with their required counts
         cur.execute(
             """
-            SELECT checkpoint_id, checkpoint_date
+            SELECT checkpoint_id, checkpoint_date, lots_required_cumulative
             FROM devdb.sim_takedown_checkpoints
             WHERE tda_id = %s AND checkpoint_date IS NOT NULL
             ORDER BY checkpoint_date ASC
@@ -1036,12 +1037,18 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
         checkpoints = list(cur.fetchall())
 
         if not checkpoints:
-            return {"assigned": 0, "unassigned": 0, "message": "No dated checkpoints to assign to."}
+            return {"assigned": 0, "message": "No dated checkpoints to assign to."}
 
-        # Load lots in TDA pool filtered by builder_id (same logic as engine).
-        # D-087: both BLDR and HC paths satisfy independently. Fetch each effective
-        # date separately so we can pick the MINIMUM — assigning the lot to the earliest
-        # checkpoint it can satisfy rather than always preferring the BLDR path.
+        # Compute per-checkpoint slot capacity (delta from previous cumulative)
+        cp_capacity = []
+        prev_cum = 0
+        for cp in checkpoints:
+            cum = cp["lots_required_cumulative"] or 0
+            cp_capacity.append(max(0, cum - prev_cum))
+            prev_cum = cum
+
+        # Load eligible lots sorted by effective date ascending, nulls last.
+        # D-087: use the minimum of BLDR and HC effective dates.
         cur.execute(
             """
             SELECT l.lot_id,
@@ -1055,7 +1062,25 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
             """,
             (tda_id,),
         )
-        lots = list(cur.fetchall())
+        raw_lots = list(cur.fetchall())
+
+        # Filter by builder and compute effective date, then sort
+        eligible = []
+        skipped_builder = 0
+        for lot in raw_lots:
+            if tda_builder_id is not None and lot["resolved_builder_id"] != tda_builder_id:
+                skipped_builder += 1
+                continue
+            eff_bldr = lot["eff_bldr"]
+            eff_hc   = lot["eff_hc"]
+            if eff_bldr is not None and eff_hc is not None:
+                td = min(eff_bldr, eff_hc)
+            else:
+                td = eff_bldr or eff_hc
+            eligible.append((td, lot["lot_id"]))
+
+        # Sort: dated lots ascending, then nulls
+        eligible.sort(key=lambda x: (x[0] is None, x[0]))
 
         # Clear all existing assignments for this TDA
         cur.execute(
@@ -1068,46 +1093,28 @@ def auto_assign_checkpoints(tda_id: int, conn=Depends(get_db_conn)):
             (tda_id,),
         )
 
+        # Fill checkpoints sequentially: each gets its capacity's worth of lots,
+        # then remaining lots go to the last checkpoint as overflow.
+        lot_iter = iter(eligible)
         assigned = 0
-        skipped_builder = 0
-        for lot in lots:
-            # Skip lots whose resolved builder doesn't match the TDA's builder
-            if tda_builder_id is not None and lot["resolved_builder_id"] != tda_builder_id:
-                skipped_builder += 1
-                continue
-            # D-087: use the earliest of the two independent paths (BLDR vs HC).
-            # When both are set, pick min so the lot lands in the earliest checkpoint
-            # it can satisfy. When only one is set, use whichever is available.
-            eff_bldr = lot["eff_bldr"]
-            eff_hc   = lot["eff_hc"]
-            if eff_bldr is not None and eff_hc is not None:
-                td = min(eff_bldr, eff_hc)
-            else:
-                td = eff_bldr or eff_hc
-            if td is None:
-                # No effective date — assign to last checkpoint as a late/undated slot
-                target_cp = checkpoints[-1]
-            else:
-                # Find first checkpoint whose date >= lot's effective_td
-                target_cp = None
-                for cp in checkpoints:
-                    if cp["checkpoint_date"] is not None and cp["checkpoint_date"] >= td:
-                        target_cp = cp
-                        break
-                if target_cp is None:
-                    # Effective date falls after all checkpoint dates; assign to last
-                    target_cp = checkpoints[-1]
-
-            cur.execute(
-                """
-                INSERT INTO devdb.sim_takedown_lot_assignments
-                    (checkpoint_id, lot_id, assigned_at)
-                VALUES (%s, %s, now())
-                ON CONFLICT DO NOTHING
-                """,
-                (target_cp["checkpoint_id"], lot["lot_id"]),
-            )
-            assigned += 1
+        for i, (cp, capacity) in enumerate(zip(checkpoints, cp_capacity)):
+            is_last = (i == len(checkpoints) - 1)
+            slots_to_fill = capacity if not is_last else None  # last cp is unbounded
+            filled = 0
+            for td, lot_id in lot_iter:
+                cur.execute(
+                    """
+                    INSERT INTO devdb.sim_takedown_lot_assignments
+                        (checkpoint_id, lot_id, assigned_at)
+                    VALUES (%s, %s, now())
+                    ON CONFLICT DO NOTHING
+                    """,
+                    (cp["checkpoint_id"], lot_id),
+                )
+                assigned += 1
+                filled += 1
+                if slots_to_fill is not None and filled >= slots_to_fill:
+                    break
 
         conn.commit()
         return {
