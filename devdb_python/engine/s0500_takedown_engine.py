@@ -89,6 +89,8 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
     # interfere. Also clears date_td_projected written by S-0760 so that
     # _available() sees a clean lot and HC re-assignment works correctly on
     # every iteration. Locked lots and lots with actual dates are preserved.
+    # Also clears building-group mates of TDA lots so the post-assign sync
+    # (below) always writes a fresh unified hold date each run.
     conn.execute(
         """
         UPDATE sim_lots
@@ -111,6 +113,28 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
           )
         """,
         (dev_id,),
+    )
+    # Clear synced hold dates from building-group mates (non-TDA lots that received
+    # a hold in the previous run's building-group sync step).
+    conn.execute(
+        """
+        UPDATE sim_lots
+        SET date_td_hold_projected = NULL
+        WHERE dev_id = %s
+          AND date_td_hold IS NULL
+          AND date_td_hold_is_locked IS NOT TRUE
+          AND date_td_hold_projected IS NOT NULL
+          AND building_group_id IN (
+              SELECT DISTINCT sl2.building_group_id
+              FROM sim_lots sl2
+              JOIN sim_takedown_agreement_lots tal ON tal.lot_id = sl2.lot_id
+              JOIN sim_takedown_agreements ta ON ta.tda_id = tal.tda_id
+              WHERE ta.status = 'active'
+                AND sl2.building_group_id IS NOT NULL
+                AND sl2.dev_id = %s
+          )
+        """,
+        (dev_id, dev_id),
     )
 
     # ── Find active TDA agreements covering lots in this snapshot ─────────────
@@ -360,6 +384,64 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
             updates,
         )
         logger.info(f"  S-0500: Persisted date_td_hold_projected to {len(updates)} lot(s).")
+
+    # ── Building-group HC sync ────────────────────────────────────────────────
+    # Invariant: all lots in a building share the same HC hold date.
+    # S-0500 assigns holds lot-by-lot from TDA checkpoints; different lots in
+    # the same building may land on different checkpoints and get different hold
+    # dates (e.g. B1 DT1/2/3 → Dec 2026 checkpoint, DT4 → Dec 2027 checkpoint).
+    # Propagate MAX(date_td_hold_projected) to all group mates so no unit shows
+    # a different HC date.
+    conn.execute(
+        """
+        UPDATE sim_lots sl
+        SET date_td_hold_projected = agg.max_hold,
+            updated_at = NOW()
+        FROM (
+            SELECT building_group_id, MAX(date_td_hold_projected) AS max_hold
+            FROM sim_lots
+            WHERE dev_id = %s
+              AND building_group_id IS NOT NULL
+              AND date_td_hold_projected IS NOT NULL
+              AND date_td_hold IS NULL
+              AND date_td_hold_is_locked IS NOT TRUE
+            GROUP BY building_group_id
+        ) agg
+        WHERE sl.building_group_id = agg.building_group_id
+          AND sl.dev_id = %s
+          AND sl.date_td_hold IS NULL
+          AND sl.date_td_hold_is_locked IS NOT TRUE
+          AND (sl.date_td_hold_projected IS NULL
+               OR sl.date_td_hold_projected != agg.max_hold)
+        """,
+        (dev_id, dev_id),
+    )
+    # Mirror the unified hold into the in-memory snapshot
+    bg_max_hold: dict[int, object] = {}
+    for lid, lot in lots_dict.items():
+        raw_bg = lot.get("building_group_id")
+        if raw_bg is None or pd.isna(raw_bg):
+            continue
+        raw_hold = lot.get("date_td_hold_projected")
+        if raw_hold is None or pd.isna(raw_hold):
+            continue
+        bg_id = int(raw_bg)
+        if bg_id not in bg_max_hold or pd.Timestamp(raw_hold) > pd.Timestamp(bg_max_hold[bg_id]):
+            bg_max_hold[bg_id] = raw_hold
+    for lid, lot in lots_dict.items():
+        raw_bg = lot.get("building_group_id")
+        if raw_bg is None or pd.isna(raw_bg):
+            continue
+        bg_id = int(raw_bg)
+        if bg_id not in bg_max_hold:
+            continue
+        if lot.get("date_td_hold_is_locked"):
+            continue
+        if lot.get("date_td_hold") is not None and pd.notna(lot.get("date_td_hold")):
+            continue
+        lots_dict[lid]["date_td_hold_projected"] = bg_max_hold[bg_id]
+    if bg_max_hold:
+        logger.info(f"  S-0500: Synced HC hold date within {len(bg_max_hold)} building group(s).")
 
     updated_df = pd.DataFrame(list(lots_dict.values()))
     updated_df = updated_df[lot_snapshot.columns.tolist()]
