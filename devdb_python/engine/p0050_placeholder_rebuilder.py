@@ -442,6 +442,34 @@ def _run_scheduling_loop(
 
     dev_last_delivery_lots: dict[int, int] = {}
 
+    # Initialize from locked delivery lot counts so the exhaustion fallback
+    # correctly predicts when locked-phase lots drain.  Without this, last_lots
+    # stays 0 and the fallback falls through to next_window_month_from(today),
+    # which then gets pushed out by min_gap — causing phases to be scheduled
+    # far later than the D-balance actually requires.
+    if last_locked_per_dev:
+        for _dev_id, _locked_date in last_locked_per_dev.items():
+            _cnt_df = conn.read_df(
+                """
+                SELECT COUNT(sl.lot_id) AS cnt
+                FROM sim_lots sl
+                JOIN sim_delivery_event_phases dep ON dep.phase_id = sl.phase_id
+                JOIN sim_delivery_events sde
+                     ON sde.delivery_event_id = dep.delivery_event_id
+                WHERE sde.ent_group_id = %s
+                  AND sde.date_dev_actual = %s
+                  AND sl.dev_id = %s
+                """,
+                (cfg["ent_group_id"], _locked_date, _dev_id),
+            )
+            _cnt = int(_cnt_df.iloc[0]["cnt"]) if not _cnt_df.empty else 0
+            if _cnt > 0:
+                dev_last_delivery_lots[_dev_id] = _cnt
+                logger.info(
+                    f"P-00: Dev {_dev_id}: last_locked_lots={_cnt} "
+                    f"(delivery {_locked_date}, initialized for exhaustion fallback)"
+                )
+
     # ── Closures used by the scheduling loop ─────────────────────────────────
 
     def _compute_drain_delay(dev_id_key: int, delivery_m: date) -> int:
