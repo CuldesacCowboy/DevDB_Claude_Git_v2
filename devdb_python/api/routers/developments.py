@@ -197,7 +197,6 @@ def delete_development(dev_id: int, conn=Depends(get_db_conn)):
             for phase_id in phase_ids:
                 cur.execute("UPDATE sim_lots SET phase_id = NULL WHERE phase_id = %s", (phase_id,))
                 cur.execute("DELETE FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
-                cur.execute("DELETE FROM sim_phase_builder_splits WHERE phase_id = %s", (phase_id,))
                 cur.execute("DELETE FROM sim_phase_building_config WHERE phase_id = %s", (phase_id,))
                 cur.execute("DELETE FROM sim_delivery_event_phases WHERE phase_id = %s", (phase_id,))
             cur.execute("DELETE FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))

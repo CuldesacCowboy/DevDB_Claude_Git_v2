@@ -440,7 +440,6 @@ async def delete_phase(phase_id: int, conn=Depends(get_db_conn)):
         )
         # Remove product and builder splits
         cur.execute("DELETE FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
-        cur.execute("DELETE FROM sim_phase_builder_splits WHERE phase_id = %s", (phase_id,))
         cur.execute("DELETE FROM sim_phase_building_config WHERE phase_id = %s", (phase_id,))
         # Remove delivery event phase links
         cur.execute("DELETE FROM sim_delivery_event_phases WHERE phase_id = %s", (phase_id,))
