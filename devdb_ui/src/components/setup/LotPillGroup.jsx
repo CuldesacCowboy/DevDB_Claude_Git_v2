@@ -204,6 +204,9 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
 
   const allLots = lots ?? []
 
+  // "Deletable" = pre-MARKS lots OR real lots not in the MARKS registry (both show as Pending)
+  const isDeletable = lot => lot && (lot.lot_source === 'pre' || (lot.lot_source === 'real' && !lot.in_registry))
+
   // Ordered selectable lots (non-sim, active first then excluded)
   const ordered = [
     ...allLots.filter(l => !l.excluded && l.lot_source === 'real' && l.in_registry),
@@ -269,7 +272,7 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
   }
 
   async function handleBulkDelete() {
-    const ids = [...selectedIds].filter(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre')
+    const ids = [...selectedIds].filter(id => isDeletable(allLots.find(l => l.lot_id === id)))
     if (!ids.length) return
     await runBulk(ids, id => fetch(`${API_BASE}/lots/${id}`, { method: 'DELETE' }),
       () => { onLotsRemoved(ids); deselectAll() })
@@ -308,8 +311,6 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
     }
   }
 
-  // "Deletable" = pre-MARKS lots OR real lots not in the MARKS registry (both show as Pending)
-  const isDeletable = lot => lot && (lot.lot_source === 'pre' || (lot.lot_source === 'real' && !lot.in_registry))
   const hasSelection = selectedIds.size > 0
   const hasPreSelected = [...selectedIds].some(id => isDeletable(allLots.find(l => l.lot_id === id)))
   const deleteCount = [...selectedIds].filter(id => isDeletable(allLots.find(l => l.lot_id === id))).length
