@@ -154,6 +154,10 @@ def delete_delivery_event(ent_group_id: int, event_id: int, conn=Depends(get_db_
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail=f"Delivery event {event_id} not found")
         cur.execute("DELETE FROM sim_delivery_event_phases WHERE delivery_event_id = %s", (event_id,))
+        cur.execute(
+            "DELETE FROM sim_delivery_event_predecessors WHERE event_id = %s OR predecessor_event_id = %s",
+            (event_id, event_id),
+        )
         cur.execute("DELETE FROM sim_delivery_events WHERE delivery_event_id = %s", (event_id,))
         conn.commit()
         return {"success": True, "delivery_event_id": event_id}

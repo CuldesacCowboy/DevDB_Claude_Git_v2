@@ -152,10 +152,50 @@ def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
             WHERE event_id IN (
                 SELECT delivery_event_id FROM sim_delivery_events WHERE ent_group_id = %s
             )
+               OR predecessor_event_id IN (
+                SELECT delivery_event_id FROM sim_delivery_events WHERE ent_group_id = %s
+            )
+            """,
+            (ent_group_id, ent_group_id),
+        )
+        cur.execute("DELETE FROM sim_delivery_events WHERE ent_group_id = %s", (ent_group_id,))
+
+        # Remove TDA records for this group (leaf → parent order)
+        cur.execute(
+            """
+            DELETE FROM sim_takedown_lot_assignments
+            WHERE checkpoint_id IN (
+                SELECT tc.checkpoint_id FROM sim_takedown_checkpoints tc
+                JOIN sim_takedown_agreements ta ON ta.tda_id = tc.tda_id
+                WHERE ta.ent_group_id = %s
+            )
             """,
             (ent_group_id,),
         )
-        cur.execute("DELETE FROM sim_delivery_events WHERE ent_group_id = %s", (ent_group_id,))
+        cur.execute(
+            """
+            DELETE FROM sim_takedown_checkpoints
+            WHERE tda_id IN (SELECT tda_id FROM sim_takedown_agreements WHERE ent_group_id = %s)
+            """,
+            (ent_group_id,),
+        )
+        cur.execute(
+            """
+            DELETE FROM sim_takedown_agreement_lots
+            WHERE tda_id IN (SELECT tda_id FROM sim_takedown_agreements WHERE ent_group_id = %s)
+            """,
+            (ent_group_id,),
+        )
+        cur.execute("DELETE FROM sim_takedown_agreements WHERE ent_group_id = %s", (ent_group_id,))
+        cur.execute(
+            """
+            DELETE FROM sim_tda_lot_bank_members
+            WHERE bank_id IN (SELECT bank_id FROM sim_tda_lot_banks WHERE ent_group_id = %s)
+            """,
+            (ent_group_id,),
+        )
+        cur.execute("DELETE FROM sim_tda_lot_banks WHERE ent_group_id = %s", (ent_group_id,))
+
         cur.execute("DELETE FROM sim_ent_group_developments WHERE ent_group_id = %s", (ent_group_id,))
         cur.execute("DELETE FROM sim_entitlement_groups WHERE ent_group_id = %s", (ent_group_id,))
         conn.commit()
