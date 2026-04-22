@@ -107,10 +107,19 @@ def demand_generator(conn: DBConnection, dev_id: int,
     df = pd.DataFrame(months, columns=["year", "month"])
     df["weight"] = df["month"].map(WEIGHT_SETS[weight_set])
 
-    # Step 3: Compute per-month slots at the annual pace, apply max_per_month cap,
-    # then round to integers. Do NOT renormalize across the full horizon -- that
-    # crushes values to zero when available_capacity << horizon_months * annual_target/12.
-    df["slots"] = (df["weight"] * annual_target).round().astype(int)
+    # Step 3: Compute per-month slots at the annual pace using a Bresenham accumulator.
+    # This guarantees exactly annual_starts_target slots per 12-month cycle (since
+    # sum(weights) == 1.0, the carry resets to 0 at each year boundary for integer targets),
+    # producing a natural-looking distribution without the rounding inflation of round().
+    # Example: annual_target=8 → 11 slots/yr with round(), 8 slots/yr with accumulator.
+    _slots = []
+    _carry = 0.0
+    for w in df["weight"]:
+        _carry += w * annual_target
+        s = int(_carry)
+        _slots.append(s)
+        _carry -= s
+    df["slots"] = _slots
     if max_per_month is not None:
         df["slots"] = df["slots"].clip(upper=int(max_per_month))
 
