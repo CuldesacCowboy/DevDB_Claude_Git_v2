@@ -287,11 +287,33 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
     }), async () => { onLotsUpdated(ids, { excluded }); deselectAll() })
   }
 
+  async function handleBulkRelease() {
+    const ids = [...selectedIds].filter(id => {
+      const lot = allLots.find(l => l.lot_id === id)
+      return lot && lot.lot_source === 'real' && !lot.excluded
+    })
+    if (!ids.length) return
+    setBulkSaving(true); setBulkError(null)
+    try {
+      const res = await fetch(`${API_BASE}/lots/bulk-release`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lot_ids: ids }),
+      })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? 'Release failed') }
+      onLotsRemoved(ids); deselectAll()
+    } catch (e) {
+      setBulkError(e.message)
+    } finally {
+      setBulkSaving(false)
+    }
+  }
+
   const hasSelection = selectedIds.size > 0
   const hasPreSelected = [...selectedIds].some(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre')
   const deleteCount = [...selectedIds].filter(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre').length
   const hasNonExcludedSelected = [...selectedIds].some(id => { const l = allLots.find(l => l.lot_id === id); return l && !l.excluded })
   const hasExcludedSelected = [...selectedIds].some(id => { const l = allLots.find(l => l.lot_id === id); return l && l.excluded })
+  const hasRealNonExcludedSelected = [...selectedIds].some(id => { const l = allLots.find(l => l.lot_id === id); return l && l.lot_source === 'real' && !l.excluded })
 
   const ABTN = (extra = {}) => ({
     fontSize: 11, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
@@ -304,13 +326,15 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
     .map(l => lotSeqStr(l.lot_number, l.dev_code ?? '').length)
   const maxDigits = digitLengths.length > 0 ? Math.max(...digitLengths) : 1
 
+  const byLotNumber = (a, b) => (a.lot_number ?? '').localeCompare(b.lot_number ?? '', undefined, { numeric: true })
+
   const groups = [
-    { key: 'marks', label: 'Active',  items: allLots.filter(l => !l.excluded && l.lot_source === 'real' && l.in_registry) },
-    { key: 'pre',   label: 'Pending', items: allLots.filter(l => !l.excluded && (l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry))) },
-    { key: 'sim',   label: 'Sim',     items: allLots.filter(l => !l.excluded && l.lot_source === 'sim') },
+    { key: 'marks', label: 'Active',  items: allLots.filter(l => !l.excluded && l.lot_source === 'real' && l.in_registry).sort(byLotNumber) },
+    { key: 'pre',   label: 'Pending', items: allLots.filter(l => !l.excluded && (l.lot_source === 'pre' || (l.lot_source === 'real' && !l.in_registry))).sort(byLotNumber) },
+    { key: 'sim',   label: 'Sim',     items: allLots.filter(l => !l.excluded && l.lot_source === 'sim').sort(byLotNumber) },
   ].filter(g => g.items.length > 0)
 
-  const excludedLots = allLots.filter(l => l.excluded && l.lot_source !== 'sim')
+  const excludedLots = allLots.filter(l => l.excluded && l.lot_source !== 'sim').sort(byLotNumber)
   const activeCount = ordered.length - excludedLots.length
 
   return (
@@ -392,6 +416,26 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
                 style={ABTN({ color: '#2563eb', borderColor: '#bfdbfe' })}>
                 Un-exclude
               </button>
+            )}
+
+            {/* Release to MARKS bank — only for real (active) lots */}
+            {actionMode !== 'release' ? (
+              hasRealNonExcludedSelected && (
+                <button onClick={() => setActionMode('release')} disabled={bulkSaving}
+                  title="Remove from this community — lots return to the MARKS unassigned bank"
+                  style={ABTN({ color: '#b45309', borderColor: '#fcd34d' })}>
+                  ↑ Release
+                </button>
+              )
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 11, color: '#b45309' }}>Release to MARKS bank?</span>
+                <button onClick={handleBulkRelease} disabled={bulkSaving}
+                  style={ABTN({ background: '#fffbeb', color: '#b45309', borderColor: '#fcd34d' })}>
+                  {bulkSaving ? '…' : 'Confirm'}
+                </button>
+                <button onClick={() => setActionMode(null)} style={ABTN()}>Cancel</button>
+              </span>
             )}
 
             {bulkError && <span style={{ fontSize: 11, color: '#ef4444' }}>{bulkError}</span>}

@@ -172,6 +172,41 @@ async def set_lot_excluded(lot_id: int, body: LotExcludeRequest, conn=Depends(ge
         cur.close()
 
 
+class BulkReleaseRequest(BaseModel):
+    lot_ids: list[int]
+
+
+@router.patch("/bulk-release", response_model=dict)
+async def bulk_release_lots(body: BulkReleaseRequest, conn=Depends(get_db_conn)):
+    """Release real lots back to the MARKS import bank.
+    Sets dev_id=NULL and phase_id=NULL. Only lot_source='real' lots are affected.
+    Sim and pre lots are silently skipped.
+    """
+    if not body.lot_ids:
+        return {"released": 0, "skipped": 0}
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            """
+            UPDATE sim_lots
+            SET dev_id = NULL, phase_id = NULL, updated_at = NOW()
+            WHERE lot_id = ANY(%s)
+              AND lot_source = 'real'
+              AND excluded = FALSE
+            """,
+            (body.lot_ids,),
+        )
+        released = cur.rowcount
+        skipped = len(body.lot_ids) - released
+        conn.commit()
+        return {"released": released, "skipped": skipped}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+
+
 @router.get("/search")
 def search_lots(q: str = Query(..., min_length=1), exclude_tda: int = Query(None), conn=Depends(get_db_conn)):
     """Search real lots by lot_number prefix across all communities.
