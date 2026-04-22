@@ -163,9 +163,9 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
         cur.execute(_SELECT_SQL + " WHERE d.dev_id = %s", (new_id,))
         row = cur.fetchone()
         return _row_to_dict(row)
-    except Exception:
+    except Exception as e:
         conn.rollback()
-        raise
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
 
@@ -295,9 +295,9 @@ def patch_development(dev_id: int, body: DevelopmentPatchRequest, conn=Depends(g
         return _row_to_dict(cur.fetchone())
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
         conn.rollback()
-        raise
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
 
@@ -357,9 +357,9 @@ def upsert_sim_params(dev_id: int, body: SimParamsPutRequest, conn=Depends(get_d
         }
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
         conn.rollback()
-        raise
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
 
