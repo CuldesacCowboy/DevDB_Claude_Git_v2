@@ -97,24 +97,20 @@ export function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate
 
   if (period === 'weekly') {
     // Expand each monthly row into 4 weekly sub-rows.
-    // Event cols (counts): distributed as evenly as possible (integer-safe).
-    // Status cols (snapshots): 0 for weeks 1-3, end-of-month value for week 4.
+    // Event cols (counts): split evenly as floats — no remainder spike.
+    // Status cols (snapshots): repeat the month-end value for all 4 weeks
+    // so area charts stay smooth rather than dropping to 0 for W1-W3.
     const result = []
     const WEEKS = 4
     for (const r of sorted) {
       for (let w = 1; w <= WEEKS; w++) {
-        const isLast = w === WEEKS
         const key = `${r.calendar_month}-W${w}`
-        const row = { calendar_month: key, _label: periodLabel(key, 'weekly') }
-        for (const col of EVENT_COLS) {
-          const total = r[col] || 0
-          const base = Math.floor(total / WEEKS)
-          // Remainder goes into the last week
-          row[col] = isLast ? total - base * (WEEKS - 1) : base
-        }
-        for (const col of STATUS_COLS) row[col] = isLast ? (r[col] || 0) : 0
-        row.p_end = isLast ? (r.p_end || 0) : 0
-        row.closed_cumulative = isLast ? (r.closed_cumulative || null) : null
+        const label = periodLabel(key, 'weekly')
+        const row = { calendar_month: key, _label: label, _periodLabel: label }
+        for (const col of EVENT_COLS) row[col] = (r[col] || 0) / WEEKS
+        for (const col of STATUS_COLS) row[col] = r[col] || 0
+        row.p_end = r.p_end || 0
+        row.closed_cumulative = r.closed_cumulative || null
         result.push(row)
       }
     }

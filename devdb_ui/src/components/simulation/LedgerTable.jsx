@@ -47,6 +47,7 @@ export function LedgerTable({ rows, floors, period, lots = [], deliverySchedule 
   function rowMonths(row) {
     const k = row.calendar_month
     if (period === 'monthly') return [k]
+    if (period === 'weekly') return [k.slice(0, 7)]
     if (period === 'quarterly') {
       const [y, q] = k.split('-Q')
       const s = (parseInt(q) - 1) * 3 + 1
