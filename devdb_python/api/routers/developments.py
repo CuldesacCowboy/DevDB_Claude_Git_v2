@@ -198,15 +198,17 @@ def delete_development(dev_id: int, conn=Depends(get_db_conn)):
                 cur.execute("UPDATE sim_lots SET phase_id = NULL WHERE phase_id = %s", (phase_id,))
                 cur.execute("DELETE FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
                 cur.execute("DELETE FROM sim_phase_builder_splits WHERE phase_id = %s", (phase_id,))
+                cur.execute("DELETE FROM sim_phase_building_config WHERE phase_id = %s", (phase_id,))
                 cur.execute("DELETE FROM sim_delivery_event_phases WHERE phase_id = %s", (phase_id,))
             cur.execute("DELETE FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))
+        if instr_ids:
+            cur.execute("DELETE FROM sim_instrument_builder_splits WHERE instrument_id = ANY(%s)", (instr_ids,))
         cur.execute("DELETE FROM sim_legal_instruments WHERE instrument_id = ANY(%s)", (instr_ids or [-1],))
 
-        # Remove from ent group dev mapping and sim_dev_params
-        cur.execute(
-            "DELETE FROM sim_ent_group_developments WHERE dev_id = %s",
-            (dev_id,),
-        )
+        # Remove from ent group dev mapping, sim_dev_params, and clear sim_lots.dev_id
+        cur.execute("DELETE FROM sim_ent_group_developments WHERE dev_id = %s", (dev_id,))
+        cur.execute("DELETE FROM sim_dev_params WHERE dev_id = %s", (dev_id,))
+        cur.execute("UPDATE sim_lots SET dev_id = NULL WHERE dev_id = %s", (dev_id,))
 
         cur.execute("DELETE FROM developments WHERE dev_id = %s", (dev_id,))
         conn.commit()
@@ -214,9 +216,9 @@ def delete_development(dev_id: int, conn=Depends(get_db_conn)):
     except HTTPException:
         conn.rollback()
         raise
-    except Exception:
+    except Exception as e:
         conn.rollback()
-        raise
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
 
