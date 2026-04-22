@@ -171,6 +171,88 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
 
 
 # ---------------------------------------------------------------------------
+# GET  /developments/{dev_id}/floating-lots
+# PATCH /developments/{dev_id}/floating-lots/assign
+# ---------------------------------------------------------------------------
+
+@router.get("/{dev_id}/floating-lots", response_model=list[dict])
+def get_floating_lots(dev_id: int, conn=Depends(get_db_conn)):
+    """Real lots whose lot_number matches this dev's marks_code prefix
+    but have no phase assignment (phase_id IS NULL)."""
+    cur = dict_cursor(conn)
+    try:
+        cur.execute("SELECT marks_code FROM developments WHERE dev_id = %s", (dev_id,))
+        row = cur.fetchone()
+        if not row or not row["marks_code"]:
+            return []
+        marks_code = row["marks_code"]
+        cur.execute(
+            """
+            SELECT sl.lot_id, sl.lot_number, sl.lot_source,
+                   EXISTS (SELECT 1 FROM devdb.marks_lot_registry mlr
+                           WHERE mlr.lot_number = sl.lot_number) AS in_registry
+            FROM sim_lots sl
+            WHERE sl.lot_number LIKE %s
+              AND sl.lot_source = 'real'
+              AND sl.phase_id IS NULL
+              AND sl.excluded IS NOT TRUE
+            ORDER BY sl.lot_number
+            """,
+            (marks_code + "%",),
+        )
+        return [dict(r) for r in cur.fetchall()]
+    finally:
+        cur.close()
+
+
+class FloatingLotAssignRequest(BaseModel):
+    lot_ids: list[int]
+    phase_id: int
+
+
+@router.patch("/{dev_id}/floating-lots/assign", response_model=dict)
+def assign_floating_lots(dev_id: int, body: FloatingLotAssignRequest, conn=Depends(get_db_conn)):
+    """Assign floating lots (no phase) to a phase within this dev.
+    Sets both dev_id and phase_id on the selected lots."""
+    if not body.lot_ids:
+        return {"assigned": 0}
+    cur = dict_cursor(conn)
+    try:
+        # Verify phase belongs to this dev
+        cur.execute(
+            """
+            SELECT sdp.phase_id FROM sim_dev_phases sdp
+            JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
+            WHERE sdp.phase_id = %s AND sli.dev_id = %s
+            """,
+            (body.phase_id, dev_id),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=422, detail="Phase does not belong to this development")
+        cur.execute(
+            """
+            UPDATE sim_lots
+            SET dev_id = %s, phase_id = %s, updated_at = NOW()
+            WHERE lot_id = ANY(%s)
+              AND lot_source = 'real'
+              AND phase_id IS NULL
+            """,
+            (dev_id, body.phase_id, body.lot_ids),
+        )
+        assigned = cur.rowcount
+        conn.commit()
+        return {"assigned": assigned}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+
+
+# ---------------------------------------------------------------------------
 # DELETE /developments/{dev_id}  — cascade delete
 # ---------------------------------------------------------------------------
 

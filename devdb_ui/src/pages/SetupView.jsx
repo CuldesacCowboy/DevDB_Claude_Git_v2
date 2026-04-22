@@ -144,6 +144,105 @@ function InstrumentRow({ instr, phases, lotTypes, onAddPhase, onRenameInstr, onR
 
 // ─── Development row ──────────────────────────────────────────────────────────
 
+function FloatingLotsPanel({ dev, phases }) {
+  const [lots, setLots] = useState(null)  // null = not loaded yet
+  const [open, setOpen] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [targetPhaseId, setTargetPhaseId] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  const devPhases = phases.filter(p => p.dev_id === dev.dev_id)
+
+  useEffect(() => {
+    if (!dev.marks_code) return
+    fetch(`${API_BASE}/developments/${dev.dev_id}/floating-lots`)
+      .then(r => r.json()).then(setLots).catch(() => setLots([]))
+  }, [dev.dev_id, dev.marks_code]) // eslint-disable-line
+
+  if (!lots || lots.length === 0) return null
+
+  const allSelected = selectedIds.size === lots.length
+  const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(lots.map(l => l.lot_id)))
+  const toggle = id => setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+
+  async function handleAssign() {
+    if (!targetPhaseId || selectedIds.size === 0) return
+    setSaving(true); setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/developments/${dev.dev_id}/floating-lots/assign`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lot_ids: [...selectedIds], phase_id: parseInt(targetPhaseId) }),
+      })
+      if (!res.ok) throw new Error((await res.json()).detail ?? 'Assign failed')
+      setLots(prev => prev.filter(l => !selectedIds.has(l.lot_id)))
+      setSelectedIds(new Set()); setTargetPhaseId('')
+    } catch (e) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div style={{ paddingLeft: 44, paddingTop: 4, paddingBottom: 4 }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none',
+          cursor: 'pointer', padding: 0, fontSize: 11, color: '#b45309' }}>
+        <span style={{ fontSize: 9, transform: open ? 'rotate(90deg)' : 'none', display: 'inline-block' }}>▶</span>
+        <span>Floating lots ({lots.length}) — imported but unassigned</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 4 }}>
+          {/* Action bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginBottom: 4 }}>
+            <span style={{ fontSize: 11, color: '#9ca3af' }}>{selectedIds.size} selected</span>
+            <button onClick={toggleAll} style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3,
+              background: 'none', border: '1px solid #e5e7eb', color: '#6b7280', cursor: 'pointer' }}>
+              {allSelected ? 'None' : 'All'}
+            </button>
+            {selectedIds.size > 0 && devPhases.length > 0 && (
+              <>
+                <span style={{ color: '#e5e7eb' }}>|</span>
+                <select value={targetPhaseId} onChange={e => setTargetPhaseId(e.target.value)}
+                  style={{ fontSize: 11, padding: '1px 3px', borderRadius: 3, border: '1px solid #d1d5db' }}>
+                  <option value="">Assign to phase…</option>
+                  {devPhases.map(p => (
+                    <option key={p.phase_id} value={p.phase_id}>{p.phase_name}</option>
+                  ))}
+                </select>
+                {targetPhaseId && (
+                  <button onClick={handleAssign} disabled={saving}
+                    style={{ fontSize: 11, padding: '1px 8px', borderRadius: 3, cursor: 'pointer',
+                      background: '#fffbeb', color: '#b45309', border: '1px solid #fcd34d' }}>
+                    {saving ? '…' : `Assign ${selectedIds.size}`}
+                  </button>
+                )}
+              </>
+            )}
+            {error && <span style={{ fontSize: 11, color: '#ef4444' }}>{error}</span>}
+          </div>
+          {/* Pills */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+            {lots.map(lot => {
+              const sel = selectedIds.has(lot.lot_id)
+              return (
+                <span key={lot.lot_id} onClick={() => toggle(lot.lot_id)}
+                  style={{
+                    display: 'inline-block', padding: '1px 7px', borderRadius: 10,
+                    fontSize: 11, fontFamily: 'monospace', cursor: 'pointer', userSelect: 'none',
+                    background: sel ? '#fde68a' : '#fffbeb',
+                    color: '#92400e', border: `1px solid ${sel ? '#b45309' : '#fde68a'}`,
+                    outline: sel ? '2px solid #fde68a' : 'none', outlineOffset: 1,
+                  }}>
+                  {lot.lot_number.replace(/^([A-Z]+)0*(\d+)$/, '$1$2')}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhase, onRenameDev, onRenameInstr, onChangeInstrType, onRenamePhase, onDeleteDev, onRefresh, commName }) {
   const devInstrs = instruments.filter(i => i.dev_id === dev.dev_id)
   const [open, setOpen] = useLocalOpen(`setup_open_dev_${dev.dev_id}`)
@@ -248,6 +347,7 @@ function DevRow({ dev, instruments, phases, lotTypes, onAddInstrument, onAddPhas
               No instruments — add one to start
             </div>
           )}
+          <FloatingLotsPanel dev={dev} phases={phases} />
         </div>
       )}
     </div>
