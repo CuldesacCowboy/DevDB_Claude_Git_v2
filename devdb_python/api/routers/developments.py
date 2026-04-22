@@ -291,6 +291,12 @@ def delete_development(dev_id: int, conn=Depends(get_db_conn)):
         cur.execute("DELETE FROM sim_dev_params WHERE dev_id = %s", (dev_id,))
         cur.execute("UPDATE sim_lots SET dev_id = NULL WHERE dev_id = %s", (dev_id,))
 
+        # Verify no FK references remain before final delete
+        cur.execute("SELECT COUNT(*) AS n FROM sim_ent_group_developments WHERE dev_id = %s", (dev_id,))
+        remaining = cur.fetchone()["n"]
+        if remaining:
+            raise HTTPException(status_code=500, detail=f"segd still has {remaining} row(s) for dev {dev_id} after delete")
+
         cur.execute("DELETE FROM developments WHERE dev_id = %s", (dev_id,))
         conn.commit()
         return {"success": True, "dev_id": dev_id, "instruments_deleted": len(instr_ids)}
