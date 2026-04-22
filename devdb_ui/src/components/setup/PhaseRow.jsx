@@ -16,7 +16,7 @@ import BuildingsTab from './BuildingsTab'
 // ─── LotTypeRow ───────────────────────────────────────────────────────────────
 
 function LotTypeRow({ phaseId, ltId, lotTypeName, projected, realMarks, realPre, sim, excluded,
-                      targetPhases, lotTypes, onSaveTotal, onDelete, onRefresh, showMirror = true }) {
+                      targetPhases, lotTypes, onSaveTotal, onDelete, onRefresh, showMirror = true, commName }) {
   const [open, setOpen] = useState(false)
   const [lots, setLots] = useState(null)
   const [fetching, setFetching] = useState(false)
@@ -484,6 +484,7 @@ export default function PhaseRow({ phase, phases, lotTypes, onRename, onDelete, 
                     onDelete={() => handleDelete(r.ltId)}
                     onRefresh={onRefresh}
                     showMirror={showMirror}
+                    commName={commName}
                   />
                 ))}
               </tbody>
