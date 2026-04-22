@@ -457,7 +457,12 @@ export default function SetupView({ showTestCommunities }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ dev_name: devName, marks_code: marksCode, community_id: communityId }),
     })
-    if (!res.ok) throw new Error((await res.json()).detail ?? 'Create failed')
+    if (!res.ok) {
+      let detail = 'Create failed'
+      try { detail = (await res.json()).detail ?? detail } catch (_) {}
+      console.error('POST /developments failed', res.status, detail)
+      throw new Error(String(detail))
+    }
     const data = await res.json()
     setDevelopments(prev => [...prev, data])
   }
