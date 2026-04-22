@@ -288,7 +288,7 @@ export function InstrumentTab({ phaseRows, showTest, builders, onSaveSpecRate, o
               preTotal   += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.pre    ?? 0), 0)
               exclTotal  += Object.values(p.lot_type_counts ?? {}).reduce((s, v) => s + (v.excl   ?? 0), 0)
             }
-            const simTotal = Math.max(0, projTotal - marksTotal - preTotal)
+            const simTotal = Math.max(0, projTotal - marksTotal - preTotal - exclTotal)
             const num = v => (
               <span style={{ fontSize: 12, display: 'block', textAlign: 'right', padding: '1px 4px',
                              color: v > 0 ? '#374151' : '#d1d5db' }}>
