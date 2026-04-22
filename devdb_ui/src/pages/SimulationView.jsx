@@ -526,7 +526,7 @@ const loadLedger = useCallback((id) => {
 
                 {/* Period toggle */}
                 <div style={{ display: 'flex', gap: 2 }}>
-                  {[['monthly','M'],['quarterly','Q'],['annual','Y']].map(([v, label]) => (
+                  {[['weekly','W'],['monthly','M'],['quarterly','Q'],['annual','Y']].map(([v, label]) => (
                     <button key={v} onClick={() => setPeriod(v)}
                       style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: '1px solid #d1d5db',
                                cursor: 'pointer', background: period === v ? '#1e40af' : '#f9fafb',

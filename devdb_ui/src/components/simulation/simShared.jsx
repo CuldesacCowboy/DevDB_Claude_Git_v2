@@ -49,6 +49,11 @@ export function periodLabel(key, period) {
     const [y, q] = key.split('-')
     return `${q} '${y.slice(2)}`
   }
+  if (period === 'weekly') {
+    // key = "YYYY-MM-W1" … "YYYY-MM-W4"
+    const [y, m, w] = key.split('-')
+    return `${w} ${fmt(`${y}-${m}`)}`
+  }
   return fmt(key)
 }
 
@@ -89,6 +94,32 @@ export function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate
 
   let cumul = 0
   for (const r of sorted) { cumul += (r.cls_plan || 0); r.closed_cumulative = cumul || null }
+
+  if (period === 'weekly') {
+    // Expand each monthly row into 4 weekly sub-rows.
+    // Event cols (counts): distributed as evenly as possible (integer-safe).
+    // Status cols (snapshots): 0 for weeks 1-3, end-of-month value for week 4.
+    const result = []
+    const WEEKS = 4
+    for (const r of sorted) {
+      for (let w = 1; w <= WEEKS; w++) {
+        const isLast = w === WEEKS
+        const key = `${r.calendar_month}-W${w}`
+        const row = { calendar_month: key, _label: periodLabel(key, 'weekly') }
+        for (const col of EVENT_COLS) {
+          const total = r[col] || 0
+          const base = Math.floor(total / WEEKS)
+          // Remainder goes into the last week
+          row[col] = isLast ? total - base * (WEEKS - 1) : base
+        }
+        for (const col of STATUS_COLS) row[col] = isLast ? (r[col] || 0) : 0
+        row.p_end = isLast ? (r.p_end || 0) : 0
+        row.closed_cumulative = isLast ? (r.closed_cumulative || null) : null
+        result.push(row)
+      }
+    }
+    return result
+  }
 
   if (period === 'monthly') {
     for (const r of sorted) r._label = fmt(r.calendar_month)
