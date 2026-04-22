@@ -160,10 +160,10 @@ def split_boundary(body: SplitRequest, conn=Depends(get_db_conn)):
 
         # Determine next split_order
         cur.execute(
-            "SELECT COALESCE(MAX(split_order), 0) FROM sim_phase_boundaries WHERE plan_id = %s",
+            "SELECT COALESCE(MAX(split_order), 0) AS max_order FROM sim_phase_boundaries WHERE plan_id = %s",
             (body.plan_id,),
         )
-        next_order = cur.fetchone()[0] + 1
+        next_order = cur.fetchone()["max_order"] + 1
 
         if body.original_boundary_id is not None:
             # Delete original

@@ -138,8 +138,8 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
                 # Store the synthetic code so the bridge always resolves.
                 cur.execute("UPDATE developments SET marks_code = %s WHERE dev_id = %s",
                             (synthetic_code, new_id))
-            cur.execute("SELECT COALESCE(MAX(development_id), 0) + 1 FROM dim_development")
-            legacy_id = int(cur.fetchone()[0])
+            cur.execute("SELECT COALESCE(MAX(development_id), 0) + 1 AS next_id FROM dim_development")
+            legacy_id = int(cur.fetchone()["next_id"])
             cur.execute(
                 """INSERT INTO dim_development (development_id, development_name, dev_code2, active)
                    VALUES (%s, %s, %s, true)""",
@@ -150,8 +150,8 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
 
         # 3. Link to community in sim_ent_group_developments if community_id supplied.
         if body.community_id:
-            cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM sim_ent_group_developments")
-            next_link_id = int(cur.fetchone()[0])
+            cur.execute("SELECT COALESCE(MAX(id), 0) + 1 AS next_id FROM sim_ent_group_developments")
+            next_link_id = int(cur.fetchone()["next_id"])
             cur.execute(
                 """INSERT INTO sim_ent_group_developments (id, ent_group_id, dev_id)
                    VALUES (%s, %s, %s)

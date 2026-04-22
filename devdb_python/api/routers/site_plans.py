@@ -121,9 +121,9 @@ def update_parcel(plan_id: int, body: ParcelUpdateRequest, conn=Depends(get_db_c
         # Auto-seed first phase boundary from the parcel polygon (only if none exist yet)
         if body.parcel_json:
             cur.execute(
-                "SELECT COUNT(*) FROM sim_phase_boundaries WHERE plan_id = %s", (plan_id,)
+                "SELECT COUNT(*) AS cnt FROM sim_phase_boundaries WHERE plan_id = %s", (plan_id,)
             )
-            if cur.fetchone()[0] == 0:
+            if cur.fetchone()["cnt"] == 0:
                 cur.execute(
                     """
                     INSERT INTO sim_phase_boundaries (plan_id, polygon_json, split_order)
