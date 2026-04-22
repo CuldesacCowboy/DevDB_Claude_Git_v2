@@ -236,9 +236,15 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
   async function runBulk(ids, apiFn, onDone) {
     setBulkSaving(true); setBulkError(null)
     try {
-      await Promise.all(ids.map(apiFn))
+      const results = await Promise.all(ids.map(apiFn))
+      const failed = results.find(r => !r.ok)
+      if (failed) {
+        let detail = `Server error ${failed.status}`
+        try { const e = await failed.json(); detail = e.detail ?? detail } catch (_) {}
+        throw new Error(detail)
+      }
       await onDone()
-    } catch { setBulkError('Operation failed') }
+    } catch (e) { setBulkError(e.message || 'Operation failed') }
     finally { setBulkSaving(false) }
   }
 

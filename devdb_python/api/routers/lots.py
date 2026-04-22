@@ -105,6 +105,9 @@ async def delete_lot(lot_id: int, conn=Depends(get_db_conn)):
                 status_code=422,
                 detail="This lot exists in MARKS — use Release to return it to the MARKS bank instead of deleting it",
             )
+        # Remove FK-dependent rows before deleting the lot itself.
+        cur.execute("DELETE FROM sim_tda_lot_bank_members WHERE lot_id = %s", (lot_id,))
+        cur.execute("DELETE FROM sim_lot_date_overrides   WHERE lot_id = %s", (lot_id,))
         cur.execute("DELETE FROM sim_lots WHERE lot_id = %s", (lot_id,))
         conn.commit()
         return {"lot_id": lot_id, "deleted": True}
