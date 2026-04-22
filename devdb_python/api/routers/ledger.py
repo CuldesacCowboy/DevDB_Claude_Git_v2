@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from api.db import dict_cursor
 from api.deps import get_db_conn
 from api.sql_fragments import lot_status_sql
-from services.ledger_service import query_ledger_by_dev
+from services.ledger_service import query_ledger_by_dev, query_ledger_weekly
 
 router = APIRouter(prefix="/ledger", tags=["ledger"])
 
@@ -338,6 +338,16 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
         ]
     finally:
         cur.close()
+
+
+@router.get("/{ent_group_id}/weekly")
+def get_ledger_weekly(ent_group_id: int, conn=Depends(get_db_conn)):
+    """
+    Return weekly ledger rows for all developments in the entitlement group.
+    Each row covers one ISO week (Mon–Sun).  Event counts are lots whose
+    effective date falls in that week; status counts are end-of-week snapshots.
+    """
+    return query_ledger_weekly(conn, ent_group_id)
 
 
 @router.get("/{ent_group_id}/by-dev")

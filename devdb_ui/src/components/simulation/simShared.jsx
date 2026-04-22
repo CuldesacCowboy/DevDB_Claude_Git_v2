@@ -36,10 +36,23 @@ export function fmt(iso) {
   return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
 }
 
+export function fmtWeek(iso) {
+  if (!iso) return ''
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 export function periodKey(iso, period) {
   const [y, m] = iso.split('-').map(Number)
   if (period === 'annual')    return `${y}`
   if (period === 'quarterly') return `${y}-Q${Math.ceil(m / 3)}`
+  if (period === 'weekly') {
+    // Return the ISO date of the Monday of the week containing this date.
+    const d = new Date(iso + 'T00:00:00')
+    const day = d.getDay() // 0=Sun…6=Sat
+    const offset = day === 0 ? -6 : 1 - day
+    d.setDate(d.getDate() + offset)
+    return d.toISOString().slice(0, 10)
+  }
   return iso
 }
 
@@ -49,11 +62,7 @@ export function periodLabel(key, period) {
     const [y, q] = key.split('-')
     return `${q} '${y.slice(2)}`
   }
-  if (period === 'weekly') {
-    // key = "YYYY-MM-W1" … "YYYY-MM-W4"
-    const [y, m, w] = key.split('-')
-    return `${w} ${fmt(`${y}-${m}`)}`
-  }
+  if (period === 'weekly') return fmtWeek(key)
   return fmt(key)
 }
 
@@ -96,25 +105,15 @@ export function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate
   for (const r of sorted) { cumul += (r.cls_plan || 0); r.closed_cumulative = cumul || null }
 
   if (period === 'weekly') {
-    // Expand each monthly row into 4 weekly sub-rows.
-    // Event cols (counts): split evenly as floats — no remainder spike.
-    // Status cols (snapshots): repeat the month-end value for all 4 weeks
-    // so area charts stay smooth rather than dropping to 0 for W1-W3.
-    const result = []
-    const WEEKS = 4
+    // Weekly rows come pre-aggregated from the backend (/ledger/{id}/weekly).
+    // calendar_month is an ISO date string for the Monday of each week.
+    // Just attach labels and return — counts are real, not divide-by-4 estimates.
     for (const r of sorted) {
-      for (let w = 1; w <= WEEKS; w++) {
-        const key = `${r.calendar_month}-W${w}`
-        const label = periodLabel(key, 'weekly')
-        const row = { calendar_month: key, _label: label, _periodLabel: label }
-        for (const col of EVENT_COLS) row[col] = (r[col] || 0) / WEEKS
-        for (const col of STATUS_COLS) row[col] = r[col] || 0
-        row.p_end = r.p_end || 0
-        row.closed_cumulative = r.closed_cumulative || null
-        result.push(row)
-      }
+      const label = fmtWeek(r.calendar_month)
+      r._label = label
+      r._periodLabel = label
     }
-    return result
+    return sorted
   }
 
   if (period === 'monthly') {

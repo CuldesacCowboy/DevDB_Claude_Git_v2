@@ -105,7 +105,7 @@ export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevId
 
   if (!rows.length) return null
 
-  const xInterval  = period === 'weekly' ? 51 : period === 'monthly' ? 11 : period === 'quarterly' ? 3 : 0
+  const xInterval  = period === 'weekly' ? 12 : period === 'monthly' ? 11 : period === 'quarterly' ? 3 : 0
   const tickStyle  = { fontSize: 10, fill: '#9ca3af' }
   const chartProps = { margin: { top: 4, right: 8, bottom: 0, left: 0 } }
   const tooltipProps = {

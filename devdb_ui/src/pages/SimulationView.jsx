@@ -57,6 +57,8 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   const [countyFilter, setCountyFilter]     = useState(null)
   const [sdFilter, setSdFilter]             = useState(null)
   const [period, setPeriod]                 = useState('monthly')
+  const [weeklyByDev, setWeeklyByDev]       = useState([])
+  const [weeklyLoading, setWeeklyLoading]   = useState(false)
   const [loadError, setLoadError]           = useState(null)
   const [lastRunAt, setLastRunAt]           = useState(null)
 
@@ -81,6 +83,7 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
 const loadLedger = useCallback((id) => {
     setLoading(true)
     setLoadError(null)
+    setWeeklyByDev([])   // invalidate weekly cache when ledger reloads
     Promise.all([
       fetchOk(`${API_BASE}/ledger/${id}/by-dev`),
       fetchOk(`${API_BASE}/ledger/${id}/utilization`),
@@ -91,6 +94,14 @@ const loadLedger = useCallback((id) => {
       })
       .catch((err) => { setByDev([]); setUtilization([]); setLoadError(`Could not load ledger data — ${err.message}`) })
       .finally(() => setLoading(false))
+  }, [])
+
+  const loadWeekly = useCallback((id) => {
+    setWeeklyLoading(true)
+    fetchOk(`${API_BASE}/ledger/${id}/weekly`)
+      .then(rows => setWeeklyByDev(Array.isArray(rows) ? rows : []))
+      .catch(() => setWeeklyByDev([]))
+      .finally(() => setWeeklyLoading(false))
   }, [])
 
   const loadConfig = useCallback((id) => {
@@ -188,9 +199,27 @@ const loadLedger = useCallback((id) => {
     } catch (e) { setRunStatus({ ok: false, error: e.message }); setLastRunAt(new Date()) }
   }
 
-  const ledgerRows = useMemo(() => buildLedgerRows(
-    filteredByDev, selectedDevIds, period, ledgerConfig?.date_paper ?? null, utilization,
-  ), [filteredByDev, selectedDevIds, period, ledgerConfig, utilization])
+  // Fetch real weekly data on demand (lazy — only when W is selected).
+  useEffect(() => {
+    if (period === 'weekly' && entGroupId && weeklyByDev.length === 0 && !weeklyLoading) {
+      loadWeekly(entGroupId)
+    }
+  }, [period, entGroupId, weeklyByDev.length, weeklyLoading, loadWeekly])
+
+  const filteredWeekly = useMemo(() => {
+    if (!weeklyByDev.length) return []
+    return weeklyByDev.filter(r =>
+      (!countyFilter || r.community_county_id === countyFilter) &&
+      (!sdFilter     || r.community_sd_id     === sdFilter)
+    )
+  }, [weeklyByDev, countyFilter, sdFilter])
+
+  const ledgerRows = useMemo(() => {
+    if (period === 'weekly') {
+      return buildLedgerRows(filteredWeekly, selectedDevIds, 'weekly', ledgerConfig?.date_paper ?? null, utilization)
+    }
+    return buildLedgerRows(filteredByDev, selectedDevIds, period, ledgerConfig?.date_paper ?? null, utilization)
+  }, [filteredByDev, filteredWeekly, selectedDevIds, period, ledgerConfig, utilization])
 
   const filteredUtilization = useMemo(() => {
     if (selectedDevIds === null) return utilization
@@ -551,7 +580,7 @@ const loadLedger = useCallback((id) => {
                 </div>
 
                 <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 'auto', fontStyle: 'italic' }}>
-                  {ledgerRows.length} {period === 'monthly' ? 'months' : period === 'quarterly' ? 'quarters' : 'years'}
+                  {period === 'weekly' && weeklyLoading ? 'Loading weekly…' : `${ledgerRows.length} ${period === 'weekly' ? 'weeks' : period === 'monthly' ? 'months' : period === 'quarterly' ? 'quarters' : 'years'}`}
                   {selectedDevIds !== null && ` · ${selectedDevIds.length} dev${selectedDevIds.length !== 1 ? 's' : ''}`}
                 </span>
                 {ledgerConfig !== null && (
