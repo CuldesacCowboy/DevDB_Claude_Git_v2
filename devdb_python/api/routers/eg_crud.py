@@ -133,6 +133,7 @@ def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
                     cur.execute("UPDATE sim_lots SET phase_id = NULL WHERE phase_id = %s", (phase_id,))
                     cur.execute("DELETE FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
                     cur.execute("DELETE FROM sim_phase_builder_splits WHERE phase_id = %s", (phase_id,))
+                    cur.execute("DELETE FROM sim_phase_building_config WHERE phase_id = %s", (phase_id,))
                     cur.execute("DELETE FROM sim_delivery_event_phases WHERE phase_id = %s", (phase_id,))
                 cur.execute("DELETE FROM sim_dev_phases WHERE instrument_id = %s", (instr_id,))
             if instr_ids:
@@ -140,6 +141,8 @@ def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
                 cur.execute("DELETE FROM sim_legal_instruments WHERE instrument_id = ANY(%s)", (instr_ids,))
 
         if dev_ids:
+            cur.execute("DELETE FROM sim_dev_params WHERE dev_id = ANY(%s)", (dev_ids,))
+            cur.execute("UPDATE sim_lots SET dev_id = NULL WHERE dev_id = ANY(%s)", (dev_ids,))
             cur.execute("DELETE FROM developments WHERE dev_id = ANY(%s)", (dev_ids,))
 
         # Remove delivery events and config for this group
@@ -161,9 +164,9 @@ def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
     except HTTPException:
         conn.rollback()
         raise
-    except Exception:
+    except Exception as e:
         conn.rollback()
-        raise
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         cur.close()
 
