@@ -118,8 +118,35 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
                                       dev_id, run_start_date, td_to_str_lag,
                                       build_lag_curves=build_lag_curves, rng=rng)
 
+    # Compute remaining demand for S-0770: deduct slots already reserved by HC lot clamped
+    # BLDR dates. HC buildings draw on early demand slots (pre-hold) but their actual starts
+    # land in the clamped month — those clamped months must be considered consumed before
+    # D-lot allocation so S-0770 does not double-book the same calendar capacity.
+    hc_snap = snapshot[
+        snapshot["date_td_hold_projected"].notna()
+        & snapshot["date_td_projected"].notna()
+        & snapshot["lot_source"].isin(["real", "pre"])
+    ].copy()
+    if not hc_snap.empty:
+        hc_snap["_yr"] = pd.to_datetime(hc_snap["date_td_projected"]).dt.year
+        hc_snap["_mo"] = pd.to_datetime(hc_snap["date_td_projected"]).dt.month
+        hc_consumed = (
+            hc_snap.groupby(["_yr", "_mo"]).size()
+            .reset_index(name="hc_slots")
+            .rename(columns={"_yr": "year", "_mo": "month"})
+        )
+        remaining_demand = demand_series.merge(hc_consumed, on=["year", "month"], how="left")
+        remaining_demand["hc_slots"] = remaining_demand["hc_slots"].fillna(0).astype(int)
+        remaining_demand["slots"] = (remaining_demand["slots"] - remaining_demand["hc_slots"]).clip(lower=0)
+        remaining_demand = (
+            remaining_demand[remaining_demand["slots"] > 0][["year", "month", "slots"]]
+            .reset_index(drop=True)
+        )
+    else:
+        remaining_demand = demand_series
+
     # S-0770: project BLDR/STR/CMP/CLS for D-status real lots (H-lots drain first per allocator)
-    snapshot = d_bldr_date_projector(conn, snapshot, demand_series,
+    snapshot = d_bldr_date_projector(conn, snapshot, remaining_demand,
                                      dev_id, run_start_date, td_to_str_lag,
                                      build_lag_curves=build_lag_curves, rng=rng)
     for w in guard_warnings:
