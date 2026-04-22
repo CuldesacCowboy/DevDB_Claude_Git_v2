@@ -118,26 +118,39 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
                                       dev_id, run_start_date, td_to_str_lag,
                                       build_lag_curves=build_lag_curves, rng=rng)
 
-    # Compute remaining demand for S-0770: deduct slots already reserved by HC lot clamped
-    # BLDR dates. HC buildings draw on early demand slots (pre-hold) but their actual starts
-    # land in the clamped month — those clamped months must be considered consumed before
-    # D-lot allocation so S-0770 does not double-book the same calendar capacity.
-    hc_snap = snapshot[
-        snapshot["date_td_hold_projected"].notna()
-        & snapshot["date_td_projected"].notna()
-        & snapshot["lot_source"].isin(["real", "pre"])
-    ].copy()
+    # Compute remaining demand for S-0770: deduct slots consumed by HC lot actual starts.
+    # HC buildings draw on early demand positions (pre-hold) via the allocator, but their
+    # actual starts land in the clamped BLDR year (e.g. 2028). That year's annual budget is
+    # fully consumed by the HC buildings — deduct all demand slots in that year equal to the
+    # HC start count. This prevents D-buildings from double-booking the same calendar year.
+    # Deduction is applied month-by-month from the earliest month in the HC start year.
+    has_tdh_proj_col = "date_td_hold_projected" in snapshot.columns
+    has_tdp_col = "date_td_projected" in snapshot.columns
+    hc_snap = (
+        snapshot[
+            (snapshot["date_td_hold_projected"].notna() if has_tdh_proj_col else False)
+            & (snapshot["date_td_projected"].notna() if has_tdp_col else False)
+            & snapshot["lot_source"].isin(["real", "pre"])
+        ].copy()
+        if has_tdh_proj_col and has_tdp_col
+        else pd.DataFrame()
+    )
     if not hc_snap.empty:
         hc_snap["_yr"] = pd.to_datetime(hc_snap["date_td_projected"]).dt.year
-        hc_snap["_mo"] = pd.to_datetime(hc_snap["date_td_projected"]).dt.month
-        hc_consumed = (
-            hc_snap.groupby(["_yr", "_mo"]).size()
-            .reset_index(name="hc_slots")
-            .rename(columns={"_yr": "year", "_mo": "month"})
-        )
-        remaining_demand = demand_series.merge(hc_consumed, on=["year", "month"], how="left")
-        remaining_demand["hc_slots"] = remaining_demand["hc_slots"].fillna(0).astype(int)
-        remaining_demand["slots"] = (remaining_demand["slots"] - remaining_demand["hc_slots"]).clip(lower=0)
+        hc_by_year = hc_snap.groupby("_yr").size().reset_index(name="hc_count")
+
+        remaining_demand = demand_series.copy()
+        for _, r in hc_by_year.iterrows():
+            yr = int(r["_yr"])
+            to_deduct = int(r["hc_count"])
+            for idx in remaining_demand[remaining_demand["year"] == yr].index:
+                if to_deduct <= 0:
+                    break
+                avail = int(remaining_demand.at[idx, "slots"])
+                take = min(avail, to_deduct)
+                remaining_demand.at[idx, "slots"] = avail - take
+                to_deduct -= take
+
         remaining_demand = (
             remaining_demand[remaining_demand["slots"] > 0][["year", "month", "slots"]]
             .reset_index(drop=True)
