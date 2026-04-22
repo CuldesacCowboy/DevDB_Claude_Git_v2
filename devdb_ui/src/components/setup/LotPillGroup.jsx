@@ -308,9 +308,11 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
     }
   }
 
+  // "Deletable" = pre-MARKS lots OR real lots not in the MARKS registry (both show as Pending)
+  const isDeletable = lot => lot && (lot.lot_source === 'pre' || (lot.lot_source === 'real' && !lot.in_registry))
   const hasSelection = selectedIds.size > 0
-  const hasPreSelected = [...selectedIds].some(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre')
-  const deleteCount = [...selectedIds].filter(id => allLots.find(l => l.lot_id === id)?.lot_source === 'pre').length
+  const hasPreSelected = [...selectedIds].some(id => isDeletable(allLots.find(l => l.lot_id === id)))
+  const deleteCount = [...selectedIds].filter(id => isDeletable(allLots.find(l => l.lot_id === id))).length
   const hasNonExcludedSelected = [...selectedIds].some(id => { const l = allLots.find(l => l.lot_id === id); return l && !l.excluded })
   const hasExcludedSelected = [...selectedIds].some(id => { const l = allLots.find(l => l.lot_id === id); return l && l.excluded })
   const hasRealNonExcludedSelected = [...selectedIds].some(id => { const l = allLots.find(l => l.lot_id === id); return l && l.lot_source === 'real' && !l.excluded })
@@ -387,7 +389,7 @@ export function LotPillGroup({ lots, targetPhases, onMoveLot, phaseId, ltId, onL
             {actionMode !== 'delete' ? (
               <button onClick={() => hasPreSelected && setActionMode('delete')}
                 disabled={!hasPreSelected || bulkSaving}
-                title={!hasPreSelected ? 'Only Pre-MARKS lots can be deleted' : undefined}
+                title={!hasPreSelected ? 'Only Pending lots (pre-MARKS or unregistered real) can be deleted' : undefined}
                 style={ABTN({ color: hasPreSelected ? '#dc2626' : '#d1d5db', borderColor: hasPreSelected ? '#fca5a5' : '#e5e7eb' })}>
                 × Delete
               </button>

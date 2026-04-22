@@ -81,20 +81,29 @@ async def unassign_lot_phase(
 
 @router.delete("/{lot_id}", response_model=dict)
 async def delete_lot(lot_id: int, conn=Depends(get_db_conn)):
-    """Hard-delete a pre-MARKS lot. Refuses real and sim lots."""
+    """Hard-delete a pre-MARKS lot or an unregistered real lot (not in marks_lot_registry).
+    Refuses sim lots and real lots that exist in marks_lot_registry."""
     cur = dict_cursor(conn)
     try:
         cur.execute(
-            "SELECT lot_source FROM sim_lots WHERE lot_id = %s",
+            """
+            SELECT sl.lot_source,
+                   EXISTS (SELECT 1 FROM devdb.marks_lot_registry mlr
+                           WHERE mlr.lot_number = sl.lot_number) AS in_registry
+            FROM sim_lots sl
+            WHERE sl.lot_id = %s
+            """,
             (lot_id,),
         )
         row = cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found")
-        if row["lot_source"] != "pre":
+        if row["lot_source"] == "sim":
+            raise HTTPException(status_code=422, detail="Sim lots cannot be deleted")
+        if row["lot_source"] == "real" and row["in_registry"]:
             raise HTTPException(
                 status_code=422,
-                detail="Only pre-MARKS lots (lot_source='pre') can be deleted",
+                detail="This lot exists in MARKS — use Release to return it to the MARKS bank instead of deleting it",
             )
         cur.execute("DELETE FROM sim_lots WHERE lot_id = %s", (lot_id,))
         conn.commit()
