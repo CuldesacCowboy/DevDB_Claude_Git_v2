@@ -446,10 +446,12 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         max_per_year = cfg_row["max_deliveries_per_year"] if cfg_row else None
 
         # Global settings fallback
+        cur.execute("SELECT delivery_months, max_deliveries_per_year FROM sim_global_settings WHERE id = 1")
+        gs = cur.fetchone()
         if delivery_months is None:
-            cur.execute("SELECT delivery_months FROM sim_global_settings WHERE id = 1")
-            gs = cur.fetchone()
             delivery_months = list(gs["delivery_months"]) if gs and gs["delivery_months"] else [5,6,7,8,9,10,11]
+        if max_per_year is None and gs:
+            max_per_year = gs["max_deliveries_per_year"]
 
         # All phases in community (including unscheduled)
         cur.execute("""
@@ -530,7 +532,11 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             if ev["date"]:
                 y = ev["date"].year
                 year_counts[y] += 1
-                year_events[y].append({"event": ev["name"], "date": ev["date"].isoformat()})
+                phase_names = [p["phase_name"] for p in ev["phases"]]
+                year_events[y].append({
+                    "event": ev["name"], "date": ev["date"].isoformat(),
+                    "phase_count": len(phase_names), "phases": phase_names,
+                })
         violations_max = []
         if max_per_year:
             for y, cnt in sorted(year_counts.items()):
@@ -540,11 +546,15 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         all_years_detail = []
         for y in sorted(year_counts.keys()):
             passed_yr = max_per_year is None or year_counts[y] <= max_per_year
+            evts = year_events[y]
+            total_phases = sum(e["phase_count"] for e in evts)
             all_years_detail.append({
                 "year": y,
-                "count": year_counts[y],
+                "event_count": year_counts[y],
+                "phase_count": total_phases,
                 "limit": max_per_year,
                 "passed": passed_yr,
+                "events": evts,
             })
         rules.append({
             "rule_id": "max_per_year",
@@ -769,10 +779,23 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         all_instruments_detail = []
         for iid, phases in inst_phases.items():
             phases_sorted = sorted(phases, key=lambda x: x["sequence_number"])
+            # Mark each phase passed/failed based on whether its date is <= next phase's date
+            phase_details = []
+            for k, p in enumerate(phases_sorted):
+                ok = True
+                if k > 0 and phases_sorted[k-1]["date"] > p["date"]:
+                    ok = False
+                if k < len(phases_sorted) - 1 and p["date"] > phases_sorted[k+1]["date"]:
+                    ok = False
+                phase_details.append({
+                    "phase_name": p["phase_name"],
+                    "seq": p["sequence_number"],
+                    "date": p["date"].isoformat(),
+                    "passed": ok,
+                })
             all_instruments_detail.append({
                 "instrument_name": phases_sorted[0]["instrument_name"] if phases_sorted else "",
-                "phases": [{"phase_name": p["phase_name"], "sequence_number": p["sequence_number"],
-                            "date": p["date"].isoformat()} for p in phases_sorted],
+                "phases": phase_details,
             })
 
         rules.append({

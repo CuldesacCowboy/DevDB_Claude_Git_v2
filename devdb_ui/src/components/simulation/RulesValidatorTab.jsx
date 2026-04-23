@@ -223,9 +223,7 @@ function RuleDetail({ rule }) {
 
     // ── MAX PER YEAR ───────────────────────────────────────────────────────
     case 'max_per_year': {
-      const allYears = d.all_years || Object.entries(d.year_counts || {}).map(([y, cnt]) => ({
-        year: parseInt(y), count: cnt, limit: d.max_per_year, passed: !d.max_per_year || cnt <= d.max_per_year
-      }))
+      const allYears = d.all_years || []
       return (
         <div>
           {renderHeader()}
@@ -233,19 +231,34 @@ function RuleDetail({ rule }) {
             <DataTable
               columns={[
                 { key: 'year', label: 'Year', width: 80, bold: true },
-                { key: 'count', label: 'Events', width: 80, align: 'right' },
+                { key: '_events', label: 'Events', width: 200, render: r => {
+                  const ec = r.event_count ?? r.count ?? 0
+                  const pc = r.phase_count ?? 0
+                  return `${ec} event${ec !== 1 ? 's' : ''} (${pc} phase${pc !== 1 ? 's' : ''})`
+                }},
                 { key: 'limit', label: 'Limit', width: 80, align: 'right', render: r => r.limit ?? <Muted>none</Muted> },
                 { key: 'passed', label: 'Status', width: 60, render: r => <Badge passed={r.passed} /> },
               ]}
               rows={allYears.map(y => ({ ...y, _highlight: y.passed }))}
             />
+            {/* Expandable event detail per year */}
+            {allYears.filter(y => y.events && y.events.length > 0).map(y => (
+              <div key={y.year} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 2 }}>{y.year}</div>
+                {y.events.map((ev, i) => (
+                  <div key={i} style={{ fontSize: 11, color: '#374151', paddingLeft: 12, lineHeight: 1.6 }}>
+                    <b>{ev.date}</b> — {ev.phases.join(', ')} <Muted>({ev.phase_count} phase{ev.phase_count !== 1 ? 's' : ''})</Muted>
+                  </div>
+                ))}
+              </div>
+            ))}
           </Section>
           <Conclusion passed={rule.passed}>
             {d.max_per_year
               ? (rule.passed
-                  ? `All years have ${d.max_per_year} or fewer deliveries.`
+                  ? `All years have ${d.max_per_year} or fewer delivery event(s).`
                   : `Some years exceed the ${d.max_per_year}/year limit.`)
-              : 'No maximum delivery limit is configured for this community.'}
+              : `Limit is set to ${d.max_per_year ?? 'none'} delivery event(s) per year.`}
           </Conclusion>
         </div>
       )
