@@ -49,11 +49,10 @@ function sortRows(rows, mode) {
 
 export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
   const [sortMode, setSortMode] = useState('date')
+  const sorted = useMemo(() => sortRows(rows, sortMode), [rows, sortMode])
 
   if (loading) return <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>
   if (!rows.length) return <div style={{ color: '#9ca3af', fontSize: 12 }}>No phases found. Run a simulation first.</div>
-
-  const sorted = useMemo(() => sortRows(rows, sortMode), [rows, sortMode])
 
   // Alternating background — group key depends on sort mode
   const groupKey = r => {
