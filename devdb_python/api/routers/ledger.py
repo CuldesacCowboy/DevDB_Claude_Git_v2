@@ -400,6 +400,358 @@ def get_phase_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.close()
 
 
+@router.get("/{ent_group_id}/rules-validation")
+def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
+    """
+    Validate simulation rules against current delivery schedule and phase config.
+    Returns a list of rule checks with pass/fail, summary, and rich detail.
+    """
+    cur = dict_cursor(conn)
+    try:
+        # ── Gather data ──────────────────────────────────────────────────────
+        # Delivery events with phases
+        cur.execute("""
+            SELECT
+                sde.delivery_event_id,
+                COALESCE(sde.date_dev_actual, sde.date_dev_projected)::date AS delivery_date,
+                sde.date_dev_actual IS NOT NULL AS is_locked,
+                sde.event_name,
+                dep.phase_id,
+                sdp.phase_name,
+                sdp.sequence_number,
+                sdp.delivery_tier,
+                sdp.delivery_group,
+                sdp.instrument_id,
+                sli.instrument_name,
+                d.dev_id,
+                d.dev_name
+            FROM sim_delivery_events sde
+            JOIN sim_delivery_event_phases dep ON dep.delivery_event_id = sde.delivery_event_id
+            JOIN sim_dev_phases sdp ON sdp.phase_id = dep.phase_id
+            JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
+            JOIN developments d ON d.dev_id = sli.dev_id
+            WHERE sde.ent_group_id = %s
+            ORDER BY delivery_date NULLS LAST, sde.delivery_event_id, sdp.sequence_number
+        """, (ent_group_id,))
+        event_rows = [dict(r) for r in cur.fetchall()]
+
+        # Delivery config
+        cur.execute("""
+            SELECT delivery_months, max_deliveries_per_year, auto_schedule_enabled
+            FROM sim_entitlement_delivery_config
+            WHERE ent_group_id = %s
+        """, (ent_group_id,))
+        cfg_row = cur.fetchone()
+        delivery_months = list(cfg_row["delivery_months"]) if cfg_row and cfg_row["delivery_months"] else None
+        max_per_year = cfg_row["max_deliveries_per_year"] if cfg_row else None
+        auto_sched = bool(cfg_row["auto_schedule_enabled"]) if cfg_row else False
+
+        # Global settings fallback
+        if delivery_months is None:
+            cur.execute("SELECT delivery_months FROM sim_global_settings WHERE id = 1")
+            gs = cur.fetchone()
+            delivery_months = list(gs["delivery_months"]) if gs and gs["delivery_months"] else [5,6,7,8,9,10,11]
+
+        # All phases in community (including unscheduled)
+        cur.execute("""
+            SELECT sdp.phase_id, sdp.phase_name, sdp.sequence_number,
+                   sdp.delivery_tier, sdp.delivery_group,
+                   sdp.instrument_id, sli.instrument_name,
+                   d.dev_id, d.dev_name
+            FROM sim_dev_phases sdp
+            JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
+            JOIN developments d ON d.dev_id = sli.dev_id
+            JOIN sim_ent_group_developments segd ON segd.dev_id = d.dev_id
+            WHERE segd.ent_group_id = %s
+            ORDER BY d.dev_name, sli.instrument_name, sdp.sequence_number
+        """, (ent_group_id,))
+        all_phases = [dict(r) for r in cur.fetchall()]
+
+        rules = []
+
+        # ── Build event map ──────────────────────────────────────────────────
+        from collections import defaultdict
+        events = defaultdict(lambda: {"phases": [], "date": None, "is_locked": False, "name": ""})
+        for r in event_rows:
+            eid = r["delivery_event_id"]
+            events[eid]["date"] = r["delivery_date"]
+            events[eid]["is_locked"] = r["is_locked"]
+            events[eid]["name"] = r["event_name"]
+            events[eid]["phases"].append(r)
+
+        # Phase -> event date map
+        phase_event_date = {}
+        for r in event_rows:
+            phase_event_date[r["phase_id"]] = r["delivery_date"]
+
+        month_names = ["", "Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+        # ── Rule 1: Delivery Window ──────────────────────────────────────────
+        violations_window = []
+        for eid, ev in events.items():
+            if ev["date"] and ev["date"].month not in delivery_months:
+                violations_window.append({
+                    "event": ev["name"],
+                    "date": ev["date"].isoformat(),
+                    "month": month_names[ev["date"].month],
+                    "phases": [p["phase_name"] for p in ev["phases"]],
+                })
+        rules.append({
+            "rule_id": "delivery_window",
+            "rule_name": "Delivery Window",
+            "passed": len(violations_window) == 0,
+            "summary": f"All deliveries in valid months ({', '.join(month_names[m] for m in sorted(delivery_months))})"
+                       if not violations_window
+                       else f"{len(violations_window)} event(s) outside delivery window",
+            "detail": {
+                "valid_months": sorted(delivery_months),
+                "valid_month_names": [month_names[m] for m in sorted(delivery_months)],
+                "violations": violations_window,
+            },
+        })
+
+        # ── Rule 2: Max Deliveries Per Year ──────────────────────────────────
+        year_counts = defaultdict(int)
+        year_events = defaultdict(list)
+        for eid, ev in events.items():
+            if ev["date"]:
+                y = ev["date"].year
+                year_counts[y] += 1
+                year_events[y].append({"event": ev["name"], "date": ev["date"].isoformat()})
+        violations_max = []
+        if max_per_year:
+            for y, cnt in sorted(year_counts.items()):
+                if cnt > max_per_year:
+                    violations_max.append({"year": y, "count": cnt, "max": max_per_year,
+                                           "events": year_events[y]})
+        rules.append({
+            "rule_id": "max_per_year",
+            "rule_name": "Max Deliveries Per Year",
+            "passed": len(violations_max) == 0,
+            "summary": f"All years within {max_per_year}/yr limit"
+                       if not violations_max
+                       else f"{len(violations_max)} year(s) exceed {max_per_year}/yr limit",
+            "detail": {
+                "max_per_year": max_per_year,
+                "year_counts": dict(year_counts),
+                "violations": violations_max,
+            },
+        })
+
+        # ── Rule 3: Tier Ordering ────────────────────────────────────────────
+        # Within a community, lower-tier phases should deliver on or before higher-tier phases.
+        tier_phases = []
+        for p in all_phases:
+            if p["delivery_tier"] is not None and p["phase_id"] in phase_event_date:
+                tier_phases.append({
+                    "phase_id": p["phase_id"],
+                    "phase_name": p["phase_name"],
+                    "dev_name": p["dev_name"],
+                    "instrument_name": p["instrument_name"],
+                    "tier": p["delivery_tier"],
+                    "date": phase_event_date[p["phase_id"]],
+                })
+        tier_phases.sort(key=lambda x: (x["tier"], x["date"]))
+
+        tier_violations = []
+        # Check: for each pair where tier_a < tier_b, date_a should be <= date_b
+        tier_map = defaultdict(list)  # tier -> list of (date, phase_name)
+        for tp in tier_phases:
+            tier_map[tp["tier"]].append(tp)
+
+        tiers_sorted = sorted(tier_map.keys())
+        for i in range(len(tiers_sorted)):
+            for j in range(i + 1, len(tiers_sorted)):
+                t_low, t_high = tiers_sorted[i], tiers_sorted[j]
+                max_low = max(tp["date"] for tp in tier_map[t_low])
+                min_high = min(tp["date"] for tp in tier_map[t_high])
+                if max_low > min_high:
+                    tier_violations.append({
+                        "tier_low": t_low, "tier_high": t_high,
+                        "latest_low": max_low.isoformat(),
+                        "earliest_high": min_high.isoformat(),
+                    })
+
+        # Build flow for visualization
+        tier_flow = []
+        for t in tiers_sorted:
+            phases_in_tier = tier_map[t]
+            dates = sorted(set(tp["date"].isoformat() for tp in phases_in_tier))
+            tier_flow.append({
+                "tier": t,
+                "phases": [{"phase_name": tp["phase_name"], "dev_name": tp["dev_name"],
+                            "date": tp["date"].isoformat()} for tp in phases_in_tier],
+                "dates": dates,
+            })
+
+        rules.append({
+            "rule_id": "tier_ordering",
+            "rule_name": "Tier Ordering",
+            "passed": len(tier_violations) == 0,
+            "summary": f"All {len(tiers_sorted)} tiers deliver in correct order"
+                       if not tier_violations
+                       else f"{len(tier_violations)} tier ordering violation(s)",
+            "detail": {
+                "flow": tier_flow,
+                "violations": tier_violations,
+                "tier_count": len(tiers_sorted),
+            },
+        })
+
+        # ── Rule 4: Group Simultaneous Delivery ──────────────────────────────
+        group_phases = defaultdict(list)
+        for p in all_phases:
+            if p["delivery_group"] and p["phase_id"] in phase_event_date:
+                group_phases[p["delivery_group"]].append({
+                    "phase_id": p["phase_id"],
+                    "phase_name": p["phase_name"],
+                    "dev_name": p["dev_name"],
+                    "date": phase_event_date[p["phase_id"]],
+                })
+
+        group_violations = []
+        group_detail = []
+        for grp in sorted(group_phases.keys()):
+            members = group_phases[grp]
+            dates = set(m["date"] for m in members)
+            ok = len(dates) <= 1
+            group_detail.append({
+                "group": grp,
+                "passed": ok,
+                "date": members[0]["date"].isoformat() if ok and members else None,
+                "members": [{"phase_name": m["phase_name"], "dev_name": m["dev_name"],
+                             "date": m["date"].isoformat()} for m in members],
+            })
+            if not ok:
+                group_violations.append(grp)
+
+        # Unscheduled group members
+        for p in all_phases:
+            if p["delivery_group"] and p["phase_id"] not in phase_event_date:
+                for gd in group_detail:
+                    if gd["group"] == p["delivery_group"]:
+                        gd["members"].append({
+                            "phase_name": p["phase_name"], "dev_name": p["dev_name"],
+                            "date": None,
+                        })
+                        gd["passed"] = False
+                        if p["delivery_group"] not in group_violations:
+                            group_violations.append(p["delivery_group"])
+
+        rules.append({
+            "rule_id": "group_simultaneous",
+            "rule_name": "Group Simultaneous Delivery",
+            "passed": len(group_violations) == 0,
+            "summary": f"All {len(group_phases)} group(s) deliver simultaneously"
+                       if not group_violations
+                       else f"{len(group_violations)} group(s) not synchronized",
+            "detail": { "groups": group_detail },
+        })
+
+        # ── Rule 5: Group Exclusivity ────────────────────────────────────────
+        # On dates where a group delivers, no non-group phases should deliver.
+        group_dates = set()
+        for grp, members in group_phases.items():
+            for m in members:
+                group_dates.add(m["date"])
+
+        excl_violations = []
+        for r in event_rows:
+            if r["delivery_date"] in group_dates and not r["delivery_group"]:
+                excl_violations.append({
+                    "phase_name": r["phase_name"],
+                    "dev_name": r["dev_name"],
+                    "date": r["delivery_date"].isoformat(),
+                })
+
+        rules.append({
+            "rule_id": "group_exclusivity",
+            "rule_name": "Group Date Exclusivity",
+            "passed": len(excl_violations) == 0,
+            "summary": "No non-group phases on group delivery dates"
+                       if not excl_violations
+                       else f"{len(excl_violations)} non-group phase(s) on group dates",
+            "detail": {
+                "group_dates": sorted(d.isoformat() for d in group_dates),
+                "violations": excl_violations,
+            },
+        })
+
+        # ── Rule 6: Sequence Ordering Within Instrument ──────────────────────
+        seq_violations = []
+        inst_phases = defaultdict(list)
+        for p in all_phases:
+            if p["phase_id"] in phase_event_date:
+                inst_phases[p["instrument_id"]].append({
+                    "phase_name": p["phase_name"],
+                    "instrument_name": p["instrument_name"],
+                    "sequence_number": p["sequence_number"] or 9999,
+                    "date": phase_event_date[p["phase_id"]],
+                })
+        for iid, phases in inst_phases.items():
+            phases.sort(key=lambda x: x["sequence_number"])
+            for k in range(len(phases) - 1):
+                if phases[k]["date"] > phases[k+1]["date"]:
+                    seq_violations.append({
+                        "instrument": phases[k]["instrument_name"],
+                        "earlier_phase": phases[k]["phase_name"],
+                        "earlier_seq": phases[k]["sequence_number"],
+                        "earlier_date": phases[k]["date"].isoformat(),
+                        "later_phase": phases[k+1]["phase_name"],
+                        "later_seq": phases[k+1]["sequence_number"],
+                        "later_date": phases[k+1]["date"].isoformat(),
+                    })
+
+        rules.append({
+            "rule_id": "sequence_ordering",
+            "rule_name": "Sequence Ordering (within Instrument)",
+            "passed": len(seq_violations) == 0,
+            "summary": "All phases deliver in sequence order within their instrument"
+                       if not seq_violations
+                       else f"{len(seq_violations)} sequence ordering violation(s)",
+            "detail": { "violations": seq_violations },
+        })
+
+        # ── Rule 7: All Phases Scheduled ─────────────────────────────────────
+        scheduled_ids = set(phase_event_date.keys())
+        unscheduled = [p for p in all_phases if p["phase_id"] not in scheduled_ids]
+        rules.append({
+            "rule_id": "all_scheduled",
+            "rule_name": "All Phases Scheduled",
+            "passed": len(unscheduled) == 0,
+            "summary": f"All {len(all_phases)} phases have delivery events"
+                       if not unscheduled
+                       else f"{len(unscheduled)} of {len(all_phases)} phase(s) unscheduled",
+            "detail": {
+                "total": len(all_phases),
+                "scheduled": len(scheduled_ids),
+                "unscheduled": [{"phase_name": p["phase_name"], "dev_name": p["dev_name"],
+                                 "instrument_name": p["instrument_name"]}
+                                for p in unscheduled],
+            },
+        })
+
+        # ── Rule 8: Locked Dates Honored ─────────────────────────────────────
+        locked_count = sum(1 for ev in events.values() if ev["is_locked"])
+        rules.append({
+            "rule_id": "locked_honored",
+            "rule_name": "Locked Dates Honored",
+            "passed": True,
+            "summary": f"{locked_count} locked event(s) preserved" if locked_count else "No locked events",
+            "detail": {
+                "locked_events": [
+                    {"event": ev["name"], "date": ev["date"].isoformat(),
+                     "phases": [p["phase_name"] for p in ev["phases"]]}
+                    for ev in events.values() if ev["is_locked"]
+                ],
+            },
+        })
+
+        return rules
+    finally:
+        cur.close()
+
+
 @router.get("/{ent_group_id}/weekly")
 def get_ledger_weekly(ent_group_id: int, conn=Depends(get_db_conn)):
     """

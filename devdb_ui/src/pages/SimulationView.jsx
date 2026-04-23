@@ -7,6 +7,7 @@ import { LedgerTable } from '../components/simulation/LedgerTable'
 import { LedgerGraph } from '../components/simulation/LedgerGraph'
 import { UtilizationPanel } from '../components/simulation/UtilizationPanel'
 import { DeliveryScheduleTab } from '../components/simulation/DeliveryScheduleTab'
+import { RulesValidatorTab } from '../components/simulation/RulesValidatorTab'
 import { LotLedger } from '../components/simulation/LotLedger'
 import {
   LedgerConfigSection, GlobalSettingsSection,
@@ -53,6 +54,8 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   const [deliverySchedule, setDeliverySchedule]               = useState([])
   const [deliveryScheduleLoading, setDeliveryScheduleLoading] = useState(false)
   const [deliveryDirty, setDeliveryDirty]                     = useState(false)
+  const [rulesValidation, setRulesValidation]                 = useState([])
+  const [rulesLoading, setRulesLoading]                       = useState(false)
   const [modalOpen, setModalOpen]           = useState(false)
   const [selectedDevIds, setSelectedDevIds] = useState(null)
   const [countyFilter, setCountyFilter]     = useState(null)
@@ -140,6 +143,14 @@ const loadLedger = useCallback((id) => {
       .finally(() => setLotsLoading(false))
   }, [])
 
+  const loadRulesValidation = useCallback((id) => {
+    setRulesLoading(true)
+    fetchOk(`${API_BASE}/ledger/${id}/rules-validation`)
+      .then(data => setRulesValidation(Array.isArray(data) ? data : []))
+      .catch(() => setRulesValidation([]))
+      .finally(() => setRulesLoading(false))
+  }, [])
+
   const loadDeliverySchedule = useCallback((id) => {
     setDeliveryScheduleLoading(true)
     fetchOk(`${API_BASE}/ledger/${id}/delivery-schedule`)
@@ -197,6 +208,7 @@ const loadLedger = useCallback((id) => {
       loadLedger(entGroupId)
       loadLots(entGroupId)
       loadDeliverySchedule(entGroupId)
+      loadRulesValidation(entGroupId)
       checkSplits(entGroupId)
     } catch (e) { setRunStatus({ ok: false, error: e.message }); setLastRunAt(new Date()) }
   }
@@ -464,6 +476,7 @@ const loadLedger = useCallback((id) => {
           ['ledger',      'Ledger'],
           ['lots',        'Lot List'],
           ['delivery',    'Delivery Schedule'],
+          ['rules',       'Rules Validator'],
           ['utilization', 'Phase Utilization'],
           ['overrides',   null],
         ].map(([v, label]) => {
@@ -474,6 +487,7 @@ const loadLedger = useCallback((id) => {
               setView(v)
               if (v === 'lots'     && entGroupId) loadLots(entGroupId)
               if (v === 'delivery' && entGroupId) loadDeliverySchedule(entGroupId)
+              if (v === 'rules'    && entGroupId) loadRulesValidation(entGroupId)
               if (v === 'overrides' && entGroupId) fetchOverrides()
             }}
               style={{ padding: '4px 14px', fontSize: 12, borderRadius: 4, border: '1px solid #d1d5db',
@@ -687,6 +701,13 @@ const loadLedger = useCallback((id) => {
               setDeliveryDirty(true)
             }}
           />
+        </div>
+      )}
+
+      {/* ── Rules Validator ── */}
+      {view === 'rules' && (
+        <div style={{ height: '100%', overflowY: 'auto' }}>
+          <RulesValidatorTab rules={rulesValidation} loading={rulesLoading} />
         </div>
       )}
 
