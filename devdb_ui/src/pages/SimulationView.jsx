@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { API_BASE } from '../config'
 import { useOverrides } from '../hooks/useOverrides'
 import OverridesPanel from '../components/overrides/OverridesPanel'
@@ -25,6 +26,7 @@ async function fetchOk(url) {
 // ─── Main view ───────────────────────────────────────────────────────────────
 
 export default function SimulationView({ selectedGroupId, setSelectedGroupId, showTestCommunities, globalSettingsOpen, onCloseGlobalSettings }) {
+  const navigate = useNavigate()
   const entGroupId = selectedGroupId
   const setEntGroupId = setSelectedGroupId
   const [entGroups, setEntGroups]   = useState([])
@@ -708,7 +710,18 @@ const loadLedger = useCallback((id) => {
       {/* ── Rules Validator ── */}
       {view === 'rules' && (
         <div style={{ height: '100%', overflowY: 'auto' }}>
-          <RulesValidatorTab rules={rulesValidation} loading={rulesLoading} />
+          <RulesValidatorTab rules={rulesValidation} loading={rulesLoading}
+            onNavigate={target => {
+              if (target.to === 'delivery') { setView('delivery'); loadDeliverySchedule(entGroupId) }
+              else if (target.to === 'config') {
+                localStorage.setItem('devdb_config_jump', JSON.stringify({
+                  tab: target.tab || 'community', ent_group_id: entGroupId,
+                }))
+                navigate('/configure')
+              }
+              else if (target.to === 'setup') { navigate('/setup') }
+            }}
+          />
         </div>
       )}
 

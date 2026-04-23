@@ -1,5 +1,20 @@
 import { useState } from 'react'
 
+// ── Fix Action button ────────────────────────────────────────────────────────
+function FixAction({ label, icon, onClick }) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+      border: '1px solid #2563eb', background: '#eff6ff', color: '#1e40af',
+      cursor: 'pointer', marginTop: 6, marginRight: 6,
+    }}>
+      {icon && <span>{icon}</span>}
+      {label}
+    </button>
+  )
+}
+
 // ── Styling atoms ────────────────────────────────────────────────────────────
 const PASS_BADGE = { background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }
 const FAIL_BADGE = { background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }
@@ -417,7 +432,51 @@ function SequenceGrid({ instruments }) {
 // Detail renderers — one per rule_id
 // ═════════════════════════════════════════════════════════════════════════════
 
-function RuleDetail({ rule }) {
+// ── Fix actions per rule (only shown on failure) ─────────────────────────────
+function RuleFixActions({ ruleId, passed, onNavigate }) {
+  if (passed || !onNavigate) return null
+  const nav = onNavigate
+  const actions = {
+    // Config completeness
+    config_product_splits: [{ label: 'Fix in Config → Phase Tab', icon: '→', action: () => nav({ to: 'config', tab: 'phase' }) }],
+    config_starts_target:  [{ label: 'Fix in Config → Development Tab', icon: '→', action: () => nav({ to: 'config', tab: 'development' }) }],
+    config_builder_splits: [{ label: 'Fix in Config → Instrument Tab', icon: '→', action: () => nav({ to: 'config', tab: 'instrument' }) }],
+    config_delivery:       [{ label: 'Fix in Config → Community Tab', icon: '→', action: () => nav({ to: 'config', tab: 'community' }) }],
+    // Delivery rules
+    delivery_window:       [{ label: 'Edit Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) },
+                            { label: 'Change Delivery Months in Config', icon: '→', action: () => nav({ to: 'config', tab: 'community' }) }],
+    max_per_year:          [{ label: 'Edit Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) },
+                            { label: 'Change Max/Year in Config', icon: '→', action: () => nav({ to: 'config', tab: 'community' }) }],
+    tier_ordering:         [{ label: 'Edit Tiers in Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) }],
+    group_simultaneous:    [{ label: 'Edit Groups in Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) }],
+    group_exclusivity:     [{ label: 'Edit Groups in Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) }],
+    sequence_ordering:     [{ label: 'Edit Order in Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) }],
+    all_scheduled:         [{ label: 'Re-run Simulation', icon: '↻', action: null }],
+    locked_honored:        [{ label: 'Edit Dates in Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) }],
+    // Engine diagnostics
+    chronology:            [{ label: 'Re-run Simulation', icon: '↻', action: null }],
+    builder_coverage:      [{ label: 'Check Builder Splits in Config', icon: '→', action: () => nav({ to: 'config', tab: 'instrument' }) }],
+    spec_build:            [{ label: 'Set Spec Rate in Config', icon: '→', action: () => nav({ to: 'config', tab: 'instrument' }) }],
+    building_group_sync:   [{ label: 'Re-run Simulation', icon: '↻', action: null }],
+    tda_fulfillment:       [{ label: 'Review TDAs', icon: '→', action: () => nav({ to: 'setup' }) }],
+    demand_capacity:       [{ label: 'Check Product Splits in Config', icon: '→', action: () => nav({ to: 'config', tab: 'phase' }) }],
+    convergence:           [{ label: 'Run Simulation', icon: '↻', action: null }],
+    pipeline_monotonicity: [{ label: 'Re-run Simulation', icon: '↻', action: null }],
+  }
+  const items = actions[ruleId]
+  if (!items) return null
+  return (
+    <div style={{ marginTop: 4 }}>
+      {items.map((a, i) => a.action
+        ? <FixAction key={i} label={a.label} icon={a.icon} onClick={a.action} />
+        : <span key={i} style={{ display: 'inline-block', fontSize: 11, color: '#6b7280', marginTop: 6, marginRight: 8 }}>{a.icon} {a.label}</span>
+      )}
+    </div>
+  )
+}
+
+function RuleDetail({ rule, onNavigate }) {
+  const nav = onNavigate || (() => {})
   const d = rule.detail || {}
   const explanation = d.explanation
   const methodology = d.methodology
@@ -1140,7 +1199,7 @@ const CATEGORIES = [
 ]
 
 // ── Rule row ─────────────────────────────────────────────────────────────────
-function RuleRow({ rule, expanded, onToggle }) {
+function RuleRow({ rule, expanded, onToggle, onNavigate }) {
   return (
     <div style={{ borderBottom: '1px solid #f0f0f0', background: expanded ? '#fafafa' : '#fff' }}>
       <div
@@ -1161,7 +1220,8 @@ function RuleRow({ rule, expanded, onToggle }) {
       </div>
       {expanded && (
         <div style={{ padding: '8px 20px 20px 38px', maxWidth: 900 }}>
-          <RuleDetail rule={rule} />
+          <RuleDetail rule={rule} onNavigate={onNavigate} />
+          <RuleFixActions ruleId={rule.rule_id} passed={rule.passed} onNavigate={onNavigate} />
         </div>
       )}
     </div>
@@ -1169,7 +1229,7 @@ function RuleRow({ rule, expanded, onToggle }) {
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
-export function RulesValidatorTab({ rules, loading }) {
+export function RulesValidatorTab({ rules, loading, onNavigate }) {
   const [expanded, setExpanded] = useState({})
   const [sectionOpen, setSectionOpen] = useState(
     Object.fromEntries(CATEGORIES.map(c => [c.key, c.defaultOpen]))
@@ -1226,6 +1286,7 @@ export function RulesValidatorTab({ rules, loading }) {
               <RuleRow key={rule.rule_id} rule={rule}
                 expanded={!!expanded[rule.rule_id]}
                 onToggle={() => toggle(rule.rule_id)}
+                onNavigate={onNavigate}
               />
             ))}
           </div>
