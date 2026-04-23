@@ -52,6 +52,8 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   } = useOverrides(entGroupId)
   const [deliverySchedule, setDeliverySchedule]               = useState([])
   const [deliveryScheduleLoading, setDeliveryScheduleLoading] = useState(false)
+  const [phaseDeliveryConfig, setPhaseDeliveryConfig]         = useState([])
+  const [deliveryDirty, setDeliveryDirty]                     = useState(false)
   const [modalOpen, setModalOpen]           = useState(false)
   const [selectedDevIds, setSelectedDevIds] = useState(null)
   const [countyFilter, setCountyFilter]     = useState(null)
@@ -141,9 +143,15 @@ const loadLedger = useCallback((id) => {
 
   const loadDeliverySchedule = useCallback((id) => {
     setDeliveryScheduleLoading(true)
-    fetchOk(`${API_BASE}/ledger/${id}/delivery-schedule`)
-      .then(data => setDeliverySchedule(Array.isArray(data) ? data : []))
-      .catch((err) => { setDeliverySchedule([]); setLoadError(`Could not load delivery schedule — ${err.message}`) })
+    Promise.all([
+      fetchOk(`${API_BASE}/ledger/${id}/delivery-schedule`),
+      fetchOk(`${API_BASE}/ledger/${id}/phase-delivery-config`),
+    ])
+      .then(([sched, cfg]) => {
+        setDeliverySchedule(Array.isArray(sched) ? sched : [])
+        setPhaseDeliveryConfig(Array.isArray(cfg) ? cfg : [])
+      })
+      .catch((err) => { setDeliverySchedule([]); setPhaseDeliveryConfig([]); setLoadError(`Could not load delivery schedule — ${err.message}`) })
       .finally(() => setDeliveryScheduleLoading(false))
   }, [])
 
@@ -192,6 +200,7 @@ const loadLedger = useCallback((id) => {
       setTdaGaps(data.tda_gaps || [])
       setLastRunAt(new Date())
       setLoadError(null)
+      setDeliveryDirty(false)
       loadLedger(entGroupId)
       loadLots(entGroupId)
       loadDeliverySchedule(entGroupId)
@@ -667,7 +676,25 @@ const loadLedger = useCallback((id) => {
       {/* ── Delivery Schedule ── */}
       {view === 'delivery' && (
         <div style={{ height: '100%', overflowY: 'auto' }}>
-          <DeliveryScheduleTab rows={deliverySchedule} loading={deliveryScheduleLoading} />
+          <DeliveryScheduleTab
+            rows={deliverySchedule}
+            loading={deliveryScheduleLoading}
+            phaseConfig={phaseDeliveryConfig}
+            dirty={deliveryDirty}
+            onPatchPhase={async (phaseId, field, value) => {
+              const res = await fetch(`${API_BASE}/admin/phase/${phaseId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [field]: value }),
+              })
+              if (!res.ok) return
+              const updated = await res.json()
+              setPhaseDeliveryConfig(prev => prev.map(p =>
+                p.phase_id === phaseId ? { ...p, ...updated } : p
+              ))
+              setDeliveryDirty(true)
+            }}
+          />
         </div>
       )}
 

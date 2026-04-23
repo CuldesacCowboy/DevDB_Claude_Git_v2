@@ -340,6 +340,62 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.close()
 
 
+@router.get("/{ent_group_id}/phase-delivery-config")
+def get_phase_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
+    """
+    Return per-phase delivery configuration for the community:
+    sequence_number, delivery_tier, delivery_group, dates, and source status.
+    Used by the Delivery Schedule tab's phase config panel.
+    """
+    cur = dict_cursor(conn)
+    try:
+        cur.execute(
+            """
+            SELECT
+                sdp.phase_id,
+                sdp.phase_name,
+                sdp.sequence_number,
+                sdp.delivery_tier,
+                sdp.delivery_group,
+                sdp.date_dev_projected,
+                sdp.date_dev_actual,
+                sli.instrument_id,
+                sli.instrument_name,
+                d.dev_id,
+                d.dev_name
+            FROM sim_dev_phases sdp
+            JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
+            JOIN developments d ON d.dev_id = sli.dev_id
+            JOIN sim_ent_group_developments segd ON segd.dev_id = d.dev_id
+            WHERE segd.ent_group_id = %s
+            ORDER BY d.dev_name, sli.instrument_name, sdp.sequence_number
+            """,
+            (ent_group_id,),
+        )
+
+        def _d(v):
+            return v.isoformat() if v else None
+
+        return [
+            {
+                "phase_id":          r["phase_id"],
+                "phase_name":        r["phase_name"],
+                "sequence_number":   r["sequence_number"],
+                "delivery_tier":     r["delivery_tier"],
+                "delivery_group":    r["delivery_group"],
+                "date_dev_projected": _d(r["date_dev_projected"]),
+                "date_dev_actual":   _d(r["date_dev_actual"]),
+                "instrument_id":     r["instrument_id"],
+                "instrument_name":   r["instrument_name"],
+                "dev_id":            r["dev_id"],
+                "dev_name":          r["dev_name"],
+            }
+            for r in cur.fetchall()
+        ]
+    finally:
+        cur.close()
+
+
 @router.get("/{ent_group_id}/weekly")
 def get_ledger_weekly(ent_group_id: int, conn=Depends(get_db_conn)):
     """

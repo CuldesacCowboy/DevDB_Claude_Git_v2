@@ -253,6 +253,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
 # ─── Phase fields ─────────────────────────────────────────────────────────────
 
 class PhasePatchRequest(BaseModel):
+    sequence_number:     Optional[int] = None
     lot_count_projected: Optional[int] = None
     date_dev_projected:  Optional[str] = None
     date_dev_actual:     Optional[str] = None
@@ -271,6 +272,9 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
         return {'phase_id': phase_id}
 
     clauses, params = [], []
+    if 'sequence_number' in provided:
+        clauses.append("sequence_number = %s")
+        params.append(body.sequence_number)
     if 'lot_count_projected' in provided:
         clauses.append("lot_count_projected = %s")
         params.append(body.lot_count_projected)
@@ -302,7 +306,7 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
         cur.execute(
             f"UPDATE sim_dev_phases SET {', '.join(clauses)} "
             f"WHERE phase_id = %s "
-            f"RETURNING phase_id, lot_count_projected, date_dev_projected, date_dev_actual, "
+            f"RETURNING phase_id, sequence_number, lot_count_projected, date_dev_projected, date_dev_actual, "
             f"          delivery_tier, delivery_group, county_id, school_district_id",
             params,
         )
@@ -312,6 +316,7 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
         conn.commit()
         return {
             'phase_id':            row['phase_id'],
+            'sequence_number':     row['sequence_number'],
             'lot_count_projected': row['lot_count_projected'],
             'date_dev_projected':  row['date_dev_projected'].isoformat() if row['date_dev_projected'] else None,
             'date_dev_actual':     row['date_dev_actual'].isoformat()    if row['date_dev_actual']    else None,
