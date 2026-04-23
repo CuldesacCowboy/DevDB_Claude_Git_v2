@@ -75,11 +75,18 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-16
 
 ### devdb_ui/src/components/config/CommunityTab.jsx
-- Owns: Community tab spreadsheet for ConfigView; columns: community name, Status (colored dropdown), Ledger Start, Bulk Ent. Date, County (dropdown), School District (dropdown), Auto Schedule, Delivery Months, Del/Year; STATUS_OPTIONS (7 values) + STATUS_STYLE color map; County and SD are independent dropdowns (full SD list shown regardless of county since migration 072); saving county clears SD; status/county/SD all saved via 'location' kind → PATCH /entitlement-groups/{id}
+- Owns: Community tab spreadsheet for ConfigView; columns: community name, Status (colored dropdown), Ledger Start, Bulk Ent. Date, County (dropdown), School District (dropdown), Delivery Months, Del/Year; auto_schedule_enabled removed (migration 084)
 - Imports: react (useState, useRef, useEffect), EditableCell, configShared (MonthCell, TableShell, BAND), config (API_BASE)
 - Imported by: ConfigView.jsx
 - Tables: none (API calls via /ref/counties, /ref/school-districts, PATCH /entitlement-groups/{id})
-- Last commit: 2026-04-16
+- Last commit: 2026-04-23
+
+### devdb_ui/src/components/config/DevTab.jsx
+- Owns: Development tab for ConfigView; StartsCell with supply label using max(unstarted_real, total_projected) / annual_starts_target; historical pace columns (YTD, last yr, 2yr ago)
+- Imports: react (useState, useRef, useEffect), EditableCell, configShared, config (API_BASE)
+- Imported by: ConfigView.jsx
+- Tables: none (API calls via /admin/dev-config, PATCH /developments/{id}/sim-params)
+- Last commit: 2026-04-23
 
 ### devdb_ui/src/components/config/PhaseTab.jsx
 - Owns: Phase config spreadsheet for ConfigView; county/SD override columns; Grp column (single-char A-Z delivery_group input, purple styling when set)

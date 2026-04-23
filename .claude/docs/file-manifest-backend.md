@@ -194,11 +194,11 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Last commit: 2026-04-19
 
 ### devdb_python/api/routers/ledger.py
-- Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization (phase utilization bars + spec_count/build_count/undet_count per phase); GET /ledger/{id}/lots (lot-level rows with pipeline dates + projected dates including date_td_projected + date_td_hold_projected + building_group_id + is_spec; ORDER BY real-before-sim then building_group_id ASC NULLS LAST so building groups are contiguous); GET /ledger/{id}/delivery-schedule (one row per event+dev: date, source, phases, units, D/U/UC inventory at delivery month)
-- Imports: api.deps, psycopg2.extras, fastapi
+- Owns: GET /ledger/{id} and /by-dev (monthly ledger by dev); GET /ledger/{id}/utilization; GET /ledger/{id}/lots; GET /ledger/{id}/delivery-schedule (per-phase rows with inline config); GET /ledger/{id}/phase-delivery-config; GET /ledger/{id}/rules-validation (22 rules in 3 categories with article-style detail, explanations, methodology, full data tables); GET /ledger/{id}/weekly
+- Imports: api.deps, psycopg2.extras, fastapi, collections.defaultdict
 - Imported by: api/main.py
-- Tables: v_sim_ledger_monthly, sim_ent_group_developments, developments, sim_dev_phases, sim_delivery_events, sim_delivery_event_phases, sim_lots, sim_legal_instruments, sim_phase_product_splits, ref_lot_types
-- Last commit: 2026-04-19
+- Tables: v_sim_ledger_monthly, sim_ent_group_developments, developments, sim_dev_phases, sim_delivery_events, sim_delivery_event_phases, sim_lots, sim_legal_instruments, sim_phase_product_splits, ref_lot_types, sim_entitlement_delivery_config, sim_global_settings, sim_entitlement_groups, sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_lot_assignments, sim_dev_params, sim_instrument_builder_splits
+- Last commit: 2026-04-23
 
 ### devdb_python/api/db.py
 - Owns: Database utility helpers shared across routers; dict_cursor(conn) replaces repeated conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) boilerplate

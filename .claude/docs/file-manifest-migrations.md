@@ -424,3 +424,8 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 ### devdb_python/migrations/083_fdw_type_casts.sql
 - Owns: No-op migration — type cast fixes handled in Python code (housenumber varchar vs integer)
 - Last commit: 2026-04-22
+
+### devdb_python/migrations/084_drop_auto_schedule_enabled.sql
+- Owns: Drop auto_schedule_enabled column from sim_entitlement_delivery_config (dead feature, replaced by always-on scheduling)
+- Tables: sim_entitlement_delivery_config (DROP COLUMN)
+- Last commit: 2026-04-23
