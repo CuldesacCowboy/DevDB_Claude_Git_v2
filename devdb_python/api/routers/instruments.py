@@ -363,7 +363,7 @@ def get_spec_rate_hints(instrument_id: int, conn=Depends(get_db_conn)):
                 JOIN sim_lots siml
                     ON  siml.lot_number ~ '^[A-Za-z]+[0-9]+$'
                     AND hm.developmentcode = REGEXP_REPLACE(siml.lot_number, '[0-9]+$', '')
-                    AND hm.housenumber     = CAST(REGEXP_REPLACE(siml.lot_number, '^[A-Za-z]+', '') AS BIGINT)
+                    AND hm.housenumber     = LPAD(REGEXP_REPLACE(siml.lot_number, '^[A-Za-z]+', ''), 8, '0')
                 JOIN ref_lot_types rlt ON rlt.lot_type_id = siml.lot_type_id
                 LEFT JOIN spec_flag sf
                     ON sf.companycode    = hm.companycode
@@ -388,7 +388,7 @@ def get_spec_rate_hints(instrument_id: int, conn=Depends(get_db_conn)):
                 JOIN sim_lots siml
                     ON  siml.lot_number ~ '^[A-Za-z]+[0-9]+$'
                     AND hm.developmentcode = REGEXP_REPLACE(siml.lot_number, '[0-9]+$', '')
-                    AND hm.housenumber     = CAST(REGEXP_REPLACE(siml.lot_number, '^[A-Za-z]+', '') AS BIGINT)
+                    AND hm.housenumber     = LPAD(REGEXP_REPLACE(siml.lot_number, '^[A-Za-z]+', ''), 8, '0')
                 JOIN sim_dev_phases sdp ON sdp.phase_id = siml.phase_id
                 LEFT JOIN spec_flag sf
                     ON sf.companycode    = hm.companycode

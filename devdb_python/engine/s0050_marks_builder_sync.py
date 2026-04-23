@@ -54,7 +54,7 @@ def marks_builder_sync(conn, ent_group_id: int) -> int:
             JOIN sim_ent_group_developments segd ON segd.dev_id = sl.dev_id
             JOIN devdb_ext.housemaster hm
                 ON  hm.developmentcode = REGEXP_REPLACE(sl.lot_number, '[0-9]+$', '')
-                AND hm.housenumber     = CAST(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', '') AS INT)
+                AND hm.housenumber     = LPAD(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', ''), 8, '0')
                 AND (hm.modelcode IS NULL OR hm.modelcode <> 'UNK')
             JOIN dim_builders db ON db.marks_company_code = hm.companycode
             WHERE segd.ent_group_id = %s
@@ -104,7 +104,7 @@ def marks_builder_sync(conn, ent_group_id: int) -> int:
             JOIN sim_ent_group_developments segd ON segd.dev_id = sl.dev_id
             JOIN devdb_ext.housemaster hm
                 ON  hm.developmentcode = REGEXP_REPLACE(sl.lot_number, '[0-9]+$', '')
-                AND hm.housenumber     = CAST(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', '') AS INT)
+                AND hm.housenumber     = LPAD(REGEXP_REPLACE(sl.lot_number, '^[A-Za-z]+', ''), 8, '0')
             LEFT JOIN devdb_ext.codetail ct
                 ON  ct.companycode     = hm.companycode
                 AND ct.developmentcode = hm.developmentcode
