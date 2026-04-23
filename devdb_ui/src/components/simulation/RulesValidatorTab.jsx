@@ -228,26 +228,26 @@ function RuleDetail({ rule }) {
         <div>
           {renderHeader()}
           <Section title="Deliveries by Year">
+            <Prose>A "delivery" is one unique date. Multiple phases delivered on the same date count as a single delivery event.</Prose>
             <DataTable
               columns={[
                 { key: 'year', label: 'Year', width: 80, bold: true },
-                { key: '_events', label: 'Events', width: 200, render: r => {
-                  const ec = r.event_count ?? r.count ?? 0
+                { key: '_deliveries', label: 'Deliveries', width: 240, render: r => {
+                  const dc = r.delivery_count ?? 0
                   const pc = r.phase_count ?? 0
-                  return `${ec} event${ec !== 1 ? 's' : ''} (${pc} phase${pc !== 1 ? 's' : ''})`
+                  return `${dc} delivery date${dc !== 1 ? 's' : ''} (${pc} phase${pc !== 1 ? 's' : ''} total)`
                 }},
                 { key: 'limit', label: 'Limit', width: 80, align: 'right', render: r => r.limit ?? <Muted>none</Muted> },
                 { key: 'passed', label: 'Status', width: 60, render: r => <Badge passed={r.passed} /> },
               ]}
               rows={allYears.map(y => ({ ...y, _highlight: y.passed }))}
             />
-            {/* Expandable event detail per year */}
-            {allYears.filter(y => y.events && y.events.length > 0).map(y => (
+            {allYears.filter(y => y.deliveries && y.deliveries.length > 0).map(y => (
               <div key={y.year} style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 2 }}>{y.year}</div>
-                {y.events.map((ev, i) => (
+                {y.deliveries.map((del_, i) => (
                   <div key={i} style={{ fontSize: 11, color: '#374151', paddingLeft: 12, lineHeight: 1.6 }}>
-                    <b>{ev.date}</b> — {ev.phases.join(', ')} <Muted>({ev.phase_count} phase{ev.phase_count !== 1 ? 's' : ''})</Muted>
+                    <b>{del_.date}</b> — {del_.phases.join(', ')} <Muted>({del_.phase_count} phase{del_.phase_count !== 1 ? 's' : ''})</Muted>
                   </div>
                 ))}
               </div>
@@ -256,9 +256,9 @@ function RuleDetail({ rule }) {
           <Conclusion passed={rule.passed}>
             {d.max_per_year
               ? (rule.passed
-                  ? `All years have ${d.max_per_year} or fewer delivery event(s).`
-                  : `Some years exceed the ${d.max_per_year}/year limit.`)
-              : `Limit is set to ${d.max_per_year ?? 'none'} delivery event(s) per year.`}
+                  ? `All years have ${d.max_per_year} or fewer unique delivery date(s).`
+                  : `Some years exceed the ${d.max_per_year} delivery date(s)/year limit.`)
+              : `No max-per-year limit is configured.`}
           </Conclusion>
         </div>
       )

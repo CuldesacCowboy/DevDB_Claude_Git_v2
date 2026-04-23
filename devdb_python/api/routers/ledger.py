@@ -526,35 +526,40 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         })
 
         # ── Rule 2: Max Deliveries Per Year ──────────────────────────────────
-        year_counts = defaultdict(int)
-        year_events = defaultdict(list)
+        # A "delivery" = one unique date. Multiple events on the same date = 1 delivery.
+        year_date_phases = defaultdict(lambda: defaultdict(list))  # year -> date -> [phase_name]
         for eid, ev in events.items():
             if ev["date"]:
-                y = ev["date"].year
-                year_counts[y] += 1
-                phase_names = [p["phase_name"] for p in ev["phases"]]
-                year_events[y].append({
-                    "event": ev["name"], "date": ev["date"].isoformat(),
-                    "phase_count": len(phase_names), "phases": phase_names,
-                })
+                for p in ev["phases"]:
+                    year_date_phases[ev["date"].year][ev["date"]].append(p["phase_name"])
+        year_delivery_counts = {}  # year -> number of unique dates
+        year_deliveries = {}      # year -> [{date, phases, phase_count}]
+        for y in sorted(year_date_phases.keys()):
+            dates = year_date_phases[y]
+            year_delivery_counts[y] = len(dates)
+            year_deliveries[y] = [
+                {"date": d.isoformat(), "phases": phases, "phase_count": len(phases)}
+                for d, phases in sorted(dates.items())
+            ]
         violations_max = []
         if max_per_year:
-            for y, cnt in sorted(year_counts.items()):
+            for y, cnt in sorted(year_delivery_counts.items()):
                 if cnt > max_per_year:
                     violations_max.append({"year": y, "count": cnt, "max": max_per_year,
-                                           "events": year_events[y]})
+                                           "deliveries": year_deliveries[y]})
         all_years_detail = []
-        for y in sorted(year_counts.keys()):
-            passed_yr = max_per_year is None or year_counts[y] <= max_per_year
-            evts = year_events[y]
-            total_phases = sum(e["phase_count"] for e in evts)
+        for y in sorted(year_delivery_counts.keys()):
+            cnt = year_delivery_counts[y]
+            passed_yr = max_per_year is None or cnt <= max_per_year
+            dels = year_deliveries[y]
+            total_phases = sum(d["phase_count"] for d in dels)
             all_years_detail.append({
                 "year": y,
-                "event_count": year_counts[y],
+                "delivery_count": cnt,
                 "phase_count": total_phases,
                 "limit": max_per_year,
                 "passed": passed_yr,
-                "events": evts,
+                "deliveries": dels,
             })
         rules.append({
             "rule_id": "max_per_year",
