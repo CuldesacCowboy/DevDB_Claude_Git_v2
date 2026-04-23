@@ -926,15 +926,21 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         # ── Rule 14: Demand / Capacity Match ─────────────────────────────────
         cur.execute("""
             SELECT sdp.phase_id, sdp.phase_name,
-                   COALESCE(SUM(spps.projected_count), 0)::int AS configured_capacity,
-                   COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'sim') AS sim_lots
+                   COALESCE(cap.total, 0)::int AS configured_capacity,
+                   COALESCE(sim.cnt, 0)::int   AS sim_lots
             FROM sim_dev_phases sdp
             JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
             JOIN sim_ent_group_developments segd ON segd.dev_id = sli.dev_id
-            LEFT JOIN sim_phase_product_splits spps ON spps.phase_id = sdp.phase_id
-            LEFT JOIN sim_lots sl ON sl.phase_id = sdp.phase_id AND sl.excluded IS NOT TRUE
+            LEFT JOIN (
+                SELECT phase_id, SUM(projected_count) AS total
+                FROM sim_phase_product_splits GROUP BY phase_id
+            ) cap ON cap.phase_id = sdp.phase_id
+            LEFT JOIN (
+                SELECT phase_id, COUNT(*) AS cnt
+                FROM sim_lots WHERE lot_source = 'sim' AND excluded IS NOT TRUE
+                GROUP BY phase_id
+            ) sim ON sim.phase_id = sdp.phase_id
             WHERE segd.ent_group_id = %s
-            GROUP BY sdp.phase_id, sdp.phase_name
         """, (ent_group_id,))
         cap_rows = [dict(r) for r in cur.fetchall()]
         # Count real started lots per phase
