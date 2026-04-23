@@ -155,7 +155,9 @@ function TierFlowDiagram({ flow }) {
                 )}
                 {allDates.map(d => {
                   const phases = byDate[d] || []
-                  const phase = phases[rowIdx]
+                  // Bottom-align: offset so phases fill from the last row upward
+                  const offset = rowIdx - (maxRows - phases.length)
+                  const phase = offset >= 0 ? phases[offset] : null
                   return (
                     <td key={d} style={{
                       padding: phase ? '4px 10px' : '4px 6px',
