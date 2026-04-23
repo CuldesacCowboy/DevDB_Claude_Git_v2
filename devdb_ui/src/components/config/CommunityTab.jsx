@@ -194,9 +194,9 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
                     onSaveGlobal={onSaveGlobal} />
                 </td>
 
-                <td style={td(8, { textAlign: 'right' })}>
+                <td style={td(7, { textAlign: 'right' })}>
                   <EditableCell value={row.max_deliveries_per_year} width={60}
-                    triggerActivate={ac(i, 8) ? activateSignal : 0} onDone={onDone}
+                    triggerActivate={ac(i, 7) ? activateSignal : 0} onDone={onDone}
                     onSave={v => onPatchComm(row.ent_group_id, 'delivery', { max_deliveries_per_year: v })} />
                 </td>
               </tr>
