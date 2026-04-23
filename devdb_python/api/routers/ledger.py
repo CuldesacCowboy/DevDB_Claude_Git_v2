@@ -487,14 +487,24 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
 
         # ── Rule 1: Delivery Window ──────────────────────────────────────────
         violations_window = []
+        all_events_window = []
         for eid, ev in events.items():
-            if ev["date"] and ev["date"].month not in delivery_months:
-                violations_window.append({
+            if ev["date"]:
+                in_window = ev["date"].month in delivery_months
+                all_events_window.append({
                     "event": ev["name"],
                     "date": ev["date"].isoformat(),
-                    "month": month_names[ev["date"].month],
-                    "phases": [p["phase_name"] for p in ev["phases"]],
+                    "month": ev["date"].month,
+                    "month_name": month_names[ev["date"].month],
+                    "passed": in_window,
                 })
+                if not in_window:
+                    violations_window.append({
+                        "event": ev["name"],
+                        "date": ev["date"].isoformat(),
+                        "month": month_names[ev["date"].month],
+                        "phases": [p["phase_name"] for p in ev["phases"]],
+                    })
         rules.append({
             "rule_id": "delivery_window",
             "category": "config_validation",
@@ -504,8 +514,11 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not violations_window
                        else f"{len(violations_window)} event(s) outside delivery window",
             "detail": {
+                "explanation": "Land development delivery events are constrained to specific calendar months because municipal approvals, infrastructure readiness, and weather conditions create seasonal windows during which lot delivery is feasible. Delivering outside the configured window risks construction delays, financing misalignment, and regulatory complications. This rule ensures every scheduled delivery event falls within the community's allowed delivery months.",
+                "methodology": "Each delivery event's effective date (actual if locked, otherwise projected) is checked to confirm its calendar month appears in the community's delivery_months configuration array. Events in months outside the allowed set are flagged.",
                 "valid_months": sorted(delivery_months),
                 "valid_month_names": [month_names[m] for m in sorted(delivery_months)],
+                "all_events": all_events_window,
                 "violations": violations_window,
             },
         })
@@ -524,6 +537,15 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 if cnt > max_per_year:
                     violations_max.append({"year": y, "count": cnt, "max": max_per_year,
                                            "events": year_events[y]})
+        all_years_detail = []
+        for y in sorted(year_counts.keys()):
+            passed_yr = max_per_year is None or year_counts[y] <= max_per_year
+            all_years_detail.append({
+                "year": y,
+                "count": year_counts[y],
+                "limit": max_per_year,
+                "passed": passed_yr,
+            })
         rules.append({
             "rule_id": "max_per_year",
             "category": "config_validation",
@@ -534,8 +556,11 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not violations_max
                        else f"{len(violations_max)} year(s) exceed {max_per_year}/yr limit",
             "detail": {
+                "explanation": "Delivery frequency is capped per calendar year to prevent over-commitment of construction and sales resources. Each delivery event triggers a burst of lot takedowns, builder starts, and municipal inspections. Exceeding the annual cap can overwhelm builder capacity, create financing bottlenecks, and strain municipal review bandwidth. This limit ensures a sustainable pace of land absorption.",
+                "methodology": "Delivery events are grouped by calendar year of their effective date. The count per year is compared against the community's max_deliveries_per_year configuration. Years exceeding the cap are flagged as violations.",
                 "max_per_year": max_per_year,
                 "year_counts": dict(year_counts),
+                "all_years": all_years_detail,
                 "violations": violations_max,
             },
         })
@@ -586,6 +611,9 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 "dates": dates,
             })
 
+        untiered_phases = [{"phase_name": p["phase_name"], "dev_name": p["dev_name"],
+                            "instrument_name": p["instrument_name"]}
+                           for p in all_phases if p["delivery_tier"] is None]
         rules.append({
             "rule_id": "tier_ordering",
             "category": "config_validation",
@@ -595,9 +623,12 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not tier_violations
                        else f"{len(tier_violations)} tier ordering violation(s)",
             "detail": {
+                "explanation": "Delivery tiers establish a priority hierarchy for phased land development. Tier 1 phases represent the most shovel-ready parcels and must deliver before Tier 2, which in turn must precede Tier 3, and so on. This ordering ensures that infrastructure investment flows sequentially from the most accessible sections outward, preventing stranded capital in later sections while earlier ones remain undeveloped. Violations indicate that a higher-priority tier has phases delivering after a lower-priority tier.",
+                "methodology": "All phases with an assigned delivery_tier and a scheduled delivery event are grouped by tier. For each pair of tiers (low, high), the latest delivery date in the lower tier is compared against the earliest date in the higher tier. If the lower tier's latest date exceeds the higher tier's earliest date, a violation is recorded.",
                 "flow": tier_flow,
                 "violations": tier_violations,
                 "tier_count": len(tiers_sorted),
+                "untiered_phases": untiered_phases,
             },
         })
 
@@ -649,7 +680,11 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "summary": f"All {len(group_phases)} group(s) deliver simultaneously"
                        if not group_violations
                        else f"{len(group_violations)} group(s) not synchronized",
-            "detail": { "groups": group_detail },
+            "detail": {
+                "explanation": "Delivery groups enforce cross-instrument forced bundling, where phases from different legal instruments must deliver on the same date. This typically arises when a single physical section of a community is recorded under multiple instruments (e.g., a plat for single-family lots and a site condo for attached units sharing the same infrastructure). Simultaneous delivery ensures that roads, utilities, and grading serving the entire section are complete before any lots in the group are released to builders.",
+                "methodology": "Phases sharing the same delivery_group value are collected. Their scheduled delivery dates are compared; if any members within a group have different dates, or if any group member lacks a delivery event entirely, the group is flagged as unsynchronized.",
+                "groups": group_detail,
+            },
         })
 
         # ── Rule 5: Group Exclusivity ────────────────────────────────────────
@@ -668,6 +703,27 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                     "date": r["delivery_date"].isoformat(),
                 })
 
+        # Build all_dates: every unique delivery date with what delivers on it
+        date_phases_map = defaultdict(list)
+        for r in event_rows:
+            if r["delivery_date"]:
+                date_phases_map[r["delivery_date"]].append({
+                    "phase_name": r["phase_name"],
+                    "dev_name": r["dev_name"],
+                    "delivery_group": r["delivery_group"],
+                })
+        all_dates_detail = []
+        for dt in sorted(date_phases_map.keys()):
+            has_group = any(p["delivery_group"] for p in date_phases_map[dt])
+            has_non_group = any(not p["delivery_group"] for p in date_phases_map[dt])
+            all_dates_detail.append({
+                "date": dt.isoformat(),
+                "phases": date_phases_map[dt],
+                "has_group_phase": has_group,
+                "has_non_group_phase": has_non_group,
+                "passed": not (has_group and has_non_group),
+            })
+
         rules.append({
             "rule_id": "group_exclusivity",
             "category": "config_validation",
@@ -677,7 +733,10 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not excl_violations
                        else f"{len(excl_violations)} non-group phase(s) on group dates",
             "detail": {
+                "explanation": "When a delivery group occupies a particular date, that date must be exclusive to the group. Non-group phases sharing the same delivery date would create resource conflicts during the development process -- grading crews, utility contractors, and municipal inspectors cannot simultaneously serve both the coordinated group delivery and an independent phase delivery. Date exclusivity ensures that the forced-bundling contract is honored without competing demands.",
+                "methodology": "All dates on which at least one grouped phase delivers are identified. Every non-grouped phase delivering on one of those dates is flagged as a violation.",
                 "group_dates": sorted(d.isoformat() for d in group_dates),
+                "all_dates": all_dates_detail,
                 "violations": excl_violations,
             },
         })
@@ -707,6 +766,15 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                         "later_date": phases[k+1]["date"].isoformat(),
                     })
 
+        all_instruments_detail = []
+        for iid, phases in inst_phases.items():
+            phases_sorted = sorted(phases, key=lambda x: x["sequence_number"])
+            all_instruments_detail.append({
+                "instrument_name": phases_sorted[0]["instrument_name"] if phases_sorted else "",
+                "phases": [{"phase_name": p["phase_name"], "sequence_number": p["sequence_number"],
+                            "date": p["date"].isoformat()} for p in phases_sorted],
+            })
+
         rules.append({
             "rule_id": "sequence_ordering",
             "category": "config_validation",
@@ -715,12 +783,22 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "summary": "All phases deliver in sequence order within their instrument"
                        if not seq_violations
                        else f"{len(seq_violations)} sequence ordering violation(s)",
-            "detail": { "violations": seq_violations },
+            "detail": {
+                "explanation": "Within each legal instrument (plat, site condo, etc.), phases are numbered sequentially to reflect the planned development progression. Phase 1 should deliver before Phase 2, Phase 2 before Phase 3, and so on, because each successive phase typically depends on infrastructure extensions from the prior phase. Out-of-sequence delivery can strand lots behind unbuilt roads or missing utility connections, creating legal and practical barriers to builder access.",
+                "methodology": "For each instrument, scheduled phases are sorted by sequence_number. Adjacent pairs are checked to ensure the earlier-sequenced phase has a delivery date on or before the later-sequenced phase. Any pair where the earlier phase delivers after the later phase is flagged.",
+                "all_instruments": all_instruments_detail,
+                "violations": seq_violations,
+            },
         })
 
         # ── Rule 7: All Phases Scheduled ─────────────────────────────────────
         scheduled_ids = set(phase_event_date.keys())
         unscheduled = [p for p in all_phases if p["phase_id"] not in scheduled_ids]
+        scheduled_list = [{
+            "phase_name": p["phase_name"], "dev_name": p["dev_name"],
+            "instrument_name": p["instrument_name"],
+            "delivery_date": phase_event_date[p["phase_id"]].isoformat(),
+        } for p in all_phases if p["phase_id"] in scheduled_ids]
         rules.append({
             "rule_id": "all_scheduled",
             "category": "config_validation",
@@ -730,8 +808,11 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not unscheduled
                        else f"{len(unscheduled)} of {len(all_phases)} phase(s) unscheduled",
             "detail": {
+                "explanation": "Every phase in the community must be linked to a delivery event so the simulation engine can project when its lots transition from Paper to Developed status. Unscheduled phases represent gaps in the development timeline -- their lots remain in Paper status indefinitely, which distorts supply projections, understates future inventory, and prevents builder assignment and start scheduling for those lots.",
+                "methodology": "The set of phases linked to delivery events (via sim_delivery_event_phases) is compared against the complete set of phases in the community. Any phase without a delivery event link is listed as unscheduled.",
                 "total": len(all_phases),
-                "scheduled": len(scheduled_ids),
+                "scheduled_count": len(scheduled_ids),
+                "scheduled": scheduled_list,
                 "unscheduled": [{"phase_name": p["phase_name"], "dev_name": p["dev_name"],
                                  "instrument_name": p["instrument_name"]}
                                 for p in unscheduled],
@@ -740,6 +821,11 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
 
         # ── Rule 8: Locked Dates Honored ─────────────────────────────────────
         locked_count = sum(1 for ev in events.values() if ev["is_locked"])
+        auto_events_list = [
+            {"event": ev["name"], "date": ev["date"].isoformat() if ev["date"] else None,
+             "phases": [p["phase_name"] for p in ev["phases"]]}
+            for ev in events.values() if not ev["is_locked"]
+        ]
         rules.append({
             "rule_id": "locked_honored",
             "category": "config_validation",
@@ -747,11 +833,14 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "passed": True,
             "summary": f"{locked_count} locked event(s) preserved" if locked_count else "No locked events",
             "detail": {
+                "explanation": "Delivery events are either locked (date_dev_actual is set, meaning the delivery has already occurred or is contractually committed) or auto-scheduled (date_dev_projected, computed by the simulation engine). Locked dates must never be moved or deleted by the engine -- they represent historical facts or binding obligations. Auto-scheduled dates, by contrast, are recalculated each simulation run. This rule confirms that all locked events remain intact after the most recent simulation run.",
+                "methodology": "All delivery events for the community are classified as locked (date_dev_actual IS NOT NULL) or auto-scheduled. The locked set is listed for audit; this rule always passes because the engine is designed never to modify locked events.",
                 "locked_events": [
                     {"event": ev["name"], "date": ev["date"].isoformat(),
                      "phases": [p["phase_name"] for p in ev["phases"]]}
                     for ev in events.values() if ev["is_locked"]
                 ],
+                "auto_events": auto_events_list,
             },
         })
 
@@ -773,7 +862,9 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
               AND (sl.date_str IS NOT NULL OR sl.date_cmp IS NOT NULL OR sl.date_cls IS NOT NULL)
         """, (ent_group_id,))
         chrono_violations = []
+        chrono_lots_checked = 0
         for r in cur.fetchall():
+            chrono_lots_checked += 1
             pairs = [("ent","dev"), ("dev","td"), ("td","str"), ("str","cmp"), ("cmp","cls")]
             for early, late in pairs:
                 d_e = r[f"d_{early}"]
@@ -794,7 +885,14 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "summary": "All lot dates in correct pipeline order"
                        if not chrono_violations
                        else f"{len(chrono_violations)} lot(s) with out-of-order dates",
-            "detail": {"violations": chrono_violations[:20], "total": len(chrono_violations)},
+            "detail": {
+                "explanation": "Every lot in the pipeline must have its milestone dates in strict chronological order: entitlement before development, development before takedown, takedown before start, start before completion, and completion before closing. A violation indicates either a data import error from MARKsystems, a gap-fill engine defect, or a manual override that created an impossible timeline. Out-of-order dates would cause the derived pipeline status to be incorrect and distort ledger counts at every affected month.",
+                "methodology": "For each lot with at least one downstream date (STR, CMP, or CLS), the six pipeline dates are compared in adjacent pairs. NULL dates are treated as 9999-12-31 to avoid false positives on lots that have not yet reached a stage. The first out-of-order pair found per lot is reported.",
+                "lots_checked": chrono_lots_checked,
+                "stage_order": ["ENT", "DEV", "TD", "STR", "CMP", "CLS"],
+                "violations": chrono_violations[:20],
+                "total": len(chrono_violations),
+            },
         })
 
         # ── Rule 10: Builder Assignment Coverage ─────────────────────────────
@@ -809,6 +907,19 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         bldr = cur.fetchone()
         bldr_total = bldr["total"] or 0
         bldr_assigned = bldr["assigned"] or 0
+
+        # Per-phase breakdown
+        cur.execute("""
+            SELECT sdp.phase_name, COUNT(*) AS sim_count,
+                   COUNT(*) FILTER (WHERE sl.builder_id IS NOT NULL) AS assigned
+            FROM sim_lots sl JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
+            WHERE sl.dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND sl.lot_source = 'sim' AND sl.excluded IS NOT TRUE
+            GROUP BY sdp.phase_name ORDER BY sdp.phase_name
+        """, (ent_group_id,))
+        by_phase_bldr = [{"phase_name": r["phase_name"], "sim_count": r["sim_count"],
+                          "assigned_count": r["assigned"]} for r in cur.fetchall()]
+
         rules.append({
             "rule_id": "builder_coverage",
             "category": "engine_diagnostic",
@@ -816,8 +927,14 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "passed": bldr_total == 0 or bldr_assigned == bldr_total,
             "summary": f"{bldr_assigned}/{bldr_total} sim lots have builder assigned"
                        if bldr_total > 0 else "No sim lots",
-            "detail": {"total": bldr_total, "assigned": bldr_assigned,
-                       "unassigned": bldr_total - bldr_assigned},
+            "detail": {
+                "explanation": "Every simulated lot must be assigned to a builder so that start pacing, spec/build classification, and downstream milestone projections reflect the correct builder's construction timeline. Builder assignment is driven by instrument-level builder splits (S-0900). Unassigned sim lots indicate either missing builder split configuration or a module defect. Without builder assignment, lots cannot be scheduled for starts and will not flow through the pipeline.",
+                "methodology": "All non-excluded sim lots in the community are counted. The subset with a non-null builder_id is compared against the total. A per-phase breakdown is also provided to localize any gaps.",
+                "total": bldr_total,
+                "assigned": bldr_assigned,
+                "unassigned": bldr_total - bldr_assigned,
+                "by_phase": by_phase_bldr,
+            },
         })
 
         # ── Rule 11: Spec/Build Assignment ───────────────────────────────────
@@ -835,6 +952,25 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         """, (ent_group_id,))
         spec_rows = [dict(r) for r in cur.fetchall()]
         spec_violations = [r for r in spec_rows if r["assigned"] < r["total"]]
+
+        # Get spec/build counts per instrument
+        cur.execute("""
+            SELECT sli.instrument_id, sli.instrument_name,
+                   COUNT(*) FILTER (WHERE sl.is_spec = TRUE) AS spec_count,
+                   COUNT(*) FILTER (WHERE sl.is_spec = FALSE) AS build_count,
+                   COUNT(*) FILTER (WHERE sl.is_spec IS NULL) AS undetermined_count
+            FROM sim_lots sl
+            JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
+            JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
+            WHERE sl.dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND sl.excluded IS NOT TRUE
+              AND sli.spec_rate IS NOT NULL
+            GROUP BY sli.instrument_id, sli.instrument_name
+        """, (ent_group_id,))
+        spec_breakdown = {r["instrument_id"]: {"spec_count": r["spec_count"], "build_count": r["build_count"],
+                                                "undetermined_count": r["undetermined_count"]}
+                          for r in cur.fetchall()}
+
         rules.append({
             "rule_id": "spec_build",
             "category": "engine_diagnostic",
@@ -844,10 +980,14 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not spec_violations
                        else f"{len(spec_violations)} instrument(s) with unassigned is_spec",
             "detail": {
+                "explanation": "Each lot must be classified as either spec (builder-initiated, no buyer under contract at start) or build (buyer-contracted before construction begins). The spec/build ratio is a critical financial metric: spec homes carry inventory risk and holding costs, while build homes have committed revenue. The classification is driven by the instrument-level spec_rate parameter and applied by the S-0950 module. Unclassified lots indicate the module has not run or the spec_rate is misconfigured.",
+                "methodology": "For each instrument with a configured spec_rate, all non-excluded lots are counted. Lots with is_spec set (TRUE or FALSE) are compared against the total. Per-instrument spec and build counts are provided for ratio verification against the configured spec_rate.",
                 "instruments": [{
                     "instrument_name": r["instrument_name"],
                     "spec_rate": float(r["spec_rate"]) if r["spec_rate"] else None,
                     "total": r["total"], "assigned": r["assigned"],
+                    "spec_count": spec_breakdown.get(r["instrument_id"], {}).get("spec_count", 0),
+                    "build_count": spec_breakdown.get(r["instrument_id"], {}).get("build_count", 0),
                 } for r in spec_rows],
             },
         })
@@ -868,6 +1008,18 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             HAVING COUNT(DISTINCT date_str) > 1
         """, (ent_group_id,))
         bg_violations = [dict(r) for r in cur.fetchall()]
+
+        # Total building groups checked
+        cur.execute("""
+            SELECT COUNT(DISTINCT building_group_id) AS groups_checked
+            FROM sim_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND building_group_id IS NOT NULL
+              AND date_str IS NOT NULL
+              AND excluded IS NOT TRUE
+        """, (ent_group_id,))
+        bg_total = cur.fetchone()["groups_checked"] or 0
+
         rules.append({
             "rule_id": "building_group_sync",
             "category": "engine_diagnostic",
@@ -876,11 +1028,16 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "summary": "All building groups share unified start dates"
                        if not bg_violations
                        else f"{len(bg_violations)} group(s) with split start dates",
-            "detail": {"violations": [{
-                "building_group_id": v["building_group_id"],
-                "lot_count": v["lot_count"],
-                "min_str": v["min_str"], "max_str": v["max_str"],
-            } for v in bg_violations]},
+            "detail": {
+                "explanation": "Building groups represent physically attached units (e.g., townhome buildings) that must start construction simultaneously because they share a common foundation, framing, and roofline. If lots within a building group have different start dates, it would be physically impossible to build -- you cannot frame half a townhome building while the other half remains unstarted. This rule verifies that the engine's building group date synchronization logic (S-1050) is working correctly.",
+                "methodology": "All building groups with at least one started lot are identified. For each group, the number of distinct date_str values is counted. Groups with more than one distinct start date are flagged as violations.",
+                "groups_checked": bg_total,
+                "violations": [{
+                    "building_group_id": v["building_group_id"],
+                    "lot_count": v["lot_count"],
+                    "min_str": v["min_str"], "max_str": v["max_str"],
+                } for v in bg_violations],
+            },
         })
 
         # ── Rule 13: TDA Checkpoint Fulfillment ──────────────────────────────
@@ -901,6 +1058,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         tda_rows = [dict(r) for r in cur.fetchall()]
         tda_gaps = [r for r in tda_rows
                     if r["lots_required_cumulative"] and r["assigned_count"] < r["lots_required_cumulative"]]
+        tda_ids_seen = set(r["tda_id"] for r in tda_rows)
         rules.append({
             "rule_id": "tda_fulfillment",
             "category": "engine_diagnostic",
@@ -910,6 +1068,9 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not tda_gaps
                        else f"{len(tda_gaps)} checkpoint(s) under-fulfilled",
             "detail": {
+                "explanation": "Takedown agreements (TDAs) are contractual obligations to purchase a specified cumulative number of lots by each checkpoint date. Under-fulfilled checkpoints represent a breach risk -- the developer may face financial penalties, lose option rights, or trigger acceleration clauses. The simulation engine's S-0500 module assigns lots to checkpoints based on projected development and hold dates. Both date_td and date_td_hold count toward fulfillment (D-087). This rule audits whether every active TDA checkpoint has enough lots assigned to meet its cumulative requirement.",
+                "methodology": "For each active TDA, checkpoints are queried with their lots_required_cumulative and the count of lots actually assigned (via sim_takedown_lot_assignments). Checkpoints where the assigned count falls below the required count are flagged.",
+                "tda_count": len(tda_ids_seen),
                 "checkpoints": [{
                     "tda_name": r["tda_name"],
                     "checkpoint_number": r["checkpoint_number"],
@@ -959,13 +1120,24 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         """, (ent_group_id,))
         started_map = {r["phase_id"]: r["started"] for r in cur.fetchall()}
         cap_mismatches = []
+        all_phases_cap = []
         for r in cap_rows:
-            expected_sim = max(0, r["configured_capacity"] - started_map.get(r["phase_id"], 0))
+            real_started = started_map.get(r["phase_id"], 0)
+            expected_sim = max(0, r["configured_capacity"] - real_started)
+            passed_cap = r["sim_lots"] == expected_sim or r["configured_capacity"] == 0
+            all_phases_cap.append({
+                "phase_name": r["phase_name"],
+                "configured": r["configured_capacity"],
+                "real_started": real_started,
+                "expected_sim": expected_sim,
+                "actual_sim": r["sim_lots"],
+                "passed": passed_cap,
+            })
             if r["sim_lots"] != expected_sim and r["configured_capacity"] > 0:
                 cap_mismatches.append({
                     "phase_name": r["phase_name"],
                     "configured": r["configured_capacity"],
-                    "real_started": started_map.get(r["phase_id"], 0),
+                    "real_started": real_started,
                     "expected_sim": expected_sim,
                     "actual_sim": r["sim_lots"],
                 })
@@ -977,7 +1149,12 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "summary": f"Sim lot counts match configured capacity for all phases"
                        if not cap_mismatches
                        else f"{len(cap_mismatches)} phase(s) with capacity mismatch",
-            "detail": {"mismatches": cap_mismatches},
+            "detail": {
+                "explanation": "The simulation engine generates exactly the right number of sim lots per phase to fill the gap between configured capacity (from product splits) and lots already started by real/pre sources. If a phase is configured for 40 lots and 12 real lots have already started, exactly 28 sim lots should exist. A mismatch indicates either a product split misconfiguration, an engine defect in S-0800 (sim lot generation), or excluded lots not being accounted for correctly. Accurate demand/capacity matching is essential for reliable supply projections.",
+                "methodology": "For each phase, configured capacity is read from sim_phase_product_splits. Real/pre lots with date_str set are counted. Expected sim lots = configured - real_started (floored at 0). The actual sim lot count is compared against the expected value.",
+                "all_phases": all_phases_cap,
+                "mismatches": cap_mismatches,
+            },
         })
 
         # ── Rule 15: Convergence ─────────────────────────────────────────────
@@ -990,6 +1167,16 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
               AND dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
         """, (ent_group_id,))
         sim_count = cur.fetchone()["sim_count"] or 0
+
+        # By-source breakdown
+        cur.execute("""
+            SELECT lot_source, COUNT(*) AS cnt FROM sim_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND excluded IS NOT TRUE
+            GROUP BY lot_source
+        """, (ent_group_id,))
+        by_source = [{"lot_source": r["lot_source"], "count": r["cnt"]} for r in cur.fetchall()]
+
         rules.append({
             "rule_id": "convergence",
             "category": "engine_diagnostic",
@@ -997,8 +1184,13 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "passed": sim_count > 0,
             "summary": f"Simulation has produced {sim_count} sim lots"
                        if sim_count > 0
-                       else "No sim lots found — simulation may not have run",
-            "detail": {"sim_lot_count": sim_count},
+                       else "No sim lots found -- simulation may not have run",
+            "detail": {
+                "explanation": "The simulation coordinator runs the engine iteratively until delivery event dates stabilize between iterations (convergence). A converged simulation means the projected delivery schedule is self-consistent: the demand signal from delivery events produces lot counts that, when fed back through the supply modules, reproduce the same delivery dates. The presence of sim lots is a proxy indicator that the simulation has been run. The by-source breakdown shows the composition of the community's lot inventory.",
+                "methodology": "Sim lots for the community are counted. If the count is zero, the simulation likely has not been run. A lot_source breakdown (real, pre, sim) provides additional context on the community's lot composition.",
+                "sim_lot_count": sim_count,
+                "by_source": by_source,
+            },
         })
 
         # ── Rule 16: Pipeline Monotonicity ───────────────────────────────────
@@ -1019,7 +1211,19 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
               AND lot_source IN ('real', 'pre')
         """, (ent_group_id,))
         mono_violations = []
+        mono_lots_checked = 0
+        mono_by_status = defaultdict(int)
         for r in cur.fetchall():
+            mono_lots_checked += 1
+            if r["has_cls"]:
+                mono_by_status["CLS"] += 1
+            elif r["has_cmp"]:
+                mono_by_status["CMP"] += 1
+            elif r["has_str"]:
+                mono_by_status["STR"] += 1
+            else:
+                mono_by_status["other"] += 1
+
             if r["has_str"] and r["no_dev"]:
                 mono_violations.append({"lot": r["lot_number"], "has": "STR", "missing": "DEV"})
             elif r["has_cmp"] and r["no_str"]:
@@ -1034,7 +1238,14 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "summary": "All real lots have contiguous pipeline stages"
                        if not mono_violations
                        else f"{len(mono_violations)} lot(s) skip pipeline stages",
-            "detail": {"violations": mono_violations[:20], "total": len(mono_violations)},
+            "detail": {
+                "explanation": "Pipeline monotonicity ensures that no lot skips a required stage in the development pipeline. A lot with a start date (STR) but no development date (DEV) is physically impossible -- you cannot begin construction on land that has not been developed. Similarly, a lot cannot complete (CMP) without starting (STR), or close (CLS) without completing (CMP). Violations typically arise from incomplete data imports from MARKsystems where an activity code was missing or mapped incorrectly. This rule only checks real and pre-MARKS lots, as sim lots are generated with guaranteed monotonicity.",
+                "methodology": "Each real/pre lot is checked for the presence of downstream dates without their prerequisite upstream dates. Specifically: has STR but no DEV, has CMP but no STR, or has CLS but no CMP. The first violation found per lot is reported.",
+                "lots_checked": mono_lots_checked,
+                "by_status": dict(mono_by_status),
+                "violations": mono_violations[:20],
+                "total": len(mono_violations),
+            },
         })
 
         # ── Config Completeness Rules ────────────────────────────────────────
@@ -1043,6 +1254,16 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         no_splits = [p for p in all_phases
                      if not any(r["configured_capacity"] > 0
                                 for r in cap_rows if r["phase_id"] == p["phase_id"])]
+        all_items_splits = []
+        for p in all_phases:
+            has_split = any(r["configured_capacity"] > 0 for r in cap_rows if r["phase_id"] == p["phase_id"])
+            cap_val = next((r["configured_capacity"] for r in cap_rows if r["phase_id"] == p["phase_id"]), 0)
+            all_items_splits.append({
+                "phase_name": p["phase_name"], "dev_name": p["dev_name"],
+                "instrument_name": p["instrument_name"],
+                "configured_capacity": cap_val,
+                "passed": has_split,
+            })
         rules.append({
             "rule_id": "config_product_splits",
             "category": "config_completeness",
@@ -1051,9 +1272,14 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "summary": f"All {len(all_phases)} phases have product splits"
                        if not no_splits
                        else f"{len(no_splits)} phase(s) missing product splits",
-            "detail": {"missing": [{"phase_name": p["phase_name"], "dev_name": p["dev_name"],
-                                     "instrument_name": p["instrument_name"]}
-                                    for p in no_splits]},
+            "detail": {
+                "explanation": "Product splits define how many lots of each type (e.g., 50ft, 60ft, townhome) are expected in each phase. Without product splits, the engine cannot generate sim lots for a phase, and the phase's capacity appears as zero in all projections. Product splits are the foundation of the demand signal -- they tell the system how many homes will ultimately be built in each phase and what product mix the builders should plan for.",
+                "methodology": "Each phase is checked for the presence of at least one row in sim_phase_product_splits with a projected_count greater than zero. Phases with no splits or all-zero counts are flagged.",
+                "all_items": all_items_splits,
+                "missing": [{"phase_name": p["phase_name"], "dev_name": p["dev_name"],
+                              "instrument_name": p["instrument_name"]}
+                             for p in no_splits],
+            },
         })
 
         # CC-2: Annual Starts Target
@@ -1066,6 +1292,11 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         """, (ent_group_id,))
         dev_params = [dict(r) for r in cur.fetchall()]
         no_target = [d for d in dev_params if d["annual_starts_target"] is None]
+        all_items_targets = [{
+            "dev_name": d["dev_name"],
+            "annual_starts_target": float(d["annual_starts_target"]) if d["annual_starts_target"] is not None else None,
+            "passed": d["annual_starts_target"] is not None,
+        } for d in dev_params]
         rules.append({
             "rule_id": "config_starts_target",
             "category": "config_completeness",
@@ -1074,10 +1305,15 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "summary": f"All {len(dev_params)} development(s) have starts targets"
                        if not no_target
                        else f"{len(no_target)} development(s) missing annual_starts_target",
-            "detail": {"missing": [{"dev_name": d["dev_name"]} for d in no_target],
-                       "configured": [{"dev_name": d["dev_name"],
-                                       "target": float(d["annual_starts_target"])}
-                                      for d in dev_params if d["annual_starts_target"] is not None]},
+            "detail": {
+                "explanation": "The annual starts target defines how many home starts per year a development can sustain, based on builder capacity, market absorption, and infrastructure constraints. This parameter drives the S-0800 pacing model, which spreads sim lot starts across months to match the target rate. Without it, the engine cannot schedule starts and lots accumulate in Unstarted status indefinitely. The target is typically set based on historical pace, builder commitments, and market analysis.",
+                "methodology": "Each development in the community is checked for a non-null annual_starts_target value in sim_dev_params. Developments without a target are flagged.",
+                "all_items": all_items_targets,
+                "missing": [{"dev_name": d["dev_name"]} for d in no_target],
+                "configured": [{"dev_name": d["dev_name"],
+                                "target": float(d["annual_starts_target"])}
+                               for d in dev_params if d["annual_starts_target"] is not None],
+            },
         })
 
         # CC-3: Builder Splits Configured
@@ -1096,6 +1332,12 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         no_bldr = [r for r in bldr_split_rows if r["split_count"] == 0]
         bad_sum = [r for r in bldr_split_rows
                    if r["split_count"] > 0 and abs(float(r["total_share"]) - 1.0) > 0.01]
+        all_items_bldr_splits = [{
+            "instrument_name": r["instrument_name"],
+            "split_count": r["split_count"],
+            "total_pct": round(float(r["total_share"]) * 100, 1) if r["split_count"] > 0 else 0.0,
+            "passed": r["split_count"] > 0 and abs(float(r["total_share"]) - 1.0) <= 0.01,
+        } for r in bldr_split_rows]
         rules.append({
             "rule_id": "config_builder_splits",
             "category": "config_completeness",
@@ -1106,6 +1348,9 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        else (f"{len(no_bldr)} instrument(s) missing splits"
                              + (f", {len(bad_sum)} don't sum to 100%" if bad_sum else "")),
             "detail": {
+                "explanation": "Builder splits define what percentage of lots in each legal instrument are allocated to each builder. These splits drive the S-0900 builder assignment module, which assigns a builder_id to every sim lot. Splits must sum to exactly 100% (1.0) for each instrument. Missing splits mean no builder can be assigned, which blocks start scheduling. Splits that do not sum to 100% will cause either over- or under-allocation of lots to builders, distorting per-builder start projections and capacity planning.",
+                "methodology": "Each instrument in the community is checked for the presence of rows in sim_instrument_builder_splits. The sum of share values per instrument is verified to be within 1% of 1.0. Instruments with no splits or incorrect sums are flagged.",
+                "all_items": all_items_bldr_splits,
                 "missing": [{"instrument_name": r["instrument_name"]} for r in no_bldr],
                 "bad_sum": [{"instrument_name": r["instrument_name"],
                              "total_pct": round(float(r["total_share"]) * 100, 1)}
@@ -1120,10 +1365,15 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "category": "config_completeness",
             "rule_name": "Delivery Config",
             "passed": has_config,
-            "summary": "Delivery config present" if has_config else "No delivery config — using global defaults",
+            "summary": "Delivery config present" if has_config else "No delivery config -- using global defaults",
             "detail": {
+                "explanation": "The delivery configuration specifies which calendar months are valid for lot delivery events and the maximum number of deliveries allowed per year. Without a community-specific configuration, the system falls back to global defaults, which may not reflect the community's actual municipal approval windows or infrastructure constraints. A dedicated delivery config ensures the simulation engine schedules deliveries only in months when the community can realistically accept them.",
+                "methodology": "The sim_entitlement_delivery_config table is checked for a row matching the community's ent_group_id. If present, the community has its own delivery_months and max_deliveries_per_year. If absent, global defaults from sim_global_settings are used.",
+                "has_community_config": has_config,
                 "delivery_months": sorted(delivery_months),
+                "delivery_month_names": [month_names[m] for m in sorted(delivery_months)],
                 "max_per_year": max_per_year,
+                "source": "community" if has_config else "global_defaults",
             },
         })
 
