@@ -82,121 +82,108 @@ function Conclusion({ passed, children }) {
 }
 
 // ── Tier Flow Diagram ────────────────────────────────────────────────────────
-function TierFlowDiagram({ flow }) {
-  if (!flow || !flow.length) return <Muted>No tiered phases.</Muted>
+// ── Shared color palettes ────────────────────────────────────────────────────
+const BAND_STYLES = [
+  { bg: '#f5f3ff', fill: '#ede9fe', border: '#c4b5fd', text: '#5b21b6', label: '#7c3aed' },
+  { bg: '#eff6ff', fill: '#dbeafe', border: '#93c5fd', text: '#1e40af', label: '#2563eb' },
+  { bg: '#ecfdf5', fill: '#d1fae5', border: '#6ee7b7', text: '#065f46', label: '#059669' },
+  { bg: '#fffbeb', fill: '#fef3c7', border: '#fcd34d', text: '#92400e', label: '#d97706' },
+  { bg: '#fef2f2', fill: '#fecaca', border: '#fca5a5', text: '#991b1b', label: '#dc2626' },
+  { bg: '#eef2ff', fill: '#e0e7ff', border: '#a5b4fc', text: '#3730a3', label: '#6366f1' },
+  { bg: '#ecfeff', fill: '#cffafe', border: '#67e8f9', text: '#155e75', label: '#0891b2' },
+  { bg: '#fdf2f8', fill: '#fce7f3', border: '#f9a8d4', text: '#9d174d', label: '#be185d' },
+]
 
-  const allDates = [...new Set(flow.flatMap(t => t.phases.map(p => p.date)))].sort()
+const fmtShortDate = d => {
+  const dt = new Date(d + 'T00:00:00')
+  return dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
 
-  const tierStyles = [
-    { bg: '#f5f3ff', fill: '#ede9fe', border: '#c4b5fd', text: '#5b21b6', label: '#7c3aed' },
-    { bg: '#eff6ff', fill: '#dbeafe', border: '#93c5fd', text: '#1e40af', label: '#2563eb' },
-    { bg: '#ecfdf5', fill: '#d1fae5', border: '#6ee7b7', text: '#065f46', label: '#059669' },
-    { bg: '#fffbeb', fill: '#fef3c7', border: '#fcd34d', text: '#92400e', label: '#d97706' },
-    { bg: '#fef2f2', fill: '#fecaca', border: '#fca5a5', text: '#991b1b', label: '#dc2626' },
-    { bg: '#eef2ff', fill: '#e0e7ff', border: '#a5b4fc', text: '#3730a3', label: '#6366f1' },
-    { bg: '#ecfeff', fill: '#cffafe', border: '#67e8f9', text: '#155e75', label: '#0891b2' },
-    { bg: '#fdf2f8', fill: '#fce7f3', border: '#f9a8d4', text: '#9d174d', label: '#be185d' },
-  ]
-
-  const fmtDate = d => {
-    const dt = new Date(d + 'T00:00:00')
-    return dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+// ── Compact timeline row: label | date-grouped pills with arrows ─────────
+function TimelineRow({ label, badge, phases, style: s, failed }) {
+  // Group phases by date, sorted chronologically
+  const byDate = {}
+  for (const p of phases) {
+    if (!byDate[p.date]) byDate[p.date] = []
+    byDate[p.date].push(p)
   }
+  const dates = Object.keys(byDate).sort()
 
   return (
-    <div style={{ overflowX: 'auto', padding: '4px 0', borderRadius: 8, border: '1px solid #e5e7eb' }}>
-      <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
-        <thead>
-          <tr>
-            <th style={{
-              padding: '8px 14px', fontSize: 11, fontWeight: 700, color: '#374151',
-              textAlign: 'left', background: '#f9fafb', borderBottom: '2px solid #e5e7eb',
-              position: 'sticky', left: 0, zIndex: 3, minWidth: 70,
-            }}>Tier</th>
-            {allDates.map(d => (
-              <th key={d} style={{
-                padding: '8px 10px', fontSize: 11, fontWeight: 600, color: '#374151',
-                textAlign: 'center', background: '#f9fafb', borderBottom: '2px solid #e5e7eb',
-                borderLeft: '1px solid #e5e7eb', whiteSpace: 'nowrap',
-              }}>{fmtDate(d)}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {flow.map((tier, ti) => {
-            const s = tierStyles[ti % tierStyles.length]
-            const byDate = {}
-            for (const p of tier.phases) {
-              if (!byDate[p.date]) byDate[p.date] = []
-              byDate[p.date].push(p)
-            }
-            // Assign row slots chronologically: earlier dates get top rows,
-            // later dates continue below. This produces the staircase layout.
-            const dateCols = allDates.filter(d => byDate[d])
-            const dateRowStart = {}  // date -> first row index for that date
-            let nextRow = 0
-            for (const d of dateCols) {
-              dateRowStart[d] = nextRow
-              nextRow += byDate[d].length
-            }
-            const maxRows = Math.max(1, nextRow)
-            const isLast = ti === flow.length - 1
+    <div style={{
+      display: 'flex', alignItems: 'stretch', borderBottom: '1px solid #e5e7eb',
+    }}>
+      {/* Label */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '8px 12px', minWidth: 120, maxWidth: 180,
+        background: s.bg, borderRight: `3px solid ${s.border}`,
+        fontSize: 12, fontWeight: 700, color: s.label, flexShrink: 0,
+      }}>
+        {badge && (
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 20, height: 20, borderRadius: '50%', background: s.label,
+            color: '#fff', fontSize: 10, fontWeight: 700, flexShrink: 0,
+          }}>{badge}</span>
+        )}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      </div>
+      {/* Timeline */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 0, padding: '6px 10px',
+        flexWrap: 'wrap', flex: 1,
+      }}>
+        {dates.map((d, di) => (
+          <div key={d} style={{ display: 'flex', alignItems: 'center' }}>
+            {di > 0 && <span style={{ padding: '0 8px', color: s.border, fontSize: 16, fontWeight: 700 }}>→</span>}
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 3,
+              padding: '4px 8px', borderRadius: 6, background: s.fill,
+              border: `1px solid ${s.border}`,
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: s.text, textAlign: 'center' }}>
+                {fmtShortDate(d)}
+              </div>
+              {byDate[d].map((p, pi) => (
+                <div key={pi} style={{
+                  padding: '1px 6px', borderRadius: 3, fontSize: 11, fontWeight: 500,
+                  background: (p.passed === false) ? '#fef2f2' : '#fff',
+                  color: (p.passed === false) ? '#991b1b' : s.text,
+                  border: `1px solid ${(p.passed === false) ? '#fca5a5' : s.border + '80'}`,
+                  whiteSpace: 'nowrap',
+                }}>
+                  {p.seq != null && <span style={{
+                    display: 'inline-block', width: 16, height: 16, borderRadius: '50%',
+                    background: (p.passed === false) ? '#fecaca' : s.border + '30',
+                    color: (p.passed === false) ? '#991b1b' : s.text,
+                    textAlign: 'center', lineHeight: '16px', fontSize: 9, fontWeight: 700,
+                    marginRight: 4, verticalAlign: 'middle',
+                  }}>{p.seq}</span>}
+                  {p.phase_name}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
-            return Array.from({ length: maxRows }, (_, rowIdx) => (
-              <tr key={`${tier.tier}-${rowIdx}`}>
-                {rowIdx === 0 && (
-                  <td rowSpan={maxRows} style={{
-                    padding: '8px 14px', fontSize: 13, fontWeight: 800, color: s.label,
-                    background: s.bg, borderRight: `3px solid ${s.border}`,
-                    borderBottom: isLast ? 'none' : '2px solid #e5e7eb',
-                    verticalAlign: 'middle', position: 'sticky', left: 0, zIndex: 2,
-                    letterSpacing: '0.02em',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: 22, height: 22, borderRadius: '50%', background: s.label,
-                        color: '#fff', fontSize: 11, fontWeight: 700,
-                      }}>{tier.tier}</span>
-                      <span>Tier {tier.tier}</span>
-                    </div>
-                  </td>
-                )}
-                {allDates.map(d => {
-                  const phases = byDate[d] || []
-                  const start = dateRowStart[d] ?? 0
-                  // Phase shows if this rowIdx falls within this date's slot range
-                  const localIdx = rowIdx - start
-                  const phase = (localIdx >= 0 && localIdx < phases.length) ? phases[localIdx] : null
-                  return (
-                    <td key={d} style={{
-                      padding: phase ? '4px 10px' : '4px 6px',
-                      fontSize: 11, whiteSpace: 'nowrap',
-                      borderBottom: rowIdx === maxRows - 1
-                        ? (isLast ? 'none' : '2px solid #e5e7eb')
-                        : '1px solid #f5f5f5',
-                      borderLeft: '1px solid #e5e7eb',
-                      background: phase ? s.fill : '#fff',
-                      minWidth: 110,
-                    }}>
-                      {phase && (
-                        <div style={{
-                          padding: '2px 8px', borderRadius: 4,
-                          border: `1px solid ${s.border}`,
-                          background: '#fff', color: s.text,
-                          fontWeight: 500, fontSize: 11, lineHeight: 1.4,
-                        }}>
-                          {phase.phase_name}
-                        </div>
-                      )}
-                    </td>
-                  )
-                })}
-              </tr>
-            ))
-          })}
-        </tbody>
-      </table>
+function TierFlowDiagram({ flow }) {
+  if (!flow || !flow.length) return <Muted>No tiered phases.</Muted>
+  return (
+    <div style={{ borderRadius: 8, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+      {flow.map((tier, ti) => (
+        <TimelineRow
+          key={tier.tier}
+          label={`Tier ${tier.tier}`}
+          badge={tier.tier}
+          phases={tier.phases}
+          style={BAND_STYLES[ti % BAND_STYLES.length]}
+        />
+      ))}
     </div>
   )
 }
@@ -262,123 +249,16 @@ function PipelineDiagram() {
 // ── Sequence Grid (instrument × date timeline) ──────────────────────────────
 function SequenceGrid({ instruments }) {
   if (!instruments || !instruments.length) return <Muted>No instruments.</Muted>
-
-  // All unique dates across all instruments
-  const allDates = [...new Set(instruments.flatMap(inst =>
-    (inst.phases || []).map(p => p.date)
-  ))].sort()
-
-  const instStyles = [
-    { bg: '#eff6ff', fill: '#dbeafe', border: '#93c5fd', text: '#1e40af', label: '#2563eb' },
-    { bg: '#f5f3ff', fill: '#ede9fe', border: '#c4b5fd', text: '#5b21b6', label: '#7c3aed' },
-    { bg: '#ecfdf5', fill: '#d1fae5', border: '#6ee7b7', text: '#065f46', label: '#059669' },
-    { bg: '#fffbeb', fill: '#fef3c7', border: '#fcd34d', text: '#92400e', label: '#d97706' },
-    { bg: '#fef2f2', fill: '#fecaca', border: '#fca5a5', text: '#991b1b', label: '#dc2626' },
-    { bg: '#ecfeff', fill: '#cffafe', border: '#67e8f9', text: '#155e75', label: '#0891b2' },
-    { bg: '#fdf2f8', fill: '#fce7f3', border: '#f9a8d4', text: '#9d174d', label: '#be185d' },
-    { bg: '#eef2ff', fill: '#e0e7ff', border: '#a5b4fc', text: '#3730a3', label: '#6366f1' },
-  ]
-
-  const fmtDate = d => {
-    const dt = new Date(d + 'T00:00:00')
-    return dt.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-  }
-
   return (
-    <div style={{ overflowX: 'auto', padding: '4px 0', borderRadius: 8, border: '1px solid #e5e7eb' }}>
-      <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%' }}>
-        <thead>
-          <tr>
-            <th style={{
-              padding: '8px 14px', fontSize: 11, fontWeight: 700, color: '#374151',
-              textAlign: 'left', background: '#f9fafb', borderBottom: '2px solid #e5e7eb',
-              position: 'sticky', left: 0, zIndex: 3, minWidth: 160,
-            }}>Instrument</th>
-            {allDates.map(d => (
-              <th key={d} style={{
-                padding: '8px 10px', fontSize: 11, fontWeight: 600, color: '#374151',
-                textAlign: 'center', background: '#f9fafb', borderBottom: '2px solid #e5e7eb',
-                borderLeft: '1px solid #e5e7eb', whiteSpace: 'nowrap',
-              }}>{fmtDate(d)}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {instruments.map((inst, ii) => {
-            const s = instStyles[ii % instStyles.length]
-            const phases = inst.phases || []
-            // Group by date
-            const byDate = {}
-            for (const p of phases) {
-              if (!byDate[p.date]) byDate[p.date] = []
-              byDate[p.date].push(p)
-            }
-            // Staircase: earlier dates top, later dates below
-            const dateCols = allDates.filter(d => byDate[d])
-            const dateRowStart = {}
-            let nextRow = 0
-            for (const d of dateCols) {
-              dateRowStart[d] = nextRow
-              nextRow += byDate[d].length
-            }
-            const maxRows = Math.max(1, nextRow)
-            const isLast = ii === instruments.length - 1
-
-            return Array.from({ length: maxRows }, (_, rowIdx) => (
-              <tr key={`${ii}-${rowIdx}`}>
-                {rowIdx === 0 && (
-                  <td rowSpan={maxRows} style={{
-                    padding: '8px 14px', fontSize: 12, fontWeight: 700, color: s.label,
-                    background: s.bg, borderRight: `3px solid ${s.border}`,
-                    borderBottom: isLast ? 'none' : '2px solid #e5e7eb',
-                    verticalAlign: 'middle', position: 'sticky', left: 0, zIndex: 2,
-                  }}>
-                    {inst.instrument_name}
-                  </td>
-                )}
-                {allDates.map(d => {
-                  const dPhases = byDate[d] || []
-                  const start = dateRowStart[d] ?? 0
-                  const localIdx = rowIdx - start
-                  const phase = (localIdx >= 0 && localIdx < dPhases.length) ? dPhases[localIdx] : null
-                  return (
-                    <td key={d} style={{
-                      padding: phase ? '4px 10px' : '4px 6px',
-                      fontSize: 11, whiteSpace: 'nowrap',
-                      borderBottom: rowIdx === maxRows - 1
-                        ? (isLast ? 'none' : '2px solid #e5e7eb')
-                        : '1px solid #f5f5f5',
-                      borderLeft: '1px solid #e5e7eb',
-                      background: phase ? s.fill : '#fff',
-                      minWidth: 110,
-                    }}>
-                      {phase && (
-                        <div style={{
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          padding: '2px 8px', borderRadius: 4,
-                          border: `1px solid ${phase.passed === false ? '#fca5a5' : s.border}`,
-                          background: phase.passed === false ? '#fef2f2' : '#fff',
-                          color: phase.passed === false ? '#991b1b' : s.text,
-                          fontWeight: 500, fontSize: 11, lineHeight: 1.4,
-                        }}>
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            width: 18, height: 18, borderRadius: '50%', fontSize: 10, fontWeight: 700,
-                            background: phase.passed === false ? '#fecaca' : s.border + '40',
-                            color: phase.passed === false ? '#991b1b' : s.text,
-                            flexShrink: 0,
-                          }}>{phase.seq ?? '?'}</span>
-                          {phase.phase_name}
-                        </div>
-                      )}
-                    </td>
-                  )
-                })}
-              </tr>
-            ))
-          })}
-        </tbody>
-      </table>
+    <div style={{ borderRadius: 8, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+      {instruments.map((inst, ii) => (
+        <TimelineRow
+          key={ii}
+          label={inst.instrument_name}
+          phases={(inst.phases || []).map(p => ({ ...p, seq: p.seq ?? p.sequence_number }))}
+          style={BAND_STYLES[(ii + 1) % BAND_STYLES.length]}
+        />
+      ))}
     </div>
   )
 }
