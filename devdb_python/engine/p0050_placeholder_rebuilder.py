@@ -647,10 +647,11 @@ def _run_scheduling_loop(
                     else:
                         lv_d = next_window_month_from(today_first, valid_months)
             lv_d = _constrain_date(lv_d, valid_months)
-            # Skip dates blocked by group deliveries
-            while lv_d in blocked_dates:
+            # Skip dates blocked by group deliveries.
+            # Do NOT re-constrain after skipping — _constrain_date may snap
+            # back to the blocked date (same-year coalescing) causing an infinite loop.
+            if lv_d in blocked_dates:
                 lv_d = next_window_month_after(lv_d, valid_months)
-                lv_d = _constrain_date(lv_d, valid_months)
             deadlines[dev_id] = lv_d
 
         urgent_dev = min(deadlines, key=lambda d: deadlines[d])
