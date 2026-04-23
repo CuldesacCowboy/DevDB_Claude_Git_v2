@@ -1022,6 +1022,21 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     """
     today_first = date.today().replace(day=1)
 
+    # Floor delivery dates to community entitlement date — nothing can
+    # be delivered before the land is entitled.
+    ent_df = conn.read_df(
+        "SELECT date_ent_actual FROM sim_entitlement_groups WHERE ent_group_id = %s",
+        (ent_group_id,),
+    )
+    if not ent_df.empty and ent_df.iloc[0]["date_ent_actual"] is not None:
+        ent_date = ent_df.iloc[0]["date_ent_actual"]
+        if hasattr(ent_date, "date"):
+            ent_date = ent_date.date()
+        ent_first = ent_date.replace(day=1)
+        if ent_first > today_first:
+            logger.info(f"P-00: Entitlement floor {ent_first} > today {today_first} — using entitlement date as scheduling floor.")
+            today_first = ent_first
+
     # Step 1: Load delivery config
     from engine.config_loader import load_delivery_config
     cfg = load_delivery_config(conn, ent_group_id)

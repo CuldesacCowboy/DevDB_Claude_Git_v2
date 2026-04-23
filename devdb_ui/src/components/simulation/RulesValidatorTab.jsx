@@ -446,6 +446,7 @@ function RuleFixActions({ ruleId, passed, onNavigate }) {
     // Delivery rules
     delivery_window:       [{ label: 'Edit Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) },
                             { label: 'Change Delivery Months in Config', icon: '→', action: () => nav({ to: 'config', tab: 'community' }) }],
+    delivery_after_entitlement: [{ label: 'Re-run Simulation', icon: '↻', action: null }],
     max_per_year:          [{ label: 'Edit Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) },
                             { label: 'Change Max/Year in Config', icon: '→', action: () => nav({ to: 'config', tab: 'community' }) }],
     tier_ordering:         [{ label: 'Edit Tiers in Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) }],
@@ -519,6 +520,38 @@ function RuleDetail({ rule, onNavigate }) {
             {rule.passed
               ? `All ${allEvents.length} delivery event(s) fall within the configured window: ${(d.valid_month_names || []).join(', ')}.`
               : `${(d.violations || []).length} event(s) fall outside the delivery window.`}
+          </Conclusion>
+        </div>
+      )
+    }
+
+    // ── DELIVERY AFTER ENTITLEMENT ────────────────────────────────────────
+    case 'delivery_after_entitlement': {
+      const allEvents = d.all_events || []
+      return (
+        <div>
+          {renderHeader()}
+          <Section title="Delivery Events vs Entitlement Date">
+            <Prose>Entitlement date: <b>{d.ent_date || 'not set'}</b></Prose>
+            <DataTable
+              columns={[
+                { key: 'event', label: 'Event', width: 200 },
+                { key: 'date', label: 'Delivery Date', width: 100 },
+                { key: 'phases', label: 'Phases', render: r => (r.phases || []).join(', ') },
+                { key: 'passed', label: 'Status', width: 60, render: r => <Badge passed={r.passed} /> },
+              ]}
+              rows={allEvents.map(e => ({ ...e, _highlight: e.passed }))}
+            />
+          </Section>
+          <Conclusion passed={rule.passed}>
+            {rule.passed
+              ? `All delivery events are scheduled on or after the entitlement date${d.ent_date ? ` (${d.ent_date})` : ''}.`
+              : <>
+                  {`${(d.violations || []).length} event(s) are scheduled before entitlement (${d.ent_date}).`}
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                    Re-run the simulation — the engine now floors delivery dates to the entitlement date. Or adjust the entitlement date in <b>Simulation → Settings → Ledger dates</b>.
+                  </div>
+                </>}
           </Conclusion>
         </div>
       )

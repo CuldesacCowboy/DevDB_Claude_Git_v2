@@ -525,6 +525,48 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             },
         })
 
+        # ── Rule 1b: Delivery After Entitlement ─────────────────────────────
+        # Fetch community entitlement date
+        cur.execute(
+            "SELECT date_ent_actual FROM sim_entitlement_groups WHERE ent_group_id = %s",
+            (ent_group_id,),
+        )
+        ent_row = cur.fetchone()
+        ent_date = ent_row["date_ent_actual"] if ent_row else None
+        pre_ent_violations = []
+        if ent_date:
+            for eid, ev in events.items():
+                if ev["date"] and ev["date"] < ent_date:
+                    pre_ent_violations.append({
+                        "event": ev["name"],
+                        "date": ev["date"].isoformat(),
+                        "ent_date": ent_date.isoformat(),
+                        "phases": [p["phase_name"] for p in ev["phases"]],
+                    })
+        rules.append({
+            "rule_id": "delivery_after_entitlement",
+            "category": "config_validation",
+            "rule_name": "Delivery After Entitlement",
+            "passed": len(pre_ent_violations) == 0,
+            "summary": (f"All deliveries on or after entitlement date ({ent_date.isoformat()})"
+                        if ent_date and not pre_ent_violations
+                        else f"{len(pre_ent_violations)} event(s) scheduled before entitlement"
+                        if pre_ent_violations
+                        else "No entitlement date set"),
+            "detail": {
+                "explanation": "Land cannot be delivered to builders before the community receives its entitlement approval. The entitlement date (date_ent_actual) marks when municipal approvals are granted and the land legally transitions from Paper to Entitled status. Any delivery event scheduled before this date represents an impossibility — lots cannot be developed on unentitled land.",
+                "methodology": "Each delivery event's effective date is compared to the community's date_ent_actual. Events with dates before the entitlement are flagged.",
+                "ent_date": ent_date.isoformat() if ent_date else None,
+                "violations": pre_ent_violations,
+                "all_events": [
+                    {"event": ev["name"], "date": ev["date"].isoformat(),
+                     "phases": [p["phase_name"] for p in ev["phases"]],
+                     "passed": not ent_date or ev["date"] >= ent_date}
+                    for ev in events.values() if ev["date"]
+                ],
+            },
+        })
+
         # ── Rule 2: Max Deliveries Per Year ──────────────────────────────────
         # A "delivery" = one unique date. Multiple events on the same date = 1 delivery.
         year_date_phases = defaultdict(lambda: defaultdict(list))  # year -> date -> [phase_name]
