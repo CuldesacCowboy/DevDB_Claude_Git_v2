@@ -11,7 +11,7 @@ Rules:   Deletes all placeholder events (date_dev_actual IS NULL) for the ent_gr
          After writing events, inserts predecessor rows between consecutive events
          per development (ordered by sequence_number) so P-0200/P-0400 enforce
          absolute intra-dev phase ordering (simultaneous OK; never out of order).
-         No-ops if auto_schedule_enabled is False. Never touches locked events.
+         Never touches locked events.
          No undelivered phases → return empty list.
          Phases with null demand + no lots are skipped unless they have real entitled lots
          OR configured product splits (supports all-sim communities on first run).
@@ -1022,12 +1022,9 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     """
     today_first = date.today().replace(day=1)
 
-    # Step 1: Check auto_schedule flag
+    # Step 1: Load delivery config
     from engine.config_loader import load_delivery_config
     cfg = load_delivery_config(conn, ent_group_id)
-    if not cfg["auto_schedule_enabled"]:
-        logger.info(f"P-00: auto_schedule_enabled=False for ent_group_id={ent_group_id}. Skipping.")
-        return []
 
     # Attach ent_group_id to cfg so sub-functions can use it without a separate param
     cfg["ent_group_id"] = ent_group_id

@@ -78,7 +78,6 @@ export default function ConfigView({ showTestCommunities }) {
       const updated = await res.json()
       setCommData(prev => prev.map(r => r.ent_group_id === entGroupId
         ? { ...r,
-            auto_schedule_enabled:   updated.auto_schedule_enabled,
             delivery_months:         updated.delivery_months != null ? [...updated.delivery_months] : null,
             max_deliveries_per_year: updated.max_deliveries_per_year }
         : r))

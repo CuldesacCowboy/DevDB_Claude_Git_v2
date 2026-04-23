@@ -23,9 +23,8 @@ const COMM_COLS = [
   { editable: true, kind: 'edit',     autoOpen: false },  // 3 date_ent   (date — don't auto-open)
   { editable: false },                                     // 4 county (select, not EditableCell)
   { editable: false },                                     // 5 school district (select)
-  { editable: true, kind: 'checkbox', autoOpen: false },  // 6 auto_schedule
-  { editable: true, kind: 'month',    autoOpen: false },  // 7 delivery_months
-  { editable: true, kind: 'edit',     autoOpen: true  },  // 8 del/year (number)
+  { editable: true, kind: 'month',    autoOpen: false },  // 6 delivery_months
+  { editable: true, kind: 'edit',     autoOpen: true  },  // 7 del/year (number)
 ]
 
 export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSaveGlobal }) {
@@ -97,7 +96,6 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
             <th style={{ ...thR, width: 110 }}>Bulk Ent. Date</th>
             <th style={{ ...thG, width: 130, textAlign: 'left' }}>County</th>
             <th style={{ ...thB, width: 160, textAlign: 'left' }}>School District</th>
-            <th style={{ ...thG, width: 90, textAlign: 'center' }}>Auto Schedule</th>
             <th style={{ ...thG, width: 240 }}>Delivery Months</th>
             <th style={{ ...thR, width: 72 }}>Del / Year</th>
           </tr>
@@ -189,15 +187,7 @@ export function CommunityTab({ rows, showTest, onPatchComm, globalMonths, onSave
                   </select>
                 </td>
 
-                <td style={tdG(6, { textAlign: 'center' })}>
-                  <input type="checkbox"
-                    checked={row.auto_schedule_enabled ?? false}
-                    onChange={e => onPatchComm(row.ent_group_id, 'delivery', { auto_schedule_enabled: e.target.checked })}
-                    style={{ cursor: 'pointer', width: 14, height: 14 }}
-                  />
-                </td>
-
-                <td style={tdG(7, { padding: '5px 8px' })}>
+                <td style={tdG(6, { padding: '5px 8px' })}>
                   <MonthCell months={row.delivery_months}
                     globalMonths={globalMonths}
                     onSave={v => onPatchComm(row.ent_group_id, 'delivery', { delivery_months: v })}

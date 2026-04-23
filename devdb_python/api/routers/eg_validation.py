@@ -20,7 +20,6 @@ class DeliveryConfigPutRequest(BaseModel):
     # Delivery scheduling
     delivery_months:         list[int] | None = None
     max_deliveries_per_year: int | None = None
-    auto_schedule_enabled:   bool | None = None
     # Build lag fallback constants
     default_cmp_lag_days: int | None = None
     default_cls_lag_days: int | None = None
@@ -132,7 +131,7 @@ def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
                    COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count,
                    min_p_count, min_e_count, min_u_count, min_uc_count, min_c_count,
                    delivery_months,
-                   max_deliveries_per_year, min_gap_months, auto_schedule_enabled,
+                   max_deliveries_per_year, min_gap_months,
                    default_cmp_lag_days, default_cls_lag_days,
                    feed_starts_mode,
                    scheduling_horizon_days,
@@ -151,7 +150,6 @@ def get_delivery_config(ent_group_id: int, conn=Depends(get_db_conn)):
                 "min_u_count": None, "min_uc_count": None, "min_c_count": None,
                 "delivery_months": None,
                 "max_deliveries_per_year": None, "min_gap_months": None,
-                "auto_schedule_enabled": None,
                 "default_cmp_lag_days": None, "default_cls_lag_days": None,
                 "feed_starts_mode": False,
                 "scheduling_horizon_days": None,
@@ -184,11 +182,11 @@ def put_delivery_config(
                 (ent_group_id, min_d_count, min_p_count, min_e_count,
                  min_u_count, min_uc_count, min_c_count,
                  delivery_months,
-                 max_deliveries_per_year, auto_schedule_enabled,
+                 max_deliveries_per_year,
                  default_cmp_lag_days, default_cls_lag_days,
                  feed_starts_mode, scheduling_horizon_days, td_to_str_lag, hc_to_bldr_lag_days,
                  updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, FALSE), %s, %s, %s, current_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, FALSE), %s, %s, %s, current_timestamp)
             ON CONFLICT (ent_group_id) DO UPDATE
                 SET min_d_count              = COALESCE(EXCLUDED.min_d_count,              sim_entitlement_delivery_config.min_d_count),
                     min_p_count              = COALESCE(EXCLUDED.min_p_count,              sim_entitlement_delivery_config.min_p_count),
@@ -198,7 +196,6 @@ def put_delivery_config(
                     min_c_count              = COALESCE(EXCLUDED.min_c_count,              sim_entitlement_delivery_config.min_c_count),
                     delivery_months          = EXCLUDED.delivery_months,
                     max_deliveries_per_year  = EXCLUDED.max_deliveries_per_year,
-                    auto_schedule_enabled    = COALESCE(EXCLUDED.auto_schedule_enabled,    sim_entitlement_delivery_config.auto_schedule_enabled),
                     default_cmp_lag_days     = COALESCE(EXCLUDED.default_cmp_lag_days,     sim_entitlement_delivery_config.default_cmp_lag_days),
                     default_cls_lag_days     = COALESCE(EXCLUDED.default_cls_lag_days,     sim_entitlement_delivery_config.default_cls_lag_days),
                     feed_starts_mode         = COALESCE(%s,                                sim_entitlement_delivery_config.feed_starts_mode),
@@ -209,7 +206,7 @@ def put_delivery_config(
             RETURNING ent_group_id, min_d_count, min_p_count, min_e_count,
                       min_u_count, min_uc_count, min_c_count,
                       delivery_months,
-                      max_deliveries_per_year, auto_schedule_enabled,
+                      max_deliveries_per_year,
                       default_cmp_lag_days, default_cls_lag_days,
                       feed_starts_mode, scheduling_horizon_days, td_to_str_lag, hc_to_bldr_lag_days
             """,
@@ -223,7 +220,6 @@ def put_delivery_config(
                 body.min_c_count,
                 body.delivery_months,
                 body.max_deliveries_per_year,
-                body.auto_schedule_enabled,
                 body.default_cmp_lag_days,
                 body.default_cls_lag_days,
                 body.feed_starts_mode,       # INSERT: COALESCE(%s, FALSE) — new rows default to FALSE

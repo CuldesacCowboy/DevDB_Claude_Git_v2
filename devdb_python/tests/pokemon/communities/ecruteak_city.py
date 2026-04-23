@@ -55,18 +55,18 @@ def install(conn) -> None:
         """
         INSERT INTO developments (dev_id, dev_name, marks_code, in_marks,
             county_id, state_id, community_id)
-        VALUES (%s, %s, %s, FALSE, %s, %s, %s)
+        VALUES (%s, %s, %s, FALSE, %s, %s)
         """,
         (7012, "Ecruteak City Estates", "QL", county_id, state_id, ENT_GROUP_ID),
     )
 
     conn.execute(
-        "INSERT INTO sim_ent_group_developments (id, ent_group_id, dev_id) VALUES (%s, %s, %s)",
+        "INSERT INTO sim_ent_group_developments (id, ent_group_id, dev_id) VALUES (%s, %s)",
         (7012, ENT_GROUP_ID, 7012),
     )
 
     conn.execute(
-        "INSERT INTO sim_dev_defaults (dev_id, default_lot_type_id, default_county_id) VALUES (%s, %s, %s)",
+        "INSERT INTO sim_dev_defaults (dev_id, default_lot_type_id, default_county_id) VALUES (%s, %s)",
         (7012, 101, county_id),
     )
 
@@ -123,10 +123,10 @@ def install(conn) -> None:
         """
         INSERT INTO sim_entitlement_delivery_config
             (ent_group_id, delivery_months,
-             min_gap_months, max_deliveries_per_year, auto_schedule_enabled, updated_at)
-        VALUES (%s, %s, %s, %s, %s, now())
+             min_gap_months, max_deliveries_per_year, updated_at)
+        VALUES (%s, %s, %s, %s, now())
         """,
-        (ENT_GROUP_ID, [5,6,7,8,9,10,11], 18, 2, True),
+        (ENT_GROUP_ID, [5,6,7,8,9,10,11], 18, 2),
     )
 
     # Locked delivery event on phase 1

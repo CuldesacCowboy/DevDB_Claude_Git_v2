@@ -599,12 +599,6 @@ function DeliveryConfigStrip({ comm, globalMonths, globalMaxPerYear }) {
         <span style={{ color: '#94a3b8' }}>Max/yr:</span>{' '}
         <span style={{ color: '#1e293b' }}>{maxPerYear ?? '—'}</span>
       </span>
-      <span title="Auto-scheduling enabled">
-        <span style={{ color: '#94a3b8' }}>Auto:</span>{' '}
-        <span style={{ color: comm.auto_schedule_enabled ? '#16a34a' : '#9ca3af' }}>
-          {comm.auto_schedule_enabled ? 'on' : comm.auto_schedule_enabled === false ? 'off' : '—'}
-        </span>
-      </span>
     </div>
   )
 }

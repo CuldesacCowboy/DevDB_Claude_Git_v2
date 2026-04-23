@@ -437,14 +437,13 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
 
         # Delivery config
         cur.execute("""
-            SELECT delivery_months, max_deliveries_per_year, auto_schedule_enabled
+            SELECT delivery_months, max_deliveries_per_year
             FROM sim_entitlement_delivery_config
             WHERE ent_group_id = %s
         """, (ent_group_id,))
         cfg_row = cur.fetchone()
         delivery_months = list(cfg_row["delivery_months"]) if cfg_row and cfg_row["delivery_months"] else None
         max_per_year = cfg_row["max_deliveries_per_year"] if cfg_row else None
-        auto_sched = bool(cfg_row["auto_schedule_enabled"]) if cfg_row else False
 
         # Global settings fallback
         if delivery_months is None:
@@ -1105,14 +1104,14 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         })
 
         # CC-4: Delivery Config
+        has_config = cfg_row is not None
         rules.append({
             "rule_id": "config_delivery",
             "category": "config_completeness",
             "rule_name": "Delivery Config",
-            "passed": auto_sched,
-            "summary": "Auto-scheduling enabled" if auto_sched else "Auto-scheduling disabled — no delivery events will be created",
+            "passed": has_config,
+            "summary": "Delivery config present" if has_config else "No delivery config — using global defaults",
             "detail": {
-                "auto_schedule_enabled": auto_sched,
                 "delivery_months": sorted(delivery_months),
                 "max_per_year": max_per_year,
             },

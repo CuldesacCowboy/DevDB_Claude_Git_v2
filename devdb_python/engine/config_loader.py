@@ -12,7 +12,6 @@ logger = logging.getLogger("devdb.engine")
 
 # Hardcoded last-resort defaults (same as pre-global-settings behaviour)
 _DEFAULTS = {
-    "auto_schedule_enabled":    False,
     "max_deliveries_per_year":  1,
     "min_gap_months":           0,
     "delivery_months":          None,
@@ -38,7 +37,7 @@ def load_delivery_config(conn, ent_group_id: int) -> dict:
 
     community_df = conn.read_df(
         """
-        SELECT auto_schedule_enabled, max_deliveries_per_year, min_gap_months,
+        SELECT max_deliveries_per_year, min_gap_months,
                delivery_months,
                COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count,
                min_u_count, min_uc_count, min_c_count,
@@ -77,7 +76,6 @@ def load_delivery_config(conn, ent_group_id: int) -> dict:
         return _DEFAULTS.get(key)
 
     return {
-        "auto_schedule_enabled":   bool(merge("auto_schedule_enabled")),
         "max_deliveries_per_year": int(merge("max_deliveries_per_year")),
         "min_gap_months":          int(merge("min_gap_months")),
         "delivery_months":         merge("delivery_months"),   # may be None → no valid months

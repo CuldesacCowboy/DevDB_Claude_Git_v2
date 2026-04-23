@@ -329,7 +329,6 @@ function RuleDetail({ rule }) {
     case 'config_delivery':
       return (
         <div style={{ fontSize: 12, color: '#374151' }}>
-          <div>Auto-schedule: <b>{d.auto_schedule_enabled ? 'Yes' : 'No'}</b></div>
           <div>Delivery months: <b>{d.delivery_months?.join(', ') || 'default'}</b></div>
           <div>Max per year: <b>{d.max_per_year ?? 'not set'}</b></div>
         </div>

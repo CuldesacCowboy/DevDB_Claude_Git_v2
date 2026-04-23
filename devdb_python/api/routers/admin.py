@@ -434,7 +434,6 @@ def get_community_config(conn=Depends(get_db_conn)):
                 seg.date_paper, seg.date_ent_actual,
                 seg.county_id, c.county_name,
                 seg.school_district_id, sd.district_name AS sd_name,
-                edc.auto_schedule_enabled,
                 edc.delivery_months,
                 edc.max_deliveries_per_year
             FROM sim_entitlement_groups seg
@@ -457,7 +456,6 @@ def get_community_config(conn=Depends(get_db_conn)):
                 'county_name':             r['county_name'],
                 'school_district_id':      r['school_district_id'],
                 'sd_name':                 r['sd_name'],
-                'auto_schedule_enabled':   r['auto_schedule_enabled'],
                 'delivery_months':         list(r['delivery_months']) if r['delivery_months'] is not None else None,
                 'max_deliveries_per_year': r['max_deliveries_per_year'],
             })
@@ -571,8 +569,7 @@ def get_audit_data(conn=Depends(get_db_conn)):
                 seg.county_id, seg.school_district_id,
                 c.county_name, sd.district_name AS sd_name,
                 edc.delivery_months,
-                edc.max_deliveries_per_year,
-                edc.auto_schedule_enabled
+                edc.max_deliveries_per_year
             FROM sim_entitlement_groups seg
             LEFT JOIN sim_entitlement_delivery_config edc
                    ON edc.ent_group_id = seg.ent_group_id
@@ -593,7 +590,6 @@ def get_audit_data(conn=Depends(get_db_conn)):
                 'sd_name':                 r['sd_name'],
                 'delivery_months':         list(r['delivery_months']) if r['delivery_months'] is not None else None,
                 'max_deliveries_per_year': r['max_deliveries_per_year'],
-                'auto_schedule_enabled':   r['auto_schedule_enabled'],
                 'phases':                  [],
                 'delivery_events':         [],
             }

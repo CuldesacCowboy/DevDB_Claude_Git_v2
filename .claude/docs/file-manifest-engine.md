@@ -14,7 +14,7 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-19
 
 ### devdb_python/engine/config_loader.py
-- Owns: load_delivery_config(conn, ent_group_id) — merges community row → global row → hardcoded defaults; returns fully-resolved dict with auto_schedule_enabled, max_deliveries_per_year, min_gap_months, delivery_months, min_d/u/uc/c_count, default_cmp_lag_days, default_cls_lag_days, feed_starts_mode; called by coordinator (for build lag defaults) and by P-0000 and P-0400
+- Owns: load_delivery_config(conn, ent_group_id) — merges community row → global row → hardcoded defaults; returns fully-resolved dict with max_deliveries_per_year, min_gap_months, delivery_months, min_d/u/uc/c_count, default_cmp_lag_days, default_cls_lag_days, feed_starts_mode; called by coordinator (for build lag defaults) and by P-0000 and P-0400
 - Imports: pandas, logging
 - Imported by: coordinator.py, p0000_placeholder_rebuilder.py, p0400_delivery_date_assigner.py
 - Tables: sim_global_settings (SELECT id=1), sim_entitlement_delivery_config (SELECT by ent_group_id)

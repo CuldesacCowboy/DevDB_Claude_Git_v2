@@ -346,9 +346,6 @@ export function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettin
       body.max_deliveries_per_year = null
     }
 
-    const asVal = valFor('auto_schedule_enabled')
-    if (asVal !== '') body.auto_schedule_enabled = asVal === true || asVal === 'true'
-
     const fsVal = valFor('feed_starts_mode')
     if (fsVal !== '') body.feed_starts_mode = fsVal === true || fsVal === 'true'
 
@@ -405,14 +402,6 @@ export function DeliveryConfigSection({ entGroupId, deliveryConfig, globalSettin
         {sectionHead('Delivery scheduling')}
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12,
                         cursor: isLocked ? 'default' : 'pointer' }}>
-          <input type="checkbox" disabled={isLocked}
-            checked={valFor('auto_schedule_enabled') === true || valFor('auto_schedule_enabled') === 'true'}
-            onChange={e => setVal('auto_schedule_enabled', e.target.checked)}
-            style={{ width: 14, height: 14, accentColor: '#2563eb' }} />
-          <span style={{ color: '#6b7280' }}>Schedule deliveries automatically</span>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12,
-                        cursor: isLocked ? 'default' : 'pointer', marginTop: 6 }}>
           <input type="checkbox" disabled={isLocked}
             checked={valFor('feed_starts_mode') === true || valFor('feed_starts_mode') === 'true'}
             onChange={e => setVal('feed_starts_mode', e.target.checked)}
