@@ -498,6 +498,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 })
         rules.append({
             "rule_id": "delivery_window",
+            "category": "config_validation",
             "rule_name": "Delivery Window",
             "passed": len(violations_window) == 0,
             "summary": f"All deliveries in valid months ({', '.join(month_names[m] for m in sorted(delivery_months))})"
@@ -526,6 +527,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                                            "events": year_events[y]})
         rules.append({
             "rule_id": "max_per_year",
+            "category": "config_validation",
             "rule_name": "Max Deliveries Per Year",
             "passed": len(violations_max) == 0,
             "summary": (f"All years within {max_per_year}/yr limit" if max_per_year
@@ -587,6 +589,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
 
         rules.append({
             "rule_id": "tier_ordering",
+            "category": "config_validation",
             "rule_name": "Tier Ordering",
             "passed": len(tier_violations) == 0,
             "summary": f"All {len(tiers_sorted)} tiers deliver in correct order"
@@ -641,6 +644,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
 
         rules.append({
             "rule_id": "group_simultaneous",
+            "category": "config_validation",
             "rule_name": "Group Simultaneous Delivery",
             "passed": len(group_violations) == 0,
             "summary": f"All {len(group_phases)} group(s) deliver simultaneously"
@@ -667,6 +671,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
 
         rules.append({
             "rule_id": "group_exclusivity",
+            "category": "config_validation",
             "rule_name": "Group Date Exclusivity",
             "passed": len(excl_violations) == 0,
             "summary": "No non-group phases on group delivery dates"
@@ -705,6 +710,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
 
         rules.append({
             "rule_id": "sequence_ordering",
+            "category": "config_validation",
             "rule_name": "Sequence Ordering (within Instrument)",
             "passed": len(seq_violations) == 0,
             "summary": "All phases deliver in sequence order within their instrument"
@@ -718,6 +724,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         unscheduled = [p for p in all_phases if p["phase_id"] not in scheduled_ids]
         rules.append({
             "rule_id": "all_scheduled",
+            "category": "config_validation",
             "rule_name": "All Phases Scheduled",
             "passed": len(unscheduled) == 0,
             "summary": f"All {len(all_phases)} phases have delivery events"
@@ -736,6 +743,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         locked_count = sum(1 for ev in events.values() if ev["is_locked"])
         rules.append({
             "rule_id": "locked_honored",
+            "category": "config_validation",
             "rule_name": "Locked Dates Honored",
             "passed": True,
             "summary": f"{locked_count} locked event(s) preserved" if locked_count else "No locked events",
@@ -777,6 +785,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                     break  # one violation per lot is enough
         rules.append({
             "rule_id": "chronology",
+            "category": "engine_diagnostic",
             "rule_name": "Pipeline Chronology",
             "passed": len(chrono_violations) == 0,
             "summary": "All lot dates in correct pipeline order"
@@ -799,6 +808,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         bldr_assigned = bldr["assigned"] or 0
         rules.append({
             "rule_id": "builder_coverage",
+            "category": "engine_diagnostic",
             "rule_name": "Builder Assignment (sim lots)",
             "passed": bldr_total == 0 or bldr_assigned == bldr_total,
             "summary": f"{bldr_assigned}/{bldr_total} sim lots have builder assigned"
@@ -824,6 +834,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         spec_violations = [r for r in spec_rows if r["assigned"] < r["total"]]
         rules.append({
             "rule_id": "spec_build",
+            "category": "engine_diagnostic",
             "rule_name": "Spec/Build Assignment",
             "passed": len(spec_violations) == 0,
             "summary": f"All lots in {len(spec_rows)} instrument(s) with spec_rate have is_spec set"
@@ -856,6 +867,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         bg_violations = [dict(r) for r in cur.fetchall()]
         rules.append({
             "rule_id": "building_group_sync",
+            "category": "engine_diagnostic",
             "rule_name": "Building Group Date Sync",
             "passed": len(bg_violations) == 0,
             "summary": "All building groups share unified start dates"
@@ -888,6 +900,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                     if r["lots_required_cumulative"] and r["assigned_count"] < r["lots_required_cumulative"]]
         rules.append({
             "rule_id": "tda_fulfillment",
+            "category": "engine_diagnostic",
             "rule_name": "TDA Checkpoint Fulfillment",
             "passed": len(tda_gaps) == 0,
             "summary": f"All {len(tda_rows)} checkpoint(s) met"
@@ -949,6 +962,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 })
         rules.append({
             "rule_id": "demand_capacity",
+            "category": "engine_diagnostic",
             "rule_name": "Demand / Capacity Match",
             "passed": len(cap_mismatches) == 0,
             "summary": f"Sim lot counts match configured capacity for all phases"
@@ -969,6 +983,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         sim_count = cur.fetchone()["sim_count"] or 0
         rules.append({
             "rule_id": "convergence",
+            "category": "engine_diagnostic",
             "rule_name": "Simulation Convergence",
             "passed": sim_count > 0,
             "summary": f"Simulation has produced {sim_count} sim lots"
@@ -1004,12 +1019,103 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 mono_violations.append({"lot": r["lot_number"], "has": "CLS", "missing": "CMP"})
         rules.append({
             "rule_id": "pipeline_monotonicity",
+            "category": "engine_diagnostic",
             "rule_name": "Pipeline Stage Monotonicity",
             "passed": len(mono_violations) == 0,
             "summary": "All real lots have contiguous pipeline stages"
                        if not mono_violations
                        else f"{len(mono_violations)} lot(s) skip pipeline stages",
             "detail": {"violations": mono_violations[:20], "total": len(mono_violations)},
+        })
+
+        # ── Config Completeness Rules ────────────────────────────────────────
+
+        # CC-1: Product Splits Configured
+        no_splits = [p for p in all_phases
+                     if not any(r["configured_capacity"] > 0
+                                for r in cap_rows if r["phase_id"] == p["phase_id"])]
+        rules.append({
+            "rule_id": "config_product_splits",
+            "category": "config_completeness",
+            "rule_name": "Product Splits Configured",
+            "passed": len(no_splits) == 0,
+            "summary": f"All {len(all_phases)} phases have product splits"
+                       if not no_splits
+                       else f"{len(no_splits)} phase(s) missing product splits",
+            "detail": {"missing": [{"phase_name": p["phase_name"], "dev_name": p["dev_name"],
+                                     "instrument_name": p["instrument_name"]}
+                                    for p in no_splits]},
+        })
+
+        # CC-2: Annual Starts Target
+        cur.execute("""
+            SELECT d.dev_id, d.dev_name, sdp.annual_starts_target
+            FROM developments d
+            JOIN sim_ent_group_developments segd ON segd.dev_id = d.dev_id
+            LEFT JOIN sim_dev_params sdp ON sdp.dev_id = d.dev_id
+            WHERE segd.ent_group_id = %s
+        """, (ent_group_id,))
+        dev_params = [dict(r) for r in cur.fetchall()]
+        no_target = [d for d in dev_params if d["annual_starts_target"] is None]
+        rules.append({
+            "rule_id": "config_starts_target",
+            "category": "config_completeness",
+            "rule_name": "Annual Starts Target",
+            "passed": len(no_target) == 0,
+            "summary": f"All {len(dev_params)} development(s) have starts targets"
+                       if not no_target
+                       else f"{len(no_target)} development(s) missing annual_starts_target",
+            "detail": {"missing": [{"dev_name": d["dev_name"]} for d in no_target],
+                       "configured": [{"dev_name": d["dev_name"],
+                                       "target": float(d["annual_starts_target"])}
+                                      for d in dev_params if d["annual_starts_target"] is not None]},
+        })
+
+        # CC-3: Builder Splits Configured
+        cur.execute("""
+            SELECT sli.instrument_id, sli.instrument_name,
+                   COUNT(sibs.builder_id) AS split_count,
+                   COALESCE(SUM(sibs.share), 0) AS total_share
+            FROM sim_legal_instruments sli
+            JOIN developments d ON d.dev_id = sli.dev_id
+            JOIN sim_ent_group_developments segd ON segd.dev_id = d.dev_id
+            LEFT JOIN sim_instrument_builder_splits sibs ON sibs.instrument_id = sli.instrument_id
+            WHERE segd.ent_group_id = %s
+            GROUP BY sli.instrument_id, sli.instrument_name
+        """, (ent_group_id,))
+        bldr_split_rows = [dict(r) for r in cur.fetchall()]
+        no_bldr = [r for r in bldr_split_rows if r["split_count"] == 0]
+        bad_sum = [r for r in bldr_split_rows
+                   if r["split_count"] > 0 and abs(float(r["total_share"]) - 1.0) > 0.01]
+        rules.append({
+            "rule_id": "config_builder_splits",
+            "category": "config_completeness",
+            "rule_name": "Builder Splits Configured",
+            "passed": len(no_bldr) == 0 and len(bad_sum) == 0,
+            "summary": f"All {len(bldr_split_rows)} instrument(s) have builder splits summing to 100%"
+                       if not no_bldr and not bad_sum
+                       else (f"{len(no_bldr)} instrument(s) missing splits"
+                             + (f", {len(bad_sum)} don't sum to 100%" if bad_sum else "")),
+            "detail": {
+                "missing": [{"instrument_name": r["instrument_name"]} for r in no_bldr],
+                "bad_sum": [{"instrument_name": r["instrument_name"],
+                             "total_pct": round(float(r["total_share"]) * 100, 1)}
+                            for r in bad_sum],
+            },
+        })
+
+        # CC-4: Delivery Config
+        rules.append({
+            "rule_id": "config_delivery",
+            "category": "config_completeness",
+            "rule_name": "Delivery Config",
+            "passed": auto_sched,
+            "summary": "Auto-scheduling enabled" if auto_sched else "Auto-scheduling disabled — no delivery events will be created",
+            "detail": {
+                "auto_schedule_enabled": auto_sched,
+                "delivery_months": sorted(delivery_months),
+                "max_per_year": max_per_year,
+            },
         })
 
         return rules
