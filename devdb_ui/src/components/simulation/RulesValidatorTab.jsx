@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { API_BASE } from '../../config'
 
 // ── Fix Action button ────────────────────────────────────────────────────────
 function FixAction({ label, icon, onClick }) {
@@ -1028,31 +1027,29 @@ function RuleDetail({ rule, onNavigate }) {
         <div>
           {renderHeader()}
           <Section title="All Phases">
-            {allItems.map((p, i) => (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px',
-                background: p.passed ? '#f0fdf4' : '#fef9c3', borderRadius: 4, marginBottom: 3,
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#374151', flex: 1 }}>{p.phase_name}</span>
-                <Muted>{p.instrument_name}</Muted>
-                <span style={{
-                  fontSize: 12, fontWeight: 600, minWidth: 40, textAlign: 'right',
-                  color: (p.configured_capacity || p.configured || 0) > 0 ? '#374151' : '#dc2626',
-                }}>{p.configured_capacity ?? p.configured ?? 0} lots</span>
-                <Badge passed={p.passed} />
-                {!p.passed && nav && (
-                  <button onClick={() => nav({ to: 'config', tab: 'phase' })} style={{
-                    fontSize: 10, padding: '1px 8px', borderRadius: 3, cursor: 'pointer',
-                    border: '1px solid #2563eb', background: '#eff6ff', color: '#1e40af',
-                  }}>Edit</button>
-                )}
-              </div>
-            ))}
+            <DataTable
+              columns={[
+                { key: 'phase_name', label: 'Phase', bold: true },
+                { key: 'dev_name', label: 'Development' },
+                { key: 'instrument_name', label: 'Instrument' },
+                { key: '_lots', label: 'Configured', width: 80, align: 'right', render: r => {
+                  const v = r.configured_capacity ?? r.configured ?? 0
+                  return v > 0 ? `${v} lots` : <span style={{ color: '#dc2626', fontWeight: 600 }}>0 lots</span>
+                }},
+                { key: 'passed', label: 'Status', width: 60, render: r => <Badge passed={r.passed} /> },
+              ]}
+              rows={allItems.map(p => ({ ...p, _highlight: p.passed }))}
+            />
           </Section>
           <Conclusion passed={rule.passed}>
             {rule.passed
               ? `All phases have product splits configured.`
-              : `${missing.length} phase(s) need product splits. Click Edit to configure in the Phase tab.`}
+              : <>
+                  {`${missing.length} phase(s) have no product splits.`}
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                    Go to <b>Configure → Phase tab</b>, find the phases listed above with 0 lots, and add product split counts in the lot-type columns (e.g. 50ft, 60ft, TH).
+                  </div>
+                </>}
           </Conclusion>
         </div>
       )
@@ -1066,39 +1063,24 @@ function RuleDetail({ rule, onNavigate }) {
         <div>
           {renderHeader()}
           <Section title="All Developments">
-            {allItems.map((dev, i) => (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '4px 8px',
-                background: dev.passed ? '#f0fdf4' : '#fef9c3', borderRadius: 4, marginBottom: 3,
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#374151', flex: 1 }}>{dev.dev_name}</span>
-                <input type="number" min={0} step={1}
-                  defaultValue={dev.target ?? dev.annual_starts_target ?? ''}
-                  placeholder="not set"
-                  onBlur={async e => {
-                    const v = e.target.value === '' ? null : parseFloat(e.target.value)
-                    try {
-                      await fetch(`${API_BASE}/developments/${dev.dev_id}/sim-params`, {
-                        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ annual_starts_target: v }),
-                      })
-                      e.target.style.borderColor = '#16a34a'
-                    } catch { e.target.style.borderColor = '#dc2626' }
-                  }}
-                  style={{
-                    width: 70, textAlign: 'right', fontSize: 12, padding: '2px 6px',
-                    borderRadius: 3, border: `1px solid ${dev.passed ? '#bbf7d0' : '#fcd34d'}`,
-                  }}
-                />
-                <span style={{ fontSize: 11, color: '#6b7280' }}>starts/yr</span>
-                <Badge passed={dev.passed} />
-              </div>
-            ))}
+            <DataTable
+              columns={[
+                { key: 'dev_name', label: 'Development', bold: true },
+                { key: 'target', label: 'Starts/Year', width: 100, align: 'right', render: r => (r.target ?? r.annual_starts_target) != null ? (r.target ?? r.annual_starts_target) : <span style={{ color: '#dc2626', fontWeight: 600 }}>not set</span> },
+                { key: 'passed', label: 'Status', width: 60, render: r => <Badge passed={r.passed} /> },
+              ]}
+              rows={allItems.map(r => ({ ...r, _highlight: r.passed }))}
+            />
           </Section>
           <Conclusion passed={rule.passed}>
             {rule.passed
               ? `All developments have an annual starts target configured.`
-              : `${missing.length} development(s) missing. Edit values above, then re-run simulation.`}
+              : <>
+                  {`${missing.length} development(s) missing annual_starts_target.`}
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                    Go to <b>Configure → Development tab</b> and set the <b>Starts/Year</b> value for each development listed above.
+                  </div>
+                </>}
           </Conclusion>
         </div>
       )
@@ -1111,33 +1093,27 @@ function RuleDetail({ rule, onNavigate }) {
         <div>
           {renderHeader()}
           <Section title="All Instruments">
-            {allItems.map((inst, i) => (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px',
-                background: inst.passed ? '#f0fdf4' : '#fef9c3', borderRadius: 4, marginBottom: 3,
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: '#374151', flex: 1 }}>{inst.instrument_name}</span>
-                <span style={{ fontSize: 11, color: '#6b7280' }}>
-                  {inst.split_count} builder{inst.split_count !== 1 ? 's' : ''}
-                </span>
-                <span style={{
-                  fontSize: 12, fontWeight: 600, minWidth: 50, textAlign: 'right',
-                  color: inst.passed ? '#16a34a' : '#dc2626',
-                }}>{inst.total_pct}%</span>
-                <Badge passed={inst.passed} />
-                {!inst.passed && nav && (
-                  <button onClick={() => nav({ to: 'config', tab: 'instrument' })} style={{
-                    fontSize: 10, padding: '1px 8px', borderRadius: 3, cursor: 'pointer',
-                    border: '1px solid #2563eb', background: '#eff6ff', color: '#1e40af',
-                  }}>Edit</button>
-                )}
-              </div>
-            ))}
+            <DataTable
+              columns={[
+                { key: 'instrument_name', label: 'Instrument', bold: true },
+                { key: 'split_count', label: 'Builders', width: 70, align: 'right' },
+                { key: 'total_pct', label: 'Sum %', width: 70, align: 'right', render: r =>
+                  r.split_count > 0 ? <span style={{ color: r.passed ? '#16a34a' : '#dc2626', fontWeight: 600 }}>{r.total_pct}%</span> : <span style={{ color: '#dc2626', fontWeight: 600 }}>none</span>
+                },
+                { key: 'passed', label: 'Status', width: 60, render: r => <Badge passed={r.passed} /> },
+              ]}
+              rows={allItems.map(r => ({ ...r, _highlight: r.passed }))}
+            />
           </Section>
           <Conclusion passed={rule.passed}>
             {rule.passed
               ? `All instruments have builder splits summing to 100%.`
-              : `Some instruments need builder splits configured. Click Edit to set up in the Instrument tab.`}
+              : <>
+                  Some instruments are missing builder splits or their splits don't sum to 100%.
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                    Go to <b>Configure → Instrument tab</b> and set builder percentage columns for each instrument. Percentages must sum to 100%.
+                  </div>
+                </>}
           </Conclusion>
         </div>
       )
@@ -1149,39 +1125,24 @@ function RuleDetail({ rule, onNavigate }) {
         <div>
           {renderHeader()}
           <Section title="Current Configuration">
-            <div style={{ fontSize: 12, color: '#374151', lineHeight: 2.2 }}>
-              <div>
-                Delivery months: <b>{(d.delivery_month_names || d.delivery_months || []).join(', ')}</b>
+            <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.8 }}>
+              <div>Delivery months: <b>{(d.delivery_month_names || d.delivery_months || []).join(', ')}</b>
                 <Muted> ({d.source === 'community' ? 'community override' : 'global default'})</Muted>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                Max deliveries per year:
-                <input type="number" min={1} max={12}
-                  defaultValue={d.max_per_year ?? ''}
-                  placeholder="not set"
-                  onBlur={async e => {
-                    const v = e.target.value === '' ? null : parseInt(e.target.value, 10)
-                    try {
-                      await fetch(`${API_BASE}/entitlement-groups/${d.ent_group_id}/delivery-config`, {
-                        method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ max_deliveries_per_year: v }),
-                      })
-                      e.target.style.borderColor = '#16a34a'
-                    } catch { e.target.style.borderColor = '#dc2626' }
-                  }}
-                  style={{
-                    width: 50, textAlign: 'right', fontSize: 12, padding: '2px 6px',
-                    borderRadius: 3, border: '1px solid #d1d5db',
-                  }}
-                />
-                <Muted>per year</Muted>
+              <div>Max deliveries per year: <b>{d.max_per_year ?? <span style={{ color: '#dc2626' }}>not set</span>}</b>
+                <Muted> ({d.source === 'community' ? 'community override' : 'global default'})</Muted>
               </div>
             </div>
           </Section>
           <Conclusion passed={rule.passed}>
             {rule.passed
               ? `Delivery months and max/yr are configured (${d.source === 'community' ? 'community override' : 'via global defaults'}).`
-              : `Missing configuration. Edit above, then re-run simulation.`}
+              : <>
+                  Missing delivery months or max deliveries per year.
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                    Go to <b>Configure → Community tab</b> and set the <b>delivery months</b> (month grid) and <b>Del/Year</b> value for this community.
+                  </div>
+                </>}
           </Conclusion>
         </div>
       )
