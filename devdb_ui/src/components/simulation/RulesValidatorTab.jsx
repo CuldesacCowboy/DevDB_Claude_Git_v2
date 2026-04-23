@@ -84,30 +84,88 @@ function Conclusion({ passed, children }) {
 // ── Tier Flow Diagram ────────────────────────────────────────────────────────
 function TierFlowDiagram({ flow }) {
   if (!flow || !flow.length) return <Muted>No tiered phases.</Muted>
+
+  // Collect all unique dates across all tiers, sorted chronologically
+  const allDates = [...new Set(flow.flatMap(t => t.phases.map(p => p.date)))].sort()
+  const dateIdx = Object.fromEntries(allDates.map((d, i) => [d, i]))
+
+  // Build phase->date lookup per tier
+  const tierColors = ['#7c3aed','#2563eb','#059669','#d97706','#dc2626','#6366f1','#0891b2','#be185d','#4338ca','#9333ea']
+
+  const fmtDate = d => {
+    const [y, m] = d.split('-')
+    return `${parseInt(m)}/${parseInt('1')}/${y}`
+  }
+
+  const thStyle = {
+    padding: '4px 8px', fontSize: 10, fontWeight: 600, color: '#6b7280',
+    textAlign: 'center', borderBottom: '2px solid #e5e7eb', whiteSpace: 'nowrap',
+    background: '#f9fafb', position: 'sticky', top: 0,
+  }
+  const tierTh = {
+    ...thStyle, textAlign: 'left', position: 'sticky', left: 0, zIndex: 2,
+    background: '#f9fafb', minWidth: 60,
+  }
+
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', gap: 0, overflowX: 'auto', padding: '8px 0' }}>
-      {flow.map((tier, i) => (
-        <div key={tier.tier} style={{ display: 'flex', alignItems: 'center' }}>
-          <div style={{
-            border: '2px solid #6366f1', borderRadius: 8, padding: '10px 16px',
-            background: '#eef2ff', minWidth: 140,
-          }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#4338ca', marginBottom: 6 }}>
-              Tier {tier.tier} <Muted>({tier.phases.length} phase{tier.phases.length !== 1 ? 's' : ''})</Muted>
-            </div>
-            {tier.phases.map((p, j) => (
-              <div key={j} style={{ fontSize: 11, color: '#374151', lineHeight: 1.6 }}>
-                {p.phase_name}
-                <span style={{ color: '#6366f1', marginLeft: 6, fontWeight: 500 }}>{p.date}</span>
-                <Muted> — {p.dev_name}</Muted>
-              </div>
+    <div style={{ overflowX: 'auto', padding: '4px 0' }}>
+      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+        <thead>
+          <tr>
+            <th style={tierTh} />
+            {allDates.map(d => (
+              <th key={d} style={thStyle}>{fmtDate(d)}</th>
             ))}
-          </div>
-          {i < flow.length - 1 && (
-            <div style={{ padding: '0 10px', color: '#6366f1', fontSize: 20, fontWeight: 700 }}>→</div>
-          )}
-        </div>
-      ))}
+          </tr>
+        </thead>
+        <tbody>
+          {flow.map((tier, ti) => {
+            const color = tierColors[ti % tierColors.length]
+            // Group phases by date for this tier
+            const byDate = {}
+            for (const p of tier.phases) {
+              if (!byDate[p.date]) byDate[p.date] = []
+              byDate[p.date].push(p)
+            }
+            // Max rows needed for this tier (max phases on any single date)
+            const maxRows = Math.max(1, ...Object.values(byDate).map(a => a.length))
+
+            return Array.from({ length: maxRows }, (_, rowIdx) => (
+              <tr key={`${tier.tier}-${rowIdx}`}>
+                {rowIdx === 0 && (
+                  <td rowSpan={maxRows} style={{
+                    padding: '6px 10px', fontSize: 12, fontWeight: 700, color,
+                    borderRight: '2px solid #e5e7eb', verticalAlign: 'top',
+                    position: 'sticky', left: 0, background: '#fff', zIndex: 1,
+                    borderBottom: '1px solid #e5e7eb',
+                  }}>
+                    Tier {tier.tier}
+                  </td>
+                )}
+                {allDates.map(d => {
+                  const phases = byDate[d] || []
+                  const phase = phases[rowIdx]
+                  return (
+                    <td key={d} style={{
+                      padding: '3px 6px', fontSize: 11, whiteSpace: 'nowrap',
+                      borderBottom: rowIdx === maxRows - 1 ? '1px solid #e5e7eb' : '1px solid #f5f5f5',
+                      borderLeft: '1px solid #f0f0f0',
+                      background: phase ? `${color}10` : '#fff',
+                      minWidth: 100,
+                    }}>
+                      {phase && (
+                        <span style={{ color: '#374151' }}>
+                          {phase.phase_name}
+                        </span>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))
+          })}
+        </tbody>
+      </table>
     </div>
   )
 }
