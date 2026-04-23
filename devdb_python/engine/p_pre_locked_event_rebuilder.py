@@ -71,24 +71,43 @@ def locked_event_rebuilder(conn, ent_group_id: int) -> int:
             f"for ent_group_id={ent_group_id}."
         )
 
-    # 2. Query all phases in this community that have date_dev_actual set.
-    phases_df = conn.read_df(
+    # 2. Query all phases in this community (locked and unlocked) for delivery_group handling.
+    all_phases_df = conn.read_df(
         """
-        SELECT sdp.phase_id, sdp.date_dev_actual
+        SELECT sdp.phase_id, sdp.date_dev_actual, sdp.delivery_group
         FROM sim_dev_phases sdp
         JOIN sim_ent_group_developments segd ON segd.dev_id = sdp.dev_id
         WHERE segd.ent_group_id = %s
-          AND sdp.date_dev_actual IS NOT NULL
         ORDER BY sdp.date_dev_actual, sdp.phase_id
         """,
         (ent_group_id,),
     )
+
+    if all_phases_df.empty:
+        logger.info(
+            f"  p_pre: no phases for ent_group_id={ent_group_id}. Nothing created."
+        )
+        return 0
+
+    # Split into locked vs unlocked
+    import pandas as pd
+    locked_mask = all_phases_df["date_dev_actual"].notna()
+    phases_df = all_phases_df[locked_mask]
 
     if phases_df.empty:
         logger.info(
             f"  p_pre: no locked phases for ent_group_id={ent_group_id}. Nothing created."
         )
         return 0
+
+    # Build delivery_group -> list of phase_ids (all phases, for pulling unlocked members)
+    group_members: dict = defaultdict(list)
+    for _, row in all_phases_df.iterrows():
+        dg = row.get("delivery_group")
+        if dg is not None and hasattr(dg, "strip"):
+            dg = dg.strip() or None
+        if dg:
+            group_members[dg].append(int(row["phase_id"]))
 
     # 3. Group phases by date_dev_actual → one event per unique date.
     date_to_phases: dict = defaultdict(list)
@@ -97,6 +116,33 @@ def locked_event_rebuilder(conn, ent_group_id: int) -> int:
         if hasattr(d, "date"):
             d = d.date()
         date_to_phases[d].append(int(row["phase_id"]))
+
+    # 3b. Delivery group enforcement: if a locked phase has a delivery_group,
+    #     pull unlocked group members into the same event (earliest locked date wins).
+    assigned_phases = set()
+    for phase_ids in date_to_phases.values():
+        assigned_phases.update(phase_ids)
+
+    for locked_date in sorted(date_to_phases.keys()):
+        phase_ids = date_to_phases[locked_date]
+        groups_in_event = set()
+        for pid in phase_ids:
+            row_match = all_phases_df[all_phases_df["phase_id"] == pid]
+            if not row_match.empty:
+                dg = row_match.iloc[0].get("delivery_group")
+                if dg is not None and hasattr(dg, "strip"):
+                    dg = dg.strip() or None
+                if dg:
+                    groups_in_event.add(dg)
+        for grp in groups_in_event:
+            for member_pid in group_members.get(grp, []):
+                if member_pid not in assigned_phases:
+                    phase_ids.append(member_pid)
+                    assigned_phases.add(member_pid)
+                    logger.info(
+                        f"  p_pre: delivery_group={grp}: pulled phase {member_pid} "
+                        f"into locked event at {locked_date}"
+                    )
 
     # 4. Insert one delivery event per unique date, link phases.
     created = 0

@@ -138,6 +138,7 @@ export function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit
             <th rowSpan={2} style={thR({  width: 44 })} title="Excluded lots">Excl</th>
             <th rowSpan={2} style={thGR({ width: 90 })}>Dev Date</th>
             <th rowSpan={2} style={thR({  width: 84 })}>Lock</th>
+            <th rowSpan={2} style={thR({  width: 42 })} title="Delivery Group (A-Z)">Grp</th>
             <th rowSpan={2} style={thR({  width: 110 })}>County</th>
             <th rowSpan={2} style={thR({  width: 130 })}>School District</th>
             {showSplits && lotTypes.map((lt, i) => (
@@ -239,6 +240,27 @@ export function PhaseTab({ phaseData, showTest, onPatchPhase, onSaveProductSplit
                 <td style={tdB({ textAlign: 'center' })}>
                   <LockButton locked={isLocked} disabled={!canLock}
                     onToggle={shouldLock => onToggleLock(row, shouldLock)} />
+                </td>
+                {/* Delivery Group */}
+                <td style={tdB({ textAlign: 'center', padding: '2px 3px' })}>
+                  <input
+                    type="text"
+                    maxLength={1}
+                    value={row.delivery_group ?? ''}
+                    onChange={async e => {
+                      const raw = e.target.value.toUpperCase().replace(/[^A-Z]/g, '')
+                      try { await onPatchPhase(row.phase_id, 'delivery_group', raw || null) } catch {}
+                    }}
+                    style={{
+                      width: 28, textAlign: 'center', fontSize: 11, padding: '1px 2px',
+                      borderRadius: 3,
+                      border: row.delivery_group ? '1px solid #7c3aed' : '1px solid #e5e7eb',
+                      background: row.delivery_group ? '#f5f3ff' : '#fafafa',
+                      color: row.delivery_group ? '#5b21b6' : '#9ca3af',
+                      fontWeight: row.delivery_group ? 700 : 400,
+                    }}
+                    placeholder="—"
+                  />
                 </td>
                 {/* County */}
                 <td style={tdB({ padding: '3px 4px' })}>

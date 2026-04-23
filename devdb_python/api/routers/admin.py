@@ -59,6 +59,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 sdp.date_dev_projected,
                 sdp.date_dev_actual,
                 sdp.delivery_tier,
+                sdp.delivery_group,
                 sdp.updated_at,
                 sdp.county_id           AS phase_county_id,
                 sdp.school_district_id  AS phase_sd_id,
@@ -231,6 +232,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                 'date_dev_projected':     p['date_dev_projected'].isoformat() if p['date_dev_projected'] else None,
                 'date_dev_actual':        p['date_dev_actual'].isoformat()    if p['date_dev_actual']    else None,
                 'delivery_tier':          p['delivery_tier'],
+                'delivery_group':         p['delivery_group'],
                 'updated_at':             p['updated_at'].isoformat()         if p['updated_at']         else None,
                 'hint_date':              hint_map.get(pid),
                 'phase_county_id':        p['phase_county_id'],
@@ -255,6 +257,7 @@ class PhasePatchRequest(BaseModel):
     date_dev_projected:  Optional[str] = None
     date_dev_actual:     Optional[str] = None
     delivery_tier:       Optional[int] = None
+    delivery_group:      Optional[str] = None
     county_id:           Optional[int] = None
     school_district_id:  Optional[int] = None
 
@@ -280,6 +283,12 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
     if 'delivery_tier' in provided:
         clauses.append("delivery_tier = %s")
         params.append(body.delivery_tier)
+    if 'delivery_group' in provided:
+        val = (body.delivery_group or '').strip().upper() or None
+        if val and (len(val) != 1 or not val.isalpha()):
+            raise HTTPException(status_code=422, detail='delivery_group must be a single letter A-Z')
+        clauses.append("delivery_group = %s")
+        params.append(val)
     if 'county_id' in provided:
         clauses.append("county_id = %s")
         params.append(body.county_id)
@@ -294,7 +303,7 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
             f"UPDATE sim_dev_phases SET {', '.join(clauses)} "
             f"WHERE phase_id = %s "
             f"RETURNING phase_id, lot_count_projected, date_dev_projected, date_dev_actual, "
-            f"          delivery_tier, county_id, school_district_id",
+            f"          delivery_tier, delivery_group, county_id, school_district_id",
             params,
         )
         row = cur.fetchone()
@@ -307,6 +316,7 @@ def patch_phase(phase_id: int, body: PhasePatchRequest, conn=Depends(get_db_conn
             'date_dev_projected':  row['date_dev_projected'].isoformat() if row['date_dev_projected'] else None,
             'date_dev_actual':     row['date_dev_actual'].isoformat()    if row['date_dev_actual']    else None,
             'delivery_tier':       row['delivery_tier'],
+            'delivery_group':      row['delivery_group'],
             'county_id':           row['county_id'],
             'school_district_id':  row['school_district_id'],
         }
@@ -596,6 +606,7 @@ def get_audit_data(conn=Depends(get_db_conn)):
                 sdp.phase_name,
                 sdp.sequence_number,
                 sdp.delivery_tier,
+                sdp.delivery_group,
                 sdp.date_dev_actual
             FROM sim_entitlement_groups seg
             JOIN sim_ent_group_developments segd ON segd.ent_group_id = seg.ent_group_id
@@ -711,6 +722,7 @@ def get_audit_data(conn=Depends(get_db_conn)):
                 'sequence_number':     p['sequence_number'],
                 'spec_rate':           float(p['spec_rate']) if p['spec_rate'] is not None else None,
                 'delivery_tier':       p['delivery_tier'],
+                'delivery_group':      p['delivery_group'],
                 'date_dev_actual':     p['date_dev_actual'].isoformat() if p['date_dev_actual'] else None,
                 'real_pre_lots':       real_pre_map.get(pid, 0),
                 'product_split_total': prod_total_map.get(pid, 0),

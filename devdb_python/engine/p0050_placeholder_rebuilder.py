@@ -104,7 +104,7 @@ def _collect_schedulable_phases(conn, ent_group_id: int, today_first: date) -> d
     all_phases_df = conn.read_df(
         """
         SELECT sdp.phase_id, sdp.dev_id, sdp.date_dev_demand_derived,
-               sdp.sequence_number, sdp.delivery_tier
+               sdp.sequence_number, sdp.delivery_tier, sdp.delivery_group
         FROM sim_dev_phases sdp
         JOIN sim_ent_group_developments egd
              ON egd.dev_id = sdp.dev_id
@@ -144,12 +144,16 @@ def _collect_schedulable_phases(conn, ent_group_id: int, today_first: date) -> d
                 demand = None
         except (TypeError, ValueError):
             pass
+        dg = ph["delivery_group"] if "delivery_group" in ph.index else None
+        if dg is not None and hasattr(dg, "strip"):
+            dg = dg.strip() or None
         undelivered.append({
             "phase_id": ph_id,
             "dev_id": dev_id,
             "demand_date": demand,
             "sequence_number": int(ph["sequence_number"]) if ph["sequence_number"] is not None else 9999,
             "delivery_tier": int(ph["delivery_tier"]) if ph["delivery_tier"] is not None else None,
+            "delivery_group": dg,
         })
 
     if not undelivered:
@@ -415,6 +419,9 @@ def _run_scheduling_loop(
             p["sequence_number"],
         ))
 
+    # Snapshot for delivery_group lookup (phases are popped from dev_phases during scheduling)
+    undelivered_orig = list(undelivered)
+
     dev_monthly_pace: dict[int, float] = {}
     for dev_id, phases_list in dev_phases.items():
         paces = [annual_target_map[p["phase_id"]] for p in phases_list if p["phase_id"] in annual_target_map]
@@ -676,6 +683,34 @@ def _run_scheduling_loop(
             )
             for p in batch:
                 event_phase_ids.append(p["phase_id"])
+
+        # --- Delivery group enforcement: pull in same-group phases from other devs ---
+        event_groups = set()
+        for pid in event_phase_ids:
+            for p in undelivered_orig:
+                if p["phase_id"] == pid and p["delivery_group"]:
+                    event_groups.add(p["delivery_group"])
+        if event_groups:
+            for grp in event_groups:
+                for dev_id_g, bucket in list(dev_phases.items()):
+                    for i, p in enumerate(bucket):
+                        if p["delivery_group"] == grp and p["phase_id"] not in event_phase_ids:
+                            popped = bucket.pop(i)
+                            extra_lots = sum(_get_phase_lots(conn, popped["phase_id"]))
+                            pace_g = dev_monthly_pace.get(dev_id_g, 1.0)
+                            if popped["phase_id"] in phases_with_sim_lots:
+                                _apply_delivery_to_balance_from_sim_lots(dev_id_g, event_date, popped["phase_id"])
+                            else:
+                                delay_g = _compute_drain_delay(dev_id_g, event_date)
+                                _apply_delivery_to_balance(dev_id_g, event_date, extra_lots, pace_g, delay_g)
+                                demand_consumed[dev_id_g] = demand_consumed.get(dev_id_g, 0) + extra_lots
+                            event_phase_ids.append(popped["phase_id"])
+                            dev_scan_floor[dev_id_g] = event_date
+                            logger.info(
+                                f"P-00: delivery_group={grp}: pulled phase {popped['phase_id']} "
+                                f"(dev {dev_id_g}) into event at {event_date}"
+                            )
+                            break  # one phase per dev per group letter
 
         events_to_create.append({"date": event_date, "phases": event_phase_ids})
         if event_date.year not in delivery_date_per_year:
