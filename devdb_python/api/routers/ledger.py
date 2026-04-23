@@ -528,7 +528,8 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "rule_id": "max_per_year",
             "rule_name": "Max Deliveries Per Year",
             "passed": len(violations_max) == 0,
-            "summary": f"All years within {max_per_year}/yr limit"
+            "summary": (f"All years within {max_per_year}/yr limit" if max_per_year
+                        else "No max-per-year limit configured")
                        if not violations_max
                        else f"{len(violations_max)} year(s) exceed {max_per_year}/yr limit",
             "detail": {
