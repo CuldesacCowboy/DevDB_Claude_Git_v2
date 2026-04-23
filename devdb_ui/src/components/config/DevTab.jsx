@@ -20,7 +20,7 @@ const DEV_COLS = [
 // ─── StartsCell ───────────────────────────────────────────────────────────────
 // Editable annual starts target with a reactive supply label below.
 
-function StartsCell({ value, unstarted, onSave, triggerActivate = 0, onDone }) {
+function StartsCell({ value, unstarted, totalProjected, onSave, triggerActivate = 0, onDone }) {
   const [editing, setEditing] = useState(false)
   const [draft,   setDraft]   = useState('')
   const [saving,  setSaving]  = useState(false)
@@ -36,11 +36,16 @@ function StartsCell({ value, unstarted, onSave, triggerActivate = 0, onDone }) {
   }, [triggerActivate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const liveTarget = editing ? (parseFloat(draft) || 0) : (value ?? 0)
-  const supplyYrs  = liveTarget > 0 && unstarted != null ? unstarted / liveTarget : null
+  // Use the larger of unstarted real lots or total projected (from product splits).
+  // total_projected captures the full planned capacity including future sim lots.
+  // unstarted_real captures only lots that exist today and haven't started.
+  const supply = Math.max(unstarted ?? 0, totalProjected ?? 0)
+  const supplyYrs  = liveTarget > 0 && supply > 0 ? supply / liveTarget : null
 
   function supplyLabel() {
-    if (supplyYrs == null || liveTarget === 0) return null
-    if (unstarted === 0) return 'exhausted'
+    if (liveTarget === 0) return null
+    if (supply === 0) return 'exhausted'
+    if (supplyYrs == null) return null
     if (supplyYrs >= 2)  return `≈ ${supplyYrs.toFixed(1)} yrs`
     return `≈ ${Math.round(supplyYrs * 12)} mo`
   }
@@ -244,6 +249,7 @@ export function DevTab({ rows, showTest, onPatchDev }) {
                   <StartsCell
                     value={row.annual_starts_target}
                     unstarted={row.unstarted_real}
+                    totalProjected={row.total_projected}
                     triggerActivate={ac(i, 7) ? activateSignal : 0} onDone={onDone}
                     onSave={v => onPatchDev(row.dev_id, { annual_starts_target: v })}
                   />

@@ -1415,6 +1415,38 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             },
         })
 
+        # CC-5: Ledger Dates
+        cur.execute("""
+            SELECT date_paper, date_ent_actual
+            FROM sim_entitlement_groups
+            WHERE ent_group_id = %s
+        """, (ent_group_id,))
+        eg_row = cur.fetchone()
+        date_paper = eg_row["date_paper"] if eg_row else None
+        date_ent = eg_row["date_ent_actual"] if eg_row else None
+        missing_dates = []
+        if not date_paper:
+            missing_dates.append("Ledger start date (date_paper)")
+        if not date_ent:
+            missing_dates.append("Bulk entitlement date (date_ent_actual)")
+        rules.append({
+            "rule_id": "config_ledger_dates",
+            "category": "config_completeness",
+            "rule_name": "Ledger Dates",
+            "passed": len(missing_dates) == 0,
+            "summary": "Ledger start and entitlement dates are set"
+                       if not missing_dates
+                       else f"{len(missing_dates)} ledger date(s) not set",
+            "detail": {
+                "explanation": "The ledger start date (date_paper) defines when this community first appears in the simulation timeline — it anchors the P-status (paper lot) period on the ledger chart. The bulk entitlement date (date_ent_actual) marks when all lots transition from Paper to Entitled status, which is the prerequisite for delivery scheduling. Without these dates, the simulation cannot properly sequence the community's lot pipeline.",
+                "methodology": "The sim_entitlement_groups table is checked for non-null date_paper and date_ent_actual values for this community.",
+                "date_paper": date_paper.isoformat() if date_paper else None,
+                "date_ent": date_ent.isoformat() if date_ent else None,
+                "missing": missing_dates,
+                "ent_group_id": ent_group_id,
+            },
+        })
+
         return rules
     finally:
         cur.close()

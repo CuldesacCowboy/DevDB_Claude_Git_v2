@@ -442,6 +442,7 @@ function RuleFixActions({ ruleId, passed, onNavigate }) {
     config_starts_target:  [{ label: 'Fix in Config → Development Tab', icon: '→', action: () => nav({ to: 'config', tab: 'development' }) }],
     config_builder_splits: [{ label: 'Fix in Config → Instrument Tab', icon: '→', action: () => nav({ to: 'config', tab: 'instrument' }) }],
     config_delivery:       [{ label: 'Fix in Config → Community Tab', icon: '→', action: () => nav({ to: 'config', tab: 'community' }) }],
+    config_ledger_dates:   [{ label: 'Open Settings (gear icon)', icon: '⚙', action: null }],
     // Delivery rules
     delivery_window:       [{ label: 'Edit Delivery Schedule', icon: '→', action: () => nav({ to: 'delivery' }) },
                             { label: 'Change Delivery Months in Config', icon: '→', action: () => nav({ to: 'config', tab: 'community' }) }],
@@ -1141,6 +1142,36 @@ function RuleDetail({ rule, onNavigate }) {
                   Missing delivery months or max deliveries per year.
                   <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
                     Go to <b>Configure → Community tab</b> and set the <b>delivery months</b> (month grid) and <b>Del/Year</b> value for this community.
+                  </div>
+                </>}
+          </Conclusion>
+        </div>
+      )
+
+    // ── CONFIG: LEDGER DATES ─────────────────────────────────────────────
+    case 'config_ledger_dates':
+      return (
+        <div>
+          {renderHeader()}
+          <Section title="Current Values">
+            <div style={{ fontSize: 12, color: '#374151', lineHeight: 1.8 }}>
+              <div>Ledger start date: {d.date_paper
+                ? <b>{d.date_paper}</b>
+                : <span style={{ color: '#dc2626', fontWeight: 600 }}>not set</span>}
+              </div>
+              <div>Bulk entitlement date: {d.date_ent
+                ? <b>{d.date_ent}</b>
+                : <span style={{ color: '#dc2626', fontWeight: 600 }}>not set</span>}
+              </div>
+            </div>
+          </Section>
+          <Conclusion passed={rule.passed}>
+            {rule.passed
+              ? `Both ledger dates are configured.`
+              : <>
+                  {d.missing.join(' and ')} not set.
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                    Go to <b>Simulation → Settings</b> (gear icon) and set the <b>Ledger start date</b> and <b>Bulk entitlement date</b> under Ledger dates.
                   </div>
                 </>}
           </Conclusion>
