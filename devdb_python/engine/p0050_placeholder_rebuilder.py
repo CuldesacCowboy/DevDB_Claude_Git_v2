@@ -255,11 +255,38 @@ def _collect_schedulable_phases(conn, ent_group_id: int, today_first: date) -> d
         f"phase(s) have prior-iteration sim lots — balance-driven mode active for those phases."
     )
 
+    # Step 3e: Collect locked group dates — dates blocked by locked events
+    # that contain at least one grouped phase. No other phases may deliver
+    # on these dates (group exclusivity rule).
+    locked_group_dates = set()
+    if not locked_phases_df.empty:
+        locked_events_df = conn.read_df(
+            """
+            SELECT DISTINCT
+                COALESCE(sde.date_dev_actual, sde.date_dev_projected)::date AS delivery_date
+            FROM sim_delivery_events sde
+            JOIN sim_delivery_event_phases dep ON dep.delivery_event_id = sde.delivery_event_id
+            JOIN sim_dev_phases sdp ON sdp.phase_id = dep.phase_id
+            WHERE sde.ent_group_id = %s
+              AND sde.date_dev_actual IS NOT NULL
+              AND sdp.delivery_group IS NOT NULL
+            """,
+            (ent_group_id,),
+        )
+        for _, row in locked_events_df.iterrows():
+            d = row["delivery_date"]
+            if hasattr(d, "date"):
+                d = d.date()
+            locked_group_dates.add(d)
+        if locked_group_dates:
+            logger.info(f"P-00: Locked group dates (blocked for other deliveries): {sorted(locked_group_dates)}")
+
     return {
         "undelivered": undelivered,
         "locked_phase_ids": locked_phase_ids,
         "all_phases_df": all_phases_df,
         "phases_with_sim_lots": phases_with_sim_lots,
+        "locked_group_dates": locked_group_dates,
     }
 
 
@@ -275,6 +302,7 @@ def _run_scheduling_loop(
     all_phases_df,
     phases_with_sim_lots: set,
     today_first: date,
+    locked_group_dates: set | None = None,
 ) -> list:
     """
     Build the D-balance model and run the iterative delivery scheduling loop.
@@ -421,6 +449,10 @@ def _run_scheduling_loop(
 
     # Snapshot for delivery_group lookup (phases are popped from dev_phases during scheduling)
     undelivered_orig = list(undelivered)
+
+    # Dates blocked by grouped deliveries (locked + newly created).
+    # No non-group phases may deliver on these dates.
+    blocked_dates = set(locked_group_dates or set())
 
     dev_monthly_pace: dict[int, float] = {}
     for dev_id, phases_list in dev_phases.items():
@@ -615,6 +647,10 @@ def _run_scheduling_loop(
                     else:
                         lv_d = next_window_month_from(today_first, valid_months)
             lv_d = _constrain_date(lv_d, valid_months)
+            # Skip dates blocked by group deliveries
+            while lv_d in blocked_dates:
+                lv_d = next_window_month_after(lv_d, valid_months)
+                lv_d = _constrain_date(lv_d, valid_months)
             deadlines[dev_id] = lv_d
 
         urgent_dev = min(deadlines, key=lambda d: deadlines[d])
@@ -633,6 +669,7 @@ def _run_scheduling_loop(
         joining = [d for d in active if deadlines[d] <= event_date]
 
         event_phase_ids = []
+        dev_batches = defaultdict(list)   # dev_id -> list of phase dicts popped for this event
         for dev_id in joining:
             pace         = dev_monthly_pace.get(dev_id, 1.0)
             next_allowed = date(event_date.year + 1, min(valid_months), 1)
@@ -681,6 +718,7 @@ def _run_scheduling_loop(
             dev_last_delivery_lots[dev_id] = sum(
                 sum(_get_phase_lots(conn, p["phase_id"])) for p in batch
             )
+            dev_batches[dev_id] = batch
             for p in batch:
                 event_phase_ids.append(p["phase_id"])
 
@@ -705,12 +743,45 @@ def _run_scheduling_loop(
                                 _apply_delivery_to_balance(dev_id_g, event_date, extra_lots, pace_g, delay_g)
                                 demand_consumed[dev_id_g] = demand_consumed.get(dev_id_g, 0) + extra_lots
                             event_phase_ids.append(popped["phase_id"])
+                            dev_batches.setdefault(dev_id_g, []).append(popped)
                             dev_scan_floor[dev_id_g] = event_date
                             logger.info(
                                 f"P-00: delivery_group={grp}: pulled phase {popped['phase_id']} "
                                 f"(dev {dev_id_g}) into event at {event_date}"
                             )
                             break  # one phase per dev per group letter
+
+        # --- Group exclusivity: if event has grouped phases, evict non-group phases ---
+        # Rule: when a delivery_group exists on a date, no other phases may deliver
+        # on that date. Evicted phases go back to their dev_phases buckets.
+        if event_groups:
+            evicted = []
+            kept = []
+            for pid in event_phase_ids:
+                phase_group = None
+                for p in undelivered_orig:
+                    if p["phase_id"] == pid:
+                        phase_group = p.get("delivery_group")
+                        break
+                if phase_group and phase_group in event_groups:
+                    kept.append(pid)
+                else:
+                    evicted.append(pid)
+            if evicted:
+                # Return evicted phases to front of their dev_phases buckets
+                for pid in evicted:
+                    for p_orig in undelivered_orig:
+                        if p_orig["phase_id"] == pid:
+                            dev_phases[p_orig["dev_id"]].insert(0, p_orig)
+                            logger.info(
+                                f"P-00: group exclusivity: evicted phase {pid} "
+                                f"(dev {p_orig['dev_id']}) from event at {event_date} "
+                                f"— date reserved for group(s) {sorted(event_groups)}"
+                            )
+                            break
+                event_phase_ids = kept
+            # Block this date for future iterations
+            blocked_dates.add(event_date)
 
         events_to_create.append({"date": event_date, "phases": event_phase_ids})
         if event_date.year not in delivery_date_per_year:
@@ -951,11 +1022,13 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     locked_phase_ids     = phase_data["locked_phase_ids"]
     all_phases_df        = phase_data["all_phases_df"]
     phases_with_sim_lots = phase_data["phases_with_sim_lots"]
+    locked_group_dates   = phase_data.get("locked_group_dates", set())
 
     # Steps 4+5: Build D-balance and run scheduling loop
     events_to_create = _run_scheduling_loop(
         conn, cfg, undelivered, locked_phase_ids,
         all_phases_df, phases_with_sim_lots, today_first,
+        locked_group_dates=locked_group_dates,
     )
 
     if not events_to_create:
