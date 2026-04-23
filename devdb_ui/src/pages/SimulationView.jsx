@@ -174,6 +174,7 @@ const loadLedger = useCallback((id) => {
     loadGlobalSettings()
     fetchOverrides()
     loadDeliverySchedule(entGroupId)
+    loadRulesValidation(entGroupId)
     loadLots(entGroupId)
     setRunErrors([])
     setTdaGaps([])
