@@ -154,6 +154,9 @@ def temp_lot_generator(unmet_demand_series: list, phase_capacity: list,
                     state["slots_in_building"] = 0
 
         date_td = _add_months_local(date_str, -td_to_str_lag) if td_to_str_lag else date_str
+        # Clamp: takedown cannot precede delivery — land must be delivered first.
+        if delivery and date_td < delivery:
+            date_td = delivery
 
         temp_lots.append({
             "lot_id":            None,

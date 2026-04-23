@@ -206,7 +206,7 @@ function RuleDetail({ rule }) {
         <div>
           {d.total > 20 && <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Showing first 20 of {d.total}</div>}
           <ViolationList items={d.violations} render={v =>
-            `Lot ${v.lot_number}: date_${v.early_stage} (${v.early_date}) > date_${v.late_stage} (${v.late_date})`
+            `${v.lot_number} (${v.lot_source}, ${v.phase_name}): date_${v.early_stage} (${v.early_date}) > date_${v.late_stage} (${v.late_date})`
           } />
         </div>
       )

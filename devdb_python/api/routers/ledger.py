@@ -757,17 +757,20 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
 
         # ── Rule 9: Chronology ────────────────────────────────────────────────
         cur.execute("""
-            SELECT lot_id, lot_number, phase_id,
-                   COALESCE(date_ent, '9999-12-31'::date) AS d_ent,
-                   COALESCE(date_dev, '9999-12-31'::date) AS d_dev,
-                   COALESCE(date_td,  '9999-12-31'::date) AS d_td,
-                   COALESCE(date_str, '9999-12-31'::date) AS d_str,
-                   COALESCE(date_cmp, '9999-12-31'::date) AS d_cmp,
-                   COALESCE(date_cls, '9999-12-31'::date) AS d_cls
-            FROM sim_lots
-            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
-              AND excluded IS NOT TRUE
-              AND (date_str IS NOT NULL OR date_cmp IS NOT NULL OR date_cls IS NOT NULL)
+            SELECT sl.lot_id,
+                   COALESCE(sl.lot_number, 'sim #' || sl.lot_id::text) AS lot_label,
+                   sl.phase_id, sdp.phase_name, sl.lot_source,
+                   COALESCE(sl.date_ent, '9999-12-31'::date) AS d_ent,
+                   COALESCE(sl.date_dev, '9999-12-31'::date) AS d_dev,
+                   COALESCE(sl.date_td,  '9999-12-31'::date) AS d_td,
+                   COALESCE(sl.date_str, '9999-12-31'::date) AS d_str,
+                   COALESCE(sl.date_cmp, '9999-12-31'::date) AS d_cmp,
+                   COALESCE(sl.date_cls, '9999-12-31'::date) AS d_cls
+            FROM sim_lots sl
+            JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
+            WHERE sl.dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND sl.excluded IS NOT TRUE
+              AND (sl.date_str IS NOT NULL OR sl.date_cmp IS NOT NULL OR sl.date_cls IS NOT NULL)
         """, (ent_group_id,))
         chrono_violations = []
         for r in cur.fetchall():
@@ -777,7 +780,8 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 d_l = r[f"d_{late}"]
                 if d_e > d_l and d_l.year < 9999 and d_e.year < 9999:
                     chrono_violations.append({
-                        "lot_id": r["lot_id"], "lot_number": r["lot_number"],
+                        "lot_id": r["lot_id"], "lot_number": r["lot_label"],
+                        "phase_name": r["phase_name"], "lot_source": r["lot_source"],
                         "early_stage": early, "late_stage": late,
                         "early_date": d_e.isoformat(), "late_date": d_l.isoformat(),
                     })
