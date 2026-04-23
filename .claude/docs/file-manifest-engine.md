@@ -68,7 +68,7 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Owns: S-0500 -- TDA checkpoint enforcement; writes date_td_hold_projected per D-087 using checkpoint_lead_days; DB+in-memory pre-clear wipes both date_td_hold_projected and date_td_projected (stale S-0760 output) before recomputing each run; extended pre-clear also clears group-mate holds assigned by previous sync; NULL guards for checkpoint_number and lots_required_cumulative; past checkpoints (checkpoint_date < today) — count fulfillment for cumulative tracking, record residual gap, but NO HC assignment; future checkpoints — apply scheduling_horizon_days floor: hold_date = max(natural_hold, today + horizon); post-assign building-group HC sync: propagates MAX(date_td_hold_projected) to all mates in each building group so every lot in a building shares the same HC date (invariant); never writes actuals; accepts scheduling_horizon_days param (default 0) injected by coordinator via build_lag_curves
 - Imported by: coordinator.py
 - Tables: sim_lots (UPDATE date_td_hold_projected, date_td_projected), sim_takedown_agreements, sim_takedown_checkpoints, sim_takedown_agreement_lots
-- Last commit: 2026-04-21
+- Last commit: 2026-04-23
 
 ### devdb_python/engine/seasonal_weights.py
 - Owns: Shared seasonal weight sets (month→fractional weight, sums to 1.0) used by S-0600 and P-0000 for monthly demand/pace allocation
