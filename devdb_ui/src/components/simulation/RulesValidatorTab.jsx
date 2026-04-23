@@ -195,6 +195,106 @@ function RuleDetail({ rule }) {
           }
         </div>
       )
+    case 'chronology':
+      return (
+        <div>
+          {d.total > 20 && <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Showing first 20 of {d.total}</div>}
+          <ViolationList items={d.violations} render={v =>
+            `Lot ${v.lot_number}: date_${v.early_stage} (${v.early_date}) > date_${v.late_stage} (${v.late_date})`
+          } />
+        </div>
+      )
+    case 'builder_coverage':
+      return (
+        <div style={{ fontSize: 12, color: '#374151' }}>
+          <div>{d.assigned} of {d.total} sim lots have a builder assigned.</div>
+          {d.unassigned > 0 && <div style={{ color: '#991b1b', fontWeight: 600, marginTop: 4 }}>{d.unassigned} unassigned</div>}
+        </div>
+      )
+    case 'spec_build':
+      return (
+        <div>
+          {(d.instruments || []).map((inst, i) => (
+            <div key={i} style={{
+              fontSize: 12, padding: '2px 8px',
+              color: inst.assigned < inst.total ? '#991b1b' : '#374151',
+              fontWeight: inst.assigned < inst.total ? 600 : 400,
+            }}>
+              {inst.instrument_name} — spec_rate={((inst.spec_rate || 0) * 100).toFixed(1)}%
+              — {inst.assigned}/{inst.total} assigned
+            </div>
+          ))}
+        </div>
+      )
+    case 'building_group_sync':
+      return (
+        <ViolationList items={d.violations} render={v =>
+          `Building group ${v.building_group_id} (${v.lot_count} lots): start dates range ${v.min_str} to ${v.max_str}`
+        } />
+      )
+    case 'tda_fulfillment': {
+      const cps = d.checkpoints || []
+      return (
+        <div>
+          {cps.length === 0
+            ? <div style={{ fontSize: 12, color: '#9ca3af' }}>No active TDA checkpoints.</div>
+            : <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: '#f9fafb' }}>
+                    <th style={{ padding: '4px 8px', textAlign: 'left' }}>TDA</th>
+                    <th style={{ padding: '4px 8px' }}>#</th>
+                    <th style={{ padding: '4px 8px' }}>Date</th>
+                    <th style={{ padding: '4px 8px' }}>Required</th>
+                    <th style={{ padding: '4px 8px' }}>Assigned</th>
+                    <th style={{ padding: '4px 8px' }}>Gap</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cps.map((cp, i) => (
+                    <tr key={i} style={{
+                      background: cp.gap > 0 ? '#fee2e2' : '#fff',
+                    }}>
+                      <td style={{ padding: '3px 8px' }}>{cp.tda_name}</td>
+                      <td style={{ padding: '3px 8px', textAlign: 'center' }}>{cp.checkpoint_number}</td>
+                      <td style={{ padding: '3px 8px' }}>{cp.checkpoint_date || '—'}</td>
+                      <td style={{ padding: '3px 8px', textAlign: 'right' }}>{cp.required ?? '—'}</td>
+                      <td style={{ padding: '3px 8px', textAlign: 'right' }}>{cp.assigned}</td>
+                      <td style={{ padding: '3px 8px', textAlign: 'right', fontWeight: cp.gap > 0 ? 700 : 400, color: cp.gap > 0 ? '#991b1b' : '#374151' }}>
+                        {cp.gap > 0 ? `-${cp.gap}` : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+          }
+        </div>
+      )
+    }
+    case 'demand_capacity':
+      return (
+        <ViolationList items={d.mismatches} render={v =>
+          `${v.phase_name}: configured=${v.configured}, real started=${v.real_started}, ` +
+          `expected sim=${v.expected_sim}, actual sim=${v.actual_sim}`
+        } />
+      )
+    case 'convergence':
+      return (
+        <div style={{ fontSize: 12, color: '#374151' }}>
+          {d.iterations != null
+            ? <div>Iterations: <b>{d.iterations}</b> — Converged: <b>{d.converged ? 'Yes' : 'No'}</b> — Time: <b>{d.elapsed_ms?.toFixed(0)}ms</b></div>
+            : <div style={{ color: '#9ca3af' }}>No run log found. Run a simulation first.</div>
+          }
+        </div>
+      )
+    case 'pipeline_monotonicity':
+      return (
+        <div>
+          {d.total > 20 && <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4 }}>Showing first 20 of {d.total}</div>}
+          <ViolationList items={d.violations} render={v =>
+            `Lot ${v.lot}: has ${v.has} but missing ${v.missing}`
+          } />
+        </div>
+      )
     default:
       return <pre style={{ fontSize: 11 }}>{JSON.stringify(d, null, 2)}</pre>
   }

@@ -748,6 +748,270 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             },
         })
 
+        # ── Rule 9: Chronology ────────────────────────────────────────────────
+        cur.execute("""
+            SELECT lot_id, lot_number, phase_id,
+                   COALESCE(date_ent, '9999-12-31'::date) AS d_ent,
+                   COALESCE(date_dev, '9999-12-31'::date) AS d_dev,
+                   COALESCE(date_td,  '9999-12-31'::date) AS d_td,
+                   COALESCE(date_str, '9999-12-31'::date) AS d_str,
+                   COALESCE(date_cmp, '9999-12-31'::date) AS d_cmp,
+                   COALESCE(date_cls, '9999-12-31'::date) AS d_cls
+            FROM sim_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND excluded IS NOT TRUE
+              AND (date_str IS NOT NULL OR date_cmp IS NOT NULL OR date_cls IS NOT NULL)
+        """, (ent_group_id,))
+        chrono_violations = []
+        for r in cur.fetchall():
+            pairs = [("ent","dev"), ("dev","td"), ("td","str"), ("str","cmp"), ("cmp","cls")]
+            for early, late in pairs:
+                d_e = r[f"d_{early}"]
+                d_l = r[f"d_{late}"]
+                if d_e > d_l and d_l.year < 9999 and d_e.year < 9999:
+                    chrono_violations.append({
+                        "lot_id": r["lot_id"], "lot_number": r["lot_number"],
+                        "early_stage": early, "late_stage": late,
+                        "early_date": d_e.isoformat(), "late_date": d_l.isoformat(),
+                    })
+                    break  # one violation per lot is enough
+        rules.append({
+            "rule_id": "chronology",
+            "rule_name": "Pipeline Chronology",
+            "passed": len(chrono_violations) == 0,
+            "summary": "All lot dates in correct pipeline order"
+                       if not chrono_violations
+                       else f"{len(chrono_violations)} lot(s) with out-of-order dates",
+            "detail": {"violations": chrono_violations[:20], "total": len(chrono_violations)},
+        })
+
+        # ── Rule 10: Builder Assignment Coverage ─────────────────────────────
+        cur.execute("""
+            SELECT COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE builder_id IS NOT NULL) AS assigned
+            FROM sim_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND lot_source = 'sim'
+              AND excluded IS NOT TRUE
+        """, (ent_group_id,))
+        bldr = cur.fetchone()
+        bldr_total = bldr["total"] or 0
+        bldr_assigned = bldr["assigned"] or 0
+        rules.append({
+            "rule_id": "builder_coverage",
+            "rule_name": "Builder Assignment (sim lots)",
+            "passed": bldr_total == 0 or bldr_assigned == bldr_total,
+            "summary": f"{bldr_assigned}/{bldr_total} sim lots have builder assigned"
+                       if bldr_total > 0 else "No sim lots",
+            "detail": {"total": bldr_total, "assigned": bldr_assigned,
+                       "unassigned": bldr_total - bldr_assigned},
+        })
+
+        # ── Rule 11: Spec/Build Assignment ───────────────────────────────────
+        cur.execute("""
+            SELECT sli.instrument_id, sli.instrument_name, sli.spec_rate,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE sl.is_spec IS NOT NULL) AS assigned
+            FROM sim_lots sl
+            JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
+            JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
+            WHERE sl.dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND sl.excluded IS NOT TRUE
+              AND sli.spec_rate IS NOT NULL
+            GROUP BY sli.instrument_id, sli.instrument_name, sli.spec_rate
+        """, (ent_group_id,))
+        spec_rows = [dict(r) for r in cur.fetchall()]
+        spec_violations = [r for r in spec_rows if r["assigned"] < r["total"]]
+        rules.append({
+            "rule_id": "spec_build",
+            "rule_name": "Spec/Build Assignment",
+            "passed": len(spec_violations) == 0,
+            "summary": f"All lots in {len(spec_rows)} instrument(s) with spec_rate have is_spec set"
+                       if not spec_violations
+                       else f"{len(spec_violations)} instrument(s) with unassigned is_spec",
+            "detail": {
+                "instruments": [{
+                    "instrument_name": r["instrument_name"],
+                    "spec_rate": float(r["spec_rate"]) if r["spec_rate"] else None,
+                    "total": r["total"], "assigned": r["assigned"],
+                } for r in spec_rows],
+            },
+        })
+
+        # ── Rule 12: Building Group Date Sync ────────────────────────────────
+        cur.execute("""
+            SELECT building_group_id,
+                   COUNT(DISTINCT date_str) AS distinct_str_dates,
+                   COUNT(*) AS lot_count,
+                   MIN(date_str)::text AS min_str,
+                   MAX(date_str)::text AS max_str
+            FROM sim_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND building_group_id IS NOT NULL
+              AND date_str IS NOT NULL
+              AND excluded IS NOT TRUE
+            GROUP BY building_group_id
+            HAVING COUNT(DISTINCT date_str) > 1
+        """, (ent_group_id,))
+        bg_violations = [dict(r) for r in cur.fetchall()]
+        rules.append({
+            "rule_id": "building_group_sync",
+            "rule_name": "Building Group Date Sync",
+            "passed": len(bg_violations) == 0,
+            "summary": "All building groups share unified start dates"
+                       if not bg_violations
+                       else f"{len(bg_violations)} group(s) with split start dates",
+            "detail": {"violations": [{
+                "building_group_id": v["building_group_id"],
+                "lot_count": v["lot_count"],
+                "min_str": v["min_str"], "max_str": v["max_str"],
+            } for v in bg_violations]},
+        })
+
+        # ── Rule 13: TDA Checkpoint Fulfillment ──────────────────────────────
+        cur.execute("""
+            SELECT ta.tda_id, ta.tda_name,
+                   tc.checkpoint_id, tc.checkpoint_number, tc.checkpoint_date,
+                   tc.lots_required_cumulative,
+                   COUNT(tla.lot_id) AS assigned_count
+            FROM sim_takedown_agreements ta
+            JOIN sim_takedown_checkpoints tc ON tc.tda_id = ta.tda_id
+            LEFT JOIN sim_takedown_lot_assignments tla ON tla.checkpoint_id = tc.checkpoint_id
+            WHERE ta.ent_group_id = %s
+              AND ta.status = 'active'
+            GROUP BY ta.tda_id, ta.tda_name, tc.checkpoint_id,
+                     tc.checkpoint_number, tc.checkpoint_date, tc.lots_required_cumulative
+            ORDER BY ta.tda_id, tc.checkpoint_number
+        """, (ent_group_id,))
+        tda_rows = [dict(r) for r in cur.fetchall()]
+        tda_gaps = [r for r in tda_rows
+                    if r["lots_required_cumulative"] and r["assigned_count"] < r["lots_required_cumulative"]]
+        rules.append({
+            "rule_id": "tda_fulfillment",
+            "rule_name": "TDA Checkpoint Fulfillment",
+            "passed": len(tda_gaps) == 0,
+            "summary": f"All {len(tda_rows)} checkpoint(s) met"
+                       if not tda_gaps
+                       else f"{len(tda_gaps)} checkpoint(s) under-fulfilled",
+            "detail": {
+                "checkpoints": [{
+                    "tda_name": r["tda_name"],
+                    "checkpoint_number": r["checkpoint_number"],
+                    "checkpoint_date": r["checkpoint_date"].isoformat() if r["checkpoint_date"] else None,
+                    "required": r["lots_required_cumulative"],
+                    "assigned": r["assigned_count"],
+                    "gap": (r["lots_required_cumulative"] or 0) - r["assigned_count"],
+                } for r in tda_rows],
+                "gaps": [{
+                    "tda_name": r["tda_name"],
+                    "checkpoint": r["checkpoint_number"],
+                    "required": r["lots_required_cumulative"],
+                    "assigned": r["assigned_count"],
+                } for r in tda_gaps],
+            },
+        })
+
+        # ── Rule 14: Demand / Capacity Match ─────────────────────────────────
+        cur.execute("""
+            SELECT sdp.phase_id, sdp.phase_name,
+                   COALESCE(SUM(spps.projected_count), 0)::int AS configured_capacity,
+                   COUNT(sl.lot_id) FILTER (WHERE sl.lot_source = 'sim') AS sim_lots
+            FROM sim_dev_phases sdp
+            JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
+            JOIN sim_ent_group_developments segd ON segd.dev_id = sli.dev_id
+            LEFT JOIN sim_phase_product_splits spps ON spps.phase_id = sdp.phase_id
+            LEFT JOIN sim_lots sl ON sl.phase_id = sdp.phase_id AND sl.excluded IS NOT TRUE
+            WHERE segd.ent_group_id = %s
+            GROUP BY sdp.phase_id, sdp.phase_name
+        """, (ent_group_id,))
+        cap_rows = [dict(r) for r in cur.fetchall()]
+        # Count real started lots per phase
+        cur.execute("""
+            SELECT phase_id, COUNT(*) AS started
+            FROM sim_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND lot_source IN ('real', 'pre')
+              AND date_str IS NOT NULL
+              AND excluded IS NOT TRUE
+            GROUP BY phase_id
+        """, (ent_group_id,))
+        started_map = {r["phase_id"]: r["started"] for r in cur.fetchall()}
+        cap_mismatches = []
+        for r in cap_rows:
+            expected_sim = max(0, r["configured_capacity"] - started_map.get(r["phase_id"], 0))
+            if r["sim_lots"] != expected_sim and r["configured_capacity"] > 0:
+                cap_mismatches.append({
+                    "phase_name": r["phase_name"],
+                    "configured": r["configured_capacity"],
+                    "real_started": started_map.get(r["phase_id"], 0),
+                    "expected_sim": expected_sim,
+                    "actual_sim": r["sim_lots"],
+                })
+        rules.append({
+            "rule_id": "demand_capacity",
+            "rule_name": "Demand / Capacity Match",
+            "passed": len(cap_mismatches) == 0,
+            "summary": f"Sim lot counts match configured capacity for all phases"
+                       if not cap_mismatches
+                       else f"{len(cap_mismatches)} phase(s) with capacity mismatch",
+            "detail": {"mismatches": cap_mismatches},
+        })
+
+        # ── Rule 15: Convergence ─────────────────────────────────────────────
+        # Convergence data is returned in the sim run response, not persisted.
+        # Check if sim lots exist (proxy for "has been run").
+        cur.execute("""
+            SELECT COUNT(*) AS sim_count
+            FROM sim_lots
+            WHERE lot_source = 'sim'
+              AND dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+        """, (ent_group_id,))
+        sim_count = cur.fetchone()["sim_count"] or 0
+        rules.append({
+            "rule_id": "convergence",
+            "rule_name": "Simulation Convergence",
+            "passed": sim_count > 0,
+            "summary": f"Simulation has produced {sim_count} sim lots"
+                       if sim_count > 0
+                       else "No sim lots found — simulation may not have run",
+            "detail": {"sim_lot_count": sim_count},
+        })
+
+        # ── Rule 16: Pipeline Monotonicity ───────────────────────────────────
+        # No lot should have a later stage date without the earlier stage date
+        cur.execute("""
+            SELECT lot_id, lot_number,
+                   date_dev IS NULL AS no_dev,
+                   date_td IS NULL AND date_td_hold IS NULL AS no_td,
+                   date_str IS NULL AS no_str,
+                   date_cmp IS NULL AS no_cmp,
+                   date_cls IS NULL AS no_cls,
+                   date_str IS NOT NULL AS has_str,
+                   date_cmp IS NOT NULL AS has_cmp,
+                   date_cls IS NOT NULL AS has_cls
+            FROM sim_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+              AND excluded IS NOT TRUE
+              AND lot_source IN ('real', 'pre')
+        """, (ent_group_id,))
+        mono_violations = []
+        for r in cur.fetchall():
+            if r["has_str"] and r["no_dev"]:
+                mono_violations.append({"lot": r["lot_number"], "has": "STR", "missing": "DEV"})
+            elif r["has_cmp"] and r["no_str"]:
+                mono_violations.append({"lot": r["lot_number"], "has": "CMP", "missing": "STR"})
+            elif r["has_cls"] and r["no_cmp"]:
+                mono_violations.append({"lot": r["lot_number"], "has": "CLS", "missing": "CMP"})
+        rules.append({
+            "rule_id": "pipeline_monotonicity",
+            "rule_name": "Pipeline Stage Monotonicity",
+            "passed": len(mono_violations) == 0,
+            "summary": "All real lots have contiguous pipeline stages"
+                       if not mono_violations
+                       else f"{len(mono_violations)} lot(s) skip pipeline stages",
+            "detail": {"violations": mono_violations[:20], "total": len(mono_violations)},
+        })
+
         return rules
     finally:
         cur.close()
