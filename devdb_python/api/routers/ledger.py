@@ -574,7 +574,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 "explanation": "Delivery frequency is capped per calendar year to prevent over-commitment of construction and sales resources. Each delivery event triggers a burst of lot takedowns, builder starts, and municipal inspections. Exceeding the annual cap can overwhelm builder capacity, create financing bottlenecks, and strain municipal review bandwidth. This limit ensures a sustainable pace of land absorption.",
                 "methodology": "Delivery events are grouped by calendar year of their effective date. The count per year is compared against the community's max_deliveries_per_year configuration. Years exceeding the cap are flagged as violations.",
                 "max_per_year": max_per_year,
-                "year_counts": dict(year_counts),
+                "year_counts": dict(year_delivery_counts),
                 "all_years": all_years_detail,
                 "violations": violations_max,
             },
