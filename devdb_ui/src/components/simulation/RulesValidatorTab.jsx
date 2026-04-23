@@ -130,7 +130,16 @@ function TierFlowDiagram({ flow }) {
               if (!byDate[p.date]) byDate[p.date] = []
               byDate[p.date].push(p)
             }
-            const maxRows = Math.max(1, ...Object.values(byDate).map(a => a.length))
+            // Assign row slots chronologically: earlier dates get top rows,
+            // later dates continue below. This produces the staircase layout.
+            const dateCols = allDates.filter(d => byDate[d])
+            const dateRowStart = {}  // date -> first row index for that date
+            let nextRow = 0
+            for (const d of dateCols) {
+              dateRowStart[d] = nextRow
+              nextRow += byDate[d].length
+            }
+            const maxRows = Math.max(1, nextRow)
             const isLast = ti === flow.length - 1
 
             return Array.from({ length: maxRows }, (_, rowIdx) => (
@@ -155,9 +164,10 @@ function TierFlowDiagram({ flow }) {
                 )}
                 {allDates.map(d => {
                   const phases = byDate[d] || []
-                  // Bottom-align: offset so phases fill from the last row upward
-                  const offset = rowIdx - (maxRows - phases.length)
-                  const phase = offset >= 0 ? phases[offset] : null
+                  const start = dateRowStart[d] ?? 0
+                  // Phase shows if this rowIdx falls within this date's slot range
+                  const localIdx = rowIdx - start
+                  const phase = (localIdx >= 0 && localIdx < phases.length) ? phases[localIdx] : null
                   return (
                     <td key={d} style={{
                       padding: phase ? '4px 10px' : '4px 6px',
