@@ -1307,6 +1307,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 "missing": [{"phase_name": p["phase_name"], "dev_name": p["dev_name"],
                               "instrument_name": p["instrument_name"]}
                              for p in no_splits],
+                "ent_group_id": ent_group_id,
             },
         })
 
@@ -1336,11 +1337,13 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "detail": {
                 "explanation": "The annual starts target defines how many home starts per year a development can sustain, based on builder capacity, market absorption, and infrastructure constraints. This parameter drives the S-0800 pacing model, which spreads sim lot starts across months to match the target rate. Without it, the engine cannot schedule starts and lots accumulate in Unstarted status indefinitely. The target is typically set based on historical pace, builder commitments, and market analysis.",
                 "methodology": "Each development in the community is checked for a non-null annual_starts_target value in sim_dev_params. Developments without a target are flagged.",
-                "all_items": all_items_targets,
-                "missing": [{"dev_name": d["dev_name"]} for d in no_target],
-                "configured": [{"dev_name": d["dev_name"],
+                "all_items": [{**item, "dev_id": d["dev_id"]}
+                              for item, d in zip(all_items_targets, dev_params)],
+                "missing": [{"dev_name": d["dev_name"], "dev_id": d["dev_id"]} for d in no_target],
+                "configured": [{"dev_name": d["dev_name"], "dev_id": d["dev_id"],
                                 "target": float(d["annual_starts_target"])}
                                for d in dev_params if d["annual_starts_target"] is not None],
+                "ent_group_id": ent_group_id,
             },
         })
 
@@ -1361,6 +1364,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         bad_sum = [r for r in bldr_split_rows
                    if r["split_count"] > 0 and abs(float(r["total_share"]) - 1.0) > 0.01]
         all_items_bldr_splits = [{
+            "instrument_id": r["instrument_id"],
             "instrument_name": r["instrument_name"],
             "split_count": r["split_count"],
             "total_pct": round(float(r["total_share"]) * 100, 1) if r["split_count"] > 0 else 0.0,
@@ -1379,7 +1383,8 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 "explanation": "Builder splits define what percentage of lots in each legal instrument are allocated to each builder. These splits drive the S-0900 builder assignment module, which assigns a builder_id to every sim lot. Splits must sum to exactly 100% (1.0) for each instrument. Missing splits mean no builder can be assigned, which blocks start scheduling. Splits that do not sum to 100% will cause either over- or under-allocation of lots to builders, distorting per-builder start projections and capacity planning.",
                 "methodology": "Each instrument in the community is checked for the presence of rows in sim_instrument_builder_splits. The sum of share values per instrument is verified to be within 1% of 1.0. Instruments with no splits or incorrect sums are flagged.",
                 "all_items": all_items_bldr_splits,
-                "missing": [{"instrument_name": r["instrument_name"]} for r in no_bldr],
+                "ent_group_id": ent_group_id,
+                "missing": [{"instrument_id": r["instrument_id"], "instrument_name": r["instrument_name"]} for r in no_bldr],
                 "bad_sum": [{"instrument_name": r["instrument_name"],
                              "total_pct": round(float(r["total_share"]) * 100, 1)}
                             for r in bad_sum],
@@ -1387,21 +1392,26 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         })
 
         # CC-4: Delivery Config
-        has_config = cfg_row is not None
+        has_community_config = cfg_row is not None
+        has_valid_config = len(delivery_months) > 0 and max_per_year is not None
         rules.append({
             "rule_id": "config_delivery",
             "category": "config_completeness",
             "rule_name": "Delivery Config",
-            "passed": has_config,
-            "summary": "Delivery config present" if has_config else "No delivery config -- using global defaults",
+            "passed": has_valid_config,
+            "summary": (f"Delivery months and max/yr configured"
+                        + (f" (community override)" if has_community_config else f" (global defaults)")
+                       ) if has_valid_config
+                       else "Missing delivery months or max deliveries per year",
             "detail": {
-                "explanation": "The delivery configuration specifies which calendar months are valid for lot delivery events and the maximum number of deliveries allowed per year. Without a community-specific configuration, the system falls back to global defaults, which may not reflect the community's actual municipal approval windows or infrastructure constraints. A dedicated delivery config ensures the simulation engine schedules deliveries only in months when the community can realistically accept them.",
-                "methodology": "The sim_entitlement_delivery_config table is checked for a row matching the community's ent_group_id. If present, the community has its own delivery_months and max_deliveries_per_year. If absent, global defaults from sim_global_settings are used.",
-                "has_community_config": has_config,
+                "explanation": "The delivery configuration specifies which calendar months are valid for lot delivery events and the maximum number of deliveries allowed per year. The engine resolves config by checking for a community-specific override first, then falling back to global defaults. Either source is valid — what matters is that delivery_months and max_deliveries_per_year are set.",
+                "methodology": "The sim_entitlement_delivery_config table is checked for a community row, then sim_global_settings for global defaults. The rule passes if valid delivery_months and max_deliveries_per_year are resolved from either source.",
+                "has_community_config": has_community_config,
                 "delivery_months": sorted(delivery_months),
                 "delivery_month_names": [month_names[m] for m in sorted(delivery_months)],
                 "max_per_year": max_per_year,
-                "source": "community" if has_config else "global_defaults",
+                "source": "community" if has_community_config else "global_defaults",
+                "ent_group_id": ent_group_id,
             },
         })
 
