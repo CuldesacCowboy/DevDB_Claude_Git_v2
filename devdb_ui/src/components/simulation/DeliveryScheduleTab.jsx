@@ -1,15 +1,81 @@
+import { useState, useMemo } from 'react'
 import { thS, tdS, fmt } from './simShared'
 
+// Sort modes: 'date' (default API order), 'instrument', 'order', 'tier', 'group'
+const SORT_MODES = [
+  { key: 'date',       label: 'Date' },
+  { key: 'instrument', label: 'Instrument' },
+  { key: 'order',      label: 'Inst + Order' },
+  { key: 'tier',       label: 'Tier' },
+  { key: 'group',      label: 'Group' },
+]
+
+function sortRows(rows, mode) {
+  const s = [...rows]
+  const nil = 9999
+  switch (mode) {
+    case 'instrument':
+      return s.sort((a, b) =>
+        a.dev_name.localeCompare(b.dev_name)
+        || a.instrument_name.localeCompare(b.instrument_name)
+        || (a.sequence_number ?? nil) - (b.sequence_number ?? nil)
+      )
+    case 'order':
+      return s.sort((a, b) =>
+        a.dev_name.localeCompare(b.dev_name)
+        || a.instrument_name.localeCompare(b.instrument_name)
+        || (a.sequence_number ?? nil) - (b.sequence_number ?? nil)
+      )
+    case 'tier':
+      return s.sort((a, b) =>
+        (a.delivery_tier ?? nil) - (b.delivery_tier ?? nil)
+        || a.dev_name.localeCompare(b.dev_name)
+        || a.instrument_name.localeCompare(b.instrument_name)
+        || (a.sequence_number ?? nil) - (b.sequence_number ?? nil)
+      )
+    case 'group':
+      return s.sort((a, b) => {
+        const ga = a.delivery_group || '\xff'
+        const gb = b.delivery_group || '\xff'
+        return ga.localeCompare(gb)
+          || (a.delivery_tier ?? nil) - (b.delivery_tier ?? nil)
+          || a.dev_name.localeCompare(b.dev_name)
+          || (a.sequence_number ?? nil) - (b.sequence_number ?? nil)
+      })
+    default: // 'date' — preserve API order
+      return s
+  }
+}
+
 export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
+  const [sortMode, setSortMode] = useState('date')
+
   if (loading) return <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>
   if (!rows.length) return <div style={{ color: '#9ca3af', fontSize: 12 }}>No phases found. Run a simulation first.</div>
 
-  // Alternating background by delivery_event_id (null = unscheduled group)
-  const eventOrder = [...new Set(rows.map(r => r.delivery_event_id ?? '_none'))]
-  const eventIdx = new Map(eventOrder.map((id, i) => [id, i]))
+  const sorted = useMemo(() => sortRows(rows, sortMode), [rows, sortMode])
+
+  // Alternating background — group key depends on sort mode
+  const groupKey = r => {
+    if (sortMode === 'date') return r.delivery_event_id ?? '_none'
+    if (sortMode === 'group') return r.delivery_group || '_none'
+    if (sortMode === 'tier') return r.delivery_tier ?? '_none'
+    return `${r.dev_id}|${r.instrument_id}`   // instrument / order
+  }
+  const groupOrder = [...new Set(sorted.map(groupKey))]
+  const groupIdx = new Map(groupOrder.map((id, i) => [id, i]))
   const rowBg = r => {
-    const key = r.delivery_event_id ?? '_none'
-    return eventIdx.get(key) % 2 === 0 ? '#fff' : '#f9fafb'
+    const isUnscheduled = sortMode === 'date' && !r.delivery_event_id
+    if (isUnscheduled) return '#fefce8'
+    return groupIdx.get(groupKey(r)) % 2 === 0 ? '#fff' : '#f9fafb'
+  }
+
+  // Group separator borders
+  const firstOfGroup = new Set()
+  let prevGroup = null
+  for (const r of sorted) {
+    const k = groupKey(r)
+    if (k !== prevGroup) { firstOfGroup.add(r.phase_id); prevGroup = k }
   }
 
   const stickyTh = (align = 'right', extra = {}) => ({
@@ -32,13 +98,14 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
     color: hasValue ? '#1e40af' : '#9ca3af',
   })
 
-  // Identify first row of each event for visual grouping border
-  const firstOfEvent = new Set()
-  let prevEvent = null
-  for (const r of rows) {
-    const key = r.delivery_event_id ?? '_none'
-    if (key !== prevEvent) { firstOfEvent.add(r.phase_id); prevEvent = key }
-  }
+  const sortBtnStyle = (active) => ({
+    padding: '2px 10px', fontSize: 11, borderRadius: 4,
+    border: active ? '1px solid #2563eb' : '1px solid #d1d5db',
+    background: active ? '#1e40af' : '#f9fafb',
+    color: active ? '#fff' : '#374151',
+    fontWeight: active ? 600 : 400,
+    cursor: 'pointer',
+  })
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -51,26 +118,32 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
         </div>
       )}
 
-      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)' }}>
+      {/* Sort controls */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 11, color: '#6b7280', marginRight: 2 }}>Sort:</span>
+        {SORT_MODES.map(m => (
+          <button key={m.key} onClick={() => setSortMode(m.key)} style={sortBtnStyle(sortMode === m.key)}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 310px)' }}>
         <table style={{ borderCollapse: 'collapse', fontSize: 12, whiteSpace: 'nowrap', width: '100%' }}>
           <thead>
             <tr style={{ background: '#f9fafb' }}>
-              {/* Delivery event columns */}
               <th style={stickyTh('left')}>Date</th>
               <th style={stickyTh('left')}>Source</th>
-              {/* Phase identity */}
               <th style={{ ...stickyTh('left'), borderLeft: '2px solid #d1d5db' }}>Development</th>
               <th style={stickyTh('left')}>Instrument</th>
               <th style={stickyTh('left')}>Phase</th>
               <th style={stickyTh()}>Units</th>
-              {/* Config columns */}
               <th style={{ ...stickyTh('center'), borderLeft: '2px solid #d1d5db' }}
                   title="Sequence within instrument — controls delivery order among sibling phases">Order</th>
               <th style={stickyTh('center')}
                   title="Delivery tier — controls ordering across instruments (lower tier delivers first)">Tier</th>
               <th style={stickyTh('center')}
                   title="Delivery group A-Z — phases with the same letter deliver simultaneously within this community">Group</th>
-              {/* Inventory */}
               <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db', color: '#6b7280', fontSize: 10 }}
                   colSpan={3}>Prior to delivery</th>
               <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db', color: '#6b7280', fontSize: 10 }}>After</th>
@@ -92,18 +165,14 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r => {
+            {sorted.map(r => {
               const isLocked = !!r.date_dev_actual
               const dateVal = r.date_dev_actual || r.date_dev_projected || ''
               const isUnscheduled = !r.delivery_event_id
-              const groupBorder = firstOfEvent.has(r.phase_id) ? '2px solid #e0e0e0' : undefined
+              const border = firstOfGroup.has(r.phase_id) ? '2px solid #e0e0e0' : undefined
 
               return (
-                <tr key={r.phase_id} style={{
-                  background: isUnscheduled ? '#fefce8' : rowBg(r),
-                  borderTop: groupBorder,
-                }}>
-                  {/* Date — editable */}
+                <tr key={r.phase_id} style={{ background: rowBg(r), borderTop: border }}>
                   <td style={tdS('left', { fontWeight: 500 })}>
                     <input type="date" value={dateVal}
                       onChange={e => {
@@ -114,7 +183,6 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
                       style={dateInputStyle(!!dateVal)}
                     />
                   </td>
-                  {/* Source — clickable toggle */}
                   <td style={tdS('left')}>
                     {isLocked
                       ? <span
@@ -141,12 +209,10 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
                           }}>{isUnscheduled ? 'Unscheduled' : 'Projected'}</span>
                     }
                   </td>
-                  {/* Identity */}
                   <td style={tdS('left', { borderLeft: '2px solid #d1d5db', color: '#374151' })}>{r.dev_name}</td>
                   <td style={tdS('left', { color: '#6b7280' })}>{r.instrument_name}</td>
                   <td style={tdS('left', { color: '#374151', fontWeight: 500 })}>{r.phase_name}</td>
                   <td style={tdS()}>{r.units > 0 ? r.units : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
-                  {/* Order */}
                   <td style={tdS('center', { borderLeft: '2px solid #d1d5db' })}>
                     <input type="number" min={1} max={99}
                       value={r.sequence_number ?? ''}
@@ -157,7 +223,6 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
                       style={{ ...inputStyle(r.sequence_number != null), width: 40 }}
                     />
                   </td>
-                  {/* Tier */}
                   <td style={tdS('center')}>
                     <input type="number" min={0} max={9}
                       value={r.delivery_tier ?? ''}
@@ -168,7 +233,6 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
                       style={{ ...inputStyle(r.delivery_tier != null), width: 40 }}
                     />
                   </td>
-                  {/* Group */}
                   <td style={tdS('center')}>
                     <input type="text" maxLength={1}
                       value={r.delivery_group ?? ''}
@@ -180,7 +244,6 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
                       placeholder="—"
                     />
                   </td>
-                  {/* Inventory */}
                   <td style={tdS('right', { borderLeft: '2px solid #d1d5db' })}>
                     {r.d_pre != null ? r.d_pre : <span style={{ color: '#e5e7eb' }}>—</span>}
                   </td>
