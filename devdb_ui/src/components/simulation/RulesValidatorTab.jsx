@@ -82,8 +82,27 @@ function Conclusion({ passed, children }) {
 }
 
 // ── Tier Flow Diagram ────────────────────────────────────────────────────────
+// Strip longest common prefix from an array of names (e.g. "Abbey Farms SF ph. 1" → "SF ph. 1")
+function stripCommonPrefix(names) {
+  if (names.length <= 1) return names
+  let prefix = names[0]
+  for (let i = 1; i < names.length; i++) {
+    while (!names[i].startsWith(prefix)) prefix = prefix.slice(0, -1)
+    if (!prefix) return names
+  }
+  // Trim to last word boundary so we don't cut mid-word
+  const trimmed = prefix.replace(/\s*\S*$/, '')
+  if (trimmed.length < 4) return names  // not worth stripping < 4 chars
+  return names.map(n => n.slice(trimmed.length).replace(/^\s+/, ''))
+}
+
 function TierFlowDiagram({ flow }) {
   if (!flow || !flow.length) return <Muted>No tiered phases.</Muted>
+
+  // Shorten phase names by stripping common community prefix
+  const allNames = flow.flatMap(t => t.phases.map(p => p.phase_name))
+  const shortNames = stripCommonPrefix(allNames)
+  const nameMap = Object.fromEntries(allNames.map((n, i) => [n, shortNames[i]]))
 
   const allDates = [...new Set(flow.flatMap(t => t.phases.map(p => p.date)))].sort()
 
@@ -177,16 +196,16 @@ function TierFlowDiagram({ flow }) {
                         : '1px solid #f5f5f5',
                       borderLeft: '1px solid #e5e7eb',
                       background: phase ? s.fill : '#fff',
-                      minWidth: 110,
                     }}>
                       {phase && (
                         <div style={{
-                          padding: '2px 8px', borderRadius: 4,
+                          padding: '1px 6px', borderRadius: 3,
                           border: `1px solid ${s.border}`,
                           background: '#fff', color: s.text,
-                          fontWeight: 500, fontSize: 11, lineHeight: 1.4,
+                          fontWeight: 500, fontSize: 10, lineHeight: 1.4,
+                          whiteSpace: 'nowrap',
                         }}>
-                          {phase.phase_name}
+                          {nameMap[phase.phase_name] || phase.phase_name}
                         </div>
                       )}
                     </td>
@@ -263,6 +282,16 @@ function PipelineDiagram() {
 function SequenceGrid({ instruments }) {
   if (!instruments || !instruments.length) return <Muted>No instruments.</Muted>
 
+  // Shorten phase names
+  const allNames = instruments.flatMap(inst => (inst.phases || []).map(p => p.phase_name))
+  const shortNames = stripCommonPrefix(allNames)
+  const nameMap = Object.fromEntries(allNames.map((n, i) => [n, shortNames[i]]))
+
+  // Shorten instrument names
+  const allInstNames = instruments.map(inst => inst.instrument_name)
+  const shortInstNames = stripCommonPrefix(allInstNames)
+  const instNameMap = Object.fromEntries(allInstNames.map((n, i) => [n, shortInstNames[i]]))
+
   // All unique dates across all instruments
   const allDates = [...new Set(instruments.flatMap(inst =>
     (inst.phases || []).map(p => p.date)
@@ -333,7 +362,7 @@ function SequenceGrid({ instruments }) {
                     borderBottom: isLast ? 'none' : '2px solid #e5e7eb',
                     verticalAlign: 'middle', position: 'sticky', left: 0, zIndex: 2,
                   }}>
-                    {inst.instrument_name}
+                    {instNameMap[inst.instrument_name] || inst.instrument_name}
                   </td>
                 )}
                 {allDates.map(d => {
@@ -350,25 +379,26 @@ function SequenceGrid({ instruments }) {
                         : '1px solid #f5f5f5',
                       borderLeft: '1px solid #e5e7eb',
                       background: phase ? s.fill : '#fff',
-                      minWidth: 110,
+                      minWidth: 80,
                     }}>
                       {phase && (
                         <div style={{
-                          display: 'flex', alignItems: 'center', gap: 6,
-                          padding: '2px 8px', borderRadius: 4,
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          padding: '1px 6px', borderRadius: 3,
                           border: `1px solid ${phase.passed === false ? '#fca5a5' : s.border}`,
                           background: phase.passed === false ? '#fef2f2' : '#fff',
                           color: phase.passed === false ? '#991b1b' : s.text,
-                          fontWeight: 500, fontSize: 11, lineHeight: 1.4,
+                          fontWeight: 500, fontSize: 10, lineHeight: 1.4,
+                          whiteSpace: 'nowrap',
                         }}>
                           <span style={{
                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            width: 18, height: 18, borderRadius: '50%', fontSize: 10, fontWeight: 700,
+                            width: 16, height: 16, borderRadius: '50%', fontSize: 9, fontWeight: 700,
                             background: phase.passed === false ? '#fecaca' : s.border + '40',
                             color: phase.passed === false ? '#991b1b' : s.text,
                             flexShrink: 0,
                           }}>{phase.seq ?? '?'}</span>
-                          {phase.phase_name}
+                          {nameMap[phase.phase_name] || phase.phase_name}
                         </div>
                       )}
                     </td>
