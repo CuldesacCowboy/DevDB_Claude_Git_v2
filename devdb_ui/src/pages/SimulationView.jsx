@@ -52,7 +52,6 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   } = useOverrides(entGroupId)
   const [deliverySchedule, setDeliverySchedule]               = useState([])
   const [deliveryScheduleLoading, setDeliveryScheduleLoading] = useState(false)
-  const [phaseDeliveryConfig, setPhaseDeliveryConfig]         = useState([])
   const [deliveryDirty, setDeliveryDirty]                     = useState(false)
   const [modalOpen, setModalOpen]           = useState(false)
   const [selectedDevIds, setSelectedDevIds] = useState(null)
@@ -143,15 +142,9 @@ const loadLedger = useCallback((id) => {
 
   const loadDeliverySchedule = useCallback((id) => {
     setDeliveryScheduleLoading(true)
-    Promise.all([
-      fetchOk(`${API_BASE}/ledger/${id}/delivery-schedule`),
-      fetchOk(`${API_BASE}/ledger/${id}/phase-delivery-config`),
-    ])
-      .then(([sched, cfg]) => {
-        setDeliverySchedule(Array.isArray(sched) ? sched : [])
-        setPhaseDeliveryConfig(Array.isArray(cfg) ? cfg : [])
-      })
-      .catch((err) => { setDeliverySchedule([]); setPhaseDeliveryConfig([]); setLoadError(`Could not load delivery schedule — ${err.message}`) })
+    fetchOk(`${API_BASE}/ledger/${id}/delivery-schedule`)
+      .then(data => setDeliverySchedule(Array.isArray(data) ? data : []))
+      .catch((err) => { setDeliverySchedule([]); setLoadError(`Could not load delivery schedule — ${err.message}`) })
       .finally(() => setDeliveryScheduleLoading(false))
   }, [])
 
@@ -679,7 +672,6 @@ const loadLedger = useCallback((id) => {
           <DeliveryScheduleTab
             rows={deliverySchedule}
             loading={deliveryScheduleLoading}
-            phaseConfig={phaseDeliveryConfig}
             dirty={deliveryDirty}
             onPatchPhase={async (phaseId, field, value) => {
               const res = await fetch(`${API_BASE}/admin/phase/${phaseId}`, {
@@ -689,8 +681,8 @@ const loadLedger = useCallback((id) => {
               })
               if (!res.ok) return
               const updated = await res.json()
-              setPhaseDeliveryConfig(prev => prev.map(p =>
-                p.phase_id === phaseId ? { ...p, ...updated } : p
+              setDeliverySchedule(prev => prev.map(r =>
+                r.phase_id === phaseId ? { ...r, ...updated } : r
               ))
               setDeliveryDirty(true)
             }}

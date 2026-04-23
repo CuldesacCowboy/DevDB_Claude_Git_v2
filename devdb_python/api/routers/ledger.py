@@ -222,69 +222,63 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
 @router.get("/{ent_group_id}/delivery-schedule")
 def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
     """
-    Return one row per (delivery_event, development) with phases delivered,
-    units, and D/U/UC inventory at the delivery month.
+    Return one row per phase with delivery event info (if scheduled),
+    phase delivery config fields (order, tier, group), units, and
+    D/H/U inventory at the delivery month.
+    Unscheduled phases appear at the bottom with null delivery fields.
     """
     cur = dict_cursor(conn)
     try:
         cur.execute(
             """
-            WITH event_phases AS (
+            WITH all_phases AS (
                 SELECT
+                    sdp.phase_id,
+                    sdp.phase_name,
+                    sdp.sequence_number,
+                    sdp.delivery_tier,
+                    sdp.delivery_group,
+                    sdp.date_dev_projected,
+                    sdp.date_dev_actual,
+                    sli.instrument_id,
+                    sli.instrument_name,
+                    d.dev_id,
+                    d.dev_name
+                FROM sim_dev_phases sdp
+                JOIN sim_legal_instruments sli ON sli.instrument_id = sdp.instrument_id
+                JOIN developments d            ON d.dev_id = sli.dev_id
+                JOIN sim_ent_group_developments segd ON segd.dev_id = d.dev_id
+                WHERE segd.ent_group_id = %s
+            ),
+            event_link AS (
+                SELECT
+                    dep.phase_id,
                     sde.delivery_event_id,
                     sde.event_name,
                     COALESCE(sde.date_dev_actual, sde.date_dev_projected)::date AS delivery_date,
-                    (sde.date_dev_actual IS NOT NULL)                            AS is_locked,
-                    sdp.dev_id,
-                    d.dev_name,
-                    sdp.phase_id,
-                    sdp.phase_name,
-                    sdp.sequence_number
+                    (sde.date_dev_actual IS NOT NULL)                            AS is_locked
                 FROM sim_delivery_events sde
                 JOIN sim_delivery_event_phases dep ON dep.delivery_event_id = sde.delivery_event_id
-                JOIN sim_dev_phases sdp            ON sdp.phase_id = dep.phase_id
-                JOIN developments d               ON d.dev_id = sdp.dev_id
                 WHERE sde.ent_group_id = %s
-            ),
-            excluded_counts AS (
-                SELECT phase_id, COUNT(*)::int AS excluded_count
-                FROM sim_lots
-                WHERE phase_id IN (SELECT phase_id FROM event_phases)
-                  AND excluded IS TRUE
-                GROUP BY phase_id
             ),
             phase_units AS (
                 SELECT spps.phase_id,
                     GREATEST(
                         COALESCE(SUM(spps.projected_count), 0)::int
-                            - COALESCE(MAX(ec.excluded_count), 0),
+                            - COALESCE(
+                                (SELECT COUNT(*)::int FROM sim_lots
+                                 WHERE phase_id = spps.phase_id AND excluded IS TRUE), 0),
                         0
                     ) AS units
                 FROM sim_phase_product_splits spps
-                LEFT JOIN excluded_counts ec ON ec.phase_id = spps.phase_id
-                WHERE spps.phase_id IN (SELECT phase_id FROM event_phases)
+                WHERE spps.phase_id IN (SELECT phase_id FROM all_phases)
                 GROUP BY spps.phase_id
-            ),
-            event_dev AS (
-                SELECT
-                    ep.delivery_event_id,
-                    ep.event_name,
-                    ep.delivery_date,
-                    ep.is_locked,
-                    ep.dev_id,
-                    ep.dev_name,
-                    STRING_AGG(ep.phase_name, ', ' ORDER BY ep.sequence_number) AS phases,
-                    COALESCE(SUM(pu.units), 0)::int                             AS units_delivered
-                FROM event_phases ep
-                LEFT JOIN phase_units pu ON pu.phase_id = ep.phase_id
-                GROUP BY ep.delivery_event_id, ep.event_name, ep.delivery_date,
-                         ep.is_locked, ep.dev_id, ep.dev_name
             ),
             inventory AS (
                 SELECT dev_id, calendar_month,
-                       SUM(d_end)::int   AS d_end,
-                       SUM(h_end)::int   AS h_end,
-                       SUM(u_end)::int   AS u_end
+                       SUM(d_end)::int AS d_end,
+                       SUM(h_end)::int AS h_end,
+                       SUM(u_end)::int AS u_end
                 FROM v_sim_ledger_monthly
                 WHERE dev_id IN (
                     SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s
@@ -292,28 +286,30 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
                 GROUP BY dev_id, calendar_month
             )
             SELECT
-                ed.delivery_event_id,
-                ed.event_name,
-                ed.delivery_date,
-                ed.is_locked,
-                ed.dev_id,
-                ed.dev_name,
-                ed.phases,
-                ed.units_delivered,
+                ap.*,
+                el.delivery_event_id,
+                el.event_name,
+                el.delivery_date,
+                el.is_locked,
+                COALESCE(pu.units, 0)::int AS units,
                 pre.d_end  AS d_pre,
                 pre.h_end  AS h_pre,
                 pre.u_end  AS u_pre,
                 post.d_end AS d_post
-            FROM event_dev ed
+            FROM all_phases ap
+            LEFT JOIN event_link el  ON el.phase_id = ap.phase_id
+            LEFT JOIN phase_units pu ON pu.phase_id = ap.phase_id
             LEFT JOIN inventory pre
-                ON  pre.dev_id = ed.dev_id
-                AND pre.calendar_month = (DATE_TRUNC('month', ed.delivery_date) - INTERVAL '1 month')::date
+                ON  pre.dev_id = ap.dev_id
+                AND pre.calendar_month = (DATE_TRUNC('month', el.delivery_date) - INTERVAL '1 month')::date
             LEFT JOIN inventory post
-                ON  post.dev_id = ed.dev_id
-                AND post.calendar_month = DATE_TRUNC('month', ed.delivery_date)::date
-            ORDER BY ed.delivery_date NULLS LAST, ed.delivery_event_id, ed.dev_name
+                ON  post.dev_id = ap.dev_id
+                AND post.calendar_month = DATE_TRUNC('month', el.delivery_date)::date
+            ORDER BY el.delivery_date NULLS LAST,
+                     el.delivery_event_id NULLS LAST,
+                     ap.dev_name, ap.instrument_name, ap.sequence_number
             """,
-            (ent_group_id, ent_group_id),
+            (ent_group_id, ent_group_id, ent_group_id),
         )
 
         def _d(v):
@@ -321,18 +317,26 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
 
         return [
             {
-                "delivery_event_id": r["delivery_event_id"],
-                "event_name":        r["event_name"],
-                "delivery_date":     _d(r["delivery_date"]),
-                "is_locked":         bool(r["is_locked"]),
-                "dev_id":            r["dev_id"],
-                "dev_name":          r["dev_name"],
-                "phases":            r["phases"],
-                "units_delivered":   r["units_delivered"],
-                "d_pre":             r["d_pre"],
-                "h_pre":             r["h_pre"],
-                "u_pre":             r["u_pre"],
-                "d_post":            r["d_post"],
+                "phase_id":           r["phase_id"],
+                "phase_name":         r["phase_name"],
+                "sequence_number":    r["sequence_number"],
+                "delivery_tier":      r["delivery_tier"],
+                "delivery_group":     r["delivery_group"],
+                "date_dev_projected": _d(r["date_dev_projected"]),
+                "date_dev_actual":    _d(r["date_dev_actual"]),
+                "instrument_id":      r["instrument_id"],
+                "instrument_name":    r["instrument_name"],
+                "dev_id":             r["dev_id"],
+                "dev_name":           r["dev_name"],
+                "delivery_event_id":  r["delivery_event_id"],
+                "event_name":         r["event_name"],
+                "delivery_date":      _d(r["delivery_date"]),
+                "is_locked":          bool(r["is_locked"]) if r["is_locked"] is not None else False,
+                "units":              r["units"],
+                "d_pre":              r["d_pre"],
+                "h_pre":              r["h_pre"],
+                "u_pre":              r["u_pre"],
+                "d_post":             r["d_post"],
             }
             for r in cur.fetchall()
         ]
