@@ -322,16 +322,20 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
                 ),
             )
 
-            # Project how many unstarted lots will be naturally covered by demand
-            # before this checkpoint.  HC is only assigned to the true residual —
-            # lots that demand pace cannot reach in time.
-            months_to_cp = max(
-                0,
-                (cp_date.year - today.year) * 12 + (cp_date.month - today.month),
-            )
-            eligible_unstarted = sum(1 for lot in tda_snapshot_lots.values() if _available(lot))
-            projected_natural  = min(eligible_unstarted, round(monthly_rate * months_to_cp))
-            effective_gap      = max(0, gap - projected_natural)
+            # Count lots that already have a projected takedown date on or before
+            # the checkpoint.  These are the ones demand has already "claimed" via
+            # S-0760/S-0770 — they will fulfill the checkpoint without HC.
+            # The old pace-based estimate (monthly_rate * months) was too optimistic:
+            # it assumed demand would cover N lots, but their projected dates often
+            # landed after the checkpoint, leaving it unmet.
+            projected_natural = 0
+            for lot in tda_snapshot_lots.values():
+                if _available(lot):
+                    td_proj = lot.get("date_td_projected")
+                    if td_proj is not None and pd.notna(td_proj):
+                        if pd.Timestamp(td_proj) <= cp_date:
+                            projected_natural += 1
+            effective_gap = max(0, gap - projected_natural)
 
             scheduled = 0
             for lot in available:
