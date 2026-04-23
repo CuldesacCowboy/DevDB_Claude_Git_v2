@@ -44,7 +44,7 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_entitlement_groups, developments, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits
-- Last commit: 2026-04-17
+- Last commit: 2026-04-22
 
 ### devdb_python/api/routers/eg_validation.py
 - Owns: split-check, param-check, delivery-config GET/PUT (delivery_months integer[] replaces delivery_window_start/end; validates each month 1–12; max_deliveries_per_year, auto_schedule_enabled, default_cmp_lag_days, default_cls_lag_days, feed_starts_mode), ledger-config GET/PUT (propagates date_ent to sim_dev_phases + sim_lots; propagates date_plan_start to sim_dev_phases; date_ent truncated to first-of-month; earliest_delivery_date from sim_delivery_events COALESCE(actual, projected))
@@ -65,7 +65,7 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: api.deps, api.db, pydantic, fastapi, re
 - Imported by: api/main.py
 - Tables: developments, sim_legal_instruments, sim_dev_phases, devdb_ext.housemaster, devdb_ext.codetail
-- Last commit: 2026-04-15
+- Last commit: 2026-04-22
 
 ### devdb_python/api/routers/lots.py
 - Owns: PATCH /{id}/phase, PATCH /{id}/lot-type, DELETE /{id}/phase -- all delegating to lot_assignment_service
@@ -107,14 +107,14 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: api.deps, fastapi, pydantic
 - Imported by: api/main.py
 - Tables: sim_site_plans, sim_phase_boundaries
-- Last commit: 2026-04-01
+- Last commit: 2026-04-22
 
 ### devdb_python/api/routers/phase_boundaries.py
 - Owns: Phase boundary CRUD + split endpoint; GET /plan/{plan_id}; POST; PATCH /{boundary_id} (polygon_json, label, phase_id — uses model_fields_set for null-safe unassign); DELETE; POST /split (delete original, insert two children)
 - Imports: api.deps, fastapi, pydantic
 - Imported by: api/main.py
 - Tables: sim_phase_boundaries
-- Last commit: 2026-04-01
+- Last commit: 2026-04-22
 
 ### devdb_python/api/routers/lot_positions.py
 - Owns: Lot site-plan positioning endpoints; GET /lot-positions/plan/{plan_id} returns {positioned, bank}; POST /lot-positions/plan/{plan_id}/save bulk-upserts positions and applies phase assignments (client point-in-polygon); removes lots from plan when phase_id absent; dev_code from developments.marks_code (no dim_development bridge)
@@ -128,7 +128,7 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_entitlement_groups, sim_ent_group_developments, sim_legal_instruments, sim_dev_phases, sim_lots, sim_phase_product_splits, sim_instrument_builder_splits, ref_lot_types, dim_builders, sim_entitlement_delivery_config, sim_dev_params, developments, ref_counties, ref_school_districts
-- Last commit: 2026-04-16
+- Last commit: 2026-04-23
 
 ### devdb_python/api/routers/bulk_lots.py
 - Owns: POST /bulk-lots/suggestions (infers dev lot-number prefix + max seq from existing lots, returns flat suggestion list for given phase + lot type counts); POST /bulk-lots/insert (inserts pre-MARKS lots as lot_source='pre', sequence-backed lot_id, validates no duplicate lot_numbers, maintains product splits, audit logs each insertion); dev_code from developments.marks_code (no dim_development bridge)
@@ -177,7 +177,7 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: api.deps, api.db, pydantic, fastapi
 - Imported by: api/main.py
 - Tables: sim_delivery_events, sim_delivery_event_phases
-- Last commit: 2026-04-14
+- Last commit: 2026-04-22
 
 ### devdb_python/api/routers/simulations.py
 - Owns: POST /simulations/run — triggers convergence_coordinator for an ent_group_id; returns status, iterations, elapsed_ms, errors[]; looks up dev names for missing_params_devs via developments directly; on exception prints full traceback to server terminal and returns only str(exc) to client (no traceback leak)
@@ -212,7 +212,7 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: none
 - Imported by: routers/developments.py, services/eg_lot_phase_service.py, routers/ledger.py
 - Tables: none
-- Last commit: 2026-04-02
+- Last commit: 2026-04-22
 
 ### devdb_python/services/eg_lot_phase_service.py
 - Owns: query_lot_phase_view(ent_group_id, conn) — full lot-phase-view query logic extracted from eg_views.py; _sort_phases_for_display() helper; dev_id lookup uses sim_ent_group_developments (authoritative) not developments.community_id; lot queries include lot_source IN ('real','pre'); all joins use developments.dev_id directly (no dim_development bridge)
@@ -226,18 +226,18 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Imports: psycopg2.extras, dataclasses
 - Imported by: routers/lots.py
 - Tables: sim_lots, sim_dev_phases, sim_ent_group_developments, sim_phase_product_splits, ref_lot_types, dim_projection_groups, sim_assignment_log
-- Last commit: 2026-04-05
+- Last commit: 2026-04-22
 
 ### devdb_python/services/ledger_service.py
 - Owns: Ledger query logic extracted from routers/ledger.py; query_ledger_by_dev(conn, ent_group_id) — bounded date range, synthetic start-date rows; _ledger_row() dict serializer includes str_plan_spec, str_plan_build, community_county_id, community_county_name, community_sd_id, community_sd_name. Entitlement event overlay removed (sim_entitlement_events dropped in migration 025). All joins use developments.dev_id directly (no dim_development bridge).
 - Imports: api.db.dict_cursor
 - Imported by: routers/ledger.py
 - Tables: v_sim_ledger_monthly, sim_entitlement_groups, sim_ent_group_developments, sim_lots, developments, ref_counties, ref_school_districts
-- Last commit: 2026-04-16
+- Last commit: 2026-04-22
 
 ### devdb_python/services/phase_assignment_service.py
 - Owns: Phase-to-instrument reassignment with entitlement group validation and audit logging
 - Imports: psycopg2.extras, dataclasses
 - Imported by: routers/phases.py
 - Tables: sim_dev_phases, sim_legal_instruments, sim_ent_group_developments, sim_lots, dim_projection_groups, sim_assignment_log
-- Last commit: 2026-03-26
+- Last commit: 2026-04-22

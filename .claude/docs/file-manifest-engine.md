@@ -32,7 +32,13 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Imports: psycopg2
 - Imported by: coordinator.py (called as first step of run_supply_pipeline)
 - Tables: sim_delivery_events, sim_delivery_event_phases, sim_delivery_event_predecessors, sim_dev_phases, sim_ent_group_developments, sim_legal_instruments
-- Last commit: 2026-04-08
+- Last commit: 2026-04-22
+
+### devdb_python/engine/s0050_marks_builder_sync.py
+- Owns: S-0050 — applies MARKS builder_id and is_spec to real/pre lots via devdb_ext.housemaster + codetail joins; uses LPAD zero-padded housenumber comparison (marks_mirror varchar format)
+- Imported by: coordinator.py
+- Tables: devdb_ext.housemaster, devdb_ext.codetail, sim_lots (UPDATE builder_id, is_spec), dim_builders
+- Last commit: 2026-04-22
 
 ### devdb_python/engine/s0100_lot_loader.py
 - Owns: S-0100 -- loads real lots for ent_group from sim_lots into a DataFrame
@@ -161,7 +167,7 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Owns: P-0050 -- drains D-status lot balance using COALESCE(date_td, date_td_projected) so that lots with only a projected takedown date are correctly counted as leaving the D bucket; pre-computes drain dates in a CTE for cleaner query plan; called between P-0000 and P-0100 in supply pipeline
 - Imported by: coordinator.py
 - Tables: sim_lots (SELECT), sim_dev_phases (UPDATE d_balance or equivalent)
-- Last commit: 2026-04-21
+- Last commit: 2026-04-23
 
 ### devdb_python/engine/p0000_placeholder_rebuilder.py
 - Owns: P-0000 -- rebuilds placeholder delivery events per D-139 cross-dev scheduling lean rule; D-balance floor enforcement using min_d_count/per-status floors from sim_entitlement_delivery_config; uses delivery_months integer[] (frozenset) for window logic — supports arbitrary month sets; Step 7 auto-generates sim_delivery_event_predecessors rows between consecutive events per dev (ordered by sequence_number) so P-0200/P-0400 enforce absolute phase ordering; step 3c uses `date_ent IS NOT NULL` (not `date_dev IS NULL`) to detect real pending lots — survives P-07 multi-iteration write-back; pd.NaT normalized to None at load time; delivery_tier gate in outer loop (tier-N held until all tier-(N-1) scheduled); dev_phases sorted by (tier, seq); tier check in inner co-bundling loop; feed_starts_mode=True bypasses both tier gates while predecessor links still enforce tier ordering

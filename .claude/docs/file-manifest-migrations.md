@@ -398,3 +398,29 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Lot banks — creates `sim_tda_lot_banks` and `sim_tda_lot_bank_members`; adds `bank_id`, `lot_quota`, `builder_id` to `sim_takedown_agreements`
 - Tables: sim_tda_lot_banks (CREATE TABLE), sim_tda_lot_bank_members (CREATE TABLE), sim_takedown_agreements (ADD COLUMN bank_id, ADD COLUMN lot_quota, ADD COLUMN builder_id)
 - Last commit: 2026-04-17
+
+### devdb_python/migrations/078_restore_seneca_ridge_ph2.sql
+- Owns: Restore Seneca Ridge ph.2 data (instrument, phase, product split)
+- Last commit: 2026-04-22
+
+### devdb_python/migrations/079_fix_seneca_ridge_marks_code.sql
+- Owns: Fix marks_code SR→SN for Seneca Ridge (SR belongs to Spring Ridge)
+- Last commit: 2026-04-22
+
+### devdb_python/migrations/080_fix_seneca_ridge_sr_sn_lots.sql
+- Owns: Fix Seneca Ridge SR/SN lot assignment
+- Last commit: 2026-04-22
+
+### devdb_python/migrations/081_delivery_group.sql
+- Owns: Add delivery_group CHAR(1) CHECK [A-Z] to sim_dev_phases for forced simultaneous delivery within community
+- Tables: sim_dev_phases (ADD COLUMN delivery_group)
+- Last commit: 2026-04-22
+
+### devdb_python/migrations/082_fdw_marks_mirror.sql
+- Owns: Replace local devdb_ext tables with postgres_fdw foreign tables pointing at marks_mirror DB; also replaces local schedhousedetail
+- Tables: devdb_ext.* (10 tables DROP + IMPORT FOREIGN SCHEMA), devdb.schedhousedetail (DROP + IMPORT)
+- Last commit: 2026-04-22
+
+### devdb_python/migrations/083_fdw_type_casts.sql
+- Owns: No-op migration — type cast fixes handled in Python code (housenumber varchar vs integer)
+- Last commit: 2026-04-22
