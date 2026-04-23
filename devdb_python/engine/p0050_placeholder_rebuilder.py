@@ -668,6 +668,9 @@ def _run_scheduling_loop(
 
         joining = [d for d in active if deadlines[d] <= event_date]
 
+        # Save scan floors so we can revert for fully-evicted devs
+        prev_scan_floors = {d: dev_scan_floor.get(d) for d in joining}
+
         event_phase_ids = []
         dev_batches = defaultdict(list)   # dev_id -> list of phase dicts popped for this event
         for dev_id in joining:
@@ -769,20 +772,38 @@ def _run_scheduling_loop(
                     evicted.append(pid)
             if evicted:
                 # Return evicted phases to front of their dev_phases buckets
+                # and revert dev_scan_floor so their dev re-computes deadlines cleanly.
+                evicted_devs = set()
                 for pid in evicted:
                     for p_orig in undelivered_orig:
                         if p_orig["phase_id"] == pid:
-                            dev_phases[p_orig["dev_id"]].insert(0, p_orig)
+                            did = p_orig["dev_id"]
+                            dev_phases[did].insert(0, p_orig)
+                            evicted_devs.add(did)
                             logger.info(
                                 f"P-00: group exclusivity: evicted phase {pid} "
-                                f"(dev {p_orig['dev_id']}) from event at {event_date} "
+                                f"(dev {did}) from event at {event_date} "
                                 f"— date reserved for group(s) {sorted(event_groups)}"
                             )
                             break
+                # Re-sort evicted dev buckets so insertion order doesn't break tier/seq
+                for did in evicted_devs:
+                    # Only revert scan floor if ALL of this dev's phases were evicted
+                    dev_kept = [pid for pid in kept if any(
+                        p["phase_id"] == pid and p["dev_id"] == did for p in undelivered_orig
+                    )]
+                    if not dev_kept and did in prev_scan_floors:
+                        dev_scan_floor[did] = prev_scan_floors[did]
+                    dev_phases[did].sort(key=lambda p: (
+                        p["delivery_tier"] if p["delivery_tier"] is not None else 0,
+                        p["sequence_number"],
+                    ))
                 event_phase_ids = kept
             # Block this date for future iterations
             blocked_dates.add(event_date)
 
+        if not event_phase_ids:
+            continue  # all phases evicted — skip empty event
         events_to_create.append({"date": event_date, "phases": event_phase_ids})
         if event_date.year not in delivery_date_per_year:
             delivery_date_per_year[event_date.year] = event_date
