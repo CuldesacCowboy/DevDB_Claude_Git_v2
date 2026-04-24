@@ -142,9 +142,37 @@ export function buildLedgerRows(rawRows, selectedDevIds, period, ledgerStartDate
 
 // ─── Provenance style tokens ──────────────────────────────────────────────────
 // Use these everywhere a value can be MARKS-actual, engine-projected, or user-overridden.
+// Legacy inline styles (still used by some components):
 export const PROV_MARKS = { color: '#111827' }
 export const PROV_SIM   = { color: '#93c5fd', fontStyle: 'italic' }
 export const PROV_OV    = { color: '#92400e', background: '#fef3c7', fontWeight: 600 }
+
+// ─── Unified provenance pill system ──────────────────────────────────────────
+// Three data sources, three pill colors. Use these everywhere.
+export const PROV = {
+  marks:    { bg: '#f3f4f6', border: '#d1d5db', color: '#374151', label: 'MARKS' },
+  sim:      { bg: '#eff6ff', border: '#93c5fd', color: '#1e40af', label: 'SIM' },
+  override: { bg: '#fef3c7', border: '#fbbf24', color: '#92400e', label: 'OVR' },
+}
+
+// Returns pill style object for inline use
+export function provStyle(source) {
+  const p = PROV[source] || PROV.marks
+  return {
+    display: 'inline-block', padding: '0px 6px', borderRadius: 8,
+    fontSize: 10, fontWeight: 600, lineHeight: '16px',
+    background: p.bg, border: `1px solid ${p.border}`, color: p.color,
+    whiteSpace: 'nowrap',
+  }
+}
+
+// Returns the provenance key from a source string
+export function provKey(source) {
+  if (!source) return 'marks'
+  if (source === 'actual') return 'marks'
+  if (source === 'manual') return 'override'
+  return 'sim'  // engine_filled, building_sync, etc.
+}
 
 // ─── Lot number display ───────────────────────────────────────────────────────
 // Converts raw DB lot_number ("ST00000064") → display format ("ST_ 64").

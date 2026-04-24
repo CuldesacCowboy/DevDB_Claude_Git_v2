@@ -1,7 +1,8 @@
-// OverrideDateCell.jsx — displays a pipeline date with override indicator.
-// Amber = active override. Click to open entry popover.
+// OverrideDateCell.jsx — displays a pipeline date with provenance pill.
+// Three sources: MARKS (gray), SIM (blue), Override (amber).
 
 import { useState } from 'react'
+import { PROV } from '../simulation/simShared'
 import OverrideEntryPopover from './OverrideEntryPopover'
 
 const fmt = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) : null
@@ -24,19 +25,21 @@ export default function OverrideDateCell({
   const displayValue = overrideValue || marksValue
   const isProjected  = !displayValue && !!projectedValue
 
+  // Determine provenance
+  const source = hasOverride ? 'override' : (isProjected || isSim) ? 'sim' : 'marks'
+  const p = PROV[source]
+
   const style = {
     cursor: disabled ? 'default' : 'pointer',
-    padding: '2px 4px',
-    borderRadius: 3,
-    fontSize: 12,
+    padding: '1px 7px',
+    borderRadius: 9,
+    fontSize: 11,
+    fontWeight: 600,
     display: 'inline-block',
     userSelect: 'none',
-    ...(hasOverride
-      ? { color: '#92400e', background: '#fef3c7', fontWeight: 600 }
-      : (isProjected || isSim)
-        ? { color: '#93c5fd', fontStyle: 'italic' }
-        : { color: '#111827' }
-    ),
+    background: p.bg,
+    border: `1px solid ${p.border}`,
+    color: p.color,
   }
 
   const shown = displayValue ? fmt(displayValue) : isProjected ? fmt(projectedValue) : null
@@ -45,11 +48,12 @@ export default function OverrideDateCell({
     <span style={{ position: 'relative', display: 'inline-block' }}>
       <span
         style={style}
-        title={hasOverride ? `Override: ${fmt(overrideValue)} | MARKS: ${fmt(marksValue) ?? '—'}` : undefined}
+        title={hasOverride
+          ? `Override: ${fmt(overrideValue)} | MARKS: ${fmt(marksValue) ?? '—'}`
+          : source === 'sim' ? 'Engine projection' : 'MARKS actual'}
         onClick={() => { if (!disabled) setOpen(o => !o) }}
       >
-        {shown ?? <span style={{ color: '#e5e7eb' }}>—</span>}
-        {hasOverride && <span style={{ fontSize: 9, marginLeft: 3, verticalAlign: 'super' }}>●</span>}
+        {shown ?? <span style={{ color: '#d1d5db' }}>—</span>}
       </span>
 
       {open && (

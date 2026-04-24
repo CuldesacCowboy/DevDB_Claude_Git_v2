@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { API_BASE } from '../../config'
 import { StatusBadge } from '../../utils/statusConfig'
 import OverrideDateCell from '../overrides/OverrideDateCell'
-import { thS, tdS, fmt, exportToCsv, fmtLot, PROV_SIM, PROV_MARKS, stripPrefix } from './simShared'
+import { thS, tdS, fmt, exportToCsv, fmtLot, PROV_SIM, PROV_MARKS, PROV, provStyle, stripPrefix } from './simShared'
 
 const BG_ROW_PALETTE = [
   '#eff6ff','#f0fdf4','#fefce8','#fff1f2',
@@ -194,8 +194,9 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
             ↺ reset sort
           </button>
         )}
-        <span style={{ fontSize: 11, color: '#93c5fd', fontStyle: 'italic', marginLeft: 6 }}>italic blue = projected</span>
-        <span style={{ fontSize: 11, color: '#92400e', marginLeft: 6 }}>amber = override (click to edit)</span>
+        <span style={{ ...provStyle('marks'), marginLeft: 6 }}>MARKS</span>
+        <span style={{ ...provStyle('sim'), marginLeft: 4 }}>SIM</span>
+        <span style={{ ...provStyle('override'), marginLeft: 4 }}>OVR</span>
         <button onClick={() => {
           const headers = ['Development','Lot #','Type','Phase','Bldg','Source','Spec','Status','ENT','DEV','HC','BLDR','DIG','CMP','CLS']
           const csvRows = sortedFiltered.map(l => {
@@ -289,10 +290,10 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                 </td>
                 <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>{l.lot_source}</td>
                 <td style={tdS('center', { width: 20 })}>
-                  {l.is_spec === true && <span style={{ ...(l.lot_source === 'sim' ? PROV_SIM : PROV_MARKS), fontSize: 12 }}>S</span>}
+                  {l.is_spec === true && <span style={{ ...provStyle(l.lot_source === 'sim' ? 'sim' : 'marks'), fontSize: 10, padding: '0 4px' }}>S</span>}
                 </td>
                 <td style={tdS('center', { width: 20 })}>
-                  {l.is_spec === false && <span style={{ ...(l.lot_source === 'sim' ? PROV_SIM : PROV_MARKS), fontSize: 12 }}>B</span>}
+                  {l.is_spec === false && <span style={{ ...provStyle(l.lot_source === 'sim' ? 'sim' : 'marks'), fontSize: 10, padding: '0 4px' }}>B</span>}
                 </td>
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>
