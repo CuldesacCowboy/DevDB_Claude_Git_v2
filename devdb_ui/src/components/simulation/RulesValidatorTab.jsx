@@ -461,6 +461,8 @@ function RuleFixActions({ ruleId, passed, onNavigate }) {
     spec_build:            [{ label: 'Set Spec Rate in Config', icon: '→', action: () => nav({ to: 'config', tab: 'instrument' }) }],
     building_group_sync:   [{ label: 'Re-run Simulation', icon: '↻', action: null }],
     tda_fulfillment:       [{ label: 'Review TDAs', icon: '→', action: () => nav({ to: 'setup' }) }],
+    tda_date_alignment:    [{ label: 'Review TDAs', icon: '→', action: () => nav({ to: 'setup' }) },
+                            { label: 'Re-run Simulation', icon: '↻', action: null }],
     demand_capacity:       [{ label: 'Check Product Splits in Config', icon: '→', action: () => nav({ to: 'config', tab: 'phase' }) }],
     convergence:           [{ label: 'Run Simulation', icon: '↻', action: null }],
     pipeline_monotonicity: [{ label: 'Re-run Simulation', icon: '↻', action: null }],
@@ -957,6 +959,46 @@ function RuleDetail({ rule, onNavigate }) {
     }
 
     // ── DEMAND CAPACITY ────────────────────────────────────────────────────
+    case 'tda_date_alignment': {
+      const allItems = d.all_items || []
+      const misaligned = d.misaligned || []
+      return (
+        <div>
+          {renderHeader()}
+          <Section title={`Lot-Checkpoint Assignments (${d.total_checked ?? allItems.length} lots)`}>
+            {allItems.length > 0 ? (
+              <DataTable
+                columns={[
+                  { key: 'tda_name', label: 'TDA', bold: true },
+                  { key: 'checkpoint_number', label: 'CP', width: 40, align: 'center' },
+                  { key: 'checkpoint_date', label: 'CP Deadline', width: 100 },
+                  { key: 'lot_number', label: 'Lot', width: 100 },
+                  { key: 'effective_date', label: 'Lot Date', width: 100 },
+                  { key: 'date_type', label: 'Type', width: 70, render: r =>
+                    <span style={{ fontSize: 10, color: r.date_type === 'hold' ? '#d97706' : r.date_type === 'takedown' ? '#059669' : '#9ca3af' }}>
+                      {r.date_type}
+                    </span>
+                  },
+                  { key: 'passed', label: 'Aligned', width: 60, render: r => <Badge passed={r.passed} /> },
+                ]}
+                rows={allItems.map(r => ({ ...r, _highlight: r.passed }))}
+              />
+            ) : <Prose>No lots assigned to checkpoints.</Prose>}
+          </Section>
+          <Conclusion passed={rule.passed}>
+            {rule.passed
+              ? `All ${d.aligned_count ?? 0} assigned lots have dates on or before their checkpoint deadline.`
+              : <>
+                  {`${misaligned.length} lot(s) are assigned to checkpoints they cannot meet on time. Their projected dates fall after the checkpoint deadline.`}
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>
+                    This usually means lots were assigned to the wrong checkpoint. Go to the <b>Takedown</b> page and move the flagged lots to the correct checkpoint, or re-run the simulation to let the engine reassign HC dates.
+                  </div>
+                </>}
+          </Conclusion>
+        </div>
+      )
+    }
+
     case 'demand_capacity': {
       const allPhases = d.all_phases || d.mismatches || []
       return (

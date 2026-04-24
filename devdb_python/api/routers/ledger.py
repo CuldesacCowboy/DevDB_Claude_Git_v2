@@ -1158,6 +1158,66 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             },
         })
 
+        # ── Rule 13b: TDA Lot-Checkpoint Date Alignment ──────────────────────
+        cur.execute("""
+            SELECT ta.tda_id, ta.tda_name,
+                   tc.checkpoint_id, tc.checkpoint_number, tc.checkpoint_date,
+                   sl.lot_id, sl.lot_number, sl.building_group_id,
+                   COALESCE(sl.date_td_hold, sl.date_td_hold_projected) AS eff_hold,
+                   COALESCE(sl.date_td, sl.date_td_projected) AS eff_td
+            FROM sim_takedown_agreements ta
+            JOIN sim_takedown_checkpoints tc ON tc.tda_id = ta.tda_id
+            JOIN sim_takedown_lot_assignments tla ON tla.checkpoint_id = tc.checkpoint_id
+            JOIN sim_lots sl ON sl.lot_id = tla.lot_id
+            WHERE ta.ent_group_id = %s
+              AND ta.status = 'active'
+            ORDER BY ta.tda_id, tc.checkpoint_number, sl.lot_number
+        """, (ent_group_id,))
+        alignment_rows = [dict(r) for r in cur.fetchall()]
+
+        misaligned = []
+        aligned = []
+        for r in alignment_rows:
+            cp_date = r["checkpoint_date"]
+            eff_date = r["eff_td"] or r["eff_hold"]
+            lot_label = r["lot_number"] or f"lot #{r['lot_id']}"
+            is_ok = True
+            if cp_date and eff_date:
+                if eff_date > cp_date:
+                    is_ok = False
+            item = {
+                "tda_name": r["tda_name"],
+                "checkpoint_number": r["checkpoint_number"],
+                "checkpoint_date": cp_date.isoformat() if cp_date else None,
+                "lot_number": lot_label,
+                "effective_date": eff_date.isoformat() if eff_date else None,
+                "date_type": "takedown" if r["eff_td"] else ("hold" if r["eff_hold"] else "none"),
+                "passed": is_ok,
+            }
+            if is_ok:
+                aligned.append(item)
+            else:
+                misaligned.append(item)
+
+        rules.append({
+            "rule_id": "tda_date_alignment",
+            "category": "engine_diagnostic",
+            "rule_name": "TDA Lot-Checkpoint Date Alignment",
+            "passed": len(misaligned) == 0,
+            "summary": f"All {len(alignment_rows)} assigned lot(s) have dates on or before their checkpoint"
+                       if not misaligned
+                       else f"{len(misaligned)} lot(s) assigned to checkpoints they can't meet on time",
+            "detail": {
+                "explanation": "Each lot assigned to a TDA checkpoint must have a projected or actual takedown/hold date on or before the checkpoint deadline. A lot with a hold date of 2027-12-15 assigned to a checkpoint due 2026-12-31 cannot fulfill that obligation on time — it belongs on a later checkpoint. This typically indicates lots were assigned to the wrong checkpoint, or the engine scheduled HC dates against a later checkpoint than intended.",
+                "methodology": "For each lot in sim_takedown_lot_assignments, the effective date (COALESCE of actual and projected takedown or hold) is compared to the checkpoint_date. Lots whose effective date exceeds the checkpoint deadline are flagged as misaligned.",
+                "total_checked": len(alignment_rows),
+                "aligned_count": len(aligned),
+                "misaligned_count": len(misaligned),
+                "misaligned": misaligned,
+                "all_items": aligned + misaligned,
+            },
+        })
+
         # ── Rule 14: Demand / Capacity Match ─────────────────────────────────
         cur.execute("""
             SELECT sdp.phase_id, sdp.phase_name,
