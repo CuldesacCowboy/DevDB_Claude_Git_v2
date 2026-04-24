@@ -129,8 +129,9 @@ def marks_builder_sync(conn, ent_group_id: int) -> int:
         conn.execute_values(
             """
             UPDATE sim_lots AS sl
-            SET is_spec    = v.is_spec,
-                updated_at = NOW()
+            SET is_spec        = v.is_spec,
+                is_spec_source = 'marks',
+                updated_at     = NOW()
             FROM (VALUES %s) AS v(is_spec, lot_id)
             WHERE sl.lot_id = v.lot_id::bigint
             """,

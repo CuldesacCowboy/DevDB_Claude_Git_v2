@@ -74,8 +74,9 @@ def spec_assignment(conn, ent_group_id: int) -> int:
     conn.execute_values(
         """
         UPDATE sim_lots AS sl
-        SET is_spec    = v.is_spec,
-            updated_at = NOW()
+        SET is_spec        = v.is_spec,
+            is_spec_source = 'engine',
+            updated_at     = NOW()
         FROM (VALUES %s) AS v(is_spec, lot_id)
         WHERE sl.lot_id = v.lot_id::bigint
           AND sl.is_spec IS NULL

@@ -137,6 +137,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 sl.date_cmp,
                 sl.date_cls,
                 sl.is_spec,
+                sl.is_spec_source,
                 sl.date_str_projected,
                 sl.date_cmp_projected,
                 sl.date_cls_projected,
@@ -187,6 +188,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 "building_group_id":   r["building_group_id"],
                 "status":              r["status"],
                 "is_spec":             r["is_spec"],   # True=spec, False=build, None=undetermined
+                "is_spec_source":      r["is_spec_source"],  # marks, engine, manual, or None
                 "date_ent":            _d(r["date_ent"]),
                 "date_dev":            _d(r["date_dev"]),
                 "date_td_hold":           _d(r["date_td_hold"]),
