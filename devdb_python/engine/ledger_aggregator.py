@@ -146,4 +146,4 @@ def ledger_aggregator(conn: DBConnection) -> None:
         GROUP BY COALESCE(l.builder_id_override, l.builder_id), l.dev_id, m.calendar_month
     """)
 
-    print("S-12: v_sim_ledger_monthly and month_spine views created.")
+    print("ledger_aggregator: v_sim_ledger_monthly and month_spine views created.")

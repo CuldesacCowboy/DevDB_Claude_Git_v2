@@ -53,7 +53,7 @@ def spec_assignment(conn, ent_group_id: int) -> int:
     )
 
     if undetermined_df.empty:
-        logger.info("  S-0950: No undetermined lots to assign is_spec.")
+        logger.info("  spec_assignment: No undetermined lots to assign is_spec.")
         return 0
 
     assignments = []  # list of (is_spec: bool, lot_id: int)
@@ -68,7 +68,7 @@ def spec_assignment(conn, ent_group_id: int) -> int:
             assignments.append((i < n_spec, int(lot_id)))
 
     if not assignments:
-        logger.info("  S-0950: No assignments produced.")
+        logger.info("  spec_assignment: No assignments produced.")
         return 0
 
     conn.execute_values(
@@ -85,7 +85,7 @@ def spec_assignment(conn, ent_group_id: int) -> int:
 
     n_spec_total = sum(1 for is_spec, _ in assignments if is_spec)
     logger.info(
-        f"  S-0950: Assigned is_spec to {len(assignments)} lot(s) "
+        f"  spec_assignment: Assigned is_spec to {len(assignments)} lot(s) "
         f"({n_spec_total} spec, {len(assignments) - n_spec_total} build) "
         f"(ent_group_id={ent_group_id})."
     )

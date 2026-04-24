@@ -2,8 +2,8 @@
 seasonal_weights.py -- Shared seasonal weight sets for demand generation.
 
 Used by:
-  S-0600 demand_generator     -- per-month slot allocation
-  P-0050 placeholder_rebuilder -- effective monthly pace calculation
+  demand_generator demand_generator     -- per-month slot allocation
+  placeholder_rebuilder placeholder_rebuilder -- effective monthly pace calculation
 
 Each weight set is a dict mapping month number (1-12) to fractional weight.
 Weights within a set must sum to 1.0.

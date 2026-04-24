@@ -110,37 +110,37 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     Run all starts pipeline modules in order for one development.
     Returns (temp_lots list, needs_config bool, residual_gaps list).
     """
-    # S-01
+    # lot_loader
     snapshot = lot_loader(conn, dev_id)
 
-    # S-02
+    # date_actualizer
     snapshot = date_actualizer(conn, snapshot)
 
-    # S-0205
+    # building_group_sync
     snapshot = building_group_sync(conn, snapshot)
 
-    # S-0250: apply planning overrides (wins over MARKS actuals in engine)
+    # lot_date_overrides: apply planning overrides (wins over MARKS actuals in engine)
     snapshot = apply_lot_date_overrides(conn, snapshot)
 
-    # S-03
+    # gap_fill_engine
     phase_delivery_dates = load_phase_delivery_dates(conn, dev_id)
     snapshot = gap_fill_engine(snapshot, phase_delivery_dates)
 
-    # S-04
+    # chronology_validator
     snapshot, violations, has_violations = chronology_validator(snapshot)
     if has_violations:
         vcount = len(violations) if hasattr(violations, '__len__') else violations.shape[0]
         logger.warning(f"  WARNING: {vcount} chronology violations in dev {dev_id}. Run continues.")
     persist_violations(conn, violations, dev_id, sim_run_id)
 
-    # S-05
+    # tda_preclear
     horizon_days   = build_lag_curves.get("_scheduling_horizon_days", 0)
     hc_to_bldr_lag = build_lag_curves.get("_hc_to_bldr_lag_days", 16)
     snapshot, residual_gaps = takedown_engine(conn, snapshot, dev_id,
                                               scheduling_horizon_days=horizon_days,
                                               hc_to_bldr_lag_days=hc_to_bldr_lag)
 
-    # S-06
+    # demand_generator
     demand_series, needs_config = demand_generator(conn, dev_id, run_start_date)
     if needs_config:
         logger.warning(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
@@ -148,7 +148,7 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
 
     td_to_str_lag = build_lag_curves.get("_td_to_str_lag", 1)
 
-    # S-07 through S-0820: kernel planning pass
+    # kernel through post_gen_chronology_guard: kernel planning pass
     frozen = build_frozen_input(conn, dev_id, snapshot, demand_series, sim_run_id,
                                 td_to_str_lag=td_to_str_lag)
     proposal = plan(frozen)
@@ -156,18 +156,18 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
         for w in proposal.warnings:
             logger.info(f"  {w}")
 
-    # S-0850: derive date_cmp and date_cls from date_str via empirical lag curves
+    # timing_expansion: derive date_cmp and date_cls from date_str via empirical lag curves
     temp_lots = timing_expansion(proposal.temp_lots, build_lag_curves, rng)
 
-    # S-0820 (shell stage): discard temp lots with chronology violations post-expansion
+    # post_gen_chronology_guard (shell stage): discard temp lots with chronology violations post-expansion
     temp_lots, discarded_lots, guard_warnings = post_generation_chronology_guard(temp_lots)
 
-    # S-0760: project BLDR/DIG/CMP/CLS for HC-held lots (runs after kernel — correct order)
+    # hc_bldr_date_projector: project BLDR/DIG/CMP/CLS for HC-held lots (runs after kernel — correct order)
     snapshot = hc_bldr_date_projector(conn, snapshot, demand_series,
                                       dev_id, run_start_date, td_to_str_lag,
                                       build_lag_curves=build_lag_curves, rng=rng)
 
-    # Compute remaining demand for S-0770: deduct slots consumed by HC lot actual starts.
+    # Compute remaining demand for d_bldr_date_projector: deduct slots consumed by HC lot actual starts.
     # HC buildings draw on early demand positions (pre-hold) via the allocator, but their
     # actual starts land in the clamped BLDR year (e.g. 2028). That year's annual budget is
     # fully consumed by the HC buildings — deduct all demand slots in that year equal to the
@@ -207,28 +207,28 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     else:
         remaining_demand = demand_series
 
-    # S-0770: project BLDR/STR/CMP/CLS for D-status real lots (H-lots drain first per allocator)
+    # d_bldr_date_projector: project BLDR/STR/CMP/CLS for D-status real lots (H-lots drain first per allocator)
     snapshot = d_bldr_date_projector(conn, snapshot, remaining_demand,
                                      dev_id, run_start_date, td_to_str_lag,
                                      build_lag_curves=build_lag_curves, rng=rng)
     for w in guard_warnings:
         logger.info(f"  {w}")
     if discarded_lots:
-        logger.info(f"  S-0820: {len(discarded_lots)} temp lot(s) discarded for chronology violations.")
+        logger.info(f"  post_gen_chronology_guard: {len(discarded_lots)} temp lot(s) discarded for chronology violations.")
 
-    # S-09
+    # builder_assignment
     temp_lots = builder_assignment(temp_lots, builder_splits)
 
-    # S-10
+    # demand_derived_date_writer
     demand_derived_date_writer(conn, temp_lots)
 
-    # S-11
+    # persistence_writer
     persistence_writer(conn, temp_lots, dev_id, sim_run_id, _proposal=proposal)
 
-    # S-1050: write projected dates to real P lots at configured annual pace
+    # real_lot_projections: write projected dates to real P lots at configured annual pace
     write_real_lot_projections(conn, dev_id, run_start_date, build_lag_curves, rng)
 
-    # S-12
+    # ledger_aggregator
     ledger_aggregator(conn)
 
     return temp_lots, needs_config, residual_gaps
@@ -244,48 +244,48 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
 
     pre_run_phases = load_phase_delivery_snapshot(conn, ent_group_id)
 
-    # P-0050
+    # placeholder_rebuilder
     placeholder_rebuilder(conn, ent_group_id)
 
-    # P-01
+    # actual_date_applicator
     locked = actual_date_applicator(conn, ent_group_id)
 
-    # P-02
+    # dependency_resolver
     sorted_queue, eligible_pool = dependency_resolver(conn, ent_group_id, locked)
 
-    # P-03 through P-05: process eligible events until pool is empty
+    # constraint_urgency_ranker through eligibility_updater: process eligible events until pool is empty
     resolved_events = []
     resolved_so_far = set(locked)
 
     while eligible_pool:
-        # P-03
+        # constraint_urgency_ranker
         ranked = constraint_urgency_ranker(conn, eligible_pool)
         if not ranked:
             break
 
         top_event = ranked[0]
 
-        # P-04
+        # delivery_date_assigner
         projected = delivery_date_assigner(conn, top_event, ent_group_id)
         if projected:
             resolved_events.append((top_event, projected))
 
-        # P-05
+        # eligibility_updater
         eligible_pool = eligibility_updater(conn, top_event, sorted_queue,
                                             eligible_pool, resolved_so_far)
 
-    # P-06
+    # phase_date_propagator
     phase_date_propagator(conn, resolved_events)
 
-    # P-07
+    # lot_date_propagator
     lot_date_propagator(conn, resolved_events)
 
-    # S-12 (final refresh): rebuild ledger now that P-07 has written date_dev to lots
+    # ledger_aggregator (final refresh): rebuild ledger now that P-07 has written date_dev to lots
     ledger_aggregator(conn)
 
     post_run_phases = load_phase_delivery_snapshot(conn, ent_group_id)
 
-    # P-08
+    # sync_flag_writer
     affected_devs = sync_flag_writer(conn, pre_run_phases, post_run_phases)
 
     return post_run_phases, affected_devs
@@ -349,7 +349,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         # S-0050: apply MARKS builder_id from devdb_ext.housemaster (once per run)
         marks_builder_sync(conn, ent_group_id)
 
-        # S-0900 pre-pass: assign builder_id to real/pre lots not in MARKS (idempotent)
+        # builder_assignment pre-pass: assign builder_id to real/pre lots not in MARKS (idempotent)
         assign_real_lot_builders(conn, ent_group_id, builder_splits)
 
         _seed = rng_seed if rng_seed is not None else sim_run_id * 1000 + ent_group_id
@@ -387,7 +387,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
 
             latest_residual_gaps = iter_gaps
 
-            # S-0950: assign is_spec to all NULL lots after S-1100 flushes sim lots
+            # spec_assignment: assign is_spec to all NULL lots after S-1100 flushes sim lots
             spec_assignment(conn, ent_group_id)
 
             # Step 2: Run supply pipeline

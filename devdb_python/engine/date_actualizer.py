@@ -114,7 +114,7 @@ def _write_back_dates(conn: DBConnection, df: pd.DataFrame) -> None:
         written_lot_ids.update(lid for lid, _ in pairs)
 
     if written_lot_ids:
-        logger.info(f"S-02: Persisted actual dates for {len(written_lot_ids)} real lot(s).")
+        logger.info(f"date_actualizer: Persisted actual dates for {len(written_lot_ids)} real lot(s).")
 
 
 def date_actualizer(conn: DBConnection, lot_snapshot: pd.DataFrame) -> pd.DataFrame:

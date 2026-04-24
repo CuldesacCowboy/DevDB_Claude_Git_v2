@@ -47,5 +47,5 @@ def apply_lot_date_overrides(conn: DBConnection, snapshot: pd.DataFrame) -> pd.D
         mask = df['lot_id'] == lot_id
         if field in df.columns:
             df.loc[mask, field] = value
-    logger.info(f"  S-0250: Overrides applied: {len(ov_df)} field(s) across {ov_df['lot_id'].nunique()} lot(s).")
+    logger.info(f"  lot_date_overrides: Overrides applied: {len(ov_df)} field(s) across {ov_df['lot_id'].nunique()} lot(s).")
     return df

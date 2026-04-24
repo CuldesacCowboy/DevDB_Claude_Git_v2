@@ -8,7 +8,7 @@ Writes:  sim_lots.builder_id
          sim_lots.is_spec
 Input:   conn: DBConnection, ent_group_id: int
 Rules:   Runs once per engine invocation, before the iteration loop and before
-         S-0900 split assignment.
+         builder_assignment split assignment.
          Priority is preserved: builder_id_override always wins (never touched here).
          Only writes builder_id — the MARKS tier in the three-tier priority.
          Skips lots with MODELCODE = 'UNK' in housemaster.
@@ -20,7 +20,7 @@ Rules:   Runs once per engine invocation, before the iteration loop and before
                   Lots with no housemaster match remain NULL (undetermined → S-0950).
          If devdb_ext.housemaster is empty or does not exist, logs a warning and returns 0.
 Not Own: modifying builder_id_override, split percentages, or sim/temp lot builder logic.
-         S-0950 handles is_spec assignment for NULL lots.
+         spec_assignment handles is_spec assignment for NULL lots.
 """
 
 import logging

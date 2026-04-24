@@ -190,14 +190,14 @@ def write_real_lot_projections(
                 )
                 pace_count = len(updates)
                 logger.info(
-                    f"  S-1050: Projected dates written to {pace_count} real P lot(s) for dev {dev_id}."
+                    f"  real_lot_projections: Projected dates written to {pace_count} real P lot(s) for dev {dev_id}."
                 )
 
     # Building-group HC sync — always runs, even when there are no pure P/E lots.
     # Invariant: every lot in a building group must have identical BLDR, STR, CMP,
     # and CLS projected dates.  When some group mates are HC-held (S-0760 owns
     # their dates) and others are D-status (S-0770 wrote earlier, independent dates),
-    # the HC mates' dates must win unconditionally.  S-0770 may have written an
+    # the HC mates' dates must win unconditionally.  d_bldr_date_projector may have written an
     # earlier BLDR for the D-lot (lot can't be taken down before hold releases),
     # so this override replaces the S-0770 values entirely.
     synced = conn.execute(
@@ -234,7 +234,7 @@ def write_real_lot_projections(
     )
     if synced:
         logger.info(
-            f"  S-1050: Synced BLDR/STR/CMP/CLS to {synced} D-lot(s) from HC group mates."
+            f"  real_lot_projections: Synced BLDR/STR/CMP/CLS to {synced} D-lot(s) from HC group mates."
         )
 
     return pace_count

@@ -45,7 +45,7 @@ def eligibility_updater(conn: DBConnection, resolved_event_id: int,
     updated_pool = [e for e in eligible_pool if e != resolved_event_id] + newly_eligible
 
     if newly_eligible:
-        logger.info(f"P-05: {len(newly_eligible)} newly eligible events after "
+        logger.info(f"eligibility_updater: {len(newly_eligible)} newly eligible events after "
                     f"resolving event {resolved_event_id}: {newly_eligible}")
 
     return updated_pool

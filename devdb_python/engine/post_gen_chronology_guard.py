@@ -50,7 +50,7 @@ def post_generation_chronology_guard(temp_lots: list) -> tuple:
             discarded = dict(lot)
             discarded["violation"] = violation
             discarded_lots.append(discarded)
-            print(f"S-0820: Discarding lot phase_id={lot.get('phase_id')} "
+            print(f"post_gen_chronology_guard: Discarding lot phase_id={lot.get('phase_id')} "
                   f"lot_type_id={lot.get('lot_type_id')}: {violation}")
         else:
             clean_lots.append(lot)

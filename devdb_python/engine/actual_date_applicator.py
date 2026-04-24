@@ -51,7 +51,7 @@ def actual_date_applicator(conn: DBConnection, ent_group_id: int) -> list:
         )
 
         if child_phases_df.empty:
-            logger.info(f"P-01: Event {event_id} has actual date but no child phases. Skipping.")
+            logger.info(f"actual_date_applicator: Event {event_id} has actual date but no child phases. Skipping.")
             locked_event_ids.append(event_id)
             continue
 
@@ -76,5 +76,5 @@ def actual_date_applicator(conn: DBConnection, ent_group_id: int) -> list:
 
         locked_event_ids.append(event_id)
 
-    logger.info(f"P-01: Locked {len(locked_event_ids)} events for ent_group_id={ent_group_id}.")
+    logger.info(f"actual_date_applicator: Locked {len(locked_event_ids)} events for ent_group_id={ent_group_id}.")
     return locked_event_ids

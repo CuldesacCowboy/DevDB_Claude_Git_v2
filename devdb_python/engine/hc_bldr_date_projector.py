@@ -119,7 +119,7 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
         else demand_series
     )
     if is_empty:
-        logger.info(f"  S-0760: demand_series empty for dev {dev_id} — using pace fallback.")
+        logger.info(f"  hc_bldr_date_projector: demand_series empty for dev {dev_id} — using pace fallback.")
 
     # Run demand allocator over full snapshot — it handles U/H/D priority ordering
     allocated_df, _ = demand_allocator(lot_snapshot, effective_demand)
@@ -159,7 +159,7 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
     # STR  = BLDR + td_to_str_lag months.
     # CMP/CLS derived via empirical lag curves (same logic as S-1050).
     # Writing all four columns here overwrites any stale pace-based values that
-    # S-1050 may have left from a prior run before the lot gained its HC hold
+    # real_lot_projections may have left from a prior run before the lot gained its HC hold
     # assignment (S-1050 skips HC lots and cannot self-correct stale data).
     hc_dates: dict[int, date] = {}
     hc_str_dates: dict[int, date] = {}
@@ -282,7 +282,7 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
         updates,
     )
     logger.info(
-        f"  S-0760: Wrote BLDR/DIG/CMP/CLS projected dates for {len(updates)} HC lot(s)."
+        f"  hc_bldr_date_projector: Wrote BLDR/DIG/CMP/CLS projected dates for {len(updates)} HC lot(s)."
     )
 
     # Clear date_td_hold_projected for lots where bldr date still precedes the hold date.
@@ -307,7 +307,7 @@ def hc_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
             [(lid,) for lid in clear_hold_ids],
         )
         logger.info(
-            f"  S-0760: Cleared date_td_hold_projected for {len(clear_hold_ids)} lot(s) "
+            f"  hc_bldr_date_projector: Cleared date_td_hold_projected for {len(clear_hold_ids)} lot(s) "
             "covered by demand before hold date."
         )
 

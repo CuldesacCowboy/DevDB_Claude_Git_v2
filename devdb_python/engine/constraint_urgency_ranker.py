@@ -49,6 +49,6 @@ def constraint_urgency_ranker(conn: DBConnection, eligible_pool: list) -> list:
     ranked.sort(key=lambda x: x[1])
     result = [e[0] for e in ranked] + null_demand_events
 
-    logger.info(f"P-03: Ranked {len(result)} eligible events. "
+    logger.info(f"constraint_urgency_ranker: Ranked {len(result)} eligible events. "
                f"{len(null_demand_events)} with null demand_derived ranked last.")
     return result

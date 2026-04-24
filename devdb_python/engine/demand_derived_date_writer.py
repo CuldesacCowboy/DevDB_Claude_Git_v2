@@ -53,4 +53,4 @@ def demand_derived_date_writer(conn: DBConnection, temp_lots: list) -> None:
             (derived_date, phase_id, derived_date),
         )
 
-    logger.info(f"S-10: Wrote date_dev_demand_derived for {len(phase_min)} phase(s).")
+    logger.info(f"demand_derived_date_writer: Wrote date_dev_demand_derived for {len(phase_min)} phase(s).")

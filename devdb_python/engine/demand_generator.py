@@ -87,7 +87,7 @@ def demand_generator(conn: DBConnection, dev_id: int,
     available_capacity = max(0, total_capacity - real_started_lots)
 
     if available_capacity == 0:
-        logger.info(f"S-06: Dev {dev_id} available_capacity=0. No demand generated.")
+        logger.info(f"demand_generator: Dev {dev_id} available_capacity=0. No demand generated.")
         return pd.DataFrame(columns=["year", "month", "slots"]), False
 
     # Step 2: Build month spine from run_start_date.
@@ -134,7 +134,7 @@ def demand_generator(conn: DBConnection, dev_id: int,
     # Step 5: Drop zero-slot months to keep output lean.
     df = df[df["slots"] > 0].reset_index(drop=True)
 
-    logger.info(f"S-06: Dev {dev_id} demand={available_capacity} slots "
+    logger.info(f"demand_generator: Dev {dev_id} demand={available_capacity} slots "
                f"across {len(df)} months "
                f"(total_capacity={total_capacity}, real_started_lots={real_started_lots}, "
                f"demand_start={demand_start}).")

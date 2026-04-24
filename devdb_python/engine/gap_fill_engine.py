@@ -185,13 +185,13 @@ def gap_fill_engine(lot_snapshot: pd.DataFrame,
                 df.loc[fill_mask & df["date_cmp_source"].isna(), "date_cmp_source"] = "engine_filled"
                 df.loc[fill_mask, "date_cls"] = _cls.values
                 df.loc[fill_mask & df["date_cls_source"].isna(), "date_cls_source"] = "engine_filled"
-                print(f"  S-03 no-anchor fallback: {fill_mask.sum()} lot(s) filled from "
+                print(f"  gap_fill_engine no-anchor fallback: {fill_mask.sum()} lot(s) filled from "
                       f"phase delivery date (engine_filled).")
 
             no_phase_date = mask_no_anchor & ~fill_mask
             if no_phase_date.any():
                 for _, r in df.loc[no_phase_date].iterrows():
-                    print(f"  S-03 no-anchor fallback: lot_id={int(r['lot_id'])} "
+                    print(f"  gap_fill_engine no-anchor fallback: lot_id={int(r['lot_id'])} "
                           f"phase_id={r.get('phase_id')} has no phase delivery date. Left unchanged.")
 
     return df

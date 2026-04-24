@@ -37,7 +37,7 @@ def dependency_resolver(conn: DBConnection, ent_group_id: int,
     queue = all_event_ids - locked_set
 
     if not queue:
-        logger.info(f"P-02: No unresolved events for ent_group_id={ent_group_id}.")
+        logger.info(f"dependency_resolver: No unresolved events for ent_group_id={ent_group_id}.")
         return [], []
 
     queue_list = list(queue)
@@ -74,12 +74,12 @@ def dependency_resolver(conn: DBConnection, ent_group_id: int,
 
     if remaining:
         raise ValueError(
-            f"P-02: Dependency cycle detected in delivery events for "
+            f"dependency_resolver: Dependency cycle detected in delivery events for "
             f"ent_group_id={ent_group_id}. "
             f"Unresolvable events: {remaining}. "
             f"Project configuration is invalid."
         )
 
-    logger.info(f"P-02: {len(sorted_queue)} events in queue, "
+    logger.info(f"dependency_resolver: {len(sorted_queue)} events in queue, "
                f"{len(eligible_pool)} initially eligible.")
     return sorted_queue, eligible_pool

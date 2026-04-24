@@ -60,7 +60,7 @@ def _delete_placeholder_events(conn, ent_group_id: int) -> None:
         (ent_group_id,),
     )
     if placeholder_df.empty:
-        logger.info("P-00: No placeholder events to delete.")
+        logger.info("placeholder_rebuilder: No placeholder events to delete.")
         return
 
     placeholder_ids = placeholder_df["delivery_event_id"].astype(int).tolist()
@@ -80,7 +80,7 @@ def _delete_placeholder_events(conn, ent_group_id: int) -> None:
         "DELETE FROM sim_delivery_events WHERE delivery_event_id = ANY(%s)",
         (placeholder_ids,),
     )
-    logger.info(f"P-00: Deleted {len(placeholder_ids)} placeholder event(s).")
+    logger.info(f"placeholder_rebuilder: Deleted {len(placeholder_ids)} placeholder event(s).")
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ def _collect_schedulable_phases(conn, ent_group_id: int, today_first: date) -> d
         (ent_group_id,),
     )
     if all_phases_df.empty:
-        logger.info(f"P-00: No phases found for ent_group_id={ent_group_id}.")
+        logger.info(f"placeholder_rebuilder: No phases found for ent_group_id={ent_group_id}.")
         return None
 
     # Phases already covered by locked (actual) events
@@ -157,7 +157,7 @@ def _collect_schedulable_phases(conn, ent_group_id: int, today_first: date) -> d
         })
 
     if not undelivered:
-        logger.info(f"P-00: All phases covered by locked events for ent_group_id={ent_group_id}.")
+        logger.info(f"placeholder_rebuilder: All phases covered by locked events for ent_group_id={ent_group_id}.")
         return None
 
     # Step 3b: Sellout date — MAX(date_cls) across sim lots for this ent_group
@@ -214,25 +214,25 @@ def _collect_schedulable_phases(conn, ent_group_id: int, today_first: date) -> d
                 )
                 configured_capacity = int(splits_df.iloc[0]["total"]) if not splits_df.empty else 0
                 if configured_capacity == 0:
-                    logger.info(f"P-00: Phase {ph_id} skipped -- null demand, no lots, no configured capacity.")
+                    logger.info(f"placeholder_rebuilder: Phase {ph_id} skipped -- null demand, no lots, no configured capacity.")
                     continue
-                logger.info(f"P-00: Phase {ph_id} has {configured_capacity} configured lot(s) in splits -- proceeding to schedule.")
+                logger.info(f"placeholder_rebuilder: Phase {ph_id} has {configured_capacity} configured lot(s) in splits -- proceeding to schedule.")
             else:
-                logger.info(f"P-00: Phase {ph_id} has {real_pending} real entitled lot(s) -- proceeding to schedule.")
+                logger.info(f"placeholder_rebuilder: Phase {ph_id} has {real_pending} real entitled lot(s) -- proceeding to schedule.")
 
         if demand is not None and sellout_date is not None and demand > sellout_date:
-            logger.info(f"P-00: Phase {ph_id} skipped -- demand {demand} beyond sellout {sellout_date}.")
+            logger.info(f"placeholder_rebuilder: Phase {ph_id} skipped -- demand {demand} beyond sellout {sellout_date}.")
             continue
 
         filtered.append(p)
 
     skipped = len(undelivered) - len(filtered)
     if skipped:
-        logger.info(f"P-00: {skipped} phase(s) skipped. {len(filtered)} proceeding to schedule.")
+        logger.info(f"placeholder_rebuilder: {skipped} phase(s) skipped. {len(filtered)} proceeding to schedule.")
     undelivered = filtered
 
     if not undelivered:
-        logger.info(f"P-00: No schedulable phases remain for ent_group_id={ent_group_id}.")
+        logger.info(f"placeholder_rebuilder: No schedulable phases remain for ent_group_id={ent_group_id}.")
         return None
 
     # Step 3d: Which placeholder phases already have sim lots from the prior iteration?
@@ -251,7 +251,7 @@ def _collect_schedulable_phases(conn, ent_group_id: int, today_first: date) -> d
         phases_with_sim_lots = set()
 
     logger.info(
-        f"P-00: {len(phases_with_sim_lots)}/{len(placeholder_phase_ids)} placeholder "
+        f"placeholder_rebuilder: {len(phases_with_sim_lots)}/{len(placeholder_phase_ids)} placeholder "
         f"phase(s) have prior-iteration sim lots — balance-driven mode active for those phases."
     )
 
@@ -279,7 +279,7 @@ def _collect_schedulable_phases(conn, ent_group_id: int, today_first: date) -> d
                 d = d.date()
             locked_group_dates.add(d)
         if locked_group_dates:
-            logger.info(f"P-00: Locked group dates (blocked for other deliveries): {sorted(locked_group_dates)}")
+            logger.info(f"placeholder_rebuilder: Locked group dates (blocked for other deliveries): {sorted(locked_group_dates)}")
 
     return {
         "undelivered": undelivered,
@@ -435,7 +435,7 @@ def _run_scheduling_loop(
             dc_params,
         )
         demand_consumed[dev] = int(dc_df.iloc[0]["cnt"]) if not dc_df.empty else 0
-        logger.info(f"P-00: Dev {dev}: demand_start={ds}, demand_consumed={demand_consumed[dev]}")
+        logger.info(f"placeholder_rebuilder: Dev {dev}: demand_start={ds}, demand_consumed={demand_consumed[dev]}")
 
     # Organise phases by dev, sorted by (tier, seq)
     dev_phases = defaultdict(list)
@@ -571,7 +571,7 @@ def _run_scheduling_loop(
         lv = snap_to_window(prev, vm)
         if lv < today_first:
             lv = next_window_month_from(today_first, vm)
-        logger.info(f"P-00: Dev {dev_id_key}: D-balance violation {violation}, lv={lv}")
+        logger.info(f"placeholder_rebuilder: Dev {dev_id_key}: D-balance violation {violation}, lv={lv}")
         return lv
 
     def _constrain_date(ideal: date, vm: frozenset) -> date:
@@ -640,7 +640,7 @@ def _run_scheduling_loop(
                         if lv_d < today_first:
                             lv_d = next_window_month_from(today_first, valid_months)
                         logger.info(
-                            f"P-00: Dev {dev_id}: exhaustion fallback — "
+                            f"placeholder_rebuilder: Dev {dev_id}: exhaustion fallback — "
                             f"last_delivery={last_sched}, lots={last_lots}, "
                             f"pace={pace:.2f}/mo, exhaust={exhaust}, lv_d={lv_d}"
                         )
@@ -660,7 +660,7 @@ def _run_scheduling_loop(
         violation_check = _find_violation_month(urgent_dev, dev_scan_floor[urgent_dev])
         if violation_check is not None and event_date >= violation_check:
             logger.warning(
-                f"P-00: WARNING: Dev {urgent_dev}: next delivery {event_date} "
+                f"placeholder_rebuilder: WARNING: Dev {urgent_dev}: next delivery {event_date} "
                 f"cannot be moved before D-floor violation at {violation_check} "
                 f"(max_deliveries_per_year={max_per_year}, "
                 f"min_gap_months={min_gap}, min_d_count={min_buffer}). "
@@ -682,13 +682,13 @@ def _run_scheduling_loop(
             first_lots = sum(_get_phase_lots(conn, batch[0]["phase_id"]))
             if batch[0]["phase_id"] in phases_with_sim_lots:
                 _apply_delivery_to_balance_from_sim_lots(dev_id, event_date, batch[0]["phase_id"])
-                logger.info(f"P-00: Dev {dev_id}: delivery {event_date}, lots={first_lots} (balance-driven drain)")
+                logger.info(f"placeholder_rebuilder: Dev {dev_id}: delivery {event_date}, lots={first_lots} (balance-driven drain)")
             else:
                 delay = _compute_drain_delay(dev_id, event_date)
                 _apply_delivery_to_balance(dev_id, event_date, first_lots, pace, delay)
                 demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + first_lots
                 logger.info(
-                    f"P-00: Dev {dev_id}: delivery {event_date}, lots={first_lots}, "
+                    f"placeholder_rebuilder: Dev {dev_id}: delivery {event_date}, lots={first_lots}, "
                     f"drain_delay={delay}mo (pace-est), demand_consumed->{demand_consumed[dev_id]}"
                 )
 
@@ -750,7 +750,7 @@ def _run_scheduling_loop(
                             dev_batches.setdefault(dev_id_g, []).append(popped)
                             dev_scan_floor[dev_id_g] = event_date
                             logger.info(
-                                f"P-00: delivery_group={grp}: pulled phase {popped['phase_id']} "
+                                f"placeholder_rebuilder: delivery_group={grp}: pulled phase {popped['phase_id']} "
                                 f"(dev {dev_id_g}) into event at {event_date}"
                             )
                             break  # one phase per dev per group letter
@@ -782,7 +782,7 @@ def _run_scheduling_loop(
                             dev_phases[did].insert(0, p_orig)
                             evicted_devs.add(did)
                             logger.info(
-                                f"P-00: group exclusivity: evicted phase {pid} "
+                                f"placeholder_rebuilder: group exclusivity: evicted phase {pid} "
                                 f"(dev {did}) from event at {event_date} "
                                 f"— date reserved for group(s) {sorted(event_groups)}"
                             )
@@ -858,7 +858,7 @@ def _write_new_events(conn, ent_group_id: int, events_to_create: list,
         new_event_ids.append(event_id)
 
     logger.info(
-        f"P-00: Created {len(new_event_ids)} placeholder delivery event(s) "
+        f"placeholder_rebuilder: Created {len(new_event_ids)} placeholder delivery event(s) "
         f"for ent_group_id={ent_group_id}."
     )
     return new_event_ids
@@ -900,7 +900,7 @@ def _write_predecessor_links(conn, ent_group_id: int, events_to_create: list,
             )
             pred_count += 1
     if pred_count:
-        logger.info(f"P-00: Created {pred_count} intra-dev sequence predecessor row(s).")
+        logger.info(f"placeholder_rebuilder: Created {pred_count} intra-dev sequence predecessor row(s).")
 
     # Step 7c: Locked-anchor predecessors
     if locked_phase_ids and dev_event_sequence:
@@ -937,9 +937,9 @@ def _write_predecessor_links(conn, ent_group_id: int, events_to_create: list,
                 (first_placeholder, anchor_ev_id),
             )
             anchor_pred_count += 1
-            logger.info(f"P-00: Dev {dev_id}: anchor predecessor event {first_placeholder} → locked event {anchor_ev_id}.")
+            logger.info(f"placeholder_rebuilder: Dev {dev_id}: anchor predecessor event {first_placeholder} → locked event {anchor_ev_id}.")
         if anchor_pred_count:
-            logger.info(f"P-00: Created {anchor_pred_count} locked-anchor predecessor row(s).")
+            logger.info(f"placeholder_rebuilder: Created {anchor_pred_count} locked-anchor predecessor row(s).")
 
     # Step 7b: Cross-tier predecessors
     tier_df = conn.read_df(
@@ -1006,7 +1006,7 @@ def _write_predecessor_links(conn, ent_group_id: int, events_to_create: list,
                 )
                 tier_pred_count += 1
     if tier_pred_count:
-        logger.info(f"P-00: Created {tier_pred_count} cross-tier predecessor row(s).")
+        logger.info(f"placeholder_rebuilder: Created {tier_pred_count} cross-tier predecessor row(s).")
 
 
 # ---------------------------------------------------------------------------
@@ -1034,7 +1034,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
             ent_date = ent_date.date()
         ent_first = ent_date.replace(day=1)
         if ent_first > today_first:
-            logger.info(f"P-00: Entitlement floor {ent_first} > today {today_first} — using entitlement date as scheduling floor.")
+            logger.info(f"placeholder_rebuilder: Entitlement floor {ent_first} > today {today_first} — using entitlement date as scheduling floor.")
             today_first = ent_first
 
     # Step 1: Load delivery config
@@ -1066,7 +1066,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     )
 
     if not events_to_create:
-        logger.info(f"P-00: No events to create for ent_group_id={ent_group_id}.")
+        logger.info(f"placeholder_rebuilder: No events to create for ent_group_id={ent_group_id}.")
         return []
 
     # Step 6: Persist delivery events and phase links

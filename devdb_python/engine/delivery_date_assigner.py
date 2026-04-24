@@ -47,7 +47,7 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
     raw_months = cfg["delivery_months"]
     if not raw_months:
         raise ValueError(
-            f"P-04: delivery_months not configured for ent_group {ent_group_id}. "
+            f"delivery_date_assigner: delivery_months not configured for ent_group {ent_group_id}. "
             "Set delivery_months in global settings or community delivery config before running."
         )
     valid_months = frozenset(int(m) for m in raw_months)
@@ -69,11 +69,11 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
             # No demand signal yet (phases have no sim lots or date_str).
             # Fall back to P-00's lean date so P-06/P-07 can propagate it and
             # unblock the starts pipeline — without this the scheduling deadlocks.
-            logger.info(f"P-04: Event {delivery_event_id} null demand_derived; "
+            logger.info(f"delivery_date_assigner: Event {delivery_event_id} null demand_derived; "
                         f"using P-00 lean date {current_projected} to unblock pipeline.")
             min_date = current_projected.date() if hasattr(current_projected, "date") else current_projected
         else:
-            logger.info(f"P-04: Event {delivery_event_id} all child phases null demand_derived. Skipping.")
+            logger.info(f"delivery_date_assigner: Event {delivery_event_id} all child phases null demand_derived. Skipping.")
             return None
 
     # Normalize to Python date
@@ -92,7 +92,7 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
                 break
         if projected is None:
             projected = min_date.replace(month=min(valid_months), day=1)
-            logger.warning(f"P-04: Supply constraint warning -- event {delivery_event_id} "
+            logger.warning(f"delivery_date_assigner: Supply constraint warning -- event {delivery_event_id} "
                            f"pulled to first permissible window month {projected}.")
 
     # Floor rule: projected must be >= the earliest permissible date, which is
@@ -128,7 +128,7 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
         hard_floor = hard_floor + relativedelta(months=1)
 
     if projected < hard_floor:
-        logger.info(f"P-04: Floor applied -- event {delivery_event_id} "
+        logger.info(f"delivery_date_assigner: Floor applied -- event {delivery_event_id} "
                     f"clamped from {projected} to {hard_floor}.")
         projected = hard_floor
 
@@ -141,7 +141,7 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
         if hasattr(cur, 'date'):
             cur = cur.date()
         if projected > cur and cur >= today_first:
-            logger.info(f"P-04: Projected date {projected} is later than current "
+            logger.info(f"delivery_date_assigner: Projected date {projected} is later than current "
                         f"{cur}. Keeping current.")
             projected = cur  # demand guard — predecessor floor may override below
 
@@ -163,7 +163,7 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
         if max_pred_raw is not None and not pd.isnull(max_pred_raw):
             pred_floor = max_pred_raw.date() if hasattr(max_pred_raw, "date") else max_pred_raw
             if projected < pred_floor:
-                logger.info(f"P-04: Sequence constraint -- event {delivery_event_id} "
+                logger.info(f"delivery_date_assigner: Sequence constraint -- event {delivery_event_id} "
                             f"floored from {projected} to predecessor date {pred_floor}.")
                 projected = pred_floor
 
@@ -172,5 +172,5 @@ def delivery_date_assigner(conn: DBConnection, delivery_event_id: int,
         (projected, delivery_event_id),
     )
 
-    logger.info(f"P-04: Event {delivery_event_id} date_dev_projected = {projected}.")
+    logger.info(f"delivery_date_assigner: Event {delivery_event_id} date_dev_projected = {projected}.")
     return projected

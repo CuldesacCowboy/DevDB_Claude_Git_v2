@@ -33,7 +33,7 @@ def phase_date_propagator(conn: DBConnection, resolved_events: list) -> None:
         )
 
         if child_phases_df.empty:
-            logger.info(f"P-06: Event {event_id} has no child phases. Skipping.")
+            logger.info(f"phase_date_propagator: Event {event_id} has no child phases. Skipping.")
             continue
 
         phase_ids = child_phases_df["phase_id"].astype(int).tolist()
@@ -43,4 +43,4 @@ def phase_date_propagator(conn: DBConnection, resolved_events: list) -> None:
             (projected_date, phase_ids),
         )
 
-    logger.info(f"P-06: Propagated dates for {len(resolved_events)} resolved events.")
+    logger.info(f"phase_date_propagator: Propagated dates for {len(resolved_events)} resolved events.")

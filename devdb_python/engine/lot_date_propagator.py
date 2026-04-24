@@ -56,4 +56,4 @@ def lot_date_propagator(conn: DBConnection, resolved_events: list) -> None:
             (projected_date, phase_id),
         )
 
-    logger.info(f"P-07: Propagated date_dev for {len(updated_phases)} phases.")
+    logger.info(f"lot_date_propagator: Propagated date_dev for {len(updated_phases)} phases.")

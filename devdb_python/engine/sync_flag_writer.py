@@ -60,7 +60,7 @@ def sync_flag_writer(conn: DBConnection, pre_run_dates: dict,
     ]
 
     if not changed_phases:
-        logger.info("P-08: No phase dates changed.")
+        logger.info("sync_flag_writer: No phase dates changed.")
         return []
 
     affected_df = conn.read_df(
@@ -69,10 +69,10 @@ def sync_flag_writer(conn: DBConnection, pre_run_dates: dict,
     )
 
     if affected_df.empty:
-        logger.info(f"P-08: Changed phases {changed_phases} have no lots.")
+        logger.info(f"sync_flag_writer: Changed phases {changed_phases} have no lots.")
         return []
 
     dev_ids = [int(r) for r in affected_df["dev_id"]]
-    logger.info(f"P-08: {len(dev_ids)} development(s) affected by "
+    logger.info(f"sync_flag_writer: {len(dev_ids)} development(s) affected by "
                 f"{len(changed_phases)} changed phase(s).")
     return dev_ids

@@ -76,7 +76,7 @@ def building_group_sync(conn: DBConnection, lot_snapshot: pd.DataFrame) -> pd.Da
     if not updates:
         return df
 
-    logger.info(f"S-0205: Synced {len(updates)} date field(s) across building groups.")
+    logger.info(f"building_group_sync: Synced {len(updates)} date field(s) across building groups.")
     _persist(conn, updates, lot_snapshot)
     return df
 

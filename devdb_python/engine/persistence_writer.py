@@ -86,7 +86,7 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
             (dev_id,),
         )
 
-        logger.info(f"S-11: Wrote {len(temp_lots)} temp lots for "
+        logger.info(f"persistence_writer: Wrote {len(temp_lots)} temp lots for "
                     f"dev_id={dev_id}, sim_run_id={sim_run_id}.")
 
     except Exception as e:

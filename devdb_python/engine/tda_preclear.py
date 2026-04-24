@@ -324,7 +324,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
 
             # Count lots that already have a projected takedown date on or before
             # the checkpoint.  These are the ones demand has already "claimed" via
-            # S-0760/S-0770 — they will fulfill the checkpoint without HC.
+            # hc_bldr_date_projector/S-0770 — they will fulfill the checkpoint without HC.
             # The old pace-based estimate (monthly_rate * months) was too optimistic:
             # it assumed demand would cover N lots, but their projected dates often
             # landed after the checkpoint, leaving it unmet.
@@ -387,11 +387,11 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
             """,
             updates,
         )
-        logger.info(f"  S-0500: Persisted date_td_hold_projected to {len(updates)} lot(s).")
+        logger.info(f"  tda_preclear: Persisted date_td_hold_projected to {len(updates)} lot(s).")
 
     # ── Building-group HC sync ────────────────────────────────────────────────
     # Invariant: all lots in a building share the same HC hold date.
-    # S-0500 assigns holds lot-by-lot from TDA checkpoints; different lots in
+    # tda_preclear assigns holds lot-by-lot from TDA checkpoints; different lots in
     # the same building may land on different checkpoints and get different hold
     # dates (e.g. B1 DT1/2/3 → Dec 2026 checkpoint, DT4 → Dec 2027 checkpoint).
     # Propagate MAX(date_td_hold_projected) to all group mates so no unit shows
@@ -445,7 +445,7 @@ def takedown_engine(conn: DBConnection, lot_snapshot: pd.DataFrame, dev_id: int,
             continue
         lots_dict[lid]["date_td_hold_projected"] = bg_max_hold[bg_id]
     if bg_max_hold:
-        logger.info(f"  S-0500: Synced HC hold date within {len(bg_max_hold)} building group(s).")
+        logger.info(f"  tda_preclear: Synced HC hold date within {len(bg_max_hold)} building group(s).")
 
     updated_df = pd.DataFrame(list(lots_dict.values()))
     updated_df = updated_df[lot_snapshot.columns.tolist()]

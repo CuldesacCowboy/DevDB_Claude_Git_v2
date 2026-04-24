@@ -2,7 +2,7 @@
 date_window_helpers.py -- Pure calendar arithmetic for delivery window scheduling.
 
 Used by:
-  P-0050 placeholder_rebuilder -- delivery date computation
+  placeholder_rebuilder placeholder_rebuilder -- delivery date computation
 
 All functions operate on first-of-month dates and frozenset[int] valid_months.
 No database access. No side effects.

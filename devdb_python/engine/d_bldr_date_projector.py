@@ -122,7 +122,7 @@ def d_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
         else demand_series
     )
     if is_empty:
-        logger.info(f"  S-0770: demand_series empty for dev {dev_id} — using pace fallback.")
+        logger.info(f"  d_bldr_date_projector: demand_series empty for dev {dev_id} — using pace fallback.")
 
     # Run demand allocator over full snapshot — H-lots drain before D-lots automatically
     allocated_df, _ = demand_allocator(lot_snapshot, effective_demand)
@@ -206,7 +206,7 @@ def d_bldr_date_projector(conn: DBConnection, lot_snapshot: pd.DataFrame,
         updates,
     )
     logger.info(
-        f"  S-0770: Wrote BLDR/STR/CMP/CLS projected dates for {len(updates)} D-status lot(s)."
+        f"  d_bldr_date_projector: Wrote BLDR/STR/CMP/CLS projected dates for {len(updates)} D-status lot(s)."
     )
 
     # Update snapshot in memory
