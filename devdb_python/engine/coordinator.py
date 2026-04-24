@@ -84,7 +84,7 @@ from .real_lot_builder_assign import assign_real_lot_builders
 from .spec_assignment import spec_assignment
 from .demand_derived_date_writer import demand_derived_date_writer
 from .real_lot_projections import write_real_lot_projections
-from .s1100_persistence_writer import persistence_writer
+from .persistence_writer import persistence_writer
 from .ledger_aggregator import ledger_aggregator
 from .p0050_placeholder_rebuilder import placeholder_rebuilder
 from .p0100_actual_date_applicator import actual_date_applicator

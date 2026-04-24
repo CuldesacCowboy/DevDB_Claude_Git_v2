@@ -20,7 +20,7 @@ from kernel.frozen_input import FrozenInput
 from kernel.planning_kernel import plan
 from kernel.proposal_validator import ProposalValidator
 from engine.building_group_enforcer import building_group_enforcer
-from engine.s1100_persistence_writer import persistence_writer
+from engine.persistence_writer import persistence_writer
 from engine.temp_lot_generator import (
     _DEFAULT_LAG_CMP_FROM_STR,
     _DEFAULT_LAG_CLS_FROM_CMP,
