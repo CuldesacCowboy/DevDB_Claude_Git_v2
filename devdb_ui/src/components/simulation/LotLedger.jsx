@@ -161,8 +161,8 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
     (l.violations ?? []).map(vt => VIOLATION_LABELS[vt] ?? vt).join('\n')
   const ViolationDot = ({ title }) => (
     <span title={title}
-      style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
-               background: '#f97316', marginLeft: 4, verticalAlign: 'middle', flexShrink: 0 }} />
+      style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+               background: '#f97316', position: 'absolute', top: 2, right: 2 }} />
   )
 
   return (
@@ -297,13 +297,13 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                 </td>
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
                     {l.date_ent ? fmt(l.date_ent) : <span style={{ color: '#e5e7eb' }}>—</span>}
                     <VDot field="date_ent" />
                   </span>
                 </td>
                 <td style={tdS()}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
                     {l.date_dev ? fmt(l.date_dev) : <span style={{ color: '#e5e7eb' }}>—</span>}
                     <VDot field="date_dev" />
                   </span>
@@ -316,7 +316,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                     disabled={!overrideable(l)} isSim={l.lot_source === 'sim'} />
                 </td>
                 <td style={tdS()}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
                     <OverrideDateCell lotId={l.lot_id} dateField="date_td" label="BLDR"
                       marksValue={l.date_td} projectedValue={l.date_td_projected}
                       overrideValue={l.ov_date_td}
@@ -326,7 +326,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                   </span>
                 </td>
                 <td style={tdS()}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
                     <OverrideDateCell lotId={l.lot_id} dateField="date_str" label="DIG"
                       marksValue={l.date_str} projectedValue={l.date_str_projected}
                       overrideValue={l.ov_date_str}
@@ -336,7 +336,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                   </span>
                 </td>
                 <td style={tdS()}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
                     <OverrideDateCell lotId={l.lot_id} dateField="date_cmp" label="CMP"
                       marksValue={l.date_cmp} projectedValue={l.date_cmp_projected}
                       overrideValue={l.ov_date_cmp}
@@ -346,7 +346,7 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                   </span>
                 </td>
                 <td style={tdS()}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', position: 'relative' }}>
                     <OverrideDateCell lotId={l.lot_id} dateField="date_cls" label="CLS"
                       marksValue={l.date_cls} projectedValue={l.date_cls_projected}
                       overrideValue={l.ov_date_cls}
