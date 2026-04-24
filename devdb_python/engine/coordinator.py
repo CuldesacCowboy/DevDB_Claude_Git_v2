@@ -77,6 +77,8 @@ from .tda_preclear import takedown_engine
 from .demand_generator import demand_generator
 from .hc_bldr_date_projector import hc_bldr_date_projector
 from .d_bldr_date_projector import d_bldr_date_projector
+from .tda_checkpoint_assigner import tda_checkpoint_assigner
+from .tda_hc_enforcer import tda_hc_enforcer
 from .post_gen_chronology_guard import post_generation_chronology_guard
 from .timing_expansion import load_build_lag_curves, timing_expansion
 from .builder_assignment import builder_assignment
@@ -215,6 +217,13 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
         logger.info(f"  {w}")
     if discarded_lots:
         logger.info(f"  post_gen_chronology_guard: {len(discarded_lots)} temp lot(s) discarded for chronology violations.")
+
+    # tda_checkpoint_assigner: sort TDA lots by BLDR date, assign to checkpoints sequentially
+    tda_checkpoint_assigner(conn, snapshot, dev_id)
+
+    # tda_hc_enforcer: HC hold for lots whose BLDR date > checkpoint deadline
+    snapshot = tda_hc_enforcer(conn, snapshot, dev_id,
+                                hc_to_bldr_lag_days=hc_to_bldr_lag)
 
     # builder_assignment
     temp_lots = builder_assignment(temp_lots, builder_splits)

@@ -16,7 +16,7 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 ### devdb_python/engine/config_loader.py
 - Owns: load_delivery_config(conn, ent_group_id) — merges community row → global row → hardcoded defaults; returns fully-resolved dict with max_deliveries_per_year, min_gap_months, delivery_months, min_d/u/uc/c_count, default_cmp_lag_days, default_cls_lag_days, feed_starts_mode; called by coordinator (for build lag defaults) and by P-0000 and P-0400
 - Imports: pandas, logging
-- Imported by: coordinator.py, p0000_placeholder_rebuilder.py, p0400_delivery_date_assigner.py
+- Imported by: coordinator.py, placeholder_rebuilder.py, delivery_date_assigner.py
 - Tables: sim_global_settings (SELECT id=1), sim_entitlement_delivery_config (SELECT by ent_group_id)
 - Last commit: 2026-04-15
 
@@ -187,47 +187,47 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Tables: sim_dev_phases (UPDATE), sim_delivery_events, sim_delivery_event_phases (SELECT)
 - Last commit: 2026-04-24
 
-### devdb_python/engine/p0200_dependency_resolver.py
-- Owns: P-0200 -- resolves delivery event predecessor chains; uses event_id column (not delivery_event_id)
+### devdb_python/engine/dependency_resolver.py
+- Owns: resolves delivery event predecessor chains; uses event_id column (not delivery_event_id)
 - Imported by: coordinator.py
 - Tables: sim_delivery_events, sim_delivery_event_predecessors (SELECT)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-24
 
-### devdb_python/engine/p0300_constraint_urgency_ranker.py
-- Owns: P-0300 -- ranks phases by delivery urgency based on inventory exhaustion
+### devdb_python/engine/constraint_urgency_ranker.py
+- Owns: ranks phases by delivery urgency based on inventory exhaustion
 - Imported by: coordinator.py
 - Tables: sim_dev_phases, sim_lots, sim_phase_product_splits (SELECT)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-24
 
-### devdb_python/engine/p0400_delivery_date_assigner.py
-- Owns: P-0400 -- assigns delivery dates to placeholder events; never moves placeholder earlier than P-0000 wrote per D-141; uses delivery_months integer[] (frozenset) — replaced window_start/end range checks; predecessor sequence floor applied after demand/placeholder guards as absolute constraint (phase ordering always wins)
+### devdb_python/engine/delivery_date_assigner.py
+- Owns: assigns delivery dates to placeholder events; never moves placeholder earlier than placeholder_rebuilder wrote per D-141; uses delivery_months integer[] (frozenset) -- replaced window_start/end range checks; predecessor sequence floor applied after demand/placeholder guards as absolute constraint (phase ordering always wins)
 - Imported by: coordinator.py
 - Tables: sim_delivery_events (UPDATE), sim_dev_phases, sim_delivery_event_predecessors (SELECT)
-- Last commit: 2026-04-10
+- Last commit: 2026-04-24
 
-### devdb_python/engine/p0500_eligibility_updater.py
-- Owns: P-0500 -- updates phase delivery eligibility flags after date assignment; uses event_id column
+### devdb_python/engine/eligibility_updater.py
+- Owns: updates phase delivery eligibility flags after date assignment; uses event_id column
 - Imported by: coordinator.py
 - Tables: sim_delivery_events, sim_delivery_event_predecessors (SELECT/UPDATE)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-24
 
-### devdb_python/engine/p0600_phase_date_propagator.py
-- Owns: P-0600 -- propagates delivery event dates to child phases' date_dev_projected unconditionally per D-123
+### devdb_python/engine/phase_date_propagator.py
+- Owns: propagates delivery event dates to child phases' date_dev_projected unconditionally per D-123
 - Imported by: coordinator.py
 - Tables: sim_dev_phases (UPDATE), sim_delivery_event_phases, sim_delivery_events (SELECT)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-24
 
-### devdb_python/engine/p0700_lot_date_propagator.py
-- Owns: P-0700 -- accepts resolved_events list of (event_id, projected_date); queries sim_delivery_event_phases to find child phases; propagates date_dev_projected to sim lots and real lots where date_dev IS NULL per D-113
+### devdb_python/engine/lot_date_propagator.py
+- Owns: accepts resolved_events list of (event_id, projected_date); queries sim_delivery_event_phases to find child phases; propagates date_dev_projected to sim lots and real lots where date_dev IS NULL per D-113
 - Imported by: coordinator.py
 - Tables: sim_delivery_event_phases (SELECT phase_id), sim_lots (UPDATE date_dev)
-- Last commit: 2026-04-19
+- Last commit: 2026-04-24
 
-### devdb_python/engine/p0800_sync_flag_writer.py
-- Owns: P-0800 -- writes needs_rerun and sync status flags to sim_dev_phases
+### devdb_python/engine/sync_flag_writer.py
+- Owns: writes needs_rerun and sync status flags to sim_dev_phases
 - Imported by: coordinator.py
 - Tables: sim_dev_phases (UPDATE)
-- Last commit: 2026-03-25
+- Last commit: 2026-04-24
 
 ---
 
@@ -248,8 +248,8 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-19
 
 ### devdb_python/kernel/planning_kernel.py
-- Owns: plan() entry point -- wires S-0700 → S-0800 → S-0810 sequentially; passes phase_building_config from FrozenInput to S-0800; pure function (no DB access)
-- Imports: frozen_input, proposal, proposal_validator, s0700, s0800, s0810
+- Owns: plan() entry point -- wires demand_allocator -> temp_lot_generator -> building_group_enforcer sequentially; passes phase_building_config from FrozenInput to temp_lot_generator; pure function (no DB access)
+- Imports: frozen_input, proposal, proposal_validator, demand_allocator, temp_lot_generator, building_group_enforcer
 - Imported by: coordinator.py
 - Tables: none (pure transform)
 - Last commit: 2026-04-14
@@ -310,7 +310,7 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 
 ### devdb_python/tests/test_kernel_scenarios.py
 - Owns: Scenario-pack tests for planning kernel (FrozenInput fixtures, 6 truth cases); _make_frozen_input helper includes phase_building_config param; 6/6 pass
-- Imports: kernel.planning_kernel, kernel.frozen_input, engine.s0810, engine.s1100, pytest
+- Imports: kernel.planning_kernel, kernel.frozen_input, engine.building_group_enforcer, engine.persistence_writer, pytest
 - Tables: none (pure DataFrame fixtures)
 - Last commit: 2026-04-14
 
