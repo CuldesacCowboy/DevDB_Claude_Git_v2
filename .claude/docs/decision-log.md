@@ -87,6 +87,38 @@ Flagged Revisit before go-live:
 
 ---
 
+## Decision Log -- D-168
+
+D-168: Engine modules renamed from numbered codes to descriptive names
+
+Engine module files renamed from numbered codes (S-0100, P-0050, etc.) to descriptive names
+(lot_loader, placeholder_rebuilder, etc.). Execution order is no longer implicit in the
+filename numbering -- it is now defined by STARTS_SEQUENCE and SUPPLY_SEQUENCE metadata lists
+in coordinator.py.
+
+S-0900 (builder_assignment) split into two files: builder_assignment.py (pure in-memory
+assignment for sim lots) and real_lot_builder_assign.py (DB pre-pass for real/pre lots).
+
+Old numbered files deleted. Historical decision entries (D-001 through D-167) retain their
+original S-NNNN/P-NNNN references in context -- those are accurate for the time they were
+written and should not be rewritten.
+
+Full mapping: s0050->marks_builder_sync, s0100->lot_loader, s0200->date_actualizer,
+s0205->building_group_sync, s0250->lot_date_overrides, s0300->gap_fill_engine,
+s0400->chronology_validator, s0500->tda_preclear, s0600->demand_generator,
+s0700->demand_allocator, s0760->hc_bldr_date_projector, s0770->d_bldr_date_projector,
+s0800->temp_lot_generator, s0810->building_group_enforcer,
+s0820->post_gen_chronology_guard, s0850->timing_expansion, s0900->builder_assignment +
+real_lot_builder_assign, s0950->spec_assignment, s1000->demand_derived_date_writer,
+s1050->real_lot_projections, s1100->persistence_writer, s1200->ledger_aggregator,
+p_pre->locked_event_rebuilder, p0050->placeholder_rebuilder (D-balance drainer),
+p0000->placeholder_rebuilder (P-0000 event scheduling), p0100->actual_date_applicator,
+p0200->dependency_resolver, p0300->constraint_urgency_ranker, p0400->delivery_date_assigner,
+p0500->eligibility_updater, p0600->phase_date_propagator, p0700->lot_date_propagator,
+p0800->sync_flag_writer.
+
+---
+
 ## Decision Log -- D-166
 
 D-166: MARKS data sync-to-local pattern
