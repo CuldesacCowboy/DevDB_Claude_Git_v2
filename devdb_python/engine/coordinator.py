@@ -17,6 +17,54 @@ from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
+# ── Canonical execution order ────────────────────────────────────────────────
+# Descriptive module names in the order they execute.
+# This is the single source of truth for pipeline sequencing.
+
+STARTS_SEQUENCE = [
+    # Pre-loop (once per coordinator invocation)
+    "marks_builder_sync",
+    "real_lot_builder_assign",
+    # Per-development (once per dev per iteration)
+    "lot_loader",
+    "date_actualizer",
+    "building_group_sync",
+    "lot_date_overrides",
+    "gap_fill_engine",
+    "chronology_validator",
+    "tda_preclear",
+    "demand_generator",
+    # ── kernel boundary ──
+    # (demand_allocator, temp_lot_generator, building_group_enforcer run inside kernel)
+    "timing_expansion",
+    "post_gen_chronology_guard",
+    "hc_bldr_date_projector",
+    "d_bldr_date_projector",
+    "tda_checkpoint_assigner",   # planned — not yet wired
+    "tda_hc_enforcer",           # planned — not yet wired
+    "builder_assignment",
+    "demand_derived_date_writer",
+    "persistence_writer",
+    "real_lot_projections",
+    "spec_assignment",
+    "ledger_aggregator",
+]
+
+SUPPLY_SEQUENCE = [
+    "locked_event_rebuilder",
+    "placeholder_rebuilder",
+    "actual_date_applicator",
+    "dependency_resolver",
+    # ── event resolution loop ──
+    "constraint_urgency_ranker",
+    "delivery_date_assigner",
+    "eligibility_updater",
+    # ── end loop ──
+    "phase_date_propagator",
+    "lot_date_propagator",
+    "sync_flag_writer",
+]
+
 from .connection import PGConnection as DBConnection
 from .s0050_marks_builder_sync import marks_builder_sync
 from .s0100_lot_loader import lot_loader
