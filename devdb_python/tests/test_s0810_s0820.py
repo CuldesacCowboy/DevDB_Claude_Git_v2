@@ -10,9 +10,9 @@ import copy
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from engine.s0810_building_group_enforcer import building_group_enforcer
-from engine.s0820_post_generation_chronology_guard import post_generation_chronology_guard
-from engine.s0800_temp_lot_generator import _DEFAULT_LAG_CMP_FROM_STR, _DEFAULT_LAG_CLS_FROM_CMP
+from engine.building_group_enforcer import building_group_enforcer
+from engine.post_gen_chronology_guard import post_generation_chronology_guard
+from engine.temp_lot_generator import _DEFAULT_LAG_CMP_FROM_STR, _DEFAULT_LAG_CLS_FROM_CMP
 
 
 def _pass(label, condition, detail=""):

@@ -78,7 +78,7 @@ from .demand_generator import demand_generator
 from .s0760_hc_bldr_date_projector import hc_bldr_date_projector
 from .s0770_d_bldr_date_projector import d_bldr_date_projector
 from .post_gen_chronology_guard import post_generation_chronology_guard
-from .s0850_timing_expansion import load_build_lag_curves, timing_expansion
+from .timing_expansion import load_build_lag_curves, timing_expansion
 from .s0900_builder_assignment import builder_assignment, assign_real_lot_builders
 from .spec_assignment import spec_assignment
 from .demand_derived_date_writer import demand_derived_date_writer

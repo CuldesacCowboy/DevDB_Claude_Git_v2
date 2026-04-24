@@ -18,9 +18,9 @@
 from .frozen_input import FrozenInput
 from .proposal import Proposal
 from .proposal_validator import ProposalValidator, ProposalValidationError
-from engine.s0700_demand_allocator import demand_allocator
-from engine.s0800_temp_lot_generator import temp_lot_generator
-from engine.s0810_building_group_enforcer import building_group_enforcer
+from engine.demand_allocator import demand_allocator
+from engine.temp_lot_generator import temp_lot_generator
+from engine.building_group_enforcer import building_group_enforcer
 
 
 def plan(frozen_input: FrozenInput) -> Proposal:
