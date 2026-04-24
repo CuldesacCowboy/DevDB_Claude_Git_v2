@@ -40,8 +40,8 @@ STARTS_SEQUENCE = [
     "post_gen_chronology_guard",
     "hc_bldr_date_projector",
     "d_bldr_date_projector",
-    "tda_checkpoint_assigner",   # planned — not yet wired
-    "tda_hc_enforcer",           # planned — not yet wired
+    "tda_checkpoint_assigner",
+    "tda_hc_enforcer",
     "builder_assignment",
     "demand_derived_date_writer",
     "persistence_writer",
@@ -52,7 +52,7 @@ STARTS_SEQUENCE = [
 
 SUPPLY_SEQUENCE = [
     "locked_event_rebuilder",
-    "placeholder_rebuilder",
+    "placeholder_rebuilder",        # orchestrates: delivery_phase_collector → delivery_scheduler → delivery_event_writer
     "actual_date_applicator",
     "dependency_resolver",
     # ── event resolution loop ──
