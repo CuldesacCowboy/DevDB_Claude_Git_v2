@@ -475,11 +475,11 @@ function CheckpointSlotTable({ checkpoint, lots, perRequired, marksplan, simplan
             const cpDate = checkpoint.checkpoint_date
             const late   = cpDate && fulfill.date > cpDate
             return (
-              <span title={late ? `Fulfillment date ${fulfill.date} is after checkpoint ${cpDate} — this lot does not satisfy this checkpoint` : undefined}>
+              <span style={{ position: 'relative' }} title={late ? `Fulfillment date ${fulfill.date} is after checkpoint ${cpDate} — this lot does not satisfy this checkpoint` : undefined}>
                 <span style={{ color: late ? '#d97706' : TEXT_PRIMARY }}>{fulfill.date}</span>
                 {' '}
                 <span style={{ fontSize: 9, color: late ? '#d97706' : TEXT_MUTED }}>({fulfill.label})</span>
-                {late && <span style={{ fontSize: 9, color: '#d97706', marginLeft: 2 }}>⚠</span>}
+                {late && <span style={{ fontSize: 9, color: '#d97706', position: 'absolute', top: -2, right: -8 }}>⚠</span>}
               </span>
             )
           })() : (
