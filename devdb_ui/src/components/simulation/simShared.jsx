@@ -162,7 +162,7 @@ export function provStyle(source) {
     display: 'inline-block', padding: '0px 6px', borderRadius: 8,
     fontSize: 10, fontWeight: 600, lineHeight: '16px',
     background: p.bg, border: `1px solid ${p.border}`, color: p.color,
-    whiteSpace: 'nowrap',
+    whiteSpace: 'nowrap', minWidth: 62, textAlign: 'center',
   }
 }
 

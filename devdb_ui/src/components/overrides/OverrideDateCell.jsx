@@ -40,6 +40,8 @@ export default function OverrideDateCell({
     background: p.bg,
     border: `1px solid ${p.border}`,
     color: p.color,
+    minWidth: 62,
+    textAlign: 'center',
   }
 
   const shown = displayValue ? fmt(displayValue) : isProjected ? fmt(projectedValue) : null
