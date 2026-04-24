@@ -290,10 +290,10 @@ export function LotLedger({ lots, loading, onApplyOverride, onClearOverride, onR
                 </td>
                 <td style={tdS('left', { color: '#6b7280', fontSize: 11 })}>{l.lot_source}</td>
                 <td style={tdS('center', { width: 20 })}>
-                  {l.is_spec === true && <span style={{ ...provStyle(l.lot_source === 'sim' ? 'sim' : 'marks'), fontSize: 10, padding: '0 4px' }}>S</span>}
+                  {l.is_spec === true && <span style={{ ...provStyle('sim'), fontSize: 10, padding: '0 4px' }}>S</span>}
                 </td>
                 <td style={tdS('center', { width: 20 })}>
-                  {l.is_spec === false && <span style={{ ...provStyle(l.lot_source === 'sim' ? 'sim' : 'marks'), fontSize: 10, padding: '0 4px' }}>B</span>}
+                  {l.is_spec === false && <span style={{ ...provStyle('sim'), fontSize: 10, padding: '0 4px' }}>B</span>}
                 </td>
                 <td style={tdS('left')}><StatusBadge status={l.status} pill /></td>
                 <td style={tdS()}>
