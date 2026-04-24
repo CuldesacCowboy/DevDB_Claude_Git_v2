@@ -1,5 +1,5 @@
 # DevDB -- Claude Code Reference
-*Last updated: April 2026 (2026-04-23) | Architecture v20 | Decision Log: D-001 through D-167 | Next ID: D-168 | Migrations: 001–084*
+*Last updated: April 2026 (2026-04-23) | Architecture v20 | Decision Log: D-001 through D-168 | Next ID: D-169 | Migrations: 001–084*
 <!-- session 2026-04-21b: building-group date invariant enforcement — S-0500 HC sync (MAX hold per group); S-0760/S-0770/S-0850 lag caching per group; S-1050 unconditional HC mate sync + D-lot exclusion; S-0770 extended to write all four projected dates; fixes Deer Creek TH 1/8/7 start pattern -->
 <!-- session 2026-04-21: D-167 sim lot under-generation fix — kernel D-status exclusion + sim_floor_date gate removal + S-0800 deferred-start <= delivery; DC Meadows now 80/80 lots; 6/6 kernel tests pass -->
 <!-- session 2026-04-20: HC scheduling horizon rule; S-0500 past-checkpoint skip; S-0760 HC/BLDR conflict resolution; LotLedger column sort; UI provenance styles + XX NNN lot format -->

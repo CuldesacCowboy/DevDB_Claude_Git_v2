@@ -1,6 +1,6 @@
 # DevDB Decision Log
 
-Task-specific reference. Load when: investigating why something was built a certain way, debugging TDA/delivery/scheduling behavior, or any question about a specific D-number decision. D-001 through D-166 | Next ID: D-167
+Task-specific reference. Load when: investigating why something was built a certain way, debugging TDA/delivery/scheduling behavior, or any question about a specific D-number decision. D-001 through D-168 | Next ID: D-169
 
 ---
 
@@ -282,3 +282,28 @@ For building group lots: when the user locks/edits an HC or BLDR date on any
 unit, the API must fan out the write to all other sim_takedown_lot_assignments
 rows sharing the same building_group_id within the same tda_id, in a single
 atomic transaction.
+
+
+## D-168: Engine module rename — numbers to descriptive names
+
+**Date:** 2026-04-24
+
+Engine modules renamed from numeric codes (S-0100, P-0050) to descriptive names
+(lot_loader, placeholder_rebuilder). Execution order now defined by explicit
+STARTS_SEQUENCE and SUPPLY_SEQUENCE metadata lists in coordinator.py instead of
+being encoded in filenames.
+
+S-0900 (builder_assignment) split into two files: builder_assignment.py (sim lot
+builder assignment, pure function) and real_lot_builder_assign.py (pre-loop DB
+function for real/pre lots).
+
+All 32 numbered files deleted. Bridge pattern used during transition (old files
+re-export from new names) to ensure zero-downtime migration.
+
+**Why:** Module numbers had drifted out of execution order (S-0850 ran before
+S-0820, S-1100 before S-1050). Adding modules required shoehorning (S-0205,
+S-0760). Descriptive names are self-documenting and execution order is defined
+in one place.
+
+**Mapping:** See STARTS_SEQUENCE/SUPPLY_SEQUENCE in coordinator.py for the
+canonical execution order.
