@@ -1125,9 +1125,17 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                      tc.checkpoint_number, tc.checkpoint_date, tc.lots_required_cumulative
             ORDER BY ta.tda_id, tc.checkpoint_number
         """, (ent_group_id,))
-        tda_rows = [dict(r) for r in cur.fetchall()]
-        tda_gaps = [r for r in tda_rows
-                    if r["lots_required_cumulative"] and r["assigned_count"] < r["lots_required_cumulative"]]
+        tda_rows_raw = [dict(r) for r in cur.fetchall()]
+        # Compute cumulative assigned: lots assigned to CP1 also count toward CP2's cumulative requirement
+        tda_rows = []
+        cumulative_by_tda = {}  # tda_id -> running total
+        for r in tda_rows_raw:
+            tid = r["tda_id"]
+            cumulative_by_tda[tid] = cumulative_by_tda.get(tid, 0) + r["assigned_count"]
+            r["assigned_cumulative"] = cumulative_by_tda[tid]
+            r["gap"] = max(0, (r["lots_required_cumulative"] or 0) - r["assigned_cumulative"])
+            tda_rows.append(r)
+        tda_gaps = [r for r in tda_rows if r["gap"] > 0]
         tda_ids_seen = set(r["tda_id"] for r in tda_rows)
         rules.append({
             "rule_id": "tda_fulfillment",
@@ -1139,21 +1147,22 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        else f"{len(tda_gaps)} checkpoint(s) under-fulfilled",
             "detail": {
                 "explanation": "Takedown agreements (TDAs) are contractual obligations to purchase a specified cumulative number of lots by each checkpoint date. Under-fulfilled checkpoints represent a breach risk -- the developer may face financial penalties, lose option rights, or trigger acceleration clauses. The simulation engine's S-0500 module assigns lots to checkpoints based on projected development and hold dates. Both date_td and date_td_hold count toward fulfillment (D-087). This rule audits whether every active TDA checkpoint has enough lots assigned to meet its cumulative requirement.",
-                "methodology": "For each active TDA, checkpoints are queried with their lots_required_cumulative and the count of lots actually assigned (via sim_takedown_lot_assignments). Checkpoints where the assigned count falls below the required count are flagged.",
+                "methodology": "For each active TDA, checkpoints are queried with their lots_required_cumulative. The assigned count is cumulative -- lots assigned to CP1 also count toward CP2's requirement. Checkpoints where the cumulative assigned count falls below the cumulative required count are flagged.",
                 "tda_count": len(tda_ids_seen),
                 "checkpoints": [{
                     "tda_name": r["tda_name"],
                     "checkpoint_number": r["checkpoint_number"],
                     "checkpoint_date": r["checkpoint_date"].isoformat() if r["checkpoint_date"] else None,
                     "required": r["lots_required_cumulative"],
-                    "assigned": r["assigned_count"],
-                    "gap": (r["lots_required_cumulative"] or 0) - r["assigned_count"],
+                    "assigned": r["assigned_cumulative"],
+                    "this_cp": r["assigned_count"],
+                    "gap": r["gap"],
                 } for r in tda_rows],
                 "gaps": [{
                     "tda_name": r["tda_name"],
                     "checkpoint": r["checkpoint_number"],
                     "required": r["lots_required_cumulative"],
-                    "assigned": r["assigned_count"],
+                    "assigned": r["assigned_cumulative"],
                 } for r in tda_gaps],
             },
         })
