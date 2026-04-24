@@ -805,7 +805,18 @@ function RuleDetail({ rule, onNavigate }) {
 
     // ── CHRONOLOGY ─────────────────────────────────────────────────────────
     case 'chronology': {
-      const violations = d.violations || []
+      const simViolations = d.sim_violations || d.violations || []
+      const marksViolations = d.marks_violations || []
+      const violationCols = [
+        { key: 'lot_number', label: 'Lot', bold: true },
+        { key: 'lot_source', label: 'Source', width: 50 },
+        { key: 'phase_name', label: 'Phase' },
+        { key: 'early_stage', label: 'Earlier Stage', width: 80, render: r => <span style={{ fontWeight: 600 }}>date_{r.early_stage}</span> },
+        { key: 'early_date', label: 'Date', width: 100 },
+        { key: '_gt', label: '', width: 20, render: () => <span style={{ color: '#dc2626', fontWeight: 700 }}>&gt;</span> },
+        { key: 'late_stage', label: 'Later Stage', width: 80, render: r => <span style={{ fontWeight: 600 }}>date_{r.late_stage}</span> },
+        { key: 'late_date', label: 'Date', width: 100 },
+      ]
       return (
         <div>
           {renderHeader()}
@@ -813,27 +824,28 @@ function RuleDetail({ rule, onNavigate }) {
             <PipelineDiagram />
             <Prose>Each date must be less than or equal to the next stage's date. A lot cannot be taken down before delivery, started before takedown, completed before start, or closed before completion.</Prose>
           </Section>
-          {violations.length > 0 && (
-            <Section title={`Violations (${d.total > 20 ? `showing 20 of ${d.total}` : violations.length})`}>
-              <DataTable
-                columns={[
-                  { key: 'lot_number', label: 'Lot', bold: true },
-                  { key: 'lot_source', label: 'Source', width: 50 },
-                  { key: 'phase_name', label: 'Phase' },
-                  { key: 'early_stage', label: 'Earlier Stage', width: 80, render: r => <span style={{ fontWeight: 600 }}>date_{r.early_stage}</span> },
-                  { key: 'early_date', label: 'Date', width: 100 },
-                  { key: '_gt', label: '', width: 20, render: () => <span style={{ color: '#dc2626', fontWeight: 700 }}>&gt;</span> },
-                  { key: 'late_stage', label: 'Later Stage', width: 80, render: r => <span style={{ fontWeight: 600 }}>date_{r.late_stage}</span> },
-                  { key: 'late_date', label: 'Date', width: 100 },
-                ]}
-                rows={violations.map(v => ({ ...v, _highlight: false }))}
-              />
+          {simViolations.length > 0 && (
+            <Section title={`Sim Lot Violations (${d.sim_total > 20 ? `showing 20 of ${d.sim_total}` : simViolations.length})`}>
+              <DataTable columns={violationCols} rows={simViolations.map(v => ({ ...v, _highlight: false }))} />
+            </Section>
+          )}
+          {marksViolations.length > 0 && (
+            <Section title={`MARKS Date Inversions (${d.marks_total > 20 ? `showing 20 of ${d.marks_total}` : marksViolations.length})`}>
+              <div style={{
+                padding: '8px 12px', borderRadius: 6, marginBottom: 8,
+                background: '#fef9c3', border: '1px solid #fde68a', fontSize: 12, color: '#854d0e',
+              }}>
+                These are real lots with dates from MARKsystems. The inversions (e.g. takedown recorded after start)
+                reflect actual back-office timing in MARKS and are expected. They do not indicate an engine problem.
+              </div>
+              <DataTable columns={violationCols} rows={marksViolations.map(v => ({ ...v, _highlight: undefined }))} />
             </Section>
           )}
           <Conclusion passed={rule.passed}>
             {rule.passed
               ? `All ${d.lots_checked || '—'} lots have dates in correct pipeline order.`
-              : `${d.total} lot(s) have dates that violate the pipeline sequence. This indicates an engine bug or corrupt data.`}
+                + (marksViolations.length > 0 ? ` ${d.marks_total} MARKS lot(s) have known date inversions (informational only).` : '')
+              : `${d.sim_total} sim lot(s) have dates that violate the pipeline sequence. This indicates an engine defect.`}
           </Conclusion>
         </div>
       )

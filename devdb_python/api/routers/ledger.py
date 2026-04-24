@@ -931,7 +931,8 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
               AND sl.excluded IS NOT TRUE
               AND (sl.date_str IS NOT NULL OR sl.date_cmp IS NOT NULL OR sl.date_cls IS NOT NULL)
         """, (ent_group_id,))
-        chrono_violations = []
+        sim_violations = []
+        marks_violations = []
         chrono_lots_checked = 0
         for r in cur.fetchall():
             chrono_lots_checked += 1
@@ -940,28 +941,37 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                 d_e = r[f"d_{early}"]
                 d_l = r[f"d_{late}"]
                 if d_e > d_l and d_l.year < 9999 and d_e.year < 9999:
-                    chrono_violations.append({
+                    v = {
                         "lot_id": r["lot_id"], "lot_number": r["lot_label"],
                         "phase_name": r["phase_name"], "lot_source": r["lot_source"],
                         "early_stage": early, "late_stage": late,
                         "early_date": d_e.isoformat(), "late_date": d_l.isoformat(),
-                    })
-                    break  # one violation per lot is enough
+                    }
+                    if r["lot_source"] in ("real", "pre"):
+                        marks_violations.append(v)
+                    else:
+                        sim_violations.append(v)
+                    break
+        # Only sim-generated violations are failures; MARKS dates are reality
         rules.append({
             "rule_id": "chronology",
             "category": "engine_diagnostic",
             "rule_name": "Pipeline Chronology",
-            "passed": len(chrono_violations) == 0,
-            "summary": "All lot dates in correct pipeline order"
-                       if not chrono_violations
-                       else f"{len(chrono_violations)} lot(s) with out-of-order dates",
+            "passed": len(sim_violations) == 0,
+            "summary": ("All lot dates in correct pipeline order"
+                        + (f" ({len(marks_violations)} MARKS lot(s) have known date inversions)"
+                           if marks_violations else ""))
+                       if not sim_violations
+                       else f"{len(sim_violations)} sim lot(s) with out-of-order dates",
             "detail": {
-                "explanation": "Every lot in the pipeline must have its milestone dates in strict chronological order: entitlement before development, development before takedown, takedown before start, start before completion, and completion before closing. A violation indicates either a data import error from MARKsystems, a gap-fill engine defect, or a manual override that created an impossible timeline. Out-of-order dates would cause the derived pipeline status to be incorrect and distort ledger counts at every affected month.",
-                "methodology": "For each lot with at least one downstream date (STR, CMP, or CLS), the six pipeline dates are compared in adjacent pairs. NULL dates are treated as 9999-12-31 to avoid false positives on lots that have not yet reached a stage. The first out-of-order pair found per lot is reported.",
+                "explanation": "Every lot in the pipeline must have its milestone dates in strict chronological order: entitlement before development, development before takedown, takedown before start, start before completion, and completion before closing. For sim-generated lots, a violation indicates an engine defect. For real/pre lots with MARKS-sourced dates, inversions reflect actual MARKsystems data (e.g., takedown recorded after start due to back-office timing) and are informational only -- they do not indicate a problem.",
+                "methodology": "For each lot with at least one downstream date (STR, CMP, or CLS), the six pipeline dates are compared in adjacent pairs. NULL dates are treated as 9999-12-31 to avoid false positives. Violations are separated into sim-generated (failures) and MARKS-sourced (informational).",
                 "lots_checked": chrono_lots_checked,
                 "stage_order": ["ENT", "DEV", "TD", "STR", "CMP", "CLS"],
-                "violations": chrono_violations[:20],
-                "total": len(chrono_violations),
+                "sim_violations": sim_violations[:20],
+                "sim_total": len(sim_violations),
+                "marks_violations": marks_violations[:20],
+                "marks_total": len(marks_violations),
             },
         })
 
