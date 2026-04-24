@@ -1,0 +1,555 @@
+"""
+delivery_scheduler -- D-balance scheduling loop for delivery events.
+
+Owns: the iterative D-balance model, deadline computation, tier gating,
+      group exclusivity, event phase list construction.
+      Pure computation: takes phase data in, returns events_to_create list.
+"""
+
+import logging
+import math
+from datetime import date, timedelta
+from collections import defaultdict
+from .seasonal_weights import effective_annual_pace
+from .date_window_helpers import (
+    add_months, lean_window_date, next_window_month_from, next_window_month_after,
+    first_window_month_in_year, snap_to_window, months_between,
+)
+
+logger = logging.getLogger(__name__)
+
+def _get_phase_lots(conn, phase_id: int):
+    """Return list of projected_count values from sim_phase_product_splits for a phase."""
+    df = conn.read_df("SELECT projected_count FROM sim_phase_product_splits WHERE phase_id = %s", (phase_id,))
+    if df.empty:
+        return [0]
+    return [int(x) for x in df["projected_count"] if x is not None]
+
+# ---------------------------------------------------------------------------
+# Steps 4+5 — Compute delivery schedule
+# ---------------------------------------------------------------------------
+
+def run_scheduling_loop(
+    conn,
+    cfg: dict,
+    undelivered: list,
+    locked_phase_ids: set,
+    all_phases_df,
+    phases_with_sim_lots: set,
+    today_first: date,
+    locked_group_dates: set | None = None,
+) -> list:
+    """
+    Build the D-balance model and run the iterative delivery scheduling loop.
+
+    Returns events_to_create: list of {"date": date, "phases": [phase_id, ...]}
+    in chronological order.
+    """
+    import pandas as pd
+
+    max_per_year     = cfg["max_deliveries_per_year"]
+    min_gap          = cfg["min_gap_months"]
+    raw_months       = cfg["delivery_months"]
+    valid_months     = frozenset(int(m) for m in raw_months) if raw_months else frozenset([5,6,7,8,9,10,11])
+    min_buffer       = cfg["min_d_count"]
+    feed_starts_mode = cfg["feed_starts_mode"]
+
+    # Annual pace per phase
+    undelivered_phase_ids = [p["phase_id"] for p in undelivered]
+    pg_annual_df = conn.read_df(
+        """
+        SELECT DISTINCT sdp.phase_id, sdvp.annual_starts_target,
+               COALESCE(sdvp.seasonal_weight_set, 'balanced_2yr') AS seasonal_weight_set
+        FROM sim_dev_phases sdp
+        JOIN sim_dev_params sdvp ON sdvp.dev_id = sdp.dev_id
+        WHERE sdp.phase_id = ANY(%s)
+        """,
+        (undelivered_phase_ids,),
+    )
+    annual_target_map = {}
+    for _, r in pg_annual_df.iterrows():
+        ph_id = int(r["phase_id"])
+        t = r["annual_starts_target"]
+        if t is not None:
+            ws_name = r["seasonal_weight_set"]
+            annual_target_map[ph_id] = effective_annual_pace(ws_name, float(t)) / 12.0
+
+    for p in undelivered:
+        p["valid_months"] = valid_months
+
+    # Build D-balance from DB
+    all_dev_ids = [int(d) for d in all_phases_df["dev_id"].unique()]
+    d_balance: dict[int, dict[date, int]] = {d: {} for d in all_dev_ids}
+
+    if all_dev_ids:
+        if locked_phase_ids:
+            lot_filter_sql    = "AND (sl.lot_source = 'real' OR sl.phase_id = ANY(%s))"
+            lot_filter_params = [list(locked_phase_ids)]
+        else:
+            lot_filter_sql    = "AND sl.lot_source = 'real'"
+            lot_filter_params = []
+
+        d_proj_df = conn.read_df(
+            f"""
+            WITH future AS (
+                SELECT generate_series(
+                    DATE_TRUNC('MONTH', CURRENT_DATE)::DATE,
+                    (DATE_TRUNC('MONTH', CURRENT_DATE) + INTERVAL '30 years')::DATE,
+                    INTERVAL '1 month'
+                )::DATE AS m
+            )
+            SELECT sl_devs.dev_id, f.m AS calendar_month,
+                   COUNT(sl.lot_id) AS d_end
+            FROM future f
+            CROSS JOIN (SELECT UNNEST(%s::int[]) AS dev_id) AS sl_devs
+            LEFT JOIN sim_lots sl
+                ON  sl.dev_id = sl_devs.dev_id
+                -- Use projected takedown dates so real D-lots with no MARKS actual
+                -- takedown still drain at the engine-projected pace.  Without this,
+                -- real lots with date_td IS NULL are treated as permanently in D,
+                -- which prevents the balance-violation trigger from ever firing.
+                AND sl.date_dev IS NOT NULL
+                AND sl.date_dev <= f.m
+                AND (COALESCE(sl.date_td, sl.date_td_projected) IS NULL
+                     OR COALESCE(sl.date_td, sl.date_td_projected) > f.m)
+                AND (COALESCE(sl.date_td_hold, sl.date_td_hold_projected) IS NULL
+                     OR COALESCE(sl.date_td_hold, sl.date_td_hold_projected) > f.m)
+                {lot_filter_sql}
+            GROUP BY sl_devs.dev_id, f.m
+            ORDER BY sl_devs.dev_id, f.m
+            """,
+            [all_dev_ids] + lot_filter_params,
+        )
+        for _, dr in d_proj_df.iterrows():
+            d_id = int(dr["dev_id"])
+            m = dr["calendar_month"]
+            m = m.date() if hasattr(m, "date") else m
+            d_balance[d_id][m] = int(dr["d_end"])
+
+    # Last locked delivery date per dev
+    last_locked_per_dev: dict[int, date] = {}
+    if locked_phase_ids:
+        llpd_df = conn.read_df("""
+            SELECT sdp.dev_id, MAX(sde.date_dev_actual) AS last_locked
+            FROM sim_delivery_events sde
+            JOIN sim_delivery_event_phases dep
+                 ON dep.delivery_event_id = sde.delivery_event_id
+            JOIN sim_dev_phases sdp ON sdp.phase_id = dep.phase_id
+            WHERE sde.ent_group_id = %s
+              AND sde.date_dev_actual IS NOT NULL
+            GROUP BY sdp.dev_id
+        """, (cfg["ent_group_id"],))
+        for _, llr in llpd_df.iterrows():
+            d_raw = llr["last_locked"]
+            if d_raw is not None:
+                d_val = d_raw.date() if hasattr(d_raw, "date") else d_raw
+                last_locked_per_dev[int(llr["dev_id"])] = d_val
+
+    global_demand_start_per_dev: dict[int, date] = {}
+    for dev in all_dev_ids:
+        ll = last_locked_per_dev.get(dev)
+        global_demand_start_per_dev[dev] = add_months(ll, 1) if ll else today_first
+
+    demand_consumed: dict[int, int] = {}
+    for dev in all_dev_ids:
+        ds = global_demand_start_per_dev[dev]
+        if locked_phase_ids:
+            dc_filter_sql    = "AND (lot_source = 'real' OR phase_id = ANY(%s))"
+            dc_params        = (dev, ds, list(locked_phase_ids))
+        else:
+            dc_filter_sql    = "AND lot_source = 'real'"
+            dc_params        = (dev, ds)
+        dc_df = conn.read_df(
+            f"""
+            SELECT COUNT(*) AS cnt FROM sim_lots
+            WHERE dev_id = %s
+              AND date_str IS NOT NULL
+              AND date_str >= %s
+              {dc_filter_sql}
+            """,
+            dc_params,
+        )
+        demand_consumed[dev] = int(dc_df.iloc[0]["cnt"]) if not dc_df.empty else 0
+        logger.info(f"placeholder_rebuilder: Dev {dev}: demand_start={ds}, demand_consumed={demand_consumed[dev]}")
+
+    # Organise phases by dev, sorted by (tier, seq)
+    dev_phases = defaultdict(list)
+    for phase in undelivered:
+        dev_phases[phase["dev_id"]].append(phase)
+    for dev_id in dev_phases:
+        dev_phases[dev_id].sort(key=lambda p: (
+            p["delivery_tier"] if p["delivery_tier"] is not None else 0,
+            p["sequence_number"],
+        ))
+
+    # Snapshot for delivery_group lookup (phases are popped from dev_phases during scheduling)
+    undelivered_orig = list(undelivered)
+
+    # Dates blocked by grouped deliveries (locked + newly created).
+    # No non-group phases may deliver on these dates.
+    blocked_dates = set(locked_group_dates or set())
+
+    dev_monthly_pace: dict[int, float] = {}
+    for dev_id, phases_list in dev_phases.items():
+        paces = [annual_target_map[p["phase_id"]] for p in phases_list if p["phase_id"] in annual_target_map]
+        if paces:
+            dev_monthly_pace[dev_id] = sum(paces) / len(paces)
+
+    dev_scan_floor: dict[int, date] = {}
+    for dev_id in dev_phases:
+        dev_scan_floor[dev_id] = last_locked_per_dev.get(dev_id, today_first - timedelta(days=1))
+
+    # Initialise prior-locked delivery dates for max_per_year / min_gap enforcement
+    delivery_date_per_year: dict[int, date] = {}
+    last_date: date | None = None
+
+    locked_dates_df = conn.read_df("""
+        SELECT date_dev_actual
+        FROM sim_delivery_events
+        WHERE ent_group_id = %s
+          AND date_dev_actual IS NOT NULL
+    """, (cfg["ent_group_id"],))
+    last_locked_date: date | None = None
+    for _, r in locked_dates_df.iterrows():
+        d = r["date_dev_actual"]
+        if d is not None:
+            d = d.date() if hasattr(d, "date") else d
+            delivery_date_per_year[d.year] = d
+            if last_date is None or d > last_date:
+                last_date = d
+            if last_locked_date is None or d > last_locked_date:
+                last_locked_date = d
+
+    dev_last_delivery_lots: dict[int, int] = {}
+
+    # ── Closures used by the scheduling loop ─────────────────────────────────
+
+    def _compute_drain_delay(dev_id_key: int, delivery_m: date) -> int:
+        pace = dev_monthly_pace.get(dev_id_key, 1.0)
+        if pace <= 0:
+            return 0
+        consumed = demand_consumed.get(dev_id_key, 0)
+        pool_months = int(consumed / pace)
+        ds = global_demand_start_per_dev.get(dev_id_key, today_first)
+        pool_pos = add_months(ds, pool_months)
+        return months_between(delivery_m, pool_pos)
+
+    def _apply_delivery_to_balance(dev_id_key: int, delivery_month: date,
+                                    n_lots: int, monthly_pace: float,
+                                    drain_delay: int = 0) -> None:
+        if n_lots <= 0 or monthly_pace <= 0:
+            return
+        bal = d_balance.setdefault(dev_id_key, {})
+        for k in range(500):
+            m = add_months(delivery_month, k)
+            if k <= drain_delay:
+                contrib = n_lots
+            else:
+                drain_elapsed = k - drain_delay
+                contrib = n_lots - min(n_lots, int(monthly_pace * drain_elapsed))
+                if contrib <= 0:
+                    break
+            bal[m] = bal.get(m, 0) + contrib
+
+    def _apply_delivery_to_balance_from_sim_lots(dev_id_key: int,
+                                                  delivery_month: date,
+                                                  phase_id: int) -> None:
+        """Balance-driven variant: use actual date_td offsets from prior-iteration sim lots."""
+        sim_df = conn.read_df(
+            """
+            SELECT date_dev, date_td FROM sim_lots
+            WHERE phase_id = %s AND lot_source = 'sim' AND date_dev IS NOT NULL
+            """,
+            (phase_id,),
+        )
+        if sim_df.empty:
+            return
+        drain_hist: dict[int, int] = defaultdict(int)
+        permanent = 0
+        for _, row in sim_df.iterrows():
+            old_dev = row["date_dev"]
+            if hasattr(old_dev, "date"):
+                old_dev = old_dev.date()
+            old_dev = old_dev.replace(day=1)
+            td = row["date_td"]
+            if td is None or pd.isnull(td):
+                permanent += 1
+            else:
+                if hasattr(td, "date"):
+                    td = td.date()
+                offset = months_between(old_dev, td)
+                drain_hist[offset] += 1
+        bal = d_balance.setdefault(dev_id_key, {})
+        still_in_d = len(sim_df)
+        for k in range(500):
+            if still_in_d <= 0:
+                break
+            m = add_months(delivery_month, k)
+            bal[m] = bal.get(m, 0) + still_in_d
+            still_in_d -= drain_hist.get(k, 0)
+
+    def _find_violation_month(dev_id_key: int, scan_floor: date) -> date | None:
+        bal = d_balance.get(dev_id_key, {})
+        for m in sorted(bal.keys()):
+            if m <= scan_floor:
+                continue
+            if bal[m] <= min_buffer:
+                return m
+        return None
+
+    def _dev_lv_from_balance(dev_id_key: int, scan_floor: date,
+                              vm: frozenset) -> date | None:
+        violation = _find_violation_month(dev_id_key, scan_floor)
+        if violation is None:
+            return None
+        prev = add_months(violation, -1)
+        lv = snap_to_window(prev, vm)
+        if lv < today_first:
+            lv = next_window_month_from(today_first, vm)
+        logger.info(f"placeholder_rebuilder: Dev {dev_id_key}: D-balance violation {violation}, lv={lv}")
+        return lv
+
+    def _constrain_date(ideal: date, vm: frozenset) -> date:
+        d = ideal
+        for _ in range(500):
+            if d.year in delivery_date_per_year:
+                return delivery_date_per_year[d.year]
+            if last_date is not None and min_gap > 0:
+                min_ok = add_months(last_date, min_gap).replace(day=1)
+                if d < min_ok:
+                    d = next_window_month_from(min_ok, vm)
+                    continue
+            break
+        return d
+
+    # ── Main scheduling loop ──────────────────────────────────────────────────
+
+    undelivered.sort(key=lambda p: (
+        p["demand_date"] is None,
+        p["demand_date"] or date.max,
+        p["dev_id"],
+    ))
+
+    events_to_create = []
+
+    for _ in range(200):
+        # Tier gate: tier-N phases not eligible until all tier-(N-1) phases scheduled.
+        # feed_starts_mode bypasses this for aggressive batching.
+        if feed_starts_mode:
+            active = {d: phases for d, phases in dev_phases.items() if phases}
+        else:
+            remaining_tiers = {
+                phases[0]["delivery_tier"]
+                for phases in dev_phases.values()
+                if phases and phases[0]["delivery_tier"] is not None
+            }
+            min_tier = min(remaining_tiers) if remaining_tiers else None
+            active = {
+                d: phases for d, phases in dev_phases.items()
+                if phases and (
+                    phases[0]["delivery_tier"] is None
+                    or min_tier is None
+                    or phases[0]["delivery_tier"] <= min_tier
+                )
+            }
+        if not active:
+            break
+
+        deadlines = {}
+        for dev_id in active:
+            lv_d = _dev_lv_from_balance(dev_id, dev_scan_floor[dev_id], valid_months)
+            if lv_d is None:
+                first_demand = dev_phases[dev_id][0]["demand_date"]
+                if first_demand:
+                    lv_d = snap_to_window(first_demand, valid_months)
+                    if lv_d < today_first:
+                        lv_d = next_window_month_from(today_first, valid_months)
+                else:
+                    last_sched = dev_scan_floor.get(dev_id, today_first)
+                    last_lots  = dev_last_delivery_lots.get(dev_id, 0)
+                    pace       = dev_monthly_pace.get(dev_id, 1.0)
+                    if last_sched >= today_first and last_lots > 0 and pace > 0:
+                        months_exhaust = math.ceil(last_lots / pace)
+                        exhaust = add_months(last_sched, months_exhaust)
+                        lv_d = snap_to_window(add_months(exhaust, -1), valid_months)
+                        if lv_d < today_first:
+                            lv_d = next_window_month_from(today_first, valid_months)
+                        logger.info(
+                            f"placeholder_rebuilder: Dev {dev_id}: exhaustion fallback — "
+                            f"last_delivery={last_sched}, lots={last_lots}, "
+                            f"pace={pace:.2f}/mo, exhaust={exhaust}, lv_d={lv_d}"
+                        )
+                    else:
+                        lv_d = next_window_month_from(today_first, valid_months)
+            lv_d = _constrain_date(lv_d, valid_months)
+            # Skip dates blocked by group deliveries.
+            # Do NOT re-constrain after skipping — _constrain_date may snap
+            # back to the blocked date (same-year coalescing) causing an infinite loop.
+            if lv_d in blocked_dates:
+                lv_d = next_window_month_after(lv_d, valid_months)
+            deadlines[dev_id] = lv_d
+
+        urgent_dev = min(deadlines, key=lambda d: deadlines[d])
+        event_date = deadlines[urgent_dev]
+
+        violation_check = _find_violation_month(urgent_dev, dev_scan_floor[urgent_dev])
+        if violation_check is not None and event_date >= violation_check:
+            logger.warning(
+                f"placeholder_rebuilder: WARNING: Dev {urgent_dev}: next delivery {event_date} "
+                f"cannot be moved before D-floor violation at {violation_check} "
+                f"(max_deliveries_per_year={max_per_year}, "
+                f"min_gap_months={min_gap}, min_d_count={min_buffer}). "
+                f"D-balance floor will not be maintained."
+            )
+
+        joining = [d for d in active if deadlines[d] <= event_date]
+
+        # Save scan floors so we can revert for fully-evicted devs
+        prev_scan_floors = {d: dev_scan_floor.get(d) for d in joining}
+
+        event_phase_ids = []
+        dev_batches = defaultdict(list)   # dev_id -> list of phase dicts popped for this event
+        for dev_id in joining:
+            pace         = dev_monthly_pace.get(dev_id, 1.0)
+            next_allowed = date(event_date.year + 1, min(valid_months), 1)
+
+            batch      = [dev_phases[dev_id].pop(0)]
+            first_lots = sum(_get_phase_lots(conn, batch[0]["phase_id"]))
+            if batch[0]["phase_id"] in phases_with_sim_lots:
+                _apply_delivery_to_balance_from_sim_lots(dev_id, event_date, batch[0]["phase_id"])
+                logger.info(f"placeholder_rebuilder: Dev {dev_id}: delivery {event_date}, lots={first_lots} (balance-driven drain)")
+            else:
+                delay = _compute_drain_delay(dev_id, event_date)
+                _apply_delivery_to_balance(dev_id, event_date, first_lots, pace, delay)
+                demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + first_lots
+                logger.info(
+                    f"placeholder_rebuilder: Dev {dev_id}: delivery {event_date}, lots={first_lots}, "
+                    f"drain_delay={delay}mo (pace-est), demand_consumed->{demand_consumed[dev_id]}"
+                )
+
+            batch_tier = batch[0]["delivery_tier"]
+            while True:
+                next_v = _find_violation_month(dev_id, event_date)
+                if next_v is None:
+                    break
+                next_lv = snap_to_window(add_months(next_v, -1), valid_months)
+                if next_lv >= next_allowed:
+                    break
+                if not dev_phases[dev_id]:
+                    break
+                next_tier = dev_phases[dev_id][0]["delivery_tier"]
+                if (not feed_starts_mode
+                        and batch_tier is not None
+                        and next_tier is not None
+                        and next_tier > batch_tier):
+                    break
+                extra      = dev_phases[dev_id].pop(0)
+                extra_lots = sum(_get_phase_lots(conn, extra["phase_id"]))
+                if extra["phase_id"] in phases_with_sim_lots:
+                    _apply_delivery_to_balance_from_sim_lots(dev_id, event_date, extra["phase_id"])
+                else:
+                    delay_extra = _compute_drain_delay(dev_id, event_date)
+                    _apply_delivery_to_balance(dev_id, event_date, extra_lots, pace, delay_extra)
+                    demand_consumed[dev_id] = demand_consumed.get(dev_id, 0) + extra_lots
+                batch.append(extra)
+
+            dev_scan_floor[dev_id] = event_date
+            dev_last_delivery_lots[dev_id] = sum(
+                sum(_get_phase_lots(conn, p["phase_id"])) for p in batch
+            )
+            dev_batches[dev_id] = batch
+            for p in batch:
+                event_phase_ids.append(p["phase_id"])
+
+        # --- Delivery group enforcement: pull in same-group phases from other devs ---
+        event_groups = set()
+        for pid in event_phase_ids:
+            for p in undelivered_orig:
+                if p["phase_id"] == pid and p["delivery_group"]:
+                    event_groups.add(p["delivery_group"])
+        if event_groups:
+            for grp in event_groups:
+                for dev_id_g, bucket in list(dev_phases.items()):
+                    for i, p in enumerate(bucket):
+                        if p["delivery_group"] == grp and p["phase_id"] not in event_phase_ids:
+                            popped = bucket.pop(i)
+                            extra_lots = sum(_get_phase_lots(conn, popped["phase_id"]))
+                            pace_g = dev_monthly_pace.get(dev_id_g, 1.0)
+                            if popped["phase_id"] in phases_with_sim_lots:
+                                _apply_delivery_to_balance_from_sim_lots(dev_id_g, event_date, popped["phase_id"])
+                            else:
+                                delay_g = _compute_drain_delay(dev_id_g, event_date)
+                                _apply_delivery_to_balance(dev_id_g, event_date, extra_lots, pace_g, delay_g)
+                                demand_consumed[dev_id_g] = demand_consumed.get(dev_id_g, 0) + extra_lots
+                            event_phase_ids.append(popped["phase_id"])
+                            dev_batches.setdefault(dev_id_g, []).append(popped)
+                            dev_scan_floor[dev_id_g] = event_date
+                            logger.info(
+                                f"placeholder_rebuilder: delivery_group={grp}: pulled phase {popped['phase_id']} "
+                                f"(dev {dev_id_g}) into event at {event_date}"
+                            )
+                            break  # one phase per dev per group letter
+
+        # --- Group exclusivity: if event has grouped phases, evict non-group phases ---
+        # Rule: when a delivery_group exists on a date, no other phases may deliver
+        # on that date. Evicted phases go back to their dev_phases buckets.
+        if event_groups:
+            evicted = []
+            kept = []
+            for pid in event_phase_ids:
+                phase_group = None
+                for p in undelivered_orig:
+                    if p["phase_id"] == pid:
+                        phase_group = p.get("delivery_group")
+                        break
+                if phase_group and phase_group in event_groups:
+                    kept.append(pid)
+                else:
+                    evicted.append(pid)
+            if evicted:
+                # Return evicted phases to front of their dev_phases buckets
+                # and revert dev_scan_floor so their dev re-computes deadlines cleanly.
+                evicted_devs = set()
+                for pid in evicted:
+                    for p_orig in undelivered_orig:
+                        if p_orig["phase_id"] == pid:
+                            did = p_orig["dev_id"]
+                            dev_phases[did].insert(0, p_orig)
+                            evicted_devs.add(did)
+                            logger.info(
+                                f"placeholder_rebuilder: group exclusivity: evicted phase {pid} "
+                                f"(dev {did}) from event at {event_date} "
+                                f"— date reserved for group(s) {sorted(event_groups)}"
+                            )
+                            break
+                # Re-sort evicted dev buckets so insertion order doesn't break tier/seq
+                for did in evicted_devs:
+                    # Only revert scan floor if ALL of this dev's phases were evicted
+                    dev_kept = [pid for pid in kept if any(
+                        p["phase_id"] == pid and p["dev_id"] == did for p in undelivered_orig
+                    )]
+                    if not dev_kept and did in prev_scan_floors:
+                        dev_scan_floor[did] = prev_scan_floors[did]
+                    dev_phases[did].sort(key=lambda p: (
+                        p["delivery_tier"] if p["delivery_tier"] is not None else 0,
+                        p["sequence_number"],
+                    ))
+                event_phase_ids = kept
+            # Block this date for future iterations
+            blocked_dates.add(event_date)
+
+        if not event_phase_ids:
+            continue  # all phases evicted — skip empty event
+        events_to_create.append({"date": event_date, "phases": event_phase_ids})
+        if event_date.year not in delivery_date_per_year:
+            delivery_date_per_year[event_date.year] = event_date
+        last_date = event_date
+
+    events_to_create.sort(key=lambda e: e["date"])
+    return events_to_create
+
+
+# ---------------------------------------------------------------------------
+# Step 6 — Write new delivery events
+# ---------------------------------------------------------------------------
+
