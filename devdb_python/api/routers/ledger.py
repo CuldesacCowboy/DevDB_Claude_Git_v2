@@ -924,16 +924,19 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                    COALESCE(sl.date_td,  '9999-12-31'::date) AS d_td,
                    COALESCE(sl.date_str, '9999-12-31'::date) AS d_str,
                    COALESCE(sl.date_cmp, '9999-12-31'::date) AS d_cmp,
-                   COALESCE(sl.date_cls, '9999-12-31'::date) AS d_cls
+                   COALESCE(sl.date_cls, '9999-12-31'::date) AS d_cls,
+                   sl.date_str_source, sl.date_cmp_source, sl.date_cls_source
             FROM sim_lots sl
             JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
             WHERE sl.dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
               AND sl.excluded IS NOT TRUE
               AND (sl.date_str IS NOT NULL OR sl.date_cmp IS NOT NULL OR sl.date_cls IS NOT NULL)
         """, (ent_group_id,))
-        sim_violations = []
+        engine_violations = []
         marks_violations = []
         chrono_lots_checked = 0
+        # Source columns map: which source column corresponds to each date stage
+        source_col_map = {"str": "date_str_source", "cmp": "date_cmp_source", "cls": "date_cls_source"}
         for r in cur.fetchall():
             chrono_lots_checked += 1
             pairs = [("ent","dev"), ("dev","td"), ("td","str"), ("str","cmp"), ("cmp","cls")]
@@ -947,29 +950,37 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                         "early_stage": early, "late_stage": late,
                         "early_date": d_e.isoformat(), "late_date": d_l.isoformat(),
                     }
-                    if r["lot_source"] in ("real", "pre"):
-                        marks_violations.append(v)
+                    # Check if either date in the violating pair is engine-generated.
+                    # date_ent/date_dev/date_td have no source column — always MARKS/manual.
+                    # date_str/date_cmp/date_cls have source columns: 'actual' = MARKS, else engine.
+                    early_src = r.get(source_col_map.get(early)) if early in source_col_map else "actual"
+                    late_src = r.get(source_col_map.get(late)) if late in source_col_map else "actual"
+                    # For sim lots, all dates are engine-generated
+                    if r["lot_source"] == "sim":
+                        engine_violations.append(v)
+                    elif (early_src and early_src != "actual") or (late_src and late_src != "actual"):
+                        engine_violations.append(v)
                     else:
-                        sim_violations.append(v)
+                        marks_violations.append(v)
                     break
-        # Only sim-generated violations are failures; MARKS dates are reality
+        # Only engine-generated violations are failures; pure MARKS inversions are informational
         rules.append({
             "rule_id": "chronology",
             "category": "engine_diagnostic",
             "rule_name": "Pipeline Chronology",
-            "passed": len(sim_violations) == 0,
+            "passed": len(engine_violations) == 0,
             "summary": ("All lot dates in correct pipeline order"
                         + (f" ({len(marks_violations)} MARKS lot(s) have known date inversions)"
                            if marks_violations else ""))
-                       if not sim_violations
-                       else f"{len(sim_violations)} sim lot(s) with out-of-order dates",
+                       if not engine_violations
+                       else f"{len(engine_violations)} lot(s) with engine-generated date violations",
             "detail": {
-                "explanation": "Every lot in the pipeline must have its milestone dates in strict chronological order: entitlement before development, development before takedown, takedown before start, start before completion, and completion before closing. For sim-generated lots, a violation indicates an engine defect. For real/pre lots with MARKS-sourced dates, inversions reflect actual MARKsystems data (e.g., takedown recorded after start due to back-office timing) and are informational only -- they do not indicate a problem.",
-                "methodology": "For each lot with at least one downstream date (STR, CMP, or CLS), the six pipeline dates are compared in adjacent pairs. NULL dates are treated as 9999-12-31 to avoid false positives. Violations are separated into sim-generated (failures) and MARKS-sourced (informational).",
+                "explanation": "Every lot in the pipeline must have its milestone dates in strict chronological order: entitlement before development, development before takedown, takedown before start, start before completion, and completion before closing. If either date in a violating pair was engine-generated (on any lot type -- sim, real, or pre), it is a failure that indicates an engine defect. If both dates in the pair are MARKS actuals, the inversion reflects real back-office timing and is informational only.",
+                "methodology": "For each lot with at least one downstream date (STR, CMP, or CLS), the six pipeline dates are compared in adjacent pairs. NULL dates are treated as 9999-12-31 to avoid false positives. Each violation is classified by checking date source columns: if either date in the pair has a non-'actual' source (engine_filled, building_sync, etc.), it is an engine violation. If both are 'actual' (MARKS-sourced), it is informational.",
                 "lots_checked": chrono_lots_checked,
                 "stage_order": ["ENT", "DEV", "TD", "STR", "CMP", "CLS"],
-                "sim_violations": sim_violations[:20],
-                "sim_total": len(sim_violations),
+                "sim_violations": engine_violations[:20],
+                "sim_total": len(engine_violations),
                 "marks_violations": marks_violations[:20],
                 "marks_total": len(marks_violations),
             },
