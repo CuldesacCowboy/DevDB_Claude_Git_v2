@@ -998,7 +998,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             "summary": f"{bldr_assigned}/{bldr_total} sim lots have builder assigned"
                        if bldr_total > 0 else "No sim lots",
             "detail": {
-                "explanation": "Every simulated lot must be assigned to a builder so that start pacing, spec/build classification, and downstream milestone projections reflect the correct builder's construction timeline. Builder assignment is driven by instrument-level builder splits (S-0900). Unassigned sim lots indicate either missing builder split configuration or a module defect. Without builder assignment, lots cannot be scheduled for starts and will not flow through the pipeline.",
+                "explanation": "Every simulated lot must be assigned to a builder so that start pacing, spec/build classification, and downstream milestone projections reflect the correct builder's construction timeline. Builder assignment is driven by instrument-level builder splits (builder_assignment). Unassigned sim lots indicate either missing builder split configuration or a module defect. Without builder assignment, lots cannot be scheduled for starts and will not flow through the pipeline.",
                 "methodology": "All non-excluded sim lots in the community are counted. The subset with a non-null builder_id is compared against the total. A per-phase breakdown is also provided to localize any gaps.",
                 "total": bldr_total,
                 "assigned": bldr_assigned,
@@ -1050,7 +1050,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not spec_violations
                        else f"{len(spec_violations)} instrument(s) with unassigned is_spec",
             "detail": {
-                "explanation": "Each lot must be classified as either spec (builder-initiated, no buyer under contract at start) or build (buyer-contracted before construction begins). The spec/build ratio is a critical financial metric: spec homes carry inventory risk and holding costs, while build homes have committed revenue. The classification is driven by the instrument-level spec_rate parameter and applied by the S-0950 module. Unclassified lots indicate the module has not run or the spec_rate is misconfigured.",
+                "explanation": "Each lot must be classified as either spec (builder-initiated, no buyer under contract at start) or build (buyer-contracted before construction begins). The spec/build ratio is a critical financial metric: spec homes carry inventory risk and holding costs, while build homes have committed revenue. The classification is driven by the instrument-level spec_rate parameter and applied by the spec_assignment module. Unclassified lots indicate the module has not run or the spec_rate is misconfigured.",
                 "methodology": "For each instrument with a configured spec_rate, all non-excluded lots are counted. Lots with is_spec set (TRUE or FALSE) are compared against the total. Per-instrument spec and build counts are provided for ratio verification against the configured spec_rate.",
                 "instruments": [{
                     "instrument_name": r["instrument_name"],
@@ -1099,7 +1099,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not bg_violations
                        else f"{len(bg_violations)} group(s) with split start dates",
             "detail": {
-                "explanation": "Building groups represent physically attached units (e.g., townhome buildings) that must start construction simultaneously because they share a common foundation, framing, and roofline. If lots within a building group have different start dates, it would be physically impossible to build -- you cannot frame half a townhome building while the other half remains unstarted. This rule verifies that the engine's building group date synchronization logic (S-1050) is working correctly.",
+                "explanation": "Building groups represent physically attached units (e.g., townhome buildings) that must start construction simultaneously because they share a common foundation, framing, and roofline. If lots within a building group have different start dates, it would be physically impossible to build -- you cannot frame half a townhome building while the other half remains unstarted. This rule verifies that the engine's building group date synchronization logic (building_group_enforcer) is working correctly.",
                 "methodology": "All building groups with at least one started lot are identified. For each group, the number of distinct date_str values is counted. Groups with more than one distinct start date are flagged as violations.",
                 "groups_checked": bg_total,
                 "violations": [{
@@ -1146,7 +1146,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not tda_gaps
                        else f"{len(tda_gaps)} checkpoint(s) under-fulfilled",
             "detail": {
-                "explanation": "Takedown agreements (TDAs) are contractual obligations to purchase a specified cumulative number of lots by each checkpoint date. Under-fulfilled checkpoints represent a breach risk -- the developer may face financial penalties, lose option rights, or trigger acceleration clauses. The simulation engine's S-0500 module assigns lots to checkpoints based on projected development and hold dates. Both date_td and date_td_hold count toward fulfillment (D-087). This rule audits whether every active TDA checkpoint has enough lots assigned to meet its cumulative requirement.",
+                "explanation": "Takedown agreements (TDAs) are contractual obligations to purchase a specified cumulative number of lots by each checkpoint date. Under-fulfilled checkpoints represent a breach risk -- the developer may face financial penalties, lose option rights, or trigger acceleration clauses. The simulation engine's tda_preclear module assigns lots to checkpoints based on projected development and hold dates. Both date_td and date_td_hold count toward fulfillment (D-087). This rule audits whether every active TDA checkpoint has enough lots assigned to meet its cumulative requirement.",
                 "methodology": "For each active TDA, checkpoints are queried with their lots_required_cumulative. The assigned count is cumulative -- lots assigned to CP1 also count toward CP2's requirement. Checkpoints where the cumulative assigned count falls below the cumulative required count are flagged.",
                 "tda_count": len(tda_ids_seen),
                 "checkpoints": [{
@@ -1289,7 +1289,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not cap_mismatches
                        else f"{len(cap_mismatches)} phase(s) with capacity mismatch",
             "detail": {
-                "explanation": "The simulation engine generates exactly the right number of sim lots per phase to fill the gap between configured capacity (from product splits) and lots already started by real/pre sources. If a phase is configured for 40 lots and 12 real lots have already started, exactly 28 sim lots should exist. A mismatch indicates either a product split misconfiguration, an engine defect in S-0800 (sim lot generation), or excluded lots not being accounted for correctly. Accurate demand/capacity matching is essential for reliable supply projections.",
+                "explanation": "The simulation engine generates exactly the right number of sim lots per phase to fill the gap between configured capacity (from product splits) and lots already started by real/pre sources. If a phase is configured for 40 lots and 12 real lots have already started, exactly 28 sim lots should exist. A mismatch indicates either a product split misconfiguration, an engine defect in temp_lot_generator (sim lot generation), or excluded lots not being accounted for correctly. Accurate demand/capacity matching is essential for reliable supply projections.",
                 "methodology": "For each phase, configured capacity is read from sim_phase_product_splits. Real/pre lots with date_str set are counted. Expected sim lots = configured - real_started (floored at 0). The actual sim lot count is compared against the expected value.",
                 "all_phases": all_phases_cap,
                 "mismatches": cap_mismatches,
@@ -1446,7 +1446,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        if not no_target
                        else f"{len(no_target)} development(s) missing annual_starts_target",
             "detail": {
-                "explanation": "The annual starts target defines how many home starts per year a development can sustain, based on builder capacity, market absorption, and infrastructure constraints. This parameter drives the S-0800 pacing model, which spreads sim lot starts across months to match the target rate. Without it, the engine cannot schedule starts and lots accumulate in Unstarted status indefinitely. The target is typically set based on historical pace, builder commitments, and market analysis.",
+                "explanation": "The annual starts target defines how many home starts per year a development can sustain, based on builder capacity, market absorption, and infrastructure constraints. This parameter drives the temp_lot_generator pacing model, which spreads sim lot starts across months to match the target rate. Without it, the engine cannot schedule starts and lots accumulate in Unstarted status indefinitely. The target is typically set based on historical pace, builder commitments, and market analysis.",
                 "methodology": "Each development in the community is checked for a non-null annual_starts_target value in sim_dev_params. Developments without a target are flagged.",
                 "all_items": [{**item, "dev_id": d["dev_id"]}
                               for item, d in zip(all_items_targets, dev_params)],
@@ -1491,7 +1491,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
                        else (f"{len(no_bldr)} instrument(s) missing splits"
                              + (f", {len(bad_sum)} don't sum to 100%" if bad_sum else "")),
             "detail": {
-                "explanation": "Builder splits define what percentage of lots in each legal instrument are allocated to each builder. These splits drive the S-0900 builder assignment module, which assigns a builder_id to every sim lot. Splits must sum to exactly 100% (1.0) for each instrument. Missing splits mean no builder can be assigned, which blocks start scheduling. Splits that do not sum to 100% will cause either over- or under-allocation of lots to builders, distorting per-builder start projections and capacity planning.",
+                "explanation": "Builder splits define what percentage of lots in each legal instrument are allocated to each builder. These splits drive the builder_assignment builder assignment module, which assigns a builder_id to every sim lot. Splits must sum to exactly 100% (1.0) for each instrument. Missing splits mean no builder can be assigned, which blocks start scheduling. Splits that do not sum to 100% will cause either over- or under-allocation of lots to builders, distorting per-builder start projections and capacity planning.",
                 "methodology": "Each instrument in the community is checked for the presence of rows in sim_instrument_builder_splits. The sum of share values per instrument is verified to be within 1% of 1.0. Instruments with no splits or incorrect sums are flagged.",
                 "all_items": all_items_bldr_splits,
                 "ent_group_id": ent_group_id,
