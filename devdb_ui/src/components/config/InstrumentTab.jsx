@@ -253,7 +253,7 @@ export function InstrumentTab({ phaseRows, showTest, builders, onSaveSpecRate, o
             <th style={{ ...thR,  width: 60 }} title="Pre-MARKS">Pre-MARKS</th>
             <th style={{ ...thR,  width: 44 }}>Sim</th>
             <th style={{ ...thR,  width: 44 }}>Excl</th>
-            <th style={{ ...thG,  width: 160 }} title="Spec rate applies to undetermined lots (is_spec IS NULL) via S-0950">Spec Rate</th>
+            <th style={{ ...thG,  width: 160 }} title="Spec rate applies to undetermined lots (is_spec IS NULL) via spec_assignment">Spec Rate</th>
             {builders.map((b, i) => (
               <th key={b.builder_id} style={{ ...thR, width: 74,
                 ...(i === 0 ? { borderLeft: '2px solid #e0e0e0' } : {}) }}

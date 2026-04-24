@@ -891,7 +891,7 @@ function RuleDetail({ rule, onNavigate }) {
           <Conclusion passed={rule.passed}>
             {rule.passed
               ? `All lots in instruments with spec_rate configured have been assigned a spec or build designation.`
-              : `Some lots remain unassigned. The engine module S-0950 assigns is_spec based on the instrument's configured spec_rate.`}
+              : `Some lots remain unassigned. The engine module spec_assignment assigns is_spec based on the instrument's configured spec_rate.`}
           </Conclusion>
         </div>
       )
@@ -922,7 +922,7 @@ function RuleDetail({ rule, onNavigate }) {
           <Conclusion passed={rule.passed}>
             {rule.passed
               ? `All building groups have a unified start date — all units in each building start construction on the same date.`
-              : `${violations.length} group(s) have split start dates. This violates the building group invariant (S-0810).`}
+              : `${violations.length} group(s) have split start dates. This violates the building group invariant (building_group_enforcer).`}
           </Conclusion>
         </div>
       )
@@ -952,7 +952,7 @@ function RuleDetail({ rule, onNavigate }) {
           <Conclusion passed={rule.passed}>
             {rule.passed
               ? `All ${cps.length} checkpoint(s) have sufficient lots assigned to meet their cumulative requirements.`
-              : `${(d.gaps || []).length} checkpoint(s) are under-fulfilled. The engine (S-0500) assigns hold-commitment lots as a last resort when natural fulfillment falls short.`}
+              : `${(d.gaps || []).length} checkpoint(s) are under-fulfilled. The engine (tda_preclear) assigns hold-commitment lots as a last resort when natural fulfillment falls short.`}
           </Conclusion>
         </div>
       )

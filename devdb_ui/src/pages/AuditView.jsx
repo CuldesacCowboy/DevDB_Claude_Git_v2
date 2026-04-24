@@ -224,9 +224,9 @@ function checkPhase(phase, hasAnyEvents, globalMonths) {
   if (!hasAnyLots) {
     spec = { status: S.SKIP, label: 'no lots', detail: 'No lots — spec rate not needed' }
   } else if (spec_rate != null) {
-    spec = { status: S.PASS, label: `${(spec_rate * 100).toFixed(0)}%`, detail: `Spec rate configured at ${(spec_rate * 100).toFixed(1)}% — S-0950 will assign spec/build flags` }
+    spec = { status: S.PASS, label: `${(spec_rate * 100).toFixed(0)}%`, detail: `Spec rate configured at ${(spec_rate * 100).toFixed(1)}% — spec_assignment will assign spec/build flags` }
   } else {
-    spec = { status: S.WARN, label: 'not set', detail: 'No spec rate on this instrument — S-0950 will skip spec/build assignment for all lots in this phase' }
+    spec = { status: S.WARN, label: 'not set', detail: 'No spec rate on this instrument — spec_assignment will skip spec/build assignment for all lots in this phase' }
   }
 
   // Delivery tier
@@ -234,7 +234,7 @@ function checkPhase(phase, hasAnyEvents, globalMonths) {
   if (!hasAnyLots) {
     tier = { status: S.SKIP, label: 'no lots', detail: 'No lots — delivery tier not needed' }
   } else if (delivery_tier != null) {
-    tier = { status: S.PASS, label: `T${delivery_tier}`, detail: `Delivery tier ${delivery_tier} — controls P-0050 scheduling order within the entitlement group` }
+    tier = { status: S.PASS, label: `T${delivery_tier}`, detail: `Delivery tier ${delivery_tier} — controls placeholder_rebuilder scheduling order within the entitlement group` }
   } else {
     tier = { status: S.WARN, label: 'no tier', detail: 'No delivery tier set — phase will default to NULL tier, which may cause unexpected scheduling order' }
   }
@@ -250,7 +250,7 @@ function checkDev(dev, phases) {
   if (!hasLots) {
     startsTarget = { status: S.SKIP, label: 'no lots', detail: 'No lots in any phase — annual starts target not needed' }
   } else if (dev.annual_starts_target != null) {
-    startsTarget = { status: S.PASS, label: `${dev.annual_starts_target}/yr`, detail: `Annual starts target: ${dev.annual_starts_target} — S-0600 will use this as the demand signal` }
+    startsTarget = { status: S.PASS, label: `${dev.annual_starts_target}/yr`, detail: `Annual starts target: ${dev.annual_starts_target} — demand_generator will use this as the demand signal` }
   } else {
     startsTarget = { status: S.WARN, label: 'not set', detail: 'No annual starts target in sim_dev_params — simulation will not generate projected starts for this development' }
   }
