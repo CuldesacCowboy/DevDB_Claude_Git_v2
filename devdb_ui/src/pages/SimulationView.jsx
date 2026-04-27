@@ -9,6 +9,7 @@ import { LedgerGraph } from '../components/simulation/LedgerGraph'
 import { UtilizationPanel } from '../components/simulation/UtilizationPanel'
 import { DeliveryScheduleTab } from '../components/simulation/DeliveryScheduleTab'
 import { RulesValidatorTab } from '../components/simulation/RulesValidatorTab'
+import { ScenarioPanel } from '../components/simulation/ScenarioPanel'
 import { LotLedger } from '../components/simulation/LotLedger'
 import {
   LedgerConfigSection, GlobalSettingsSection,
@@ -56,6 +57,8 @@ export default function SimulationView({ selectedGroupId, setSelectedGroupId, sh
   const [deliverySchedule, setDeliverySchedule]               = useState([])
   const [deliveryScheduleLoading, setDeliveryScheduleLoading] = useState(false)
   const [deliveryDirty, setDeliveryDirty]                     = useState(false)
+  const [compareScenarioId, setCompareScenarioId]             = useState(null)
+  const [scenarioResults, setScenarioResults]                 = useState(null)
   const [rulesValidation, setRulesValidation]                 = useState([])
   const [rulesLoading, setRulesLoading]                       = useState(false)
   const [modalOpen, setModalOpen]           = useState(false)
@@ -480,6 +483,7 @@ const loadLedger = useCallback((id) => {
           ['lots',        'Lot List'],
           ['delivery',    'Delivery Schedule'],
           ['rules',       'Rules Validator'],
+          ['scenarios',   'Scenarios'],
           ['utilization', 'Phase Utilization'],
           ['overrides',   null],
         ].map(([v, label]) => {
@@ -720,6 +724,27 @@ const loadLedger = useCallback((id) => {
                 navigate('/configure')
               }
               else if (target.to === 'setup') { navigate('/setup') }
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── Scenarios ── */}
+      {view === 'scenarios' && (
+        <div style={{ height: '100%', overflowY: 'auto' }}>
+          <ScenarioPanel
+            entGroupId={entGroupId}
+            devList={devList}
+            onCompare={async (scenarioId) => {
+              setCompareScenarioId(scenarioId)
+              try {
+                const res = await fetch(`${API_BASE}/scenarios/compare/${entGroupId}?scenario_ids=${scenarioId}`)
+                if (res.ok) {
+                  const data = await res.json()
+                  setScenarioResults(data)
+                  setView('ledger')
+                }
+              } catch {}
             }}
           />
         </div>
