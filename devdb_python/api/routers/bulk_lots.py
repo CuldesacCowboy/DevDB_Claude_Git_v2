@@ -292,6 +292,7 @@ def bulk_insert(body: BulkInsertRequest, conn=Depends(get_db_conn)):
         raise
     except Exception as exc:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(exc))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         cur.close()

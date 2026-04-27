@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import traceback
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -165,7 +166,8 @@ def create_development(body: DevelopmentCreateRequest, conn=Depends(get_db_conn)
         return _row_to_dict(row)
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         cur.close()
 
@@ -247,7 +249,8 @@ def assign_floating_lots(dev_id: int, body: FloatingLotAssignRequest, conn=Depen
         raise
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         cur.close()
 
@@ -305,7 +308,8 @@ def delete_development(dev_id: int, conn=Depends(get_db_conn)):
         raise
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         cur.close()
 
@@ -385,7 +389,8 @@ def patch_development(dev_id: int, body: DevelopmentPatchRequest, conn=Depends(g
         raise
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         cur.close()
 
@@ -447,7 +452,8 @@ def upsert_sim_params(dev_id: int, body: SimParamsPutRequest, conn=Depends(get_d
         raise
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         cur.close()
 

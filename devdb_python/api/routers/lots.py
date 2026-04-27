@@ -1,6 +1,7 @@
 # routers/lots.py
 # Lot management endpoints.
 
+import traceback
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from api.db import dict_cursor
@@ -214,7 +215,8 @@ async def bulk_release_lots(body: BulkReleaseRequest, conn=Depends(get_db_conn))
         return {"released": released, "skipped": skipped}
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         cur.close()
 

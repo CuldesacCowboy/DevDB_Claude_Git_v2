@@ -3,6 +3,7 @@
 
 from typing import List
 
+import traceback
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
@@ -453,7 +454,8 @@ async def delete_phase(phase_id: int, conn=Depends(get_db_conn)):
         raise
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         cur.close()
 

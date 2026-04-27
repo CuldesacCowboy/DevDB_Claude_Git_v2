@@ -1,6 +1,7 @@
 # routers/eg_crud.py
 # Entitlement-group list, create, patch.
 
+import traceback
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -205,7 +206,8 @@ def delete_entitlement_group(ent_group_id: int, conn=Depends(get_db_conn)):
         raise
     except Exception as e:
         conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         cur.close()
 
