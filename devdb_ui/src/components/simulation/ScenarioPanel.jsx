@@ -161,8 +161,10 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
       }}))
       if (!skipReload) loadAll()
     } catch (e) {
-      setRunStatus(prev => ({ ...prev, [scenarioId]: { state: 'error', error: e.message } }))
-      setError(e.message)
+      const errMsg = e.message || String(e)
+      setRunStatus(prev => ({ ...prev, [scenarioId]: { state: 'error', error: errMsg } }))
+      setError(errMsg)
+      console.error(`Scenario ${scenarioId} failed:`, errMsg)
     }
     finally { setRunningId(null) }
   }
@@ -277,8 +279,8 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
                         </div>
                       )}
                       {isError && (
-                        <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 500 }} title={rs.error}>
-                          Failed
+                        <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 500, maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis' }} title={rs.error}>
+                          Failed: {rs.error || 'unknown'}
                         </div>
                       )}
                       <div style={{ display: 'flex', gap: 3 }}>
