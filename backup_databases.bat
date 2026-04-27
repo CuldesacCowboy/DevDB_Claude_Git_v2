@@ -1,7 +1,7 @@
 @echo off
-REM DevDB database backup script
+REM DevDB + FinancialTracker database backup script
 REM Run daily via Task Scheduler or manually.
-REM Backs up both devdb and marks_mirror to timestamped files.
+REM Backs up devdb, financial_tracker, and marks_mirror to timestamped files.
 
 set BACKUP_DIR=C:\DevDB_Backups
 set PG_BIN="C:\Program Files\PostgreSQL\16\bin"
@@ -13,6 +13,10 @@ if not exist %BACKUP_DIR% mkdir %BACKUP_DIR%
 echo Backing up devdb...
 %PG_BIN%\pg_dump -U postgres -F c -f "%BACKUP_DIR%\devdb_%TIMESTAMP%.dump" devdb
 if %errorlevel% equ 0 (echo   devdb backup OK) else (echo   devdb backup FAILED)
+
+echo Backing up financial_tracker...
+%PG_BIN%\pg_dump -U postgres -F c -f "%BACKUP_DIR%\financial_tracker_%TIMESTAMP%.dump" financial_tracker
+if %errorlevel% equ 0 (echo   financial_tracker backup OK) else (echo   financial_tracker backup FAILED)
 
 echo Backing up marks_mirror...
 %PG_BIN%\pg_dump -U postgres -F c -f "%BACKUP_DIR%\marks_mirror_%TIMESTAMP%.dump" marks_mirror
