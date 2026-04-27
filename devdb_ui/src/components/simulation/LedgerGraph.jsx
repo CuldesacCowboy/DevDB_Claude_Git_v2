@@ -67,7 +67,7 @@ function renderPinDot(props) {
   )
 }
 
-export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevIds }) {
+export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevIds, scenarioRows = null, scenarioName = null }) {
   const [panel, setPanel] = useState('pipeline')
 
   const enrichedRows = useMemo(() => {
@@ -102,6 +102,29 @@ export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevId
       return { ...r, cls_cumulative: cumCls }
     })
   }, [rows, deliverySchedule, selectedDevIds, period])
+
+  // Merge scenario data into enriched rows for overlay
+  const mergedRows = useMemo(() => {
+    if (!scenarioRows || !scenarioRows.length) return enrichedRows
+    const scByMonth = {}
+    for (const r of scenarioRows) {
+      scByMonth[r.calendar_month] = r
+    }
+    return enrichedRows.map(r => {
+      const sc = scByMonth[r.calendar_month]
+      if (!sc) return r
+      return {
+        ...r,
+        sc_d_end: (sc.d_end || 0) + (sc.h_end || 0) + (sc.u_end || 0) + (sc.uc_end || 0) + (sc.c_end || 0),
+        sc_str_plan: sc.str_plan || 0,
+        sc_cmp_plan: sc.cmp_plan || 0,
+        sc_cls_plan: sc.cls_plan || 0,
+      }
+    })
+  }, [enrichedRows, scenarioRows])
+
+  const hasScenario = scenarioRows && scenarioRows.length > 0
+  const scLabel = scenarioName || 'Scenario'
 
   if (!rows.length) return null
 
@@ -145,7 +168,7 @@ export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevId
       {panel === 'pipeline' && (
         <>
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={enrichedRows} {...chartProps} syncId="ledger-pipeline">
+            <AreaChart data={mergedRows} {...chartProps} syncId="ledger-pipeline">
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
               <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
               <YAxis {...axisProps} width={34} />
@@ -158,6 +181,11 @@ export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevId
               <Area type="linear" dataKey="d_end"  stackId="s" stroke={STATUS_COLOR.D}  fill={STATUS_COLOR.D}  fillOpacity={0.75} name={`${STATUS_CFG.D.shape} D`}  />
               <Line dataKey="_pinY" stroke="none" strokeWidth={0} dot={renderPinDot} activeDot={false}
                     isAnimationActive={false} legendType="none" connectNulls={false} />
+              {hasScenario && (
+                <Line type="linear" dataKey="sc_d_end" stroke="#7c3aed" strokeWidth={2}
+                      strokeDasharray="6 3" dot={false} name={`${scLabel} (total inv.)`}
+                      isAnimationActive={false} />
+              )}
             </AreaChart>
           </ResponsiveContainer>
 
@@ -166,7 +194,7 @@ export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevId
               Cumulative closings
             </div>
             <ResponsiveContainer width="100%" height={110}>
-              <AreaChart data={enrichedRows} {...chartProps} syncId="ledger-pipeline">
+              <AreaChart data={mergedRows} {...chartProps} syncId="ledger-pipeline">
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
                 <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
                 <YAxis {...axisProps} width={34} />
@@ -197,7 +225,7 @@ export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevId
 
       {panel === 'velocity' && (
         <ResponsiveContainer width="100%" height={280}>
-          <LineChart data={rows} {...chartProps}>
+          <LineChart data={mergedRows} {...chartProps}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
             <XAxis dataKey="_label" interval={xInterval} {...axisProps} />
             <YAxis {...axisProps} width={34} />
@@ -211,6 +239,11 @@ export function LedgerGraph({ rows, period, deliverySchedule = [], selectedDevId
             <Line type="monotone" dataKey="str_plan_build" stroke="#6b7280"         strokeWidth={1.5} dot={false} name="STR(B)" strokeDasharray="4 2" />
             <Line type="monotone" dataKey="cmp_plan"       stroke={STATUS_COLOR.C}  strokeWidth={1.5} dot={false} name="CMP" />
             <Line type="monotone" dataKey="cls_plan"       stroke={STATUS_COLOR.OUT} strokeWidth={2}  dot={false} name="CLS" />
+            {hasScenario && <>
+              <Line type="monotone" dataKey="sc_str_plan" stroke="#7c3aed" strokeWidth={2} strokeDasharray="6 3" dot={false} name={`${scLabel} STR`} />
+              <Line type="monotone" dataKey="sc_cmp_plan" stroke="#db2777" strokeWidth={2} strokeDasharray="6 3" dot={false} name={`${scLabel} CMP`} />
+              <Line type="monotone" dataKey="sc_cls_plan" stroke="#ea580c" strokeWidth={2} strokeDasharray="6 3" dot={false} name={`${scLabel} CLS`} />
+            </>}
           </LineChart>
         </ResponsiveContainer>
       )}

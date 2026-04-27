@@ -519,6 +519,22 @@ const loadLedger = useCallback((id) => {
       {view === 'ledger' && (
         <div style={{ height: '100%', overflowY: 'auto' }}>
         <>
+          {scenarioResults && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', marginBottom: 8,
+              background: '#f5f3ff', border: '1px solid #c4b5fd', borderRadius: 6,
+            }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#7c3aed' }}>
+                Comparing: {Object.values(scenarioResults.scenarios || {})[0]?.scenario_name || 'Scenario'}
+              </span>
+              <span style={{ fontSize: 11, color: '#6b7280' }}>Dashed lines = scenario projection</span>
+              <button onClick={() => { setScenarioResults(null); setCompareScenarioId(null) }}
+                style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 10px', borderRadius: 4,
+                         border: '1px solid #c4b5fd', background: '#fff', color: '#7c3aed', cursor: 'pointer' }}>
+                Clear
+              </button>
+            </div>
+          )}
           {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
           {!loading && !hasData && (
             <div style={{ color: '#9ca3af', fontSize: 12 }}>No ledger data. Run a simulation to populate results.</div>
@@ -626,7 +642,10 @@ const loadLedger = useCallback((id) => {
 
               {ledgerSubView === 'table'
                 ? <LedgerTable rows={ledgerRows} floors={deliveryConfig} period={period} lots={lots} deliverySchedule={deliverySchedule} />
-                : <LedgerGraph rows={ledgerRows} period={period} deliverySchedule={deliverySchedule} selectedDevIds={selectedDevIds} />
+                : <LedgerGraph rows={ledgerRows} period={period} deliverySchedule={deliverySchedule} selectedDevIds={selectedDevIds}
+                    scenarioRows={scenarioResults?.scenarios ? Object.values(scenarioResults.scenarios)[0]?.rows : null}
+                    scenarioName={scenarioResults?.scenarios ? Object.values(scenarioResults.scenarios)[0]?.scenario_name : null}
+                  />
               }
             </>
           )}
