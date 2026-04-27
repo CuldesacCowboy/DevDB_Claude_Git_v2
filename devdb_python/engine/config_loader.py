@@ -28,10 +28,10 @@ _DEFAULTS = {
 }
 
 
-def load_delivery_config(conn, ent_group_id: int) -> dict:
+def load_delivery_config(conn, ent_group_id: int, overrides: dict = None) -> dict:
     """
     Return a fully-resolved delivery config dict for ent_group_id.
-    Resolution order: community row → global row → hardcoded defaults.
+    Resolution order: community row → global row → hardcoded defaults → overrides (highest priority).
     """
     global_df = conn.read_df("SELECT * FROM sim_global_settings WHERE id = 1")
 
@@ -75,10 +75,10 @@ def load_delivery_config(conn, ent_group_id: int) -> dict:
             return v
         return _DEFAULTS.get(key)
 
-    return {
+    result = {
         "max_deliveries_per_year": int(merge("max_deliveries_per_year")),
         "min_gap_months":          int(merge("min_gap_months")),
-        "delivery_months":         merge("delivery_months"),   # may be None → no valid months
+        "delivery_months":         merge("delivery_months"),
         "min_d_count":             int(merge("min_d_count")),
         "min_u_count":             int(merge("min_u_count")),
         "min_uc_count":            int(merge("min_uc_count")),
@@ -90,3 +90,10 @@ def load_delivery_config(conn, ent_group_id: int) -> dict:
         "td_to_str_lag":               int(merge("td_to_str_lag")),
         "hc_to_bldr_lag_days":         int(merge("hc_to_bldr_lag_days")),
     }
+
+    if overrides:
+        for k, v in overrides.items():
+            if k in result and v is not None:
+                result[k] = v
+
+    return result

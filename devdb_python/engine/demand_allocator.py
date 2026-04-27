@@ -10,9 +10,15 @@ Rules:   Matches real lots in U/H/D status to monthly demand slots in order.
          unmet_demand_series: list of (year, month, unmet_count).
          Building groups are treated as atomic units: when any lot in a group
          is allocated, all mates receive the same assigned month.
+         HC lots respect hold dates: an HC lot is only assigned to a demand
+         month at or after its hold release date. Earlier demand months are
+         skipped (left for sim lots or unfilled). This prevents phantom demand
+         consumption where HC lots claim early slots they can't actually fill.
          Vectorized merge — no carry-forward, no fractional slots.
          Not Own: creating temp lots (S-0800), assigning builder (S-0900).
 """
+
+from datetime import date
 
 import pandas as pd
 
@@ -21,6 +27,7 @@ def demand_allocator(lot_snapshot: pd.DataFrame, demand_df):
     """
     Assign real lots to demand slots via positional merge.
     Building groups are atomic: all mates are allocated to the same demand month.
+    HC lots respect hold dates: assigned only to demand months >= hold release month.
     demand_df: DataFrame [year, month, slots] from S-06.
     Returns (allocated_df, unmet_demand_series).
     """
@@ -89,26 +96,42 @@ def demand_allocator(lot_snapshot: pd.DataFrame, demand_df):
     # A unit is a list of lot_ids that must share the same assigned month.
     # Singletons (no building_group_id) → unit of size 1.
     # Groups → all available mates collected the first time the group is seen.
+    # Each unit also carries an optional earliest_month (from HC hold dates).
     seen_bg_ids: set = set()
-    allocation_units: list[list[int]] = []
+    allocation_units: list[tuple[list[int], date | None]] = []  # (lot_ids, earliest_month)
 
     has_bg_col = "building_group_id" in available.columns
+
+    def _hold_release(row) -> date | None:
+        """Return the hold release month (first-of-month after hold date), or None."""
+        hold = row.get("date_td_hold")
+        if hold is None or pd.isna(hold):
+            hold = row.get("date_td_hold_projected") if has_tdh_proj else None
+        if hold is None or pd.isna(hold):
+            return None
+        hold = pd.Timestamp(hold)
+        # Release month = first of next month after hold date
+        m = hold.month + 1
+        y = hold.year + (m - 1) // 12
+        m = ((m - 1) % 12) + 1
+        return date(y, m, 1)
 
     for _, row in available.iterrows():
         bg_id = row.get("building_group_id") if has_bg_col else None
         if pd.isna(bg_id) or bg_id is None:
-            allocation_units.append([int(row["lot_id"])])
+            allocation_units.append(([int(row["lot_id"])], _hold_release(row)))
         else:
             bg_id = int(bg_id)
             if bg_id in seen_bg_ids:
                 continue
             seen_bg_ids.add(bg_id)
-            group_ids = (
-                available[available["building_group_id"] == bg_id]["lot_id"]
-                .astype(int)
-                .tolist()
-            )
-            allocation_units.append(group_ids)
+            mates = available[available["building_group_id"] == bg_id]
+            group_ids = mates["lot_id"].astype(int).tolist()
+            # Group earliest = latest hold among mates (all must wait for slowest)
+            group_holds = [_hold_release(r) for _, r in mates.iterrows()]
+            group_holds = [h for h in group_holds if h is not None]
+            earliest = max(group_holds) if group_holds else None
+            allocation_units.append((group_ids, earliest))
 
     # Step 3: Flatten demand into one row per slot.
     flat = (
@@ -117,21 +140,39 @@ def demand_allocator(lot_snapshot: pd.DataFrame, demand_df):
         .reset_index(drop=True)
     )
 
-    # Step 4: Zip allocation units against demand slots.
-    # Each unit of size N consumes N slots and all lots get the first slot's month.
+    # Step 4: Assign allocation units to demand slots.
+    # U/D lots (no hold date) take the next available slot positionally.
+    # HC lots (has hold date) skip forward to the first demand slot at or after
+    # their hold release month. This prevents phantom demand consumption where
+    # HC lots claim early slots they can't actually fill.
     result_rows: list[dict] = []
     offset = 0
 
-    for unit in allocation_units:
+    for unit_ids, earliest_month in allocation_units:
         if offset >= len(flat):
             break
-        n = len(unit)
-        first = flat.iloc[offset]
+        n = len(unit_ids)
+
+        # For HC lots: advance to first demand slot >= hold release month
+        start = offset
+        if earliest_month is not None:
+            ey, em = earliest_month.year, earliest_month.month
+            while start < len(flat):
+                sy, sm = int(flat.iloc[start]["year"]), int(flat.iloc[start]["month"])
+                if (sy, sm) >= (ey, em):
+                    break
+                start += 1
+            if start >= len(flat):
+                continue  # no demand slots available after hold release
+
+        first = flat.iloc[start]
         year, month = int(first["year"]), int(first["month"])
-        for lot_id in unit:
+        for lot_id in unit_ids:
             result_rows.append({"lot_id": lot_id, "assigned_year": year, "assigned_month": month})
-        # Consume slots up to the group size (may be fewer if demand is exhausted)
-        offset += n
+        # Consume slots: for positional (U/D), advance offset past consumed slots.
+        # For HC lots that skipped ahead, advance offset to after the HC slots
+        # only if that's further than where we were.
+        offset = max(offset, start) + n
 
     allocated_df = (
         pd.DataFrame(result_rows)

@@ -23,12 +23,15 @@ logger = logging.getLogger(__name__)
 
 
 def demand_generator(conn: DBConnection, dev_id: int,
-                     run_start_date, horizon_months: int = 360):
+                     run_start_date, horizon_months: int = 360,
+                     dev_param_overrides: dict = None):
     """
     Generate monthly demand DataFrame for a development.
     Returns (demand_df, needs_config).
       demand_df:    DataFrame [year, month, slots] -- integers, sum == available_capacity.
       needs_config: True if no sim_dev_params row found.
+      dev_param_overrides: optional dict with keys annual_starts_target, max_starts_per_month,
+                           seasonal_weight_set to override DB values (scenario mode).
     """
     from dateutil.relativedelta import relativedelta
 
@@ -42,13 +45,30 @@ def demand_generator(conn: DBConnection, dev_id: int,
         (dev_id,),
     )
 
-    if params_df.empty:
+    if params_df.empty and not dev_param_overrides:
         return pd.DataFrame(columns=["year", "month", "slots"]), True
 
-    row = params_df.iloc[0]
-    annual_target = float(row["annual_starts_target"])
-    max_per_month = float(row["max_starts_per_month"]) if row["max_starts_per_month"] is not None else None
-    weight_set = row["seasonal_weight_set"] or "balanced_2yr"
+    if not params_df.empty:
+        row = params_df.iloc[0]
+        annual_target = float(row["annual_starts_target"])
+        max_per_month = float(row["max_starts_per_month"]) if row["max_starts_per_month"] is not None else None
+        weight_set = row["seasonal_weight_set"] or "balanced_2yr"
+    else:
+        annual_target = 0
+        max_per_month = None
+        weight_set = "balanced_2yr"
+
+    # Apply scenario overrides
+    if dev_param_overrides:
+        if "annual_starts_target" in dev_param_overrides:
+            annual_target = float(dev_param_overrides["annual_starts_target"])
+        if "max_starts_per_month" in dev_param_overrides:
+            max_per_month = float(dev_param_overrides["max_starts_per_month"]) if dev_param_overrides["max_starts_per_month"] is not None else None
+        if "seasonal_weight_set" in dev_param_overrides:
+            weight_set = dev_param_overrides["seasonal_weight_set"] or "balanced_2yr"
+
+    if annual_target == 0:
+        return pd.DataFrame(columns=["year", "month", "slots"]), True
 
     if weight_set not in SUPPORTED_WEIGHT_SETS:
         raise ValueError(

@@ -147,3 +147,110 @@ def ledger_aggregator(conn: DBConnection) -> None:
     """)
 
     print("ledger_aggregator: v_sim_ledger_monthly and month_spine views created.")
+
+
+def compute_scenario_ledger(conn: DBConnection, scenario_lots: list, dev_ids: list) -> list:
+    """
+    Compute monthly ledger rows for a scenario without touching the base view.
+    Creates a temp table with scenario sim lots + real lots from sim_lots,
+    runs the aggregation query, returns list of dicts.
+    """
+    import numpy as np
+
+    # Create temp table
+    conn.execute("DROP TABLE IF EXISTS _scenario_all_lots")
+    conn.execute("""
+        CREATE TEMP TABLE _scenario_all_lots (
+            dev_id INT, builder_id INT, builder_id_override INT,
+            date_ent DATE, date_dev DATE, date_td DATE, date_td_hold DATE,
+            date_str DATE, date_str_projected DATE,
+            date_cmp DATE, date_cmp_projected DATE,
+            date_cls DATE, date_cls_projected DATE,
+            is_spec BOOLEAN, excluded BOOLEAN, lot_source TEXT
+        )
+    """)
+
+    # Insert real lots from base
+    conn.execute("""
+        INSERT INTO _scenario_all_lots
+        SELECT dev_id, builder_id, builder_id_override,
+               date_ent, date_dev, date_td, date_td_hold,
+               date_str, date_str_projected,
+               date_cmp, date_cmp_projected,
+               date_cls, date_cls_projected,
+               is_spec, excluded, lot_source
+        FROM sim_lots
+        WHERE dev_id = ANY(%s) AND lot_source IN ('real', 'pre') AND excluded IS NOT TRUE
+    """, (dev_ids,))
+
+    # Insert scenario sim lots
+    def _py(v):
+        if v is None:
+            return None
+        if isinstance(v, (np.integer,)):
+            return int(v)
+        if isinstance(v, (np.floating,)):
+            return None if np.isnan(v) else float(v)
+        if isinstance(v, (np.bool_,)):
+            return bool(v)
+        if isinstance(v, float) and np.isnan(v):
+            return None
+        return v
+
+    for lot in scenario_lots:
+        conn.execute("""
+            INSERT INTO _scenario_all_lots (dev_id, builder_id, date_dev, date_td, date_str,
+                date_cmp, date_cls, is_spec, excluded, lot_source)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, FALSE, 'sim')
+        """, (
+            _py(lot.get("dev_id")), _py(lot.get("builder_id")),
+            lot.get("date_dev"), lot.get("date_td"), lot.get("date_str"),
+            lot.get("date_cmp"), lot.get("date_cls"),
+            _py(lot.get("is_spec")),
+        ))
+
+    # Run aggregation query
+    result = conn.read_df("""
+        WITH spine AS (
+            SELECT generate_series('2020-01-01'::DATE, '2046-01-01'::DATE, INTERVAL '1 month')::DATE AS calendar_month
+        )
+        SELECT
+            l.dev_id, m.calendar_month,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected)) = m.calendar_month THEN 1 END)::int AS str_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected)) = m.calendar_month AND l.is_spec = TRUE THEN 1 END)::int AS str_plan_spec,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected)) = m.calendar_month AND l.is_spec = FALSE THEN 1 END)::int AS str_plan_build,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_cmp, l.date_cmp_projected)) = m.calendar_month THEN 1 END)::int AS cmp_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected)) = m.calendar_month THEN 1 END)::int AS cls_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_ent)::DATE <= m.calendar_month THEN 1 END)::int AS ent_plan,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_dev)::DATE <= m.calendar_month AND (l.date_td IS NULL OR DATE_TRUNC('MONTH', l.date_td)::DATE > m.calendar_month) AND (l.date_td_hold IS NULL OR DATE_TRUNC('MONTH', l.date_td_hold)::DATE > m.calendar_month) AND (COALESCE(l.date_str, l.date_str_projected) IS NULL OR DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE > m.calendar_month) THEN 1 END)::int AS d_end,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_td_hold)::DATE <= m.calendar_month AND l.date_td IS NULL AND (COALESCE(l.date_str, l.date_str_projected) IS NULL OR DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE > m.calendar_month) THEN 1 END)::int AS h_end,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', l.date_td)::DATE <= m.calendar_month AND (COALESCE(l.date_str, l.date_str_projected) IS NULL OR DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE > m.calendar_month) THEN 1 END)::int AS u_end,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_str, l.date_str_projected))::DATE <= m.calendar_month AND (COALESCE(l.date_cmp, l.date_cmp_projected) IS NULL OR DATE_TRUNC('MONTH', COALESCE(l.date_cmp, l.date_cmp_projected))::DATE > m.calendar_month) AND (COALESCE(l.date_cls, l.date_cls_projected) IS NULL OR DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected))::DATE > m.calendar_month) THEN 1 END)::int AS uc_end,
+            COUNT(CASE WHEN DATE_TRUNC('MONTH', COALESCE(l.date_cmp, l.date_cmp_projected))::DATE <= m.calendar_month AND (COALESCE(l.date_cls, l.date_cls_projected) IS NULL OR DATE_TRUNC('MONTH', COALESCE(l.date_cls, l.date_cls_projected))::DATE > m.calendar_month) THEN 1 END)::int AS c_end,
+            0::int AS closed_cumulative,
+            0::int AS p_end
+        FROM _scenario_all_lots l
+        CROSS JOIN spine m
+        WHERE l.excluded IS NOT TRUE
+        GROUP BY l.dev_id, m.calendar_month
+        HAVING COUNT(*) > 0
+        ORDER BY l.dev_id, m.calendar_month
+    """)
+
+    conn.execute("DROP TABLE IF EXISTS _scenario_all_lots")
+
+    rows = []
+    for _, r in result.iterrows():
+        rows.append({
+            "dev_id": int(r["dev_id"]),
+            "calendar_month": r["calendar_month"].isoformat() if hasattr(r["calendar_month"], "isoformat") else str(r["calendar_month"]),
+            "str_plan": int(r["str_plan"]), "str_plan_spec": int(r["str_plan_spec"]),
+            "str_plan_build": int(r["str_plan_build"]),
+            "cmp_plan": int(r["cmp_plan"]), "cls_plan": int(r["cls_plan"]),
+            "ent_plan": int(r["ent_plan"]), "d_end": int(r["d_end"]),
+            "h_end": int(r["h_end"]), "u_end": int(r["u_end"]),
+            "uc_end": int(r["uc_end"]), "c_end": int(r["c_end"]),
+            "closed_cumulative": 0, "p_end": 0,
+        })
+
+    return rows
