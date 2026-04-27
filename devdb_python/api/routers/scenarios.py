@@ -289,28 +289,28 @@ def get_scenario_params(ent_group_id: int, conn=Depends(get_db_conn)):
                 "spec_rate": float(r["spec_rate"]) if r["spec_rate"] is not None else None,
             })
 
-        # Community-level params
-        cur.execute("""
-            SELECT max_deliveries_per_year, delivery_months, min_gap_months,
-                   COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count,
-                   feed_starts_mode, default_cmp_lag_days, default_cls_lag_days,
-                   td_to_str_lag, hc_to_bldr_lag_days, scheduling_horizon_days
-            FROM sim_entitlement_delivery_config
-            WHERE ent_group_id = %s
-        """, (ent_group_id,))
-        eg_row = cur.fetchone()
+        # Community-level params — resolved through community → global → defaults
+        # (same resolution as engine config_loader)
+        from engine.connection import PGConnection
+        from engine.config_loader import load_delivery_config
+        eng_conn = PGConnection()
+        try:
+            resolved = load_delivery_config(eng_conn, ent_group_id)
+        finally:
+            eng_conn.close()
+
         community = {
             "ent_group_id": ent_group_id,
-            "max_deliveries_per_year": eg_row["max_deliveries_per_year"] if eg_row else None,
-            "delivery_months": list(eg_row["delivery_months"]) if eg_row and eg_row["delivery_months"] else None,
-            "min_gap_months": eg_row["min_gap_months"] if eg_row else None,
-            "min_d_count": eg_row["min_d_count"] if eg_row else None,
-            "feed_starts_mode": bool(eg_row["feed_starts_mode"]) if eg_row and eg_row["feed_starts_mode"] is not None else None,
-            "default_cmp_lag_days": eg_row["default_cmp_lag_days"] if eg_row else None,
-            "default_cls_lag_days": eg_row["default_cls_lag_days"] if eg_row else None,
-            "td_to_str_lag": eg_row["td_to_str_lag"] if eg_row else None,
-            "hc_to_bldr_lag_days": eg_row["hc_to_bldr_lag_days"] if eg_row else None,
-            "scheduling_horizon_days": eg_row["scheduling_horizon_days"] if eg_row else None,
+            "max_deliveries_per_year": resolved.get("max_deliveries_per_year"),
+            "delivery_months": list(resolved["delivery_months"]) if resolved.get("delivery_months") else None,
+            "min_gap_months": resolved.get("min_gap_months"),
+            "min_d_count": resolved.get("min_d_count"),
+            "feed_starts_mode": bool(resolved.get("feed_starts_mode") or False),
+            "default_cmp_lag_days": resolved.get("default_cmp_lag_days"),
+            "default_cls_lag_days": resolved.get("default_cls_lag_days"),
+            "td_to_str_lag": resolved.get("td_to_str_lag"),
+            "hc_to_bldr_lag_days": resolved.get("hc_to_bldr_lag_days"),
+            "scheduling_horizon_days": resolved.get("scheduling_horizon_days"),
         }
 
         return {"devs": devs, "instruments": instruments, "community": community}
