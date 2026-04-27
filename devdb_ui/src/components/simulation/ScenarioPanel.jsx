@@ -144,7 +144,7 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
   }
 
   // ── Run scenario ───────────────────────────────────────────────────────
-  const runScenario = async (scenarioId) => {
+  const runScenario = async (scenarioId, skipReload = false) => {
     setRunningId(scenarioId)
     setError(null)
     setRunStatus(prev => ({ ...prev, [scenarioId]: { state: 'running' } }))
@@ -159,7 +159,7 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
         state: 'done', elapsed_ms: elapsed,
         iterations: data.iterations,
       }}))
-      loadAll()
+      if (!skipReload) loadAll()
     } catch (e) {
       setRunStatus(prev => ({ ...prev, [scenarioId]: { state: 'error', error: e.message } }))
       setError(e.message)
@@ -168,9 +168,11 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
   }
 
   const runAll = async () => {
-    for (const sc of scenarios) {
-      await runScenario(sc.scenario_id)
+    const ids = scenarios.map(sc => sc.scenario_id)
+    for (const id of ids) {
+      await runScenario(id, true)  // skip reload between runs
     }
+    loadAll()  // reload once at the end
   }
 
   // ── Render ─────────────────────────────────────────────────────────────
