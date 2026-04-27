@@ -124,6 +124,16 @@ export function ScenarioCompareView({ baseRows, scenarioRows, scenarioName, onCl
         }}>Back to Scenarios</button>
       </div>
 
+      {/* Warning if base looks like it hasn't been run */}
+      {sumField(base, 'str_plan') === 0 && base.length > 0 && (
+        <div style={{
+          padding: '8px 14px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+          background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e',
+        }}>
+          Base simulation has no projected starts — run the base simulation first before comparing.
+        </div>
+      )}
+
       {/* Main comparison table */}
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
