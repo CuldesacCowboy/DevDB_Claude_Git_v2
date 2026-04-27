@@ -165,6 +165,27 @@ def _run_scenario_impl(conn, scenario_id: int) -> dict:
 
 # ── Override helpers ─────────────────────────────────────────────────────────
 
+def _to_python(val):
+    """Convert numpy/pandas types to native Python for psycopg2."""
+    if val is None:
+        return None
+    import numpy as np
+    if isinstance(val, (np.integer,)):
+        return int(val)
+    if isinstance(val, (np.floating,)):
+        return None if np.isnan(val) else float(val)
+    if isinstance(val, (np.bool_,)):
+        return bool(val)
+    if isinstance(val, float) and np.isnan(val):
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return val
+
+
 def _read_original(conn, ov: dict):
     """Read the current value of the parameter being overridden."""
     scope, scope_id, param = ov["scope"], ov["scope_id"], ov["param_name"]
@@ -175,8 +196,7 @@ def _read_original(conn, ov: dict):
         )
         if df.empty:
             return None
-        val = df.iloc[0][param]
-        return None if val is None else val
+        return _to_python(df.iloc[0][param])
 
     elif scope == "instrument":
         df = conn.read_df(
@@ -184,8 +204,7 @@ def _read_original(conn, ov: dict):
         )
         if df.empty:
             return None
-        val = df.iloc[0][param]
-        return None if val is None else val
+        return _to_python(df.iloc[0][param])
 
     elif scope == "ent_group":
         df = conn.read_df(
@@ -193,8 +212,7 @@ def _read_original(conn, ov: dict):
         )
         if df.empty:
             return None
-        val = df.iloc[0][param]
-        return None if val is None else val
+        return _to_python(df.iloc[0][param])
 
     return None
 
