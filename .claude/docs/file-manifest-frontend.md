@@ -123,12 +123,19 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Tables: none (receives rules array from parent)
 - Last commit: 2026-04-23
 
+### devdb_ui/src/components/simulation/ScenarioPanel.jsx
+- Owns: Scenario CRUD UI: list scenarios, create with override rows (scope/entity/param/value), run button with spinner, compare button, delete. Override editor with scope dropdown + entity picker + param + value inputs.
+- Imports: react (useState, useEffect), config (API_BASE)
+- Imported by: SimulationView.jsx
+- Tables: none (API calls via /scenarios/*)
+- Last commit: 2026-04-27
+
 ### devdb_ui/src/components/simulation/LedgerGraph.jsx
-- Owns: Recharts-based ledger chart (monthly/weekly); xInterval adapts to period
-- Imports: recharts, simShared
+- Owns: Recharts-based ledger chart; accepts scenarioRows + scenarioName for comparison overlay (dashed purple/pink/orange lines); 4 panels: pipeline, backlog, velocity, closings
+- Imports: recharts, simShared, statusConfig
 - Imported by: SimulationView.jsx
 - Tables: none
-- Last commit: 2026-04-22
+- Last commit: 2026-04-27
 
 ### devdb_ui/src/components/simulation/LedgerTable.jsx
 - Owns: Monthly/weekly ledger table; period-aware row grouping
@@ -150,6 +157,13 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imported by: LotPhaseView.jsx
 - Tables: none (API calls via /api/entitlement-groups, /api/developments)
 - Last commit: 2026-03-28
+
+### devdb_ui/src/pages/PortfolioView.jsx
+- Owns: Company-wide portfolio dashboard (/portfolio route). Status filter pills, 4 summary cards (communities/starts YTD/unstarted/projected), Production Curve LineChart (starts/completions/closings), Inventory Pipeline AreaChart (D/H/U/UC/C stacked), Builder Capacity table with sortable columns and utilization bars.
+- Imports: react, recharts, config (API_BASE), statusConfig
+- Imported by: App.jsx
+- Tables: none (API calls via /portfolio/summary)
+- Last commit: 2026-04-27
 
 ### devdb_ui/src/pages/TakedownView.jsx
 - Owns: Standalone TDA management page (route /takedown); pill tab switcher (TdaPillTabs — one pill per TDA per community, click to switch, one AgreementCard visible at a time); CheckpointsSection with always-visible inline slots per checkpoint (no ▶/▼ toggle — slots always shown); column headers repeated per checkpoint; no checkpoint footer; SlotList — one slot per required takedown, filled with lot data or "— open slot —", MARKS dates italic/muted; LotsSection shows only unassigned pool lots (checkbox-based bulk move/remove); Add Lots picker uses pill grid; moveLots mutation via POST /takedown-agreements/{id}/lots/move; activeTdaId state auto-selects first active TDA on load; community picker with showTestCommunities support; MARKS footer tooltip corrected in CheckpointSlotTable

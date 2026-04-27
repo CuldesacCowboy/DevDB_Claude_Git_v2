@@ -429,3 +429,13 @@ Load when working on: schema changes, adding columns, creating tables, or unders
 - Owns: Drop auto_schedule_enabled column from sim_entitlement_delivery_config (dead feature, replaced by always-on scheduling)
 - Tables: sim_entitlement_delivery_config (DROP COLUMN)
 - Last commit: 2026-04-23
+
+### devdb_python/migrations/085_is_spec_source.sql
+- Owns: Add is_spec_source TEXT to sim_lots for provenance tracking (marks/engine/manual). Backfill real→marks, sim→engine.
+- Tables: sim_lots (ADD COLUMN is_spec_source)
+- Last commit: 2026-04-24
+
+### devdb_python/migrations/086_scenarios.sql
+- Owns: Scenario comparison tables: sim_scenarios (named scenarios per community), sim_scenario_overrides (parameter override sets), sim_scenario_results (monthly ledger snapshots per scenario)
+- Tables: sim_scenarios (CREATE), sim_scenario_overrides (CREATE), sim_scenario_results (CREATE)
+- Last commit: 2026-04-27

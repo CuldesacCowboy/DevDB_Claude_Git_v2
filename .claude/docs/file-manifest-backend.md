@@ -186,6 +186,27 @@ Load when working on: FastAPI routers, Pydantic models, API endpoints, services,
 - Tables: developments (for dev_name lookup on missing params)
 - Last commit: 2026-04-19
 
+### devdb_python/api/routers/scenarios.py
+- Owns: Scenario CRUD (list/create/get/patch/delete) + POST /{id}/run (triggers scenario_runner) + GET /compare/{ent_group_id} (returns base + scenario ledger results). Uses shared ThreadPoolExecutor from simulations.py for run serialization.
+- Imports: api.deps, api.db, fastapi, pydantic, services.scenario_runner, api.routers.simulations._executor
+- Imported by: api/main.py
+- Tables: sim_scenarios, sim_scenario_overrides, sim_scenario_results, v_sim_ledger_monthly
+- Last commit: 2026-04-27
+
+### devdb_python/api/routers/portfolio.py
+- Owns: GET /portfolio/summary — company-wide aggregate: communities list with rollups, monthly aggregate (v_sim_ledger_monthly summed across communities), builder capacity summary, status counts. Accepts ?status= filter.
+- Imports: api.deps, api.db, fastapi
+- Imported by: api/main.py
+- Tables: sim_entitlement_groups, sim_ent_group_developments, sim_dev_params, sim_lots, sim_phase_product_splits, v_sim_ledger_monthly, dim_builders
+- Last commit: 2026-04-27
+
+### devdb_python/services/scenario_runner.py
+- Owns: run_scenario(scenario_id) — backup sim_lots → apply param overrides → convergence_coordinator → capture v_sim_ledger_monthly → restore sim_lots + params → rebuild ledger view. Try/finally for crash safety.
+- Imports: engine.connection, engine.coordinator, engine.ledger_aggregator
+- Imported by: api/routers/scenarios.py
+- Tables: sim_scenarios, sim_scenario_overrides, sim_scenario_results, sim_lots, sim_dev_params, sim_legal_instruments, sim_entitlement_delivery_config
+- Last commit: 2026-04-27
+
 ### devdb_python/api/routers/tda_banks.py
 - Owns: CRUD for TDA lot banks (sim_tda_lot_banks + sim_tda_lot_bank_members) per D-159; phase-scoped eligible lot pools shared across TDAs; POST/GET/DELETE banks; add/remove lot members
 - Imports: api.deps, api.db, fastapi, pydantic
