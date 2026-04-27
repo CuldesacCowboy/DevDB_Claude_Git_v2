@@ -160,39 +160,50 @@ def collect_schedulable_phases(conn, ent_group_id: int, today_first: date) -> di
         sellout_date = None
 
     # Step 3c: Filter phases with no signal and those past sellout horizon
+    # Batch-load counts for all undelivered phases in 3 queries instead of 3 per phase.
+    undel_ids = [p["phase_id"] for p in undelivered]
+
+    sim_counts = {}
+    if undel_ids:
+        sc_df = conn.read_df(
+            "SELECT phase_id, COUNT(*) AS cnt FROM sim_lots WHERE phase_id = ANY(%s) AND lot_source = 'sim' GROUP BY phase_id",
+            (undel_ids,),
+        )
+        for _, r in sc_df.iterrows():
+            sim_counts[int(r["phase_id"])] = int(r["cnt"])
+
+    real_pending_counts = {}
+    if undel_ids:
+        rp_df = conn.read_df(
+            """
+            SELECT phase_id, COUNT(*) AS cnt FROM sim_lots
+            WHERE phase_id = ANY(%s) AND lot_source = 'real' AND date_ent IS NOT NULL AND excluded IS NOT TRUE
+            GROUP BY phase_id
+            """,
+            (undel_ids,),
+        )
+        for _, r in rp_df.iterrows():
+            real_pending_counts[int(r["phase_id"])] = int(r["cnt"])
+
+    split_totals = {}
+    if undel_ids:
+        sp_df = conn.read_df(
+            "SELECT phase_id, COALESCE(SUM(projected_count), 0) AS total FROM sim_phase_product_splits WHERE phase_id = ANY(%s) GROUP BY phase_id",
+            (undel_ids,),
+        )
+        for _, r in sp_df.iterrows():
+            split_totals[int(r["phase_id"])] = int(r["total"])
+
     filtered = []
     for p in undelivered:
         ph_id = p["phase_id"]
         demand = p["demand_date"]
-
-        sim_count_df = conn.read_df(
-            "SELECT COUNT(*) AS cnt FROM sim_lots WHERE phase_id = %s AND lot_source = 'sim'",
-            (ph_id,),
-        )
-        sim_count = int(sim_count_df.iloc[0]["cnt"]) if not sim_count_df.empty else 0
+        sim_count = sim_counts.get(ph_id, 0)
 
         if demand is None and sim_count == 0:
-            real_pending_df = conn.read_df(
-                """
-                SELECT COUNT(*) AS cnt FROM sim_lots
-                WHERE phase_id = %s
-                  AND lot_source = 'real'
-                  AND date_ent IS NOT NULL
-                  AND excluded IS NOT TRUE
-                """,
-                (ph_id,),
-            )
-            real_pending = int(real_pending_df.iloc[0]["cnt"]) if not real_pending_df.empty else 0
+            real_pending = real_pending_counts.get(ph_id, 0)
             if real_pending == 0:
-                splits_df = conn.read_df(
-                    """
-                    SELECT COALESCE(SUM(projected_count), 0) AS total
-                    FROM sim_phase_product_splits
-                    WHERE phase_id = %s
-                    """,
-                    (ph_id,),
-                )
-                configured_capacity = int(splits_df.iloc[0]["total"]) if not splits_df.empty else 0
+                configured_capacity = split_totals.get(ph_id, 0)
                 if configured_capacity == 0:
                     logger.info(f"placeholder_rebuilder: Phase {ph_id} skipped -- null demand, no lots, no configured capacity.")
                     continue

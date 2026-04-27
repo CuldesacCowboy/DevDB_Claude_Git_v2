@@ -174,14 +174,14 @@ const loadLedger = useCallback((id) => {
   useEffect(() => {
     if (!entGroupId) return
     setLoadError(null)
-    checkSplits(entGroupId)
+    // Essential for default Ledger tab
     loadLedger(entGroupId)
     loadConfig(entGroupId)
     loadGlobalSettings()
-    fetchOverrides()
-    loadDeliverySchedule(entGroupId)
-    loadRulesValidation(entGroupId)
-    loadLots(entGroupId)
+    checkSplits(entGroupId)
+    // Defer non-essential loads until their tab is clicked
+    // (loadLots, loadDeliverySchedule, loadRulesValidation, fetchOverrides
+    //  are triggered by tab click handlers — see setView onClick)
     setRunErrors([])
     setTdaGaps([])
     setSelectedDevIds(null)
