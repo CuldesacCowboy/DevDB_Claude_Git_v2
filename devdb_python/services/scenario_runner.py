@@ -9,6 +9,8 @@ import json
 import logging
 from datetime import date
 
+import pandas as pd
+
 from engine.connection import PGConnection
 from engine.coordinator import convergence_coordinator
 from engine.ledger_aggregator import ledger_aggregator
