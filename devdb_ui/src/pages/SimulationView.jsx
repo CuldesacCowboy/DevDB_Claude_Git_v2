@@ -736,10 +736,11 @@ const loadLedger = useCallback((id) => {
           <ScenarioPanel
             entGroupId={entGroupId}
             devList={devList}
-            onCompare={async (scenarioId) => {
-              setCompareScenarioId(scenarioId)
+            onCompare={async (scenarioIds) => {
+              const ids = Array.isArray(scenarioIds) ? scenarioIds : [scenarioIds]
+              setCompareScenarioId(ids)
               try {
-                const res = await fetch(`${API_BASE}/scenarios/compare/${entGroupId}?scenario_ids=${scenarioId}`)
+                const res = await fetch(`${API_BASE}/scenarios/compare/${entGroupId}?scenario_ids=${ids.join(',')}`)
                 if (res.ok) {
                   const data = await res.json()
                   setScenarioResults(data)
@@ -756,8 +757,7 @@ const loadLedger = useCallback((id) => {
         <div style={{ height: '100%', overflowY: 'auto' }}>
           <ScenarioCompareView
             baseRows={scenarioResults.base || []}
-            scenarioRows={Object.values(scenarioResults.scenarios || {})[0]?.rows || []}
-            scenarioName={Object.values(scenarioResults.scenarios || {})[0]?.scenario_name}
+            scenarios={scenarioResults.scenarios || {}}
             onClose={() => { setView('scenarios'); setScenarioResults(null); setCompareScenarioId(null) }}
           />
         </div>

@@ -52,6 +52,7 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
 
   // Scenario overrides: { scenarioId: { 'dev:42:annual_starts_target': { mode: 'manual'|'pct', value: 20, pct: 25 } } }
   const [overrides, setOverrides] = useState({})
+  const [selectedForCompare, setSelectedForCompare] = useState(new Set())
 
   const loadAll = () => {
     if (!entGroupId) return
@@ -233,6 +234,12 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
             opacity: runningId !== null ? 0.5 : 1,
           }}>Run All</button>
         )}
+        {selectedForCompare.size > 0 && (
+          <button onClick={() => onCompare([...selectedForCompare])} style={{
+            padding: '4px 14px', fontSize: 12, borderRadius: 4, cursor: 'pointer',
+            border: '1px solid #7c3aed', background: '#7c3aed', color: '#fff', fontWeight: 600,
+          }}>Compare {selectedForCompare.size} Selected</button>
+        )}
       </div>
 
       {/* Parameter Spreadsheet */}
@@ -273,6 +280,21 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
                         </div>
                       )}
                       <div style={{ display: 'flex', gap: 3 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input type="checkbox"
+                          checked={selectedForCompare.has(sc.scenario_id)}
+                          disabled={!sc.has_results && !isDone}
+                          onChange={e => {
+                            setSelectedForCompare(prev => {
+                              const next = new Set(prev)
+                              if (e.target.checked) next.add(sc.scenario_id)
+                              else next.delete(sc.scenario_id)
+                              return next
+                            })
+                          }}
+                          title={sc.has_results || isDone ? 'Select for comparison' : 'Run first to enable comparison'}
+                          style={{ width: 12, height: 12 }}
+                        />
                         <button onClick={() => runScenario(sc.scenario_id)} disabled={runningId !== null}
                           style={{
                             fontSize: 9, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
@@ -282,16 +304,11 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
                           }}>
                           {isRunning ? 'Running...' : 'Run'}
                         </button>
-                        {(sc.has_results || isDone) && (
-                          <button onClick={() => onCompare(sc.scenario_id)}
-                            style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #7c3aed', background: '#f5f3ff', color: '#7c3aed', cursor: 'pointer' }}>
-                            Compare
-                          </button>
-                        )}
                         <button onClick={() => deleteScenario(sc.scenario_id)}
                           style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>
                           x
                         </button>
+                      </div>
                       </div>
                     </div>
                   </th>
