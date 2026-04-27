@@ -9,6 +9,7 @@ import MarksView from './pages/MarksView'
 import PlanningView from './pages/PlanningView'
 import AuditView from './pages/AuditView'
 import TakedownView from './pages/TakedownView'
+import PortfolioView from './pages/PortfolioView'
 import ErrorBoundary from './components/ErrorBoundary'
 
 const LS_KEY = 'devdb_active_community'
@@ -73,6 +74,7 @@ export default function App() {
             </span>
           )}
         </span>
+        <NavLink to="/portfolio" style={navLinkStyle}>Portfolio</NavLink>
         <NavLink to="/" end style={navLinkStyle}>Lot · Phase</NavLink>
         <NavLink to="/site-plan" style={navLinkStyle}>Site Plan</NavLink>
         <NavLink to="/simulation" style={navLinkStyle}>Simulation</NavLink>
@@ -98,6 +100,7 @@ export default function App() {
 
       <ErrorBoundary>
         <Routes>
+          <Route path="/portfolio" element={<PortfolioView showTestCommunities={showTestCommunities} />} />
           <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} globalSettingsOpen={globalSettingsOpen} onCloseGlobalSettings={() => setGlobalSettingsOpen(false)} />} />
