@@ -47,6 +47,7 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
   const [scenarios, setScenarios] = useState([])
   const [loading, setLoading] = useState(true)
   const [runningId, setRunningId] = useState(null)
+  const [runStatus, setRunStatus] = useState({}) // { scenarioId: { state: 'idle'|'running'|'done'|'error', elapsed_ms, error } }
   const [error, setError] = useState(null)
 
   // Scenario overrides: { scenarioId: { 'dev:42:annual_starts_target': { mode: 'manual'|'pct', value: 20, pct: 25 } } }
@@ -145,12 +146,23 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
   const runScenario = async (scenarioId) => {
     setRunningId(scenarioId)
     setError(null)
+    setRunStatus(prev => ({ ...prev, [scenarioId]: { state: 'running' } }))
     await saveScenario(scenarioId)
+    const t0 = Date.now()
     try {
       const res = await fetch(`${API_BASE}/scenarios/${scenarioId}/run`, { method: 'POST' })
+      const elapsed = Date.now() - t0
       if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Run failed') }
+      const data = await res.json()
+      setRunStatus(prev => ({ ...prev, [scenarioId]: {
+        state: 'done', elapsed_ms: elapsed,
+        iterations: data.iterations,
+      }}))
       loadAll()
-    } catch (e) { setError(e.message) }
+    } catch (e) {
+      setRunStatus(prev => ({ ...prev, [scenarioId]: { state: 'error', error: e.message } }))
+      setError(e.message)
+    }
     finally { setRunningId(null) }
   }
 
@@ -230,33 +242,61 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
             <tr>
               <th style={{ ...thStyle, textAlign: 'left', minWidth: 200 }}>Parameter</th>
               <th style={{ ...thStyle, textAlign: 'right', width: 90 }}>Current</th>
-              {scenarios.map(sc => (
-                <th key={sc.scenario_id} style={{ ...thStyle, textAlign: 'center', width: 110 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-                    <input
-                      defaultValue={sc.scenario_name}
-                      onBlur={e => { if (e.target.value !== sc.scenario_name) renameScenario(sc.scenario_id, e.target.value) }}
-                      style={{ fontSize: 11, fontWeight: 600, border: 'none', background: 'transparent', textAlign: 'center', width: '100%', color: '#1e40af' }}
-                    />
-                    <div style={{ display: 'flex', gap: 3 }}>
-                      <button onClick={() => runScenario(sc.scenario_id)} disabled={runningId !== null}
-                        style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #2563eb', background: '#eff6ff', color: '#1e40af', cursor: 'pointer' }}>
-                        {runningId === sc.scenario_id ? '...' : 'Run'}
-                      </button>
-                      {sc.has_results && (
-                        <button onClick={() => onCompare(sc.scenario_id)}
-                          style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #7c3aed', background: '#f5f3ff', color: '#7c3aed', cursor: 'pointer' }}>
-                          Compare
-                        </button>
+              {scenarios.map(sc => {
+                const rs = runStatus[sc.scenario_id] || {}
+                const isRunning = rs.state === 'running'
+                const isDone = rs.state === 'done'
+                const isError = rs.state === 'error'
+                return (
+                  <th key={sc.scenario_id} style={{ ...thStyle, textAlign: 'center', width: 120 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
+                      <input
+                        defaultValue={sc.scenario_name}
+                        onBlur={e => { if (e.target.value !== sc.scenario_name) renameScenario(sc.scenario_id, e.target.value) }}
+                        style={{ fontSize: 11, fontWeight: 600, border: 'none', background: 'transparent', textAlign: 'center', width: '100%', color: '#1e40af' }}
+                      />
+                      {/* Status indicator */}
+                      {isRunning && (
+                        <div style={{ fontSize: 10, color: '#2563eb', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#2563eb', animation: 'pulse 1s infinite' }} />
+                          Running...
+                        </div>
                       )}
-                      <button onClick={() => deleteScenario(sc.scenario_id)}
-                        style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>
-                        x
-                      </button>
+                      {isDone && (
+                        <div style={{ fontSize: 10, color: '#16a34a', fontWeight: 500 }}>
+                          Done {rs.iterations ? `(${rs.iterations} iter)` : ''} {rs.elapsed_ms ? `${(rs.elapsed_ms / 1000).toFixed(1)}s` : ''}
+                        </div>
+                      )}
+                      {isError && (
+                        <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 500 }} title={rs.error}>
+                          Failed
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: 3 }}>
+                        <button onClick={() => runScenario(sc.scenario_id)} disabled={runningId !== null}
+                          style={{
+                            fontSize: 9, padding: '1px 6px', borderRadius: 3, cursor: 'pointer',
+                            border: isRunning ? '1px solid #93c5fd' : '1px solid #2563eb',
+                            background: isRunning ? '#dbeafe' : '#eff6ff',
+                            color: '#1e40af', opacity: runningId !== null && !isRunning ? 0.4 : 1,
+                          }}>
+                          {isRunning ? 'Running...' : 'Run'}
+                        </button>
+                        {(sc.has_results || isDone) && (
+                          <button onClick={() => onCompare(sc.scenario_id)}
+                            style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #7c3aed', background: '#f5f3ff', color: '#7c3aed', cursor: 'pointer' }}>
+                            Compare
+                          </button>
+                        )}
+                        <button onClick={() => deleteScenario(sc.scenario_id)}
+                          style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>
+                          x
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </th>
-              ))}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
