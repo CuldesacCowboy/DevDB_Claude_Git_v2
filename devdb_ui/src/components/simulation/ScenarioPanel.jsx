@@ -225,13 +225,13 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
 
       {/* Parameter Spreadsheet */}
       <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
-        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr>
               <th style={{ ...thStyle, textAlign: 'left', minWidth: 200 }}>Parameter</th>
-              <th style={{ ...thStyle, textAlign: 'right', minWidth: 100 }}>Current</th>
+              <th style={{ ...thStyle, textAlign: 'right', width: 90 }}>Current</th>
               {scenarios.map(sc => (
-                <th key={sc.scenario_id} style={{ ...thStyle, textAlign: 'center', minWidth: 120 }}>
+                <th key={sc.scenario_id} style={{ ...thStyle, textAlign: 'center', width: 110 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
                     <input
                       defaultValue={sc.scenario_name}
