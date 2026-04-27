@@ -44,8 +44,22 @@ function SectionHeader({ title }) {
 }
 
 export function ScenarioCompareView({ baseRows, scenarioRows, scenarioName, onClose }) {
-  const base = baseRows || []
-  const scenario = scenarioRows || []
+  // Filter to active range: only years where either base or scenario has any activity
+  const hasActivity = (r) => (r.str_plan || 0) + (r.cmp_plan || 0) + (r.cls_plan || 0) +
+    (r.d_end || 0) + (r.h_end || 0) + (r.u_end || 0) + (r.uc_end || 0) + (r.c_end || 0) > 0
+
+  const allRows = [...(baseRows || []), ...(scenarioRows || [])]
+  const activeMonths = allRows.filter(hasActivity).map(r => r.calendar_month).filter(Boolean)
+  const minMonth = activeMonths.length ? activeMonths.sort()[0] : null
+  const maxMonth = activeMonths.length ? activeMonths.sort().reverse()[0] : null
+
+  const inRange = (r) => {
+    if (!minMonth || !maxMonth || !r.calendar_month) return false
+    return r.calendar_month >= minMonth && r.calendar_month <= maxMonth
+  }
+
+  const base = (baseRows || []).filter(inRange)
+  const scenario = (scenarioRows || []).filter(inRange)
 
   // ── Compute metrics ─────────────────────────────────────────────────────
   const sumField = (rows, field) => rows.reduce((s, r) => s + (r[field] || 0), 0)
@@ -67,7 +81,13 @@ export function ScenarioCompareView({ baseRows, scenarioRows, scenarioName, onCl
 
   const baseAnnual = annualRollup(base)
   const scAnnual = annualRollup(scenario)
-  const allYears = [...new Set([...Object.keys(baseAnnual), ...Object.keys(scAnnual)])].sort()
+  const allYears = [...new Set([...Object.keys(baseAnnual), ...Object.keys(scAnnual)])]
+    .sort()
+    .filter(yr => {
+      const b = baseAnnual[yr] || {}
+      const s = scAnnual[yr] || {}
+      return (b.str || 0) + (b.cmp || 0) + (b.cls || 0) + (s.str || 0) + (s.cmp || 0) + (s.cls || 0) > 0
+    })
 
   // Sellout: last month with active inventory
   const selloutMonth = (rows) => {
@@ -83,12 +103,16 @@ export function ScenarioCompareView({ baseRows, scenarioRows, scenarioName, onCl
   const baseSellout = selloutMonth(base)
   const scSellout = selloutMonth(scenario)
 
-  // Months of zero inventory (gaps where nothing is in pipeline)
+  // Months of zero active inventory between first activity and sellout
   const zeroMonths = (rows) => {
+    const sellout = selloutMonth(rows)
+    const firstActive = rows.find(r => totalInv(r) > 0)?.calendar_month
+    if (!firstActive || !sellout) return 0
     let count = 0
     for (const r of rows) {
-      const total = (r.d_end || 0) + (r.h_end || 0) + (r.u_end || 0) + (r.uc_end || 0) + (r.c_end || 0)
-      if (total === 0 && r.calendar_month && r.calendar_month < (selloutMonth(rows) || '9999')) count++
+      if (!r.calendar_month) continue
+      if (r.calendar_month < firstActive || r.calendar_month > sellout) continue
+      if (totalInv(r) === 0) count++
     }
     return count
   }
