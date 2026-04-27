@@ -112,14 +112,36 @@ def _run_scenario_impl(conn, scenario_id: int) -> dict:
                 (dev_ids,),
             )
             if backup_df is not None and not backup_df.empty:
+                # Convert numpy types to Python natives for psycopg2 compatibility
+                import numpy as np
                 cols = backup_df.columns.tolist()
-                rows = [tuple(row) for _, row in backup_df.iterrows()]
-                placeholders = ", ".join(["%s"] * len(cols))
                 col_str = ", ".join(cols)
-                for row in rows:
-                    conn.execute(
-                        f"INSERT INTO sim_lots ({col_str}) VALUES ({placeholders})",
-                        row,
+
+                def _py(v):
+                    if v is None:
+                        return None
+                    if isinstance(v, (np.integer,)):
+                        return int(v)
+                    if isinstance(v, (np.floating,)):
+                        return None if np.isnan(v) else float(v)
+                    if isinstance(v, (np.bool_,)):
+                        return bool(v)
+                    if isinstance(v, float) and np.isnan(v):
+                        return None
+                    if hasattr(v, 'isoformat'):
+                        return v
+                    try:
+                        if pd.isna(v):
+                            return None
+                    except (TypeError, ValueError):
+                        pass
+                    return v
+
+                rows = [tuple(_py(v) for v in row) for _, row in backup_df.iterrows()]
+                if rows:
+                    conn.execute_values(
+                        f"INSERT INTO sim_lots ({col_str}) VALUES %s",
+                        rows,
                     )
             logger.info(f"scenario_runner: Restored {backup_count} sim lots")
 
