@@ -245,6 +245,79 @@ def run_scenario_endpoint(scenario_id: int, conn=Depends(get_db_conn)):
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+# ─── Parameter Matrix ────────────────────────────────────────────────────────
+
+@router.get("/params/{ent_group_id}")
+def get_scenario_params(ent_group_id: int, conn=Depends(get_db_conn)):
+    """Return all overridable parameters and their current values for the spreadsheet UI."""
+    cur = dict_cursor(conn)
+    try:
+        # Dev-level params
+        cur.execute("""
+            SELECT d.dev_id, d.dev_name,
+                   sdp.annual_starts_target, sdp.max_starts_per_month, sdp.seasonal_weight_set
+            FROM developments d
+            JOIN sim_ent_group_developments segd ON segd.dev_id = d.dev_id
+            LEFT JOIN sim_dev_params sdp ON sdp.dev_id = d.dev_id
+            WHERE segd.ent_group_id = %s
+            ORDER BY d.dev_name
+        """, (ent_group_id,))
+        devs = []
+        for r in cur.fetchall():
+            devs.append({
+                "dev_id": r["dev_id"],
+                "dev_name": r["dev_name"],
+                "annual_starts_target": float(r["annual_starts_target"]) if r["annual_starts_target"] is not None else None,
+                "max_starts_per_month": float(r["max_starts_per_month"]) if r["max_starts_per_month"] is not None else None,
+                "seasonal_weight_set": r["seasonal_weight_set"],
+            })
+
+        # Instrument-level params
+        cur.execute("""
+            SELECT sli.instrument_id, sli.instrument_name, sli.spec_rate
+            FROM sim_legal_instruments sli
+            JOIN developments d ON d.dev_id = sli.dev_id
+            JOIN sim_ent_group_developments segd ON segd.dev_id = d.dev_id
+            WHERE segd.ent_group_id = %s
+            ORDER BY sli.instrument_name
+        """, (ent_group_id,))
+        instruments = []
+        for r in cur.fetchall():
+            instruments.append({
+                "instrument_id": r["instrument_id"],
+                "instrument_name": r["instrument_name"],
+                "spec_rate": float(r["spec_rate"]) if r["spec_rate"] is not None else None,
+            })
+
+        # Community-level params
+        cur.execute("""
+            SELECT max_deliveries_per_year, delivery_months, min_gap_months,
+                   COALESCE(min_d_count, min_unstarted_inventory) AS min_d_count,
+                   feed_starts_mode, default_cmp_lag_days, default_cls_lag_days,
+                   td_to_str_lag, hc_to_bldr_lag_days, scheduling_horizon_days
+            FROM sim_entitlement_delivery_config
+            WHERE ent_group_id = %s
+        """, (ent_group_id,))
+        eg_row = cur.fetchone()
+        community = {
+            "ent_group_id": ent_group_id,
+            "max_deliveries_per_year": eg_row["max_deliveries_per_year"] if eg_row else None,
+            "delivery_months": list(eg_row["delivery_months"]) if eg_row and eg_row["delivery_months"] else None,
+            "min_gap_months": eg_row["min_gap_months"] if eg_row else None,
+            "min_d_count": eg_row["min_d_count"] if eg_row else None,
+            "feed_starts_mode": bool(eg_row["feed_starts_mode"]) if eg_row and eg_row["feed_starts_mode"] is not None else None,
+            "default_cmp_lag_days": eg_row["default_cmp_lag_days"] if eg_row else None,
+            "default_cls_lag_days": eg_row["default_cls_lag_days"] if eg_row else None,
+            "td_to_str_lag": eg_row["td_to_str_lag"] if eg_row else None,
+            "hc_to_bldr_lag_days": eg_row["hc_to_bldr_lag_days"] if eg_row else None,
+            "scheduling_horizon_days": eg_row["scheduling_horizon_days"] if eg_row else None,
+        }
+
+        return {"devs": devs, "instruments": instruments, "community": community}
+    finally:
+        cur.close()
+
+
 # ─── Compare ─────────────────────────────────────────────────────────────────
 
 @router.get("/compare/{ent_group_id}")

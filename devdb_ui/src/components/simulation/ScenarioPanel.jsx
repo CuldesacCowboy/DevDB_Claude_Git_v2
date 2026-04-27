@@ -1,94 +1,204 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { API_BASE } from '../../config'
 
+// ── Parameter definitions ────────────────────────────────────────────────────
+const DEV_PARAMS = [
+  { key: 'annual_starts_target', label: 'Starts / Year', type: 'number' },
+  { key: 'max_starts_per_month', label: 'Max / Month', type: 'number' },
+  { key: 'seasonal_weight_set', label: 'Seasonal Weights', type: 'text' },
+]
+
+const INSTRUMENT_PARAMS = [
+  { key: 'spec_rate', label: 'Spec Rate', type: 'number', format: v => v != null ? `${(v * 100).toFixed(1)}%` : '—' },
+]
+
+const COMMUNITY_PARAMS = [
+  { key: 'max_deliveries_per_year', label: 'Max Deliveries / Year', type: 'number' },
+  { key: 'delivery_months', label: 'Delivery Months', type: 'array' },
+  { key: 'min_gap_months', label: 'Min Gap (months)', type: 'number' },
+  { key: 'min_d_count', label: 'Min D-Count', type: 'number' },
+  { key: 'feed_starts_mode', label: 'Feed Starts Mode', type: 'boolean' },
+  { key: 'default_cmp_lag_days', label: 'Default CMP Lag (days)', type: 'number' },
+  { key: 'default_cls_lag_days', label: 'Default CLS Lag (days)', type: 'number' },
+  { key: 'td_to_str_lag', label: 'TD→STR Lag (months)', type: 'number' },
+  { key: 'hc_to_bldr_lag_days', label: 'HC→BLDR Lag (days)', type: 'number' },
+  { key: 'scheduling_horizon_days', label: 'Scheduling Horizon (days)', type: 'number' },
+]
+
+function fmtVal(val, param) {
+  if (val == null) return '—'
+  if (param.format) return param.format(val)
+  if (param.type === 'boolean') return val ? 'Yes' : 'No'
+  if (param.type === 'array') return Array.isArray(val) ? val.join(', ') : String(val)
+  return String(val)
+}
+
+function parseInput(raw, param) {
+  if (raw === '' || raw === null) return null
+  if (param.type === 'number') return parseFloat(raw)
+  if (param.type === 'boolean') return raw === 'true' || raw === true
+  if (param.type === 'array') return raw.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+  return raw
+}
+
+// ── Main Component ───────────────────────────────────────────────────────────
 export function ScenarioPanel({ entGroupId, devList, onCompare }) {
+  const [params, setParams] = useState(null)
   const [scenarios, setScenarios] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newOverrides, setNewOverrides] = useState([])
+  const [loading, setLoading] = useState(true)
   const [runningId, setRunningId] = useState(null)
   const [error, setError] = useState(null)
 
-  const load = () => {
+  // Scenario overrides: { scenarioId: { 'dev:42:annual_starts_target': { mode: 'manual'|'pct', value: 20, pct: 25 } } }
+  const [overrides, setOverrides] = useState({})
+
+  const loadAll = () => {
     if (!entGroupId) return
     setLoading(true)
-    fetch(`${API_BASE}/scenarios/community/${entGroupId}`)
-      .then(r => r.json())
-      .then(data => setScenarios(Array.isArray(data) ? data : []))
-      .catch(() => setScenarios([]))
+    Promise.all([
+      fetch(`${API_BASE}/scenarios/params/${entGroupId}`).then(r => r.json()),
+      fetch(`${API_BASE}/scenarios/community/${entGroupId}`).then(r => r.json()),
+    ])
+      .then(([p, s]) => {
+        setParams(p)
+        setScenarios(Array.isArray(s) ? s : [])
+        // Load existing overrides for each scenario
+        const ovMap = {}
+        for (const sc of s) {
+          ovMap[sc.scenario_id] = {}
+          // Load detail to get overrides
+          fetch(`${API_BASE}/scenarios/${sc.scenario_id}`).then(r => r.json()).then(detail => {
+            const scOv = {}
+            for (const o of (detail.overrides || [])) {
+              const cellKey = `${o.scope}:${o.scope_id}:${o.param_name}`
+              scOv[cellKey] = { mode: 'manual', value: o.param_value }
+            }
+            setOverrides(prev => ({ ...prev, [sc.scenario_id]: scOv }))
+          }).catch(() => {})
+        }
+        setOverrides(prev => ({ ...prev, ...ovMap }))
+      })
+      .catch(() => {})
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [entGroupId])
+  useEffect(() => { loadAll() }, [entGroupId])
 
-  const handleCreate = async () => {
-    if (!newName.trim()) return
-    setError(null)
+  // ── Add / Delete scenario ──────────────────────────────────────────────
+  const addScenario = async () => {
+    const name = `Scenario ${scenarios.length + 1}`
     try {
       const res = await fetch(`${API_BASE}/scenarios`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ent_group_id: entGroupId,
-          scenario_name: newName.trim(),
-          overrides: newOverrides.filter(o => o.param_name && o.param_value !== ''),
-        }),
+        body: JSON.stringify({ ent_group_id: entGroupId, scenario_name: name, overrides: [] }),
       })
-      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Failed'); }
-      setCreating(false)
-      setNewName('')
-      setNewOverrides([])
-      load()
-    } catch (e) { setError(e.message) }
+      if (res.ok) loadAll()
+    } catch {}
   }
 
-  const handleRun = async (scenarioId) => {
+  const deleteScenario = async (id) => {
+    try {
+      await fetch(`${API_BASE}/scenarios/${id}`, { method: 'DELETE' })
+      loadAll()
+    } catch {}
+  }
+
+  const renameScenario = async (id, newName) => {
+    try {
+      await fetch(`${API_BASE}/scenarios/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenario_name: newName }),
+      })
+      loadAll()
+    } catch {}
+  }
+
+  // ── Cell edit ──────────────────────────────────────────────────────────
+  const setCellValue = (scenarioId, cellKey, value, paramDef) => {
+    setOverrides(prev => {
+      const scOv = { ...(prev[scenarioId] || {}) }
+      if (value === '' || value === null) {
+        delete scOv[cellKey]
+      } else {
+        scOv[cellKey] = { mode: 'manual', value: parseInput(value, paramDef) }
+      }
+      return { ...prev, [scenarioId]: scOv }
+    })
+  }
+
+  // ── Save overrides to backend ──────────────────────────────────────────
+  const saveScenario = async (scenarioId) => {
+    const scOv = overrides[scenarioId] || {}
+    const ovList = Object.entries(scOv).map(([cellKey, cell]) => {
+      const [scope, scopeIdStr, paramName] = cellKey.split(':')
+      return { scope, scope_id: parseInt(scopeIdStr), param_name: paramName, param_value: cell.value }
+    })
+    try {
+      await fetch(`${API_BASE}/scenarios/${scenarioId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides: ovList }),
+      })
+    } catch {}
+  }
+
+  // ── Run scenario ───────────────────────────────────────────────────────
+  const runScenario = async (scenarioId) => {
     setRunningId(scenarioId)
     setError(null)
+    await saveScenario(scenarioId)
     try {
       const res = await fetch(`${API_BASE}/scenarios/${scenarioId}/run`, { method: 'POST' })
-      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Run failed'); }
-      const data = await res.json()
-      setError(null)
-      load()
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Run failed') }
+      loadAll()
     } catch (e) { setError(e.message) }
     finally { setRunningId(null) }
   }
 
-  const handleDelete = async (scenarioId) => {
-    try {
-      await fetch(`${API_BASE}/scenarios/${scenarioId}`, { method: 'DELETE' })
-      load()
-    } catch {}
+  const runAll = async () => {
+    for (const sc of scenarios) {
+      await runScenario(sc.scenario_id)
+    }
   }
 
-  const addOverride = () => {
-    setNewOverrides(prev => [...prev, { scope: 'dev', scope_id: '', param_name: 'annual_starts_target', param_value: '' }])
+  // ── Render ─────────────────────────────────────────────────────────────
+  if (loading || !params) return <div style={{ color: '#6b7280', fontSize: 12, padding: 24 }}>Loading parameters...</div>
+
+  const devs = params.devs || []
+  const instruments = params.instruments || []
+  const community = params.community || {}
+
+  // Build row definitions
+  const rows = []
+
+  // Community section
+  rows.push({ type: 'header', label: 'Community Settings' })
+  for (const p of COMMUNITY_PARAMS) {
+    rows.push({ type: 'param', scope: 'ent_group', scopeId: entGroupId, param: p, currentValue: community[p.key] })
   }
 
-  const updateOverride = (idx, field, value) => {
-    setNewOverrides(prev => prev.map((o, i) => i === idx ? { ...o, [field]: value } : o))
+  // Dev sections
+  for (const dev of devs) {
+    rows.push({ type: 'header', label: dev.dev_name })
+    for (const p of DEV_PARAMS) {
+      rows.push({ type: 'param', scope: 'dev', scopeId: dev.dev_id, param: p, currentValue: dev[p.key] })
+    }
   }
 
-  const removeOverride = (idx) => {
-    setNewOverrides(prev => prev.filter((_, i) => i !== idx))
+  // Instrument sections
+  if (instruments.length) {
+    rows.push({ type: 'header', label: 'Instruments' })
+    for (const inst of instruments) {
+      for (const p of INSTRUMENT_PARAMS) {
+        rows.push({ type: 'param', scope: 'instrument', scopeId: inst.instrument_id, param: p, currentValue: inst[p.key], entityLabel: inst.instrument_name })
+      }
+    }
   }
 
-  const paramOptions = {
-    dev: ['annual_starts_target', 'max_starts_per_month'],
-    instrument: ['spec_rate'],
-    ent_group: ['max_deliveries_per_year'],
+  const thStyle = {
+    padding: '6px 10px', fontSize: 11, fontWeight: 600, color: '#6b7280',
+    background: '#f9fafb', borderBottom: '2px solid #e5e7eb', whiteSpace: 'nowrap',
+    position: 'sticky', top: 0, zIndex: 2,
   }
-
-  const btnStyle = (primary) => ({
-    padding: '4px 12px', fontSize: 11, borderRadius: 4, cursor: 'pointer',
-    border: primary ? '1px solid #2563eb' : '1px solid #d1d5db',
-    background: primary ? '#2563eb' : '#fff',
-    color: primary ? '#fff' : '#374151',
-    fontWeight: primary ? 600 : 400,
-  })
-
-  if (loading && !scenarios.length) return <div style={{ color: '#6b7280', fontSize: 12 }}>Loading scenarios...</div>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -98,115 +208,133 @@ export function ScenarioPanel({ entGroupId, devList, onCompare }) {
         </div>
       )}
 
-      {/* Scenario list */}
-      {scenarios.length > 0 && (
-        <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
-            <thead>
-              <tr style={{ background: '#f9fafb' }}>
-                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid #e5e7eb' }}>Scenario</th>
-                <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, borderBottom: '2px solid #e5e7eb' }}>Overrides</th>
-                <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid #e5e7eb' }}>Last Run</th>
-                <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600, borderBottom: '2px solid #e5e7eb' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scenarios.map(s => (
-                <tr key={s.scenario_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                  <td style={{ padding: '8px 12px', fontWeight: 500 }}>
-                    {s.scenario_name}
-                    {s.description && <div style={{ fontSize: 11, color: '#9ca3af' }}>{s.description}</div>}
-                  </td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right', color: '#6b7280' }}>{s.override_count}</td>
-                  <td style={{ padding: '8px 12px', color: '#6b7280' }}>
-                    {s.last_run_at ? new Date(s.last_run_at).toLocaleDateString() : <span style={{ color: '#d1d5db' }}>never</span>}
-                  </td>
-                  <td style={{ padding: '8px 12px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                      <button onClick={() => handleRun(s.scenario_id)} disabled={runningId !== null}
-                        style={{ ...btnStyle(true), opacity: runningId !== null ? 0.5 : 1 }}>
-                        {runningId === s.scenario_id ? 'Running...' : 'Run'}
+      {/* Toolbar */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button onClick={addScenario} style={{
+          padding: '4px 14px', fontSize: 12, borderRadius: 4, cursor: 'pointer',
+          border: '1px solid #2563eb', background: '#2563eb', color: '#fff', fontWeight: 600,
+        }}>+ Add Scenario</button>
+        {scenarios.length > 0 && (
+          <button onClick={runAll} disabled={runningId !== null} style={{
+            padding: '4px 14px', fontSize: 12, borderRadius: 4, cursor: 'pointer',
+            border: '1px solid #16a34a', background: '#16a34a', color: '#fff', fontWeight: 600,
+            opacity: runningId !== null ? 0.5 : 1,
+          }}>Run All</button>
+        )}
+      </div>
+
+      {/* Parameter Spreadsheet */}
+      <div style={{ overflowX: 'auto', border: '1px solid #e5e7eb', borderRadius: 8 }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ ...thStyle, textAlign: 'left', minWidth: 200 }}>Parameter</th>
+              <th style={{ ...thStyle, textAlign: 'right', minWidth: 100 }}>Current</th>
+              {scenarios.map(sc => (
+                <th key={sc.scenario_id} style={{ ...thStyle, textAlign: 'center', minWidth: 120 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+                    <input
+                      defaultValue={sc.scenario_name}
+                      onBlur={e => { if (e.target.value !== sc.scenario_name) renameScenario(sc.scenario_id, e.target.value) }}
+                      style={{ fontSize: 11, fontWeight: 600, border: 'none', background: 'transparent', textAlign: 'center', width: '100%', color: '#1e40af' }}
+                    />
+                    <div style={{ display: 'flex', gap: 3 }}>
+                      <button onClick={() => runScenario(sc.scenario_id)} disabled={runningId !== null}
+                        style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #2563eb', background: '#eff6ff', color: '#1e40af', cursor: 'pointer' }}>
+                        {runningId === sc.scenario_id ? '...' : 'Run'}
                       </button>
-                      {s.has_results && (
-                        <button onClick={() => onCompare(s.scenario_id)} style={btnStyle(false)}>
+                      {sc.has_results && (
+                        <button onClick={() => onCompare(sc.scenario_id)}
+                          style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #7c3aed', background: '#f5f3ff', color: '#7c3aed', cursor: 'pointer' }}>
                           Compare
                         </button>
                       )}
-                      <button onClick={() => handleDelete(s.scenario_id)} style={{ ...btnStyle(false), color: '#dc2626', border: '1px solid #fecaca' }}>
-                        Del
+                      <button onClick={() => deleteScenario(sc.scenario_id)}
+                        style={{ fontSize: 9, padding: '1px 6px', borderRadius: 3, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}>
+                        x
                       </button>
                     </div>
-                  </td>
-                </tr>
+                  </div>
+                </th>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => {
+              if (row.type === 'header') {
+                return (
+                  <tr key={i}>
+                    <td colSpan={2 + scenarios.length} style={{
+                      padding: '8px 10px', fontSize: 11, fontWeight: 700, color: '#374151',
+                      background: '#f3f4f6', borderTop: i > 0 ? '2px solid #e5e7eb' : undefined,
+                      borderBottom: '1px solid #e5e7eb',
+                    }}>{row.label}</td>
+                  </tr>
+                )
+              }
 
-      {/* Create new scenario */}
-      {!creating ? (
-        <button onClick={() => setCreating(true)} style={{ ...btnStyle(true), alignSelf: 'flex-start' }}>
-          + New Scenario
-        </button>
-      ) : (
-        <div style={{ border: '1px solid #2563eb', borderRadius: 8, padding: 16, background: '#f8faff' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#1e40af', marginBottom: 12 }}>New Scenario</div>
+              const cellKey = `${row.scope}:${row.scopeId}:${row.param.key}`
+              return (
+                <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                  <td style={{ padding: '4px 10px', color: '#374151' }}>
+                    {row.entityLabel && <span style={{ color: '#9ca3af', marginRight: 6 }}>{row.entityLabel}</span>}
+                    {row.param.label}
+                  </td>
+                  <td style={{ padding: '4px 10px', textAlign: 'right', color: '#6b7280', fontWeight: 500 }}>
+                    {fmtVal(row.currentValue, row.param)}
+                  </td>
+                  {scenarios.map(sc => {
+                    const scOv = overrides[sc.scenario_id] || {}
+                    const cell = scOv[cellKey]
+                    const hasOverride = cell && cell.value != null
+                    return (
+                      <td key={sc.scenario_id} style={{
+                        padding: '2px 6px', textAlign: 'center',
+                        background: hasOverride ? '#eff6ff' : '#fff',
+                      }}>
+                        {row.param.type === 'boolean' ? (
+                          <select
+                            value={hasOverride ? String(cell.value) : ''}
+                            onChange={e => setCellValue(sc.scenario_id, cellKey, e.target.value === '' ? null : e.target.value, row.param)}
+                            onBlur={() => saveScenario(sc.scenario_id)}
+                            style={{
+                              fontSize: 11, padding: '1px 4px', borderRadius: 3, width: '100%',
+                              border: hasOverride ? '1px solid #93c5fd' : '1px solid #e5e7eb',
+                              background: hasOverride ? '#eff6ff' : '#fafafa', textAlign: 'center',
+                            }}
+                          >
+                            <option value="">base</option>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                          </select>
+                        ) : (
+                          <input
+                            value={hasOverride ? cell.value : ''}
+                            placeholder="base"
+                            onChange={e => setCellValue(sc.scenario_id, cellKey, e.target.value, row.param)}
+                            onBlur={() => saveScenario(sc.scenario_id)}
+                            style={{
+                              width: '100%', fontSize: 11, padding: '2px 4px', borderRadius: 3,
+                              border: hasOverride ? '1px solid #93c5fd' : '1px solid #e5e7eb',
+                              background: hasOverride ? '#eff6ff' : '#fafafa',
+                              textAlign: 'center', color: hasOverride ? '#1e40af' : '#9ca3af',
+                              fontWeight: hasOverride ? 600 : 400,
+                            }}
+                          />
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
 
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Scenario name"
-              style={{ flex: 1, padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #d1d5db' }} />
-          </div>
-
-          {/* Override rows */}
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', marginBottom: 6 }}>Parameter Overrides</div>
-          {newOverrides.map((o, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-              <select value={o.scope} onChange={e => updateOverride(i, 'scope', e.target.value)}
-                style={{ fontSize: 11, padding: '3px 6px', borderRadius: 3, border: '1px solid #d1d5db' }}>
-                <option value="dev">Development</option>
-                <option value="instrument">Instrument</option>
-                <option value="ent_group">Community</option>
-              </select>
-
-              {o.scope === 'dev' && (
-                <select value={o.scope_id} onChange={e => updateOverride(i, 'scope_id', parseInt(e.target.value))}
-                  style={{ fontSize: 11, padding: '3px 6px', borderRadius: 3, border: '1px solid #d1d5db', minWidth: 120 }}>
-                  <option value="">Select dev...</option>
-                  {(devList || []).map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </select>
-              )}
-              {o.scope === 'ent_group' && (
-                <input value={entGroupId} disabled style={{ fontSize: 11, width: 60, padding: '3px 6px', borderRadius: 3, border: '1px solid #e5e7eb', background: '#f3f4f6' }} />
-              )}
-
-              <select value={o.param_name} onChange={e => updateOverride(i, 'param_name', e.target.value)}
-                style={{ fontSize: 11, padding: '3px 6px', borderRadius: 3, border: '1px solid #d1d5db' }}>
-                {(paramOptions[o.scope] || []).map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-
-              <input value={o.param_value} onChange={e => updateOverride(i, 'param_value', e.target.value)}
-                placeholder="value" type="number"
-                style={{ width: 70, fontSize: 11, padding: '3px 6px', borderRadius: 3, border: '1px solid #d1d5db', textAlign: 'right' }} />
-
-              <button onClick={() => removeOverride(i)} style={{ fontSize: 11, cursor: 'pointer', border: 'none', background: 'none', color: '#dc2626' }}>x</button>
-            </div>
-          ))}
-
-          <button onClick={addOverride} style={{ fontSize: 11, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 12 }}>
-            + Add Override
-          </button>
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={handleCreate} style={btnStyle(true)}>Create</button>
-            <button onClick={() => { setCreating(false); setNewOverrides([]); setNewName('') }} style={btnStyle(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {!scenarios.length && !creating && (
-        <div style={{ color: '#9ca3af', fontSize: 12 }}>
-          No scenarios yet. Create one to test different assumptions against the current community structure.
+      {!scenarios.length && (
+        <div style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 16 }}>
+          Add a scenario to test different assumptions. Each column overrides specific parameters — leave empty for base values.
         </div>
       )}
     </div>

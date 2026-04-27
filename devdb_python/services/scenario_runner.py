@@ -177,41 +177,46 @@ def _read_original(conn, ov: dict):
     return None
 
 
+_SCOPE_TABLE = {
+    "dev":        ("sim_dev_params", "dev_id"),
+    "instrument": ("sim_legal_instruments", "instrument_id"),
+    "ent_group":  ("sim_entitlement_delivery_config", "ent_group_id"),
+}
+
+# Params that need special type casting in SQL
+_ARRAY_PARAMS = {"delivery_months"}
+_BOOL_PARAMS = {"feed_starts_mode"}
+
+# Whitelist of allowed param names per scope
+_ALLOWED_PARAMS = {
+    "dev": {"annual_starts_target", "max_starts_per_month", "seasonal_weight_set"},
+    "instrument": {"spec_rate"},
+    "ent_group": {
+        "max_deliveries_per_year", "delivery_months", "min_gap_months",
+        "min_d_count", "feed_starts_mode", "default_cmp_lag_days",
+        "default_cls_lag_days", "td_to_str_lag", "hc_to_bldr_lag_days",
+        "scheduling_horizon_days",
+    },
+}
+
+
 def _apply_override(conn, ov: dict):
     """Write the override value to the appropriate DB table."""
     scope, scope_id, param = ov["scope"], ov["scope_id"], ov["param_name"]
     value = ov["param_value"]
 
-    if scope == "dev":
-        if param == "annual_starts_target":
-            conn.execute(
-                "UPDATE sim_dev_params SET annual_starts_target = %s WHERE dev_id = %s",
-                (value, scope_id),
-            )
-        elif param == "max_starts_per_month":
-            conn.execute(
-                "UPDATE sim_dev_params SET max_starts_per_month = %s WHERE dev_id = %s",
-                (value, scope_id),
-            )
+    if scope not in _SCOPE_TABLE:
+        return
+    if param not in _ALLOWED_PARAMS.get(scope, set()):
+        logger.warning(f"scenario_runner: ignoring unknown param {scope}.{param}")
+        return
 
-    elif scope == "instrument":
-        if param == "spec_rate":
-            conn.execute(
-                "UPDATE sim_legal_instruments SET spec_rate = %s WHERE instrument_id = %s",
-                (value, scope_id),
-            )
-
-    elif scope == "ent_group":
-        if param == "max_deliveries_per_year":
-            conn.execute(
-                "UPDATE sim_entitlement_delivery_config SET max_deliveries_per_year = %s WHERE ent_group_id = %s",
-                (value, scope_id),
-            )
-        elif param == "delivery_months":
-            conn.execute(
-                "UPDATE sim_entitlement_delivery_config SET delivery_months = %s::int[] WHERE ent_group_id = %s",
-                (value, scope_id),
-            )
+    table, id_col = _SCOPE_TABLE[scope]
+    cast = "::int[]" if param in _ARRAY_PARAMS else ""
+    conn.execute(
+        f"UPDATE {table} SET {param} = %s{cast} WHERE {id_col} = %s",
+        (value, scope_id),
+    )
 
 
 def _restore_original(conn, ov: dict, original_value):
