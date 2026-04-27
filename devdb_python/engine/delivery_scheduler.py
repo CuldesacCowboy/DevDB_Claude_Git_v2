@@ -387,6 +387,14 @@ def run_scheduling_loop(
             # back to the blocked date (same-year coalescing) causing an infinite loop.
             if lv_d in blocked_dates:
                 lv_d = next_window_month_after(lv_d, valid_months)
+            # Enforce max_per_year: if this year already has max deliveries,
+            # push to first valid month of next year.
+            if max_per_year and lv_d.year in delivery_date_per_year:
+                existing_date = delivery_date_per_year[lv_d.year]
+                if lv_d != existing_date:
+                    # Different date in same year = would exceed limit
+                    next_yr = date(lv_d.year + 1, 1, 1)
+                    lv_d = next_window_month_from(next_yr, valid_months)
             deadlines[dev_id] = lv_d
 
         urgent_dev = min(deadlines, key=lambda d: deadlines[d])
