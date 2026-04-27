@@ -211,6 +211,40 @@ def delete_scenario(scenario_id: int, conn=Depends(get_db_conn)):
         cur.close()
 
 
+# ─── Run ─────────────────────────────────────────────────────────────────
+
+# Share the executor with simulations.py to prevent concurrent sim_lots access
+from api.routers.simulations import _executor, _SIMULATION_TIMEOUT_S
+
+
+@router.post("/{scenario_id}/run")
+def run_scenario_endpoint(scenario_id: int, conn=Depends(get_db_conn)):
+    """Run a scenario: backup → apply overrides → engine → capture → restore."""
+    import time
+    from services.scenario_runner import run_scenario
+
+    t0 = time.monotonic()
+    try:
+        future = _executor.submit(run_scenario, scenario_id)
+        try:
+            result = future.result(timeout=_SIMULATION_TIMEOUT_S)
+        except FuturesTimeoutError:
+            raise HTTPException(status_code=504, detail=f"Scenario run timed out after {_SIMULATION_TIMEOUT_S}s")
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "status": "ok",
+            "scenario_id": scenario_id,
+            "iterations": result.get("iterations", 0),
+            "elapsed_ms": elapsed_ms,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import traceback
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 # ─── Compare ─────────────────────────────────────────────────────────────────
 
 @router.get("/compare/{ent_group_id}")
