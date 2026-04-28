@@ -49,7 +49,9 @@ def list_scenarios(ent_group_id: int, conn=Depends(get_db_conn)):
                    s.created_at, s.updated_at, s.last_run_at,
                    COALESCE(s.is_stale, FALSE) AS is_stale,
                    COUNT(o.override_id) AS override_count,
-                   (SELECT COUNT(*) FROM sim_scenario_results r WHERE r.scenario_id = s.scenario_id) > 0 AS has_results
+                   (SELECT COUNT(*) FROM sim_scenario_results r WHERE r.scenario_id = s.scenario_id) > 0
+                   OR (SELECT COUNT(*) FROM sim_projections p WHERE p.scenario_id = s.scenario_id) > 0
+                   AS has_results
             FROM sim_scenarios s
             LEFT JOIN sim_scenario_overrides o ON o.scenario_id = s.scenario_id
             WHERE s.ent_group_id = %s
