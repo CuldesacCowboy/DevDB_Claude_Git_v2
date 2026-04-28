@@ -141,33 +141,19 @@ def collect_schedulable_phases(conn, ent_group_id: int, today_first: date,
         logger.info(f"placeholder_rebuilder: All phases covered by locked events for ent_group_id={ent_group_id}.")
         return None
 
-    # Step 3b: Sellout date — MAX(date_cls) across sim lots for this ent_group
-    if projection_id is not None:
-        sellout_df = conn.read_df(
-            """
-            SELECT MAX(spl.date_cls) AS sellout_date
-            FROM sim_projection_lots spl
-            WHERE spl.projection_id = %s
-              AND spl.dev_id IN (
-                  SELECT dev_id FROM sim_ent_group_developments
-                  WHERE ent_group_id = %s
-              )
-            """,
-            (projection_id, ent_group_id),
-        )
-    else:
-        sellout_df = conn.read_df(
-            """
-            SELECT MAX(sl.date_cls) AS sellout_date
-            FROM sim_lots sl
-            WHERE sl.lot_source = 'sim'
-              AND sl.dev_id IN (
-                  SELECT dev_id FROM sim_ent_group_developments
-                  WHERE ent_group_id = %s
-              )
-            """,
-            (ent_group_id,),
-        )
+    # Step 3b: Sellout date — MAX(date_cls) across sim lots from projection
+    sellout_df = conn.read_df(
+        """
+        SELECT MAX(spl.date_cls) AS sellout_date
+        FROM sim_projection_lots spl
+        WHERE spl.projection_id = %s
+          AND spl.dev_id IN (
+              SELECT dev_id FROM sim_ent_group_developments
+              WHERE ent_group_id = %s
+          )
+        """,
+        (projection_id, ent_group_id),
+    )
     sellout_raw = sellout_df.iloc[0]["sellout_date"] if not sellout_df.empty else None
     if sellout_raw is not None and not pd.isnull(sellout_raw):
         sellout_date = sellout_raw.date() if hasattr(sellout_raw, "date") else sellout_raw
@@ -180,16 +166,10 @@ def collect_schedulable_phases(conn, ent_group_id: int, today_first: date,
 
     sim_counts = {}
     if undel_ids:
-        if projection_id is not None:
-            sc_df = conn.read_df(
-                "SELECT phase_id, COUNT(*) AS cnt FROM sim_projection_lots WHERE phase_id = ANY(%s) AND projection_id = %s GROUP BY phase_id",
-                (undel_ids, projection_id),
-            )
-        else:
-            sc_df = conn.read_df(
-                "SELECT phase_id, COUNT(*) AS cnt FROM sim_lots WHERE phase_id = ANY(%s) AND lot_source = 'sim' GROUP BY phase_id",
-                (undel_ids,),
-            )
+        sc_df = conn.read_df(
+            "SELECT phase_id, COUNT(*) AS cnt FROM sim_projection_lots WHERE phase_id = ANY(%s) AND projection_id = %s GROUP BY phase_id",
+            (undel_ids, projection_id),
+        )
         for _, r in sc_df.iterrows():
             sim_counts[int(r["phase_id"])] = int(r["cnt"])
 
@@ -251,16 +231,10 @@ def collect_schedulable_phases(conn, ent_group_id: int, today_first: date,
     # These use balance-driven drain instead of pace estimation.
     placeholder_phase_ids = [p["phase_id"] for p in undelivered]
     if placeholder_phase_ids:
-        if projection_id is not None:
-            sim_lots_check_df = conn.read_df(
-                "SELECT DISTINCT phase_id FROM sim_projection_lots WHERE projection_id = %s AND phase_id = ANY(%s)",
-                (projection_id, placeholder_phase_ids),
-            )
-        else:
-            sim_lots_check_df = conn.read_df(
-                "SELECT DISTINCT phase_id FROM sim_lots WHERE lot_source = 'sim' AND phase_id = ANY(%s)",
-                (placeholder_phase_ids,),
-            )
+        sim_lots_check_df = conn.read_df(
+            "SELECT DISTINCT phase_id FROM sim_projection_lots WHERE projection_id = %s AND phase_id = ANY(%s)",
+            (projection_id, placeholder_phase_ids),
+        )
         phases_with_sim_lots = (
             set(int(x) for x in sim_lots_check_df["phase_id"])
             if not sim_lots_check_df.empty else set()

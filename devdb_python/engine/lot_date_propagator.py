@@ -1,11 +1,12 @@
 """
-P-0700 lot_date_propagator — Write phase delivery date to sim_lots rows in affected phases.
+P-0700 lot_date_propagator — Write phase delivery date to lots in affected phases.
 
-Reads:   sim_delivery_event_phases (DB), sim_lots (DB)
-Writes:  sim_lots.date_dev (DB, UPDATE)
-Input:   conn: DBConnection, resolved_events: list of (event_id, date_dev_projected)
+Reads:   sim_delivery_event_phases (DB)
+Writes:  sim_projection_lots.date_dev (DB, UPDATE for sim lots via projection_id),
+         sim_lots.date_dev (DB, UPDATE for real lots only)
+Input:   conn: DBConnection, resolved_events: list, projection_id: int
 Rules:   Real lots with date_dev already set (P-01 actuals) are not overwritten (D-113).
-         All other lots (sim + real with null date_dev) receive the projected date.
+         Sim lots are updated in sim_projection_lots via projection_id.
          Not Own: writing any other lot date field, writing to phase or event tables.
 """
 
@@ -21,10 +22,7 @@ def lot_date_propagator(conn: DBConnection, resolved_events: list,
     """
     resolved_events: list of (event_id, date_dev_projected) tuples.
     Queries sim_delivery_event_phases to find child phases for each event,
-    then writes date_dev to all lots in those phases.
-    For real lots: only updates where date_dev is null
-    (real lots with date_dev set got it from actual event via P-01).
-    Writer module: writes sim_lots.date_dev only.
+    then writes date_dev to projection lots and real lots.
     """
     updated_phases = []
     for event_id, projected_date in resolved_events:
@@ -38,18 +36,14 @@ def lot_date_propagator(conn: DBConnection, resolved_events: list,
             updated_phases.append((int(r["phase_id"]), projected_date))
 
     for phase_id, projected_date in updated_phases:
-        # Sim lots: write to projection table if available, otherwise sim_lots
+        # Sim lots: write to projection table
         if projection_id is not None:
             conn.execute(
                 "UPDATE sim_projection_lots SET date_dev = %s WHERE phase_id = %s AND projection_id = %s",
                 (projected_date, phase_id, projection_id),
             )
-        conn.execute(
-            "UPDATE sim_lots SET date_dev = %s WHERE phase_id = %s AND lot_source = 'sim'",
-            (projected_date, phase_id),
-        )
 
-        # Real lots: always write to sim_lots (no change)
+        # Real lots: always write to sim_lots
         conn.execute(
             """
             UPDATE sim_lots
