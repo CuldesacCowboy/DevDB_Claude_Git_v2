@@ -123,7 +123,8 @@ def _add_months(d: date, n: int) -> date:
 
 def _build_sim_demand(conn, dev_id: int, run_start_date: date,
                       demand_series: pd.DataFrame, snapshot: pd.DataFrame,
-                      needs_config: bool) -> pd.DataFrame:
+                      needs_config: bool,
+                      dev_param_overrides: dict = None) -> pd.DataFrame:
     """
     Build the demand series for the kernel (sim lot generation).
     Two adjustments vs raw demand_series:
@@ -180,7 +181,8 @@ def _build_sim_demand(conn, dev_id: int, run_start_date: date,
         logger.info(f"  _build_sim_demand: dev {dev_id} — shifting demand start "
                      f"from {run_start_date} to {effective_start} "
                      f"(earliest sim supply)")
-        sim_demand, _ = demand_generator(conn, dev_id, effective_start)
+        sim_demand, _ = demand_generator(conn, dev_id, effective_start,
+                                          dev_param_overrides=dev_param_overrides)
     else:
         sim_demand = demand_series.copy()
 
@@ -328,7 +330,8 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     #   B) Deduct HC projected starts at the month level so sim lots don't double-book
     #      months where HC lots are already starting.
     sim_demand = _build_sim_demand(conn, dev_id, run_start_date, demand_series,
-                                   snapshot, needs_config)
+                                   snapshot, needs_config,
+                                   dev_param_overrides=dev_param_overrides)
 
     # kernel through post_gen_chronology_guard: kernel planning pass.
     # Exclude HC lots from the kernel snapshot — they're already projected by
