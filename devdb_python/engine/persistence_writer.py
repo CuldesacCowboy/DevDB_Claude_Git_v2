@@ -21,10 +21,12 @@ logger = logging.getLogger(__name__)
 
 def persistence_writer(conn: DBConnection, temp_lots: list,
                        dev_id: int, sim_run_id: int,
-                       _proposal: Proposal = None) -> None:
+                       _proposal: Proposal = None,
+                       projection_context=None) -> None:
     """
     Step 1: Delete all lot_source='sim' rows for this dev_id.
     Step 2: Insert new temp lot records tagged with sim_run_id.
+    Step 2b: If projection_context is provided, also write to sim_projection_lots (dual-write).
 
     Never modifies real lots (lot_source='real').
     """
@@ -85,6 +87,49 @@ def persistence_writer(conn: DBConnection, temp_lots: list,
             """,
             (dev_id,),
         )
+
+        # Step 2b: Dual-write to sim_projection_lots (ephemeral projection storage)
+        if projection_context is not None and temp_lots:
+            proj_id = projection_context.projection_id
+            # Clear previous projection lots for this dev
+            conn.execute(
+                "DELETE FROM sim_projection_lots WHERE projection_id = %s AND dev_id = %s",
+                (proj_id, dev_id),
+            )
+            # Insert projection lots
+            _PROJ_COLS = [
+                "dev_id", "phase_id", "lot_type_id", "building_group_id",
+                "sim_run_id", "builder_id", "is_spec", "is_spec_source",
+                "date_ent", "date_dev", "date_td_hold", "date_td",
+                "date_str", "date_cmp", "date_cls",
+                "date_str_source", "date_cmp_source", "date_cls_source",
+                "excluded",
+            ]
+            proj_rows = []
+            for lot in temp_lots:
+                row = {"projection_id": proj_id}
+                for col in _PROJ_COLS:
+                    val = lot.get(col)
+                    if val is None and col == "excluded":
+                        val = False
+                    row[col] = val
+                row["sim_run_id"] = sim_run_id
+                proj_rows.append(row)
+            conn.executemany_insert("sim_projection_lots", proj_rows)
+
+            # Stamp date_ent from phases (mirrors Step 3 for sim_lots)
+            conn.execute(
+                """
+                UPDATE sim_projection_lots spl
+                SET date_ent = sdp.date_ent
+                FROM sim_dev_phases sdp
+                WHERE spl.phase_id = sdp.phase_id
+                  AND spl.projection_id = %s
+                  AND spl.dev_id = %s
+                  AND sdp.date_ent IS NOT NULL
+                """,
+                (proj_id, dev_id),
+            )
 
         logger.info(f"persistence_writer: Wrote {len(temp_lots)} temp lots for "
                     f"dev_id={dev_id}, sim_run_id={sim_run_id}.")

@@ -13,9 +13,18 @@ Rules:   Runs per entitlement group. Alternates supply pipeline (P-modules) and
 
 import logging
 import random
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ProjectionContext:
+    """Tracks the current projection for sim lot writes and reads."""
+    projection_id: int
+    ent_group_id: int
+    projection_type: str  # 'base' or 'scenario'
 
 # ── Canonical execution order ────────────────────────────────────────────────
 # Descriptive module names in the order they execute.
@@ -258,7 +267,8 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
                         sim_run_id: int, run_start_date: date,
                         builder_splits: dict,
                         build_lag_curves: dict,
-                        rng: random.Random) -> tuple[list, bool, list]:
+                        rng: random.Random,
+                        projection_context: ProjectionContext = None) -> tuple[list, bool, list]:
     """
     Run all starts pipeline modules in order for one development.
     Returns (temp_lots list, needs_config bool, residual_gaps list).
@@ -368,7 +378,8 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     demand_derived_date_writer(conn, temp_lots)
 
     # persistence_writer
-    persistence_writer(conn, temp_lots, dev_id, sim_run_id, _proposal=proposal)
+    persistence_writer(conn, temp_lots, dev_id, sim_run_id, _proposal=proposal,
+                       projection_context=projection_context)
 
     # real_lot_projections: write projected dates to real P lots at configured annual pace
     write_real_lot_projections(conn, dev_id, run_start_date, build_lag_curves, rng)
@@ -560,6 +571,29 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         if run_start_date < _horizon_first:
             run_start_date = _horizon_first
 
+        # ── Create/upsert base projection ────────────────────────────────
+        # Clear previous current base projection for this ent_group
+        conn.execute(
+            "UPDATE sim_projections SET is_current = FALSE "
+            "WHERE ent_group_id = %s AND projection_type = 'base' AND is_current = TRUE",
+            (ent_group_id,),
+        )
+        # Insert new current base projection
+        proj_df = conn.read_df(
+            """
+            INSERT INTO sim_projections (ent_group_id, projection_type, sim_run_id, is_current)
+            VALUES (%s, 'base', %s, TRUE)
+            RETURNING projection_id
+            """,
+            (ent_group_id, sim_run_id),
+        )
+        proj_ctx = ProjectionContext(
+            projection_id=int(proj_df.iloc[0]["projection_id"]),
+            ent_group_id=ent_group_id,
+            projection_type="base",
+        )
+        logger.info(f"  Created base projection {proj_ctx.projection_id} for ent_group {ent_group_id}")
+
         # S-0050: apply MARKS builder_id from devdb_ext.housemaster (once per run)
         marks_builder_sync(conn, ent_group_id)
 
@@ -594,6 +628,7 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
                 _, needs_config, dev_gaps = run_starts_pipeline(
                     conn, dev_id, sim_run_id, run_start_date,
                     builder_splits, build_lag_curves, rng,
+                    projection_context=proj_ctx,
                 )
                 if needs_config:
                     missing_params_devs.add(dev_id)
