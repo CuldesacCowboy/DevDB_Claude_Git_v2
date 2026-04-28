@@ -21,7 +21,8 @@ from .delivery_event_writer import write_new_events, write_predecessor_links
 logger = logging.getLogger(__name__)
 
 
-def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
+def placeholder_rebuilder(conn: DBConnection, ent_group_id: int,
+                          projection_id: int = None) -> list:
     """
     Delete all placeholder delivery events for the entitlement group and
     rebuild them using the current demand signal.
@@ -53,7 +54,8 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
     delete_placeholder_events(conn, ent_group_id)
 
     # Collect phases that need delivery events
-    phase_data = collect_schedulable_phases(conn, ent_group_id, today_first)
+    phase_data = collect_schedulable_phases(conn, ent_group_id, today_first,
+                                                projection_id=projection_id)
     if phase_data is None:
         return []
 
@@ -66,6 +68,7 @@ def placeholder_rebuilder(conn: DBConnection, ent_group_id: int) -> list:
         phase_data["phases_with_sim_lots"],
         today_first,
         locked_group_dates=phase_data.get("locked_group_dates", set()),
+        projection_id=projection_id,
     )
 
     if not events_to_create:

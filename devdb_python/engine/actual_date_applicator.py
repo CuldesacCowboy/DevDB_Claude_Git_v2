@@ -21,7 +21,8 @@ from .connection import DBConnection
 logger = logging.getLogger(__name__)
 
 
-def actual_date_applicator(conn: DBConnection, ent_group_id: int) -> list:
+def actual_date_applicator(conn: DBConnection, ent_group_id: int,
+                           projection_id: int = None) -> list:
     """
     Find all delivery events in this entitlement group with date_dev_actual set.
     For each: update date_dev on all lots in child phases to the actual date.
@@ -66,6 +67,19 @@ def actual_date_applicator(conn: DBConnection, ent_group_id: int) -> list:
             """,
             (actual_date, phase_ids, actual_date),
         )
+
+        # Also update projection lots if available
+        if projection_id is not None:
+            conn.execute(
+                """
+                UPDATE sim_projection_lots
+                SET date_dev = %s
+                WHERE phase_id = ANY(%s)
+                  AND projection_id = %s
+                  AND (date_dev IS NULL OR date_dev > %s)
+                """,
+                (actual_date, phase_ids, projection_id, actual_date),
+            )
 
         # Write actual date to sim_dev_phases.date_dev_projected so
         # _load_phase_capacity feeds S-08 the correct floor date for locked phases.

@@ -16,7 +16,8 @@ from .connection import DBConnection
 logger = logging.getLogger(__name__)
 
 
-def lot_date_propagator(conn: DBConnection, resolved_events: list) -> None:
+def lot_date_propagator(conn: DBConnection, resolved_events: list,
+                        projection_id: int = None) -> None:
     """
     resolved_events: list of (event_id, date_dev_projected) tuples.
     Queries sim_delivery_event_phases to find child phases for each event,
@@ -37,11 +38,18 @@ def lot_date_propagator(conn: DBConnection, resolved_events: list) -> None:
             updated_phases.append((int(r["phase_id"]), projected_date))
 
     for phase_id, projected_date in updated_phases:
+        # Sim lots: write to projection table if available, otherwise sim_lots
+        if projection_id is not None:
+            conn.execute(
+                "UPDATE sim_projection_lots SET date_dev = %s WHERE phase_id = %s AND projection_id = %s",
+                (projected_date, phase_id, projection_id),
+            )
         conn.execute(
             "UPDATE sim_lots SET date_dev = %s WHERE phase_id = %s AND lot_source = 'sim'",
             (projected_date, phase_id),
         )
 
+        # Real lots: always write to sim_lots (no change)
         conn.execute(
             """
             UPDATE sim_lots

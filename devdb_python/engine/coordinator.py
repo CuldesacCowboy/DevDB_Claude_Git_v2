@@ -390,21 +390,24 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
     return temp_lots, needs_config, residual_gaps
 
 
-def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
+def run_supply_pipeline(conn: DBConnection, ent_group_id: int,
+                        projection_context: ProjectionContext = None) -> tuple:
     """
     Run all supply pipeline modules in order for the entitlement group.
     Returns (post_run_phases dict, affected_dev_ids list).
     """
+    proj_id = projection_context.projection_id if projection_context else None
+
     # P-pre: rebuild locked delivery events from sim_dev_phases.date_dev_actual
     locked_event_rebuilder(conn, ent_group_id)
 
     pre_run_phases = load_phase_delivery_snapshot(conn, ent_group_id)
 
     # placeholder_rebuilder
-    placeholder_rebuilder(conn, ent_group_id)
+    placeholder_rebuilder(conn, ent_group_id, projection_id=proj_id)
 
     # actual_date_applicator
-    locked = actual_date_applicator(conn, ent_group_id)
+    locked = actual_date_applicator(conn, ent_group_id, projection_id=proj_id)
 
     # dependency_resolver
     sorted_queue, eligible_pool = dependency_resolver(conn, ent_group_id, locked)
@@ -434,7 +437,7 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int) -> tuple:
     phase_date_propagator(conn, resolved_events)
 
     # lot_date_propagator
-    lot_date_propagator(conn, resolved_events)
+    lot_date_propagator(conn, resolved_events, projection_id=proj_id)
 
     # ledger_aggregator (final refresh): rebuild ledger now that P-07 has written date_dev to lots
     ledger_aggregator(conn)
@@ -641,7 +644,8 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
 
             # Step 2: Run supply pipeline
             logger.info(f"  Running supply pipeline for ent_group_id={ent_group_id}...")
-            _, affected_devs = run_supply_pipeline(conn, ent_group_id)
+            _, affected_devs = run_supply_pipeline(conn, ent_group_id,
+                                                       projection_context=proj_ctx)
 
             # Step 3: Convergence check — compare sorted effective date lists
             post_df = conn.read_df(

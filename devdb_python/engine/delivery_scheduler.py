@@ -38,6 +38,7 @@ def run_scheduling_loop(
     phases_with_sim_lots: set,
     today_first: date,
     locked_group_dates: set | None = None,
+    projection_id: int = None,
 ) -> list:
     """
     Build the D-balance model and run the iterative delivery scheduling loop.
@@ -82,44 +83,71 @@ def run_scheduling_loop(
     d_balance: dict[int, dict[date, int]] = {d: {} for d in all_dev_ids}
 
     if all_dev_ids:
-        if locked_phase_ids:
-            lot_filter_sql    = "AND (sl.lot_source = 'real' OR sl.phase_id = ANY(%s))"
-            lot_filter_params = [list(locked_phase_ids)]
-        else:
-            lot_filter_sql    = "AND sl.lot_source = 'real'"
-            lot_filter_params = []
-
-        d_proj_df = conn.read_df(
-            f"""
+        # D-balance model: count lots in D-status per month.
+        # Real lots always come from sim_lots. Sim lots come from sim_projection_lots
+        # when projection_id is set, otherwise from sim_lots (legacy path).
+        _d_balance_base = """
             WITH future AS (
                 SELECT generate_series(
                     DATE_TRUNC('MONTH', CURRENT_DATE)::DATE,
                     (DATE_TRUNC('MONTH', CURRENT_DATE) + INTERVAL '30 years')::DATE,
                     INTERVAL '1 month'
                 )::DATE AS m
+            ),
+            combined_lots AS (
+                -- Real/pre lots always from sim_lots
+                SELECT lot_id, dev_id, date_dev, date_td, date_td_projected,
+                       date_td_hold, date_td_hold_projected
+                FROM sim_lots
+                WHERE lot_source = 'real' AND dev_id = ANY(%s)
+                {proj_union}
             )
             SELECT sl_devs.dev_id, f.m AS calendar_month,
                    COUNT(sl.lot_id) AS d_end
             FROM future f
             CROSS JOIN (SELECT UNNEST(%s::int[]) AS dev_id) AS sl_devs
-            LEFT JOIN sim_lots sl
+            LEFT JOIN combined_lots sl
                 ON  sl.dev_id = sl_devs.dev_id
-                -- Use projected takedown dates so real D-lots with no MARKS actual
-                -- takedown still drain at the engine-projected pace.  Without this,
-                -- real lots with date_td IS NULL are treated as permanently in D,
-                -- which prevents the balance-violation trigger from ever firing.
                 AND sl.date_dev IS NOT NULL
                 AND sl.date_dev <= f.m
                 AND (COALESCE(sl.date_td, sl.date_td_projected) IS NULL
                      OR COALESCE(sl.date_td, sl.date_td_projected) > f.m)
                 AND (COALESCE(sl.date_td_hold, sl.date_td_hold_projected) IS NULL
                      OR COALESCE(sl.date_td_hold, sl.date_td_hold_projected) > f.m)
-                {lot_filter_sql}
             GROUP BY sl_devs.dev_id, f.m
             ORDER BY sl_devs.dev_id, f.m
-            """,
-            [all_dev_ids] + lot_filter_params,
-        )
+        """
+
+        if projection_id is not None:
+            if locked_phase_ids:
+                proj_union = """
+                    UNION ALL
+                    SELECT projection_lot_id AS lot_id, dev_id, date_dev, date_td,
+                           NULL::date AS date_td_projected,
+                           date_td_hold, NULL::date AS date_td_hold_projected
+                    FROM sim_projection_lots
+                    WHERE projection_id = %s AND dev_id = ANY(%s) AND phase_id = ANY(%s)
+                """
+                sql = _d_balance_base.format(proj_union=proj_union)
+                d_proj_df = conn.read_df(sql, [all_dev_ids, projection_id, all_dev_ids, list(locked_phase_ids), all_dev_ids])
+            else:
+                sql = _d_balance_base.format(proj_union="")
+                d_proj_df = conn.read_df(sql, [all_dev_ids, all_dev_ids])
+        else:
+            if locked_phase_ids:
+                proj_union = """
+                    UNION ALL
+                    SELECT lot_id, dev_id, date_dev, date_td, date_td_projected,
+                           date_td_hold, date_td_hold_projected
+                    FROM sim_lots
+                    WHERE lot_source = 'sim' AND phase_id = ANY(%s) AND dev_id = ANY(%s)
+                """
+                sql = _d_balance_base.format(proj_union=proj_union)
+                d_proj_df = conn.read_df(sql, [all_dev_ids, list(locked_phase_ids), all_dev_ids, all_dev_ids])
+            else:
+                sql = _d_balance_base.format(proj_union="")
+                d_proj_df = conn.read_df(sql, [all_dev_ids, all_dev_ids])
+
         for _, dr in d_proj_df.iterrows():
             d_id = int(dr["dev_id"])
             m = dr["calendar_month"]
@@ -153,22 +181,50 @@ def run_scheduling_loop(
     demand_consumed: dict[int, int] = {}
     for dev in all_dev_ids:
         ds = global_demand_start_per_dev[dev]
-        if locked_phase_ids:
-            dc_filter_sql    = "AND (lot_source = 'real' OR phase_id = ANY(%s))"
-            dc_params        = (dev, ds, list(locked_phase_ids))
+        if projection_id is not None:
+            if locked_phase_ids:
+                # Real starts from sim_lots + sim starts from locked phases in projection
+                dc_df = conn.read_df(
+                    """
+                    SELECT (
+                        (SELECT COUNT(*) FROM sim_lots
+                         WHERE dev_id = %s AND date_str IS NOT NULL AND date_str >= %s
+                           AND lot_source = 'real')
+                        +
+                        (SELECT COUNT(*) FROM sim_projection_lots
+                         WHERE dev_id = %s AND date_str IS NOT NULL AND date_str >= %s
+                           AND projection_id = %s AND phase_id = ANY(%s))
+                    ) AS cnt
+                    """,
+                    (dev, ds, dev, ds, projection_id, list(locked_phase_ids)),
+                )
+            else:
+                dc_df = conn.read_df(
+                    """
+                    SELECT COUNT(*) AS cnt FROM sim_lots
+                    WHERE dev_id = %s AND date_str IS NOT NULL AND date_str >= %s
+                      AND lot_source = 'real'
+                    """,
+                    (dev, ds),
+                )
+        elif locked_phase_ids:
+            dc_df = conn.read_df(
+                """
+                SELECT COUNT(*) AS cnt FROM sim_lots
+                WHERE dev_id = %s AND date_str IS NOT NULL AND date_str >= %s
+                  AND (lot_source = 'real' OR phase_id = ANY(%s))
+                """,
+                (dev, ds, list(locked_phase_ids)),
+            )
         else:
-            dc_filter_sql    = "AND lot_source = 'real'"
-            dc_params        = (dev, ds)
-        dc_df = conn.read_df(
-            f"""
-            SELECT COUNT(*) AS cnt FROM sim_lots
-            WHERE dev_id = %s
-              AND date_str IS NOT NULL
-              AND date_str >= %s
-              {dc_filter_sql}
-            """,
-            dc_params,
-        )
+            dc_df = conn.read_df(
+                """
+                SELECT COUNT(*) AS cnt FROM sim_lots
+                WHERE dev_id = %s AND date_str IS NOT NULL AND date_str >= %s
+                  AND lot_source = 'real'
+                """,
+                (dev, ds),
+            )
         demand_consumed[dev] = int(dc_df.iloc[0]["cnt"]) if not dc_df.empty else 0
         logger.info(f"placeholder_rebuilder: Dev {dev}: demand_start={ds}, demand_consumed={demand_consumed[dev]}")
 
@@ -255,13 +311,22 @@ def run_scheduling_loop(
                                                   delivery_month: date,
                                                   phase_id: int) -> None:
         """Balance-driven variant: use actual date_td offsets from prior-iteration sim lots."""
-        sim_df = conn.read_df(
-            """
-            SELECT date_dev, date_td FROM sim_lots
-            WHERE phase_id = %s AND lot_source = 'sim' AND date_dev IS NOT NULL
-            """,
-            (phase_id,),
-        )
+        if projection_id is not None:
+            sim_df = conn.read_df(
+                """
+                SELECT date_dev, date_td FROM sim_projection_lots
+                WHERE phase_id = %s AND projection_id = %s AND date_dev IS NOT NULL
+                """,
+                (phase_id, projection_id),
+            )
+        else:
+            sim_df = conn.read_df(
+                """
+                SELECT date_dev, date_td FROM sim_lots
+                WHERE phase_id = %s AND lot_source = 'sim' AND date_dev IS NOT NULL
+                """,
+                (phase_id,),
+            )
         if sim_df.empty:
             return
         drain_hist: dict[int, int] = defaultdict(int)
