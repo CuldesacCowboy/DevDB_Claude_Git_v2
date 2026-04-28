@@ -62,11 +62,19 @@ def reset_mutable_state(conn, ent_group_id: int) -> None:
     )
     real_lot_ids = [int(r) for r in lot_id_df["lot_id"]] if not lot_id_df.empty else []
 
-    # 1. Delete sim lots
+    # 1. Delete sim lots from projection storage (and legacy sim_lots if any remain)
     conn.execute(
-        "DELETE FROM sim_lots WHERE lot_source = 'sim' AND dev_id = ANY(%s)",
+        "DELETE FROM sim_projection_lots WHERE dev_id = ANY(%s)",
         (dev_ids,),
     )
+    # Legacy cleanup (safe no-op once CHECK constraint is in place)
+    try:
+        conn.execute(
+            "DELETE FROM sim_lots WHERE lot_source = 'sim' AND dev_id = ANY(%s)",
+            (dev_ids,),
+        )
+    except Exception:
+        pass  # CHECK constraint prevents this — expected after migration 091
 
     # 2. Delete violations for real lots
     if real_lot_ids:

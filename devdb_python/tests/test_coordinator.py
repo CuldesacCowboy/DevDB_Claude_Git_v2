@@ -39,12 +39,11 @@ def test_coordinator():
         if not _check_fixtures(conn):
             return True  # SKIP
 
-        # Record pre-run sim lot count for PG 165/166/167
-        pg_ids_str = "165, 166, 167"
-        pre_sim = conn.read_df(f"""
-            SELECT COUNT(*) AS n FROM main.devdb.sim_lots
-            WHERE projection_group_id IN ({pg_ids_str}) AND lot_source = 'sim'
-        """).iloc[0]["n"]
+        # Record pre-run projection lot count
+        pre_sim = conn.read_df("""
+            SELECT COUNT(*) AS n FROM sim_projection_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+        """, (TEST_ENT_GROUP,)).iloc[0]["n"]
 
     iterations = convergence_coordinator(
         ent_group_id=TEST_ENT_GROUP,
@@ -60,29 +59,28 @@ def test_coordinator():
 
     with DBConnection() as conn:
         # Verify ledger view is queryable
-        ledger = conn.read_df(f"""
-            SELECT * FROM main.devdb.v_sim_ledger_monthly
-            WHERE projection_group_id IN ({pg_ids_str})
+        ledger = conn.read_df("""
+            SELECT * FROM v_sim_ledger_monthly
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
             LIMIT 1
-        """)
+        """, (TEST_ENT_GROUP,))
         results.append(_pass("Ledger view queryable after run",
                              True,  # no exception means pass
                              f"{len(ledger)} rows"))
 
-        # Verify sim lots exist for at least one PG
-        post_sim = conn.read_df(f"""
-            SELECT COUNT(*) AS n FROM main.devdb.sim_lots
-            WHERE projection_group_id IN ({pg_ids_str}) AND lot_source = 'sim'
-        """).iloc[0]["n"]
-        # May be 0 if PGs have no projection params -- that's valid
-        print(f"  [INFO] Sim lots after run: {int(post_sim)}")
+        # Verify projection lots exist after run
+        post_sim = conn.read_df("""
+            SELECT COUNT(*) AS n FROM sim_projection_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+        """, (TEST_ENT_GROUP,)).iloc[0]["n"]
+        print(f"  [INFO] Projection lots after run: {int(post_sim)}")
 
-        # Clean up sim lots from this run
-        conn.execute(f"""
-            DELETE FROM main.devdb.sim_lots
-            WHERE projection_group_id IN ({pg_ids_str}) AND lot_source = 'sim'
-        """)
-        print("  (cleaned up test sim lots)")
+        # Clean up projection lots from this run
+        conn.execute("""
+            DELETE FROM sim_projection_lots
+            WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
+        """, (TEST_ENT_GROUP,))
+        print("  (cleaned up test projection lots)")
 
     return all(results)
 

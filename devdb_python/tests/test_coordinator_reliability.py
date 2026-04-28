@@ -61,11 +61,18 @@ def _delete_sim_lots(conn, ent_group_id: int) -> int:
     dev_ids = [int(r) for r in df["dev_id"]]
     if not dev_ids:
         return 0
-    r = conn.execute(
-        "DELETE FROM sim_lots WHERE lot_source = 'sim' AND dev_id = ANY(%s)",
+    conn.execute(
+        "DELETE FROM sim_projection_lots WHERE dev_id = ANY(%s)",
         (dev_ids,),
     )
-    return r
+    try:
+        conn.execute(
+            "DELETE FROM sim_lots WHERE lot_source = 'sim' AND dev_id = ANY(%s)",
+            (dev_ids,),
+        )
+    except Exception:
+        pass  # CHECK constraint prevents this after migration 091
+    return 0
 
 
 # ---------------------------------------------------------------------------
