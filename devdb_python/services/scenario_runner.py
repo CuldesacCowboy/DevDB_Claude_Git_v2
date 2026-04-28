@@ -63,22 +63,42 @@ def _run_scenario_impl(conn, scenario_id: int) -> dict:
     )
     dev_ids = [int(d) for d in dev_ids_df["dev_id"]]
 
-    # ── 4. Run engine in read-only scenario mode ─────────────────────────
-    scenario_lots = convergence_coordinator(ent_group_id, overrides=overrides)
+    # ── 4. Run engine with overrides (full convergence loop) ────────────
+    # Pass _scenario_id so the coordinator creates a scenario projection
+    overrides["_scenario_id"] = scenario_id
+    result = convergence_coordinator(ent_group_id, overrides=overrides)
 
-    if not isinstance(scenario_lots, list):
-        raise RuntimeError(f"Unexpected coordinator return type: {type(scenario_lots)}")
+    if isinstance(result, tuple):
+        iterations = result[0]
+    else:
+        iterations = result
 
-    logger.info(f"scenario_runner: Engine returned {len(scenario_lots)} scenario lots")
+    # ── 5. Read scenario lots from projection ────────────────────────────
+    proj_df = conn.read_df(
+        "SELECT projection_id FROM sim_projections WHERE ent_group_id = %s AND projection_type = 'scenario' AND scenario_id = %s ORDER BY created_at DESC LIMIT 1",
+        (ent_group_id, scenario_id),
+    )
+    if proj_df.empty:
+        raise RuntimeError(f"No projection found for scenario {scenario_id}")
+    proj_id = int(proj_df.iloc[0]["projection_id"])
 
-    # ── 5. Write lot-level results to sim_projection_lots ────────────────
-    _write_projection_lots(conn, scenario_id, ent_group_id, scenario_lots)
+    lot_count_df = conn.read_df(
+        "SELECT COUNT(*) as n FROM sim_projection_lots WHERE projection_id = %s",
+        (proj_id,),
+    )
+    lot_count = int(lot_count_df.iloc[0]["n"])
+    logger.info(f"scenario_runner: Scenario projection {proj_id} has {lot_count} lots")
 
     # ── 6. Compute aggregated ledger → sim_scenario_results ──────────────
+    # Read scenario lots as dicts for compute_scenario_ledger
+    scenario_lots_df = conn.read_df(
+        "SELECT * FROM sim_projection_lots WHERE projection_id = %s",
+        (proj_id,),
+    )
+    scenario_lots = scenario_lots_df.to_dict("records") if not scenario_lots_df.empty else []
     ledger_rows = compute_scenario_ledger(conn, scenario_lots, dev_ids)
     _write_aggregated_results(conn, scenario_id, ledger_rows)
-    logger.info(f"scenario_runner: Wrote {len(ledger_rows)} ledger rows + "
-                f"{len(scenario_lots)} projection lots for scenario {scenario_id}")
+    logger.info(f"scenario_runner: Wrote {len(ledger_rows)} ledger rows for scenario {scenario_id}")
 
     # ── 7. Update last_run_at and clear stale flag ──────────────────────
     conn.execute(
@@ -86,7 +106,7 @@ def _run_scenario_impl(conn, scenario_id: int) -> dict:
         (scenario_id,),
     )
 
-    return {"scenario_id": scenario_id, "iterations": 1, "lots": len(scenario_lots)}
+    return {"scenario_id": scenario_id, "iterations": iterations, "lots": lot_count}
 
 
 def _build_overrides_dict(overrides_df) -> dict:
@@ -105,59 +125,6 @@ def _build_overrides_dict(overrides_df) -> dict:
             result["instrument"].setdefault(scope_id, {})[param] = value
     return result
 
-
-def _write_projection_lots(conn, scenario_id: int, ent_group_id: int,
-                           scenario_lots: list):
-    """Write scenario lots to sim_projection_lots with a scenario projection."""
-    import numpy as np
-
-    # Upsert projection row
-    conn.execute(
-        "DELETE FROM sim_projections WHERE ent_group_id = %s AND projection_type = 'scenario' AND scenario_id = %s",
-        (ent_group_id, scenario_id),
-    )
-    proj_df = conn.read_df(
-        """
-        INSERT INTO sim_projections (ent_group_id, projection_type, scenario_id, is_current)
-        VALUES (%s, 'scenario', %s, FALSE)
-        RETURNING projection_id
-        """,
-        (ent_group_id, scenario_id),
-    )
-    proj_id = int(proj_df.iloc[0]["projection_id"])
-
-    if not scenario_lots:
-        return
-
-    def _py(v):
-        if v is None:
-            return None
-        if isinstance(v, (np.integer,)):
-            return int(v)
-        if isinstance(v, (np.floating,)):
-            return None if np.isnan(v) else float(v)
-        if isinstance(v, (np.bool_,)):
-            return bool(v)
-        return v
-
-    _PROJ_COLS = [
-        "dev_id", "phase_id", "lot_type_id", "building_group_id",
-        "sim_run_id", "builder_id", "is_spec", "is_spec_source",
-        "date_ent", "date_dev", "date_td_hold", "date_td",
-        "date_str", "date_cmp", "date_cls",
-        "date_str_source", "date_cmp_source", "date_cls_source",
-        "excluded",
-    ]
-    rows = []
-    for lot in scenario_lots:
-        row = {"projection_id": proj_id}
-        for col in _PROJ_COLS:
-            val = lot.get(col)
-            if val is None and col == "excluded":
-                val = False
-            row[col] = _py(val)
-        rows.append(row)
-    conn.executemany_insert("sim_projection_lots", rows)
 
 
 def _write_aggregated_results(conn, scenario_id: int, ledger_rows: list):

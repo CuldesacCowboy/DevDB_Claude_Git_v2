@@ -268,7 +268,8 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
                         builder_splits: dict,
                         build_lag_curves: dict,
                         rng: random.Random,
-                        projection_context: ProjectionContext = None) -> tuple[list, bool, list]:
+                        projection_context: ProjectionContext = None,
+                        dev_param_overrides: dict = None) -> tuple[list, bool, list]:
     """
     Run all starts pipeline modules in order for one development.
     Returns (temp_lots list, needs_config bool, residual_gaps list).
@@ -304,7 +305,8 @@ def run_starts_pipeline(conn: DBConnection, dev_id: int,
                                               hc_to_bldr_lag_days=hc_to_bldr_lag)
 
     # demand_generator
-    demand_series, needs_config = demand_generator(conn, dev_id, run_start_date)
+    demand_series, needs_config = demand_generator(conn, dev_id, run_start_date,
+                                                    dev_param_overrides=dev_param_overrides)
     if needs_config:
         logger.warning(f"  WARNING: Dev {dev_id} has no sim_dev_params. No demand generated.")
         demand_series = pd.DataFrame(columns=["year", "month", "slots"])
@@ -450,43 +452,6 @@ def run_supply_pipeline(conn: DBConnection, ent_group_id: int,
     return post_run_phases, affected_devs
 
 
-def run_scenario_pipeline(conn, dev_id: int, run_start_date: date,
-                          builder_splits: dict, build_lag_curves: dict,
-                          rng: random.Random, sim_run_id: int,
-                          dev_param_overrides: dict = None) -> list:
-    """
-    Simplified read-only pipeline for scenario mode.
-    Reads lot snapshot, generates demand with overrides, runs kernel, returns temp_lots.
-    Never writes to sim_lots or any base table.
-    """
-    # Load snapshot (read-only)
-    snapshot = lot_loader(conn, dev_id)
-
-    # Generate demand with overrides
-    demand_series, needs_config = demand_generator(conn, dev_id, run_start_date,
-                                                    dev_param_overrides=dev_param_overrides)
-    if needs_config:
-        logger.warning(f"  Scenario: Dev {dev_id} has no starts target. Skipping.")
-        return []
-
-    td_to_str_lag = build_lag_curves.get("_td_to_str_lag", 1)
-
-    # Kernel planning pass
-    frozen = build_frozen_input(conn, dev_id, snapshot, demand_series, sim_run_id,
-                                td_to_str_lag=td_to_str_lag)
-    proposal = plan(frozen)
-
-    # Timing expansion (pure computation)
-    temp_lots = timing_expansion(proposal.temp_lots, build_lag_curves, rng)
-
-    # Post-gen chronology guard (pure computation)
-    temp_lots, _, _ = post_generation_chronology_guard(temp_lots)
-
-    # Builder assignment (pure computation)
-    temp_lots = builder_assignment(temp_lots, builder_splits)
-
-    return temp_lots
-
 
 def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
                              max_iterations: int = 10,
@@ -524,44 +489,15 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         logger.info(f"Convergence coordinator: ent_group_id={ent_group_id}, "
                     f"{len(dev_ids)} development(s): {dev_ids}")
 
-        # ── Scenario mode: read-only, single pass, return temp_lots ──────
-        if overrides is not None:
-            builder_splits = load_builder_splits(conn)
-            build_lag_curves = load_build_lag_curves(conn)
-            from engine.config_loader import load_delivery_config
-            ent_overrides = overrides.get("ent_group", {})
-            _cfg = load_delivery_config(conn, ent_group_id, overrides=ent_overrides)
-            build_lag_curves["_default_cmp"] = _cfg["default_cmp_lag_days"]
-            build_lag_curves["_default_cls"] = _cfg["default_cls_lag_days"]
-            build_lag_curves["_td_to_str_lag"] = _cfg["td_to_str_lag"]
-            build_lag_curves["_scheduling_horizon_days"] = _cfg["scheduling_horizon_days"]
-            build_lag_curves["_hc_to_bldr_lag_days"] = _cfg["hc_to_bldr_lag_days"]
-
-            _seed = rng_seed if rng_seed is not None else sim_run_id * 1000 + ent_group_id
-            rng = random.Random(_seed)
-
-            all_scenario_lots = []
-            for dev_id in dev_ids:
-                dev_overrides = overrides.get("dev", {}).get(dev_id, None)
-                temp_lots = run_scenario_pipeline(
-                    conn, dev_id, run_start_date, builder_splits,
-                    build_lag_curves, rng, sim_run_id,
-                    dev_param_overrides=dev_overrides,
-                )
-                all_scenario_lots.extend(temp_lots)
-                logger.info(f"  Scenario dev {dev_id}: {len(temp_lots)} temp lots")
-
-            logger.info(f"Scenario complete: {len(all_scenario_lots)} total lots across {len(dev_ids)} dev(s)")
-            return all_scenario_lots
-
-        # ── Normal mode: full convergence loop ───────────────────────────
+        # ── Normal mode (with optional overrides for scenarios) ──────────
         # Load shared config once (does not change per iteration)
         builder_splits = load_builder_splits(conn)
         build_lag_curves = load_build_lag_curves(conn)
 
         # Inject default lag constants from community/global config into curves dict
         from engine.config_loader import load_delivery_config
-        _cfg = load_delivery_config(conn, ent_group_id)
+        _ent_overrides = overrides.get("ent_group", {}) if overrides else None
+        _cfg = load_delivery_config(conn, ent_group_id, overrides=_ent_overrides)
         build_lag_curves["_default_cmp"] = _cfg["default_cmp_lag_days"]
         build_lag_curves["_default_cls"] = _cfg["default_cls_lag_days"]
         build_lag_curves["_td_to_str_lag"] = _cfg["td_to_str_lag"]
@@ -574,28 +510,47 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
         if run_start_date < _horizon_first:
             run_start_date = _horizon_first
 
-        # ── Create/upsert base projection ────────────────────────────────
-        # Clear previous current base projection for this ent_group
-        conn.execute(
-            "UPDATE sim_projections SET is_current = FALSE "
-            "WHERE ent_group_id = %s AND projection_type = 'base' AND is_current = TRUE",
-            (ent_group_id,),
-        )
-        # Insert new current base projection
-        proj_df = conn.read_df(
-            """
-            INSERT INTO sim_projections (ent_group_id, projection_type, sim_run_id, is_current)
-            VALUES (%s, 'base', %s, TRUE)
-            RETURNING projection_id
-            """,
-            (ent_group_id, sim_run_id),
-        )
+        # ── Create projection ────────────────────────────────────────────
+        _is_scenario = overrides is not None
+        _scenario_id = overrides.get("_scenario_id") if _is_scenario else None
+        _proj_type = "scenario" if _is_scenario else "base"
+
+        if not _is_scenario:
+            conn.execute(
+                "UPDATE sim_projections SET is_current = FALSE "
+                "WHERE ent_group_id = %s AND projection_type = 'base' AND is_current = TRUE",
+                (ent_group_id,),
+            )
+
+        if _is_scenario and _scenario_id:
+            conn.execute(
+                "DELETE FROM sim_projections WHERE ent_group_id = %s AND projection_type = 'scenario' AND scenario_id = %s",
+                (ent_group_id, _scenario_id),
+            )
+            proj_df = conn.read_df(
+                """
+                INSERT INTO sim_projections (ent_group_id, projection_type, scenario_id, sim_run_id, is_current)
+                VALUES (%s, 'scenario', %s, %s, FALSE)
+                RETURNING projection_id
+                """,
+                (ent_group_id, _scenario_id, sim_run_id),
+            )
+        else:
+            proj_df = conn.read_df(
+                """
+                INSERT INTO sim_projections (ent_group_id, projection_type, sim_run_id, is_current)
+                VALUES (%s, 'base', %s, TRUE)
+                RETURNING projection_id
+                """,
+                (ent_group_id, sim_run_id),
+            )
+
         proj_ctx = ProjectionContext(
             projection_id=int(proj_df.iloc[0]["projection_id"]),
             ent_group_id=ent_group_id,
-            projection_type="base",
+            projection_type=_proj_type,
         )
-        logger.info(f"  Created base projection {proj_ctx.projection_id} for ent_group {ent_group_id}")
+        logger.info(f"  Created {_proj_type} projection {proj_ctx.projection_id} for ent_group {ent_group_id}")
 
         # S-0050: apply MARKS builder_id from devdb_ext.housemaster (once per run)
         marks_builder_sync(conn, ent_group_id)
@@ -628,10 +583,12 @@ def convergence_coordinator(ent_group_id: int, run_start_date: date = None,
             iter_gaps: list[dict] = []
             for dev_id in dev_ids:
                 logger.info(f"  Running starts pipeline for dev {dev_id}...")
+                _dev_overrides = overrides.get("dev", {}).get(dev_id) if overrides else None
                 _, needs_config, dev_gaps = run_starts_pipeline(
                     conn, dev_id, sim_run_id, run_start_date,
                     builder_splits, build_lag_curves, rng,
                     projection_context=proj_ctx,
+                    dev_param_overrides=_dev_overrides,
                 )
                 if needs_config:
                     missing_params_devs.add(dev_id)
