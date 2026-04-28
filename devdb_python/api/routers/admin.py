@@ -101,7 +101,7 @@ def get_phase_config(conn=Depends(get_db_conn)):
                     ) AS pre_count,
                     COUNT(*) FILTER (WHERE lot_source = 'sim' AND excluded IS NOT TRUE) AS sim_count,
                     COUNT(*) FILTER (WHERE excluded IS TRUE AND lot_source != 'sim') AS excl_count
-                FROM sim_lots sl
+                FROM v_sim_ledger_combined sl
                 WHERE phase_id = ANY(%s)
                 GROUP BY phase_id, lot_type_id
             """, (phase_ids,))

@@ -207,7 +207,7 @@ def query_ledger_weekly(conn, ent_group_id: int) -> list:
                     COALESCE(sl.date_str, sl.date_str_projected) AS eff_str,
                     COALESCE(sl.date_cmp, sl.date_cmp_projected) AS eff_cmp,
                     COALESCE(sl.date_cls, sl.date_cls_projected) AS eff_cls
-                FROM sim_lots sl
+                FROM v_sim_ledger_combined sl
                 JOIN sim_ent_group_developments segd ON segd.dev_id = sl.dev_id
                 WHERE segd.ent_group_id = %(eg)s
                   AND sl.excluded IS NOT TRUE

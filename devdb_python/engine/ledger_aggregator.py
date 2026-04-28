@@ -21,17 +21,67 @@ from .connection import DBConnection
 
 def ledger_aggregator(conn: DBConnection) -> None:
     """
-    Create or replace v_sim_ledger_monthly and month_spine views.
+    Create or replace v_sim_ledger_combined, v_sim_ledger_monthly, and month_spine views.
+    v_sim_ledger_combined: UNION ALL of real/pre lots from sim_lots + sim lots from
+                           the current base projection in sim_projection_lots.
     month_spine: dynamic view from earliest date_ent in sim_lots, 30 years forward.
     v_sim_ledger_monthly: COUNT-based aggregation per dev_id, builder_id, and calendar month.
     Read-only -- does not modify any table.
     """
-    # Drop both views in dependency order before recreating.
-    # month_spine must be dropped with CASCADE because v_sim_ledger_monthly depends on it.
-    # CREATE OR REPLACE VIEW fails when the existing view has a type or column mismatch
-    # with the replacement definition (PostgreSQL error: "cannot drop columns from view").
+    # Drop all views in dependency order before recreating.
     conn.execute("DROP VIEW IF EXISTS v_sim_ledger_monthly")
     conn.execute("DROP VIEW IF EXISTS month_spine CASCADE")
+    conn.execute("DROP VIEW IF EXISTS v_sim_ledger_combined")
+
+    # v_sim_ledger_combined: real/pre lots from sim_lots UNION ALL sim lots from current base projection
+    conn.execute("""
+        CREATE VIEW v_sim_ledger_combined AS
+        -- Real/pre lots only from sim_lots (sim lots come from projection table)
+        SELECT lot_id, lot_number, lot_source, lot_type_id, dev_id, phase_id,
+               builder_id, builder_id_override, building_group_id,
+               is_spec, is_spec_source, excluded, school_district_id,
+               date_ent, date_dev, date_td_hold, date_td_hold_projected,
+               date_td, date_td_projected, date_str, date_str_projected,
+               date_frm, date_cmp, date_cmp_projected, date_cls, date_cls_projected,
+               date_str_source, date_cmp_source, date_cls_source,
+               date_ent_is_locked, date_dev_is_locked, date_td_hold_is_locked,
+               date_td_is_locked, date_str_is_locked, date_frm_is_locked,
+               date_cmp_is_locked, date_cls_is_locked,
+               sim_run_id
+        FROM sim_lots
+        WHERE lot_source != 'sim'
+        UNION ALL
+        SELECT spl.projection_lot_id AS lot_id,
+               NULL AS lot_number,
+               'sim' AS lot_source,
+               spl.lot_type_id, spl.dev_id, spl.phase_id,
+               spl.builder_id,
+               NULL AS builder_id_override,
+               spl.building_group_id,
+               spl.is_spec, spl.is_spec_source,
+               spl.excluded, NULL AS school_district_id,
+               spl.date_ent, spl.date_dev,
+               spl.date_td_hold,
+               NULL::date AS date_td_hold_projected,
+               spl.date_td,
+               NULL::date AS date_td_projected,
+               spl.date_str,
+               NULL::date AS date_str_projected,
+               NULL::date AS date_frm,
+               spl.date_cmp,
+               NULL::date AS date_cmp_projected,
+               spl.date_cls,
+               NULL::date AS date_cls_projected,
+               spl.date_str_source, spl.date_cmp_source, spl.date_cls_source,
+               FALSE AS date_ent_is_locked, FALSE AS date_dev_is_locked,
+               FALSE AS date_td_hold_is_locked, FALSE AS date_td_is_locked,
+               FALSE AS date_str_is_locked, FALSE AS date_frm_is_locked,
+               FALSE AS date_cmp_is_locked, FALSE AS date_cls_is_locked,
+               spl.sim_run_id
+        FROM sim_projection_lots spl
+        JOIN sim_projections sp ON sp.projection_id = spl.projection_id
+        WHERE sp.is_current = TRUE AND sp.projection_type = 'base'
+    """)
 
     conn.execute("""
         CREATE VIEW month_spine AS
@@ -140,7 +190,7 @@ def ledger_aggregator(conn: DBConnection) -> None:
                       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
                 AS closed_cumulative
 
-        FROM sim_lots l
+        FROM v_sim_ledger_combined l
         CROSS JOIN month_spine m
         WHERE l.excluded IS NOT TRUE
         GROUP BY COALESCE(l.builder_id_override, l.builder_id), l.dev_id, m.calendar_month

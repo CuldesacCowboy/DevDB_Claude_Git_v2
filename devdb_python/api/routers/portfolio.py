@@ -149,7 +149,7 @@ def get_portfolio_summary(
                     COUNT(sl.lot_id) FILTER (WHERE sl.date_str IS NOT NULL)::int AS started,
                     COUNT(sl.lot_id) FILTER (WHERE sl.date_str IS NULL)::int AS pipeline,
                     COUNT(DISTINCT segd.ent_group_id)::int AS communities
-                FROM sim_lots sl
+                FROM v_sim_ledger_combined sl
                 JOIN dim_builders db ON db.builder_id = COALESCE(sl.builder_id_override, sl.builder_id)
                 JOIN sim_ent_group_developments segd ON segd.dev_id = sl.dev_id
                 WHERE sl.excluded IS NOT TRUE

@@ -57,7 +57,7 @@ def get_utilization(ent_group_id: int, conn=Depends(get_db_conn)):
             JOIN developments d ON d.dev_id = sdp.dev_id
             JOIN sim_legal_instruments sli ON sdp.instrument_id = sli.instrument_id
             LEFT JOIN phase_splits ps ON ps.phase_id = sdp.phase_id
-            LEFT JOIN sim_lots sl ON sl.phase_id = sdp.phase_id AND sl.excluded IS NOT TRUE
+            LEFT JOIN v_sim_ledger_combined sl ON sl.phase_id = sdp.phase_id AND sl.excluded IS NOT TRUE
             WHERE segd.ent_group_id = %s
             GROUP BY sdp.phase_id, sdp.phase_name, sdp.dev_id, d.dev_name,
                      sli.instrument_name, sdp.sequence_number, ps.projected_count
@@ -153,7 +153,7 @@ def get_lots(ent_group_id: int, conn=Depends(get_db_conn)):
                 COALESCE(sl.school_district_id, sdp.school_district_id, eg.school_district_id)    AS resolved_sd_id,
                 COALESCE(lot_sd.district_name, ph_sd.district_name, comm_sd.district_name)        AS resolved_sd_name,
                 (sl.school_district_id IS NOT NULL)                                                AS sd_is_lot_exception
-            FROM sim_lots sl
+            FROM v_sim_ledger_combined sl
             JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
             JOIN developments d ON d.dev_id = sl.dev_id
             JOIN sim_ent_group_developments segd ON segd.dev_id = sl.dev_id AND segd.ent_group_id = %s
@@ -992,7 +992,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.execute("""
             SELECT COUNT(*) AS total,
                    COUNT(*) FILTER (WHERE builder_id IS NOT NULL) AS assigned
-            FROM sim_lots
+            FROM v_sim_ledger_combined
             WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
               AND lot_source = 'sim'
               AND excluded IS NOT TRUE
@@ -1005,7 +1005,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.execute("""
             SELECT sdp.phase_name, COUNT(*) AS sim_count,
                    COUNT(*) FILTER (WHERE sl.builder_id IS NOT NULL) AS assigned
-            FROM sim_lots sl JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
+            FROM v_sim_ledger_combined sl JOIN sim_dev_phases sdp ON sdp.phase_id = sl.phase_id
             WHERE sl.dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
               AND sl.lot_source = 'sim' AND sl.excluded IS NOT TRUE
             GROUP BY sdp.phase_name ORDER BY sdp.phase_name
@@ -1264,7 +1264,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
             ) cap ON cap.phase_id = sdp.phase_id
             LEFT JOIN (
                 SELECT phase_id, COUNT(*) AS cnt
-                FROM sim_lots WHERE lot_source = 'sim' AND excluded IS NOT TRUE
+                FROM v_sim_ledger_combined WHERE lot_source = 'sim' AND excluded IS NOT TRUE
                 GROUP BY phase_id
             ) sim ON sim.phase_id = sdp.phase_id
             WHERE segd.ent_group_id = %s
@@ -1324,7 +1324,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
         # Check if sim lots exist (proxy for "has been run").
         cur.execute("""
             SELECT COUNT(*) AS sim_count
-            FROM sim_lots
+            FROM v_sim_ledger_combined
             WHERE lot_source = 'sim'
               AND dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
         """, (ent_group_id,))
@@ -1332,7 +1332,7 @@ def get_rules_validation(ent_group_id: int, conn=Depends(get_db_conn)):
 
         # By-source breakdown
         cur.execute("""
-            SELECT lot_source, COUNT(*) AS cnt FROM sim_lots
+            SELECT lot_source, COUNT(*) AS cnt FROM v_sim_ledger_combined
             WHERE dev_id IN (SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s)
               AND excluded IS NOT TRUE
             GROUP BY lot_source
