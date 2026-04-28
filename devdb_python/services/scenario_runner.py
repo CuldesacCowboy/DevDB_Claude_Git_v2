@@ -79,9 +79,9 @@ def _run_scenario_impl(conn, scenario_id: int) -> dict:
     _write_results(conn, scenario_id, ledger_rows)
     logger.info(f"scenario_runner: Wrote results for scenario {scenario_id}")
 
-    # ── 7. Update last_run_at ────────────────────────────────────────────
+    # ── 7. Update last_run_at and clear stale flag ──────────────────────
     conn.execute(
-        "UPDATE sim_scenarios SET last_run_at = NOW() WHERE scenario_id = %s",
+        "UPDATE sim_scenarios SET last_run_at = NOW(), is_stale = FALSE WHERE scenario_id = %s",
         (scenario_id,),
     )
 

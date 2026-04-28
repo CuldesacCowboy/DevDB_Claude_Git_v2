@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from api.deps import get_db_conn
+from api.deps import get_db_conn, flag_scenarios_stale, ent_group_for_phase
 from api.db import dict_cursor
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -351,6 +351,9 @@ def upsert_product_split(
             """,
             (phase_id, lot_type_id, body.projected_count),
         )
+        eg = ent_group_for_phase(conn, phase_id)
+        if eg:
+            flag_scenarios_stale(conn, eg)
         conn.commit()
         return dict(cur.fetchone())
     finally:

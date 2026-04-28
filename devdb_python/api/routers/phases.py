@@ -7,7 +7,7 @@ import traceback
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
-from api.deps import get_db_conn
+from api.deps import get_db_conn, flag_scenarios_stale, ent_group_for_dev, ent_group_for_phase
 from api.db import dict_cursor
 from api.models.phase_models import (
     PhaseCreateRequest,
@@ -118,6 +118,9 @@ async def create_phase(body: PhaseCreateRequest, conn=Depends(get_db_conn)):
         row = cur.fetchone()
         new_phase_id = int(row["phase_id"])
         next_seq = int(row["sequence_number"])
+        eg = ent_group_for_dev(conn, dev_id)
+        if eg:
+            flag_scenarios_stale(conn, eg)
         conn.commit()
         return {
             "phase_id": new_phase_id,
@@ -427,6 +430,8 @@ async def delete_phase(phase_id: int, conn=Depends(get_db_conn)):
         if not row:
             raise HTTPException(status_code=404, detail=f"Phase {phase_id} not found")
 
+        eg = ent_group_for_phase(conn, phase_id)
+
         # Count lots that will be unassigned
         cur.execute(
             "SELECT COUNT(*) AS lot_count FROM sim_lots WHERE phase_id = %s",
@@ -447,6 +452,8 @@ async def delete_phase(phase_id: int, conn=Depends(get_db_conn)):
         # Delete the phase itself
         cur.execute("DELETE FROM sim_dev_phases WHERE phase_id = %s", (phase_id,))
 
+        if eg:
+            flag_scenarios_stale(conn, eg)
         conn.commit()
         return {"success": True, "phase_id": phase_id, "lots_unassigned": lot_count}
     except HTTPException:

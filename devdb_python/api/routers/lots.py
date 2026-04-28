@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from api.db import dict_cursor
 
-from api.deps import get_db_conn
+from api.deps import get_db_conn, flag_scenarios_stale
 from api.models.lot_models import (
     ErrorResponse,
     LotPhaseReassignRequest,
@@ -106,10 +106,22 @@ async def delete_lot(lot_id: int, conn=Depends(get_db_conn)):
                 status_code=422,
                 detail="This lot exists in MARKS — use Release to return it to the MARKS bank instead of deleting it",
             )
+        # Look up ent_group before delete for stale flagging
+        cur.execute("SELECT dev_id FROM sim_lots WHERE lot_id = %s", (lot_id,))
+        dev_row = cur.fetchone()
+        eg_id = None
+        if dev_row:
+            cur.execute("SELECT ent_group_id FROM sim_ent_group_developments WHERE dev_id = %s LIMIT 1",
+                        (dev_row["dev_id"],))
+            eg_row = cur.fetchone()
+            eg_id = eg_row["ent_group_id"] if eg_row else None
+
         # Remove FK-dependent rows before deleting the lot itself.
         cur.execute("DELETE FROM sim_tda_lot_bank_members WHERE lot_id = %s", (lot_id,))
         cur.execute("DELETE FROM sim_lot_date_overrides   WHERE lot_id = %s", (lot_id,))
         cur.execute("DELETE FROM sim_lots WHERE lot_id = %s", (lot_id,))
+        if eg_id:
+            flag_scenarios_stale(conn, eg_id)
         conn.commit()
         return {"lot_id": lot_id, "deleted": True}
     except HTTPException:

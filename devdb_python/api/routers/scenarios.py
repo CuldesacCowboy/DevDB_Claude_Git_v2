@@ -47,6 +47,7 @@ def list_scenarios(ent_group_id: int, conn=Depends(get_db_conn)):
         cur.execute("""
             SELECT s.scenario_id, s.scenario_name, s.description,
                    s.created_at, s.updated_at, s.last_run_at,
+                   COALESCE(s.is_stale, FALSE) AS is_stale,
                    COUNT(o.override_id) AS override_count,
                    (SELECT COUNT(*) FROM sim_scenario_results r WHERE r.scenario_id = s.scenario_id) > 0 AS has_results
             FROM sim_scenarios s
@@ -65,6 +66,7 @@ def list_scenarios(ent_group_id: int, conn=Depends(get_db_conn)):
                 "last_run_at": r["last_run_at"].isoformat() if r["last_run_at"] else None,
                 "override_count": r["override_count"],
                 "has_results": bool(r["has_results"]),
+                "is_stale": bool(r["is_stale"]),
             }
             for r in cur.fetchall()
         ]

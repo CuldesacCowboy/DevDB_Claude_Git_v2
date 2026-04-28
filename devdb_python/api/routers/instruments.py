@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List
 
-from api.deps import get_db_conn
+from api.deps import get_db_conn, flag_scenarios_stale, ent_group_for_dev, ent_group_for_instrument
 from api.db import dict_cursor
 
 router = APIRouter(prefix="/instruments", tags=["instruments"])
@@ -88,6 +88,9 @@ def create_instrument(body: InstrumentCreateRequest, conn=Depends(get_db_conn)):
             (name, body.instrument_type, body.dev_id),
         )
         new_id = int(cur.fetchone()["instrument_id"])
+        eg = ent_group_for_dev(conn, body.dev_id)
+        if eg:
+            flag_scenarios_stale(conn, eg)
         conn.commit()
         return {
             "instrument_id": new_id,
@@ -490,6 +493,8 @@ def delete_instrument(instrument_id: int, conn=Depends(get_db_conn)):
     Lots are unassigned (phase_id set to NULL) not deleted."""
     cur = dict_cursor(conn)
     try:
+        eg = ent_group_for_instrument(conn, instrument_id)
+
         cur.execute(
             "SELECT instrument_id FROM sim_legal_instruments WHERE instrument_id = %s",
             (instrument_id,),
@@ -509,6 +514,8 @@ def delete_instrument(instrument_id: int, conn=Depends(get_db_conn)):
         cur.execute("DELETE FROM sim_dev_phases WHERE instrument_id = %s", (instrument_id,))
         cur.execute("DELETE FROM sim_instrument_builder_splits WHERE instrument_id = %s", (instrument_id,))
         cur.execute("DELETE FROM sim_legal_instruments WHERE instrument_id = %s", (instrument_id,))
+        if eg:
+            flag_scenarios_stale(conn, eg)
         conn.commit()
         return {"success": True, "instrument_id": instrument_id, "phases_deleted": len(phase_ids)}
     except HTTPException:
