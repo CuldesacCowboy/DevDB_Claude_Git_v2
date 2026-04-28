@@ -1,36 +1,31 @@
 """
-scenario_runner -- Run a simulation scenario with parameter overrides.
+scenario_runner -- Run a simulation scenario with parameter overrides (read-only).
 
-Flow: backup sim_lots → apply overrides → run engine → capture ledger → restore everything.
-Uses the same convergence_coordinator as base runs. No engine modifications needed.
+Flow: load overrides → run engine in scenario mode → compute ledger via temp table
+      → write to sim_scenario_results. Never touches sim_lots or any base table.
 """
 
-import json
 import logging
 from datetime import date
 
-import pandas as pd
-
 from engine.connection import PGConnection
 from engine.coordinator import convergence_coordinator
-from engine.ledger_aggregator import ledger_aggregator
+from engine.ledger_aggregator import compute_scenario_ledger
 
 logger = logging.getLogger(__name__)
 
 
 def run_scenario(scenario_id: int) -> dict:
     """
-    Execute a scenario run:
+    Execute a scenario run (read-only):
     1. Load overrides from sim_scenario_overrides
-    2. Backup sim_lots (lot_source='sim') for community devs
-    3. Save original parameter values
-    4. Apply overrides to DB
-    5. Run convergence_coordinator
-    6. Capture v_sim_ledger_monthly → sim_scenario_results
-    7. Restore sim_lots + original params
-    8. Rebuild ledger view
+    2. Build overrides dict for coordinator
+    3. Run convergence_coordinator in scenario mode (returns temp_lots, no DB writes)
+    4. Compute ledger from scenario lots + real lots via temp table
+    5. Write results to sim_scenario_results
+    6. Update last_run_at
 
-    Returns dict with iterations, elapsed info.
+    Returns dict with scenario_id and lot count.
     """
     conn = PGConnection()
     try:
@@ -53,248 +48,115 @@ def _run_scenario_impl(conn, scenario_id: int) -> dict:
         "SELECT scope, scope_id, param_name, param_value FROM sim_scenario_overrides WHERE scenario_id = %s",
         (scenario_id,),
     )
-    overrides = []
-    for _, row in overrides_df.iterrows():
-        overrides.append({
-            "scope": row["scope"],
-            "scope_id": int(row["scope_id"]),
-            "param_name": row["param_name"],
-            "param_value": row["param_value"],  # already parsed from JSONB
-        })
 
-    logger.info(f"scenario_runner: Running scenario {scenario_id} for ent_group {ent_group_id} with {len(overrides)} override(s)")
+    logger.info(f"scenario_runner: Running scenario {scenario_id} for ent_group {ent_group_id} "
+                f"with {len(overrides_df)} override(s)")
 
-    # ── 2. Get community dev_ids ─────────────────────────────────────────
+    # ── 2. Build overrides dict ──────────────────────────────────────────
+    overrides = _build_overrides_dict(overrides_df)
+
+    # ── 3. Get community dev_ids ─────────────────────────────────────────
     dev_ids_df = conn.read_df(
         "SELECT dev_id FROM sim_ent_group_developments WHERE ent_group_id = %s",
         (ent_group_id,),
     )
     dev_ids = [int(d) for d in dev_ids_df["dev_id"]]
 
-    # ── 3. Backup sim lots ───────────────────────────────────────────────
-    if dev_ids:
-        backup_df = conn.read_df(
-            """
-            SELECT * FROM sim_lots
-            WHERE lot_source = 'sim' AND dev_id = ANY(%s)
-            """,
-            (dev_ids,),
-        )
-    else:
-        backup_df = None
-    backup_count = len(backup_df) if backup_df is not None and not backup_df.empty else 0
-    logger.info(f"scenario_runner: Backed up {backup_count} sim lots")
+    # ── 4. Run engine in read-only scenario mode ─────────────────────────
+    scenario_lots = convergence_coordinator(ent_group_id, overrides=overrides)
 
-    # ── 4. Save original param values ────────────────────────────────────
-    originals = []
-    for ov in overrides:
-        orig = _read_original(conn, ov)
-        originals.append({"override": ov, "original_value": orig})
+    if not isinstance(scenario_lots, list):
+        # Normal mode returns (iterations, ...) — scenario mode returns list
+        raise RuntimeError(f"Unexpected coordinator return type: {type(scenario_lots)}")
 
-    # ── 5. Apply overrides ───────────────────────────────────────────────
-    for ov in overrides:
-        _apply_override(conn, ov)
-    logger.info(f"scenario_runner: Applied {len(overrides)} override(s)")
+    logger.info(f"scenario_runner: Engine returned {len(scenario_lots)} scenario lots")
 
-    iterations = 0
-    try:
-        # ── 6. Run engine ────────────────────────────────────────────────
-        result = convergence_coordinator(ent_group_id)
-        iterations = result[0] if isinstance(result, tuple) else result
+    # ── 5. Compute ledger from scenario lots + real lots ─────────────────
+    ledger_rows = compute_scenario_ledger(conn, scenario_lots, dev_ids)
+    logger.info(f"scenario_runner: Computed {len(ledger_rows)} ledger rows")
 
-        # ── 7. Capture ledger → sim_scenario_results ─────────────────────
-        _capture_results(conn, scenario_id, ent_group_id)
-        logger.info(f"scenario_runner: Captured results for scenario {scenario_id}")
+    # ── 6. Write to sim_scenario_results ─────────────────────────────────
+    _write_results(conn, scenario_id, ledger_rows)
+    logger.info(f"scenario_runner: Wrote results for scenario {scenario_id}")
 
-    finally:
-        # ── 8. Restore sim lots ──────────────────────────────────────────
-        if dev_ids:
-            conn.execute(
-                "DELETE FROM sim_lots WHERE lot_source = 'sim' AND dev_id = ANY(%s)",
-                (dev_ids,),
-            )
-            if backup_df is not None and not backup_df.empty:
-                # Convert numpy types to Python natives for psycopg2 compatibility
-                import numpy as np
-                cols = backup_df.columns.tolist()
-                col_str = ", ".join(cols)
-
-                def _py(v):
-                    if v is None:
-                        return None
-                    if isinstance(v, (np.integer,)):
-                        return int(v)
-                    if isinstance(v, (np.floating,)):
-                        return None if np.isnan(v) else float(v)
-                    if isinstance(v, (np.bool_,)):
-                        return bool(v)
-                    if isinstance(v, float) and np.isnan(v):
-                        return None
-                    if hasattr(v, 'isoformat'):
-                        return v
-                    try:
-                        if pd.isna(v):
-                            return None
-                    except (TypeError, ValueError):
-                        pass
-                    return v
-
-                rows = [tuple(_py(v) for v in row) for _, row in backup_df.iterrows()]
-                if rows:
-                    conn.execute_values(
-                        f"INSERT INTO sim_lots ({col_str}) VALUES %s",
-                        rows,
-                    )
-            logger.info(f"scenario_runner: Restored {backup_count} sim lots")
-
-        # ── 9. Restore original params ───────────────────────────────────
-        for entry in originals:
-            _restore_original(conn, entry["override"], entry["original_value"])
-        logger.info(f"scenario_runner: Restored {len(originals)} original param value(s)")
-
-        # ── 10. Rebuild ledger view ──────────────────────────────────────
-        ledger_aggregator(conn)
-        logger.info("scenario_runner: Ledger view rebuilt")
-
-    # ── 11. Update last_run_at ───────────────────────────────────────────
+    # ── 7. Update last_run_at ────────────────────────────────────────────
     conn.execute(
         "UPDATE sim_scenarios SET last_run_at = NOW() WHERE scenario_id = %s",
         (scenario_id,),
     )
 
-    return {"iterations": iterations, "scenario_id": scenario_id}
+    return {"scenario_id": scenario_id, "iterations": 1, "lots": len(scenario_lots)}
 
 
-# ── Override helpers ─────────────────────────────────────────────────────────
+def _build_overrides_dict(overrides_df) -> dict:
+    """
+    Convert sim_scenario_overrides rows into the nested dict format
+    expected by convergence_coordinator:
+      {
+        "dev": {dev_id: {param: value, ...}, ...},
+        "ent_group": {param: value, ...},
+        "instrument": {instrument_id: {param: value, ...}, ...},
+      }
+    """
+    result = {"dev": {}, "ent_group": {}, "instrument": {}}
 
-def _to_python(val):
-    """Convert numpy/pandas types to native Python for psycopg2."""
-    if val is None:
-        return None
-    import numpy as np
-    if isinstance(val, (np.integer,)):
-        return int(val)
-    if isinstance(val, (np.floating,)):
-        return None if np.isnan(val) else float(val)
-    if isinstance(val, (np.bool_,)):
-        return bool(val)
-    if isinstance(val, float) and np.isnan(val):
-        return None
-    try:
-        if pd.isna(val):
-            return None
-    except (TypeError, ValueError):
-        pass
-    return val
+    for _, row in overrides_df.iterrows():
+        scope = row["scope"]
+        scope_id = int(row["scope_id"])
+        param = row["param_name"]
+        value = row["param_value"]
 
+        if scope == "dev":
+            result["dev"].setdefault(scope_id, {})[param] = value
+        elif scope == "ent_group":
+            result["ent_group"][param] = value
+        elif scope == "instrument":
+            result["instrument"].setdefault(scope_id, {})[param] = value
 
-def _read_original(conn, ov: dict):
-    """Read the current value of the parameter being overridden."""
-    scope, scope_id, param = ov["scope"], ov["scope_id"], ov["param_name"]
-
-    if scope == "dev":
-        df = conn.read_df(
-            f"SELECT {param} FROM sim_dev_params WHERE dev_id = %s", (scope_id,)
-        )
-        if df.empty:
-            return None
-        return _to_python(df.iloc[0][param])
-
-    elif scope == "instrument":
-        df = conn.read_df(
-            f"SELECT {param} FROM sim_legal_instruments WHERE instrument_id = %s", (scope_id,)
-        )
-        if df.empty:
-            return None
-        return _to_python(df.iloc[0][param])
-
-    elif scope == "ent_group":
-        df = conn.read_df(
-            f"SELECT {param} FROM sim_entitlement_delivery_config WHERE ent_group_id = %s", (scope_id,)
-        )
-        if df.empty:
-            return None
-        return _to_python(df.iloc[0][param])
-
-    return None
+    return result
 
 
-_SCOPE_TABLE = {
-    "dev":        ("sim_dev_params", "dev_id"),
-    "instrument": ("sim_legal_instruments", "instrument_id"),
-    "ent_group":  ("sim_entitlement_delivery_config", "ent_group_id"),
-}
-
-# Params that need special type casting in SQL
-_ARRAY_PARAMS = {"delivery_months"}
-_BOOL_PARAMS = {"feed_starts_mode"}
-
-# Whitelist of allowed param names per scope
-_ALLOWED_PARAMS = {
-    "dev": {"annual_starts_target", "max_starts_per_month", "seasonal_weight_set"},
-    "instrument": {"spec_rate"},
-    "ent_group": {
-        "max_deliveries_per_year", "delivery_months", "min_gap_months",
-        "min_d_count", "feed_starts_mode", "default_cmp_lag_days",
-        "default_cls_lag_days", "td_to_str_lag", "hc_to_bldr_lag_days",
-        "scheduling_horizon_days",
-    },
-}
-
-
-def _apply_override(conn, ov: dict):
-    """Write the override value to the appropriate DB table."""
-    scope, scope_id, param = ov["scope"], ov["scope_id"], ov["param_name"]
-    value = ov["param_value"]
-
-    if scope not in _SCOPE_TABLE:
-        return
-    if param not in _ALLOWED_PARAMS.get(scope, set()):
-        logger.warning(f"scenario_runner: ignoring unknown param {scope}.{param}")
-        return
-
-    table, id_col = _SCOPE_TABLE[scope]
-    cast = "::int[]" if param in _ARRAY_PARAMS else ""
-    conn.execute(
-        f"UPDATE {table} SET {param} = %s{cast} WHERE {id_col} = %s",
-        (value, scope_id),
-    )
-
-
-def _restore_original(conn, ov: dict, original_value):
-    """Write back the original value."""
-    ov_copy = dict(ov)
-    ov_copy["param_value"] = original_value
-    _apply_override(conn, ov_copy)
-
-
-def _capture_results(conn, scenario_id: int, ent_group_id: int):
-    """Snapshot the current v_sim_ledger_monthly into sim_scenario_results."""
+def _write_results(conn, scenario_id: int, ledger_rows: list):
+    """Write ledger rows to sim_scenario_results, replacing any previous run."""
     conn.execute(
         "DELETE FROM sim_scenario_results WHERE scenario_id = %s", (scenario_id,)
     )
-    conn.execute(
+
+    if not ledger_rows:
+        return
+
+    rows = []
+    for r in ledger_rows:
+        rows.append((
+            scenario_id,
+            r["dev_id"],
+            r["calendar_month"],
+            r.get("ent_plan", 0),
+            r.get("dev_plan", 0),
+            r.get("td_plan", 0),
+            r.get("str_plan", 0),
+            r.get("str_plan_spec", 0),
+            r.get("str_plan_build", 0),
+            r.get("cmp_plan", 0),
+            r.get("cls_plan", 0),
+            r.get("p_end", 0),
+            r.get("e_end", 0),
+            r.get("d_end", 0),
+            r.get("h_end", 0),
+            r.get("u_end", 0),
+            r.get("uc_end", 0),
+            r.get("c_end", 0),
+            r.get("closed_cumulative", 0),
+        ))
+
+    conn.execute_values(
         """
         INSERT INTO sim_scenario_results (
             scenario_id, dev_id, calendar_month,
             ent_plan, dev_plan, td_plan, str_plan, str_plan_spec, str_plan_build,
             cmp_plan, cls_plan,
             p_end, e_end, d_end, h_end, u_end, uc_end, c_end, closed_cumulative
-        )
-        SELECT
-            %s, v.dev_id, v.calendar_month,
-            COALESCE(SUM(v.ent_plan), 0), COALESCE(SUM(v.dev_plan), 0),
-            COALESCE(SUM(v.td_plan), 0), COALESCE(SUM(v.str_plan), 0),
-            COALESCE(SUM(v.str_plan_spec), 0), COALESCE(SUM(v.str_plan_build), 0),
-            COALESCE(SUM(v.cmp_plan), 0), COALESCE(SUM(v.cls_plan), 0),
-            COALESCE(SUM(v.p_end), 0), COALESCE(SUM(v.e_end), 0),
-            COALESCE(SUM(v.d_end), 0), COALESCE(SUM(v.h_end), 0),
-            COALESCE(SUM(v.u_end), 0), COALESCE(SUM(v.uc_end), 0),
-            COALESCE(SUM(v.c_end), 0), COALESCE(SUM(v.closed_cumulative), 0)
-        FROM v_sim_ledger_monthly v
-        JOIN sim_ent_group_developments segd ON segd.dev_id = v.dev_id
-        WHERE segd.ent_group_id = %s
-        GROUP BY v.dev_id, v.calendar_month
+        ) VALUES %s
         """,
-        (scenario_id, ent_group_id),
+        rows,
     )
