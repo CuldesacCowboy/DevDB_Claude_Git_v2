@@ -37,7 +37,7 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
                 )))::DATE AS max_activity_month
             FROM sim_entitlement_groups eg
             JOIN sim_ent_group_developments egd ON egd.ent_group_id = eg.ent_group_id
-            LEFT JOIN sim_lots sl ON sl.dev_id = egd.dev_id AND sl.excluded IS NOT TRUE
+            LEFT JOIN v_sim_ledger_combined sl ON sl.dev_id = egd.dev_id AND sl.excluded IS NOT TRUE
             LEFT JOIN devdb.ref_counties comm_c ON comm_c.county_id = eg.county_id
             LEFT JOIN devdb.ref_school_districts comm_sd ON comm_sd.sd_id = eg.school_district_id
             WHERE eg.ent_group_id = %s
@@ -108,7 +108,7 @@ def query_ledger_by_dev(conn, ent_group_id: int) -> list:
             FROM sim_entitlement_groups eg
             JOIN sim_ent_group_developments egd ON egd.ent_group_id = eg.ent_group_id
             JOIN developments d ON d.dev_id = egd.dev_id
-            LEFT JOIN sim_lots sl ON sl.dev_id = egd.dev_id AND sl.excluded IS NOT TRUE
+            LEFT JOIN v_sim_ledger_combined sl ON sl.dev_id = egd.dev_id AND sl.excluded IS NOT TRUE
             WHERE eg.ent_group_id = %s
               AND eg.date_paper IS NOT NULL
             GROUP BY eg.date_paper, egd.dev_id, d.dev_name
@@ -166,7 +166,7 @@ def query_ledger_weekly(conn, ent_group_id: int) -> list:
                 )))::DATE AS max_activity_month
             FROM sim_entitlement_groups eg
             JOIN sim_ent_group_developments egd ON egd.ent_group_id = eg.ent_group_id
-            LEFT JOIN sim_lots sl ON sl.dev_id = egd.dev_id AND sl.excluded IS NOT TRUE
+            LEFT JOIN v_sim_ledger_combined sl ON sl.dev_id = egd.dev_id AND sl.excluded IS NOT TRUE
             WHERE eg.ent_group_id = %s
             GROUP BY eg.date_paper
             """,
