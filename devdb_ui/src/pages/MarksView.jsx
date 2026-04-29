@@ -222,7 +222,7 @@ function ImportPanel({ devCode, onDone }) {
   }
 
   if (loading) return <div style={{ padding: '8px 12px', fontSize: 12, color: '#9ca3af' }}>Loading…</div>
-  if (!lots?.length) return <div style={{ padding: '8px 12px', fontSize: 12, color: '#9ca3af' }}>No unimported lots.</div>
+  if (!lots?.length) return <div style={{ padding: '8px 12px', fontSize: 12, color: '#9ca3af' }}>No unimported lots for dev code "{devCode}". All lots in the MARKS registry for this code are already imported.</div>
 
   const assignmentLabel = phaseId
     ? `→ ${devPhases.phases.find(p => String(p.phase_id) === phaseId)?.phase_name ?? 'phase'}`
@@ -353,9 +353,10 @@ function ImportPanel({ devCode, onDone }) {
 // ─── Column layout constants ──────────────────────────────────────────────────
 
 const COL = {
-  code:     { width: 56,  flexShrink: 0 },
-  name:     { flex: 1,    minWidth: 0   },
-  marks:    { width: 80,  flexShrink: 0, textAlign: 'right' },
+  code:      { width: 56,  flexShrink: 0 },
+  marksName: { flex: 1,    minWidth: 0   },
+  appName:   { flex: 1,    minWidth: 0   },
+  marks:     { width: 80,  flexShrink: 0, textAlign: 'right' },
   imported: { width: 80,  flexShrink: 0, textAlign: 'right' },
   newLots:  { width: 60,  flexShrink: 0, textAlign: 'right' },
   syncBtn:  { width: 92,  flexShrink: 0, textAlign: 'right' },
@@ -402,10 +403,14 @@ function DevCodeRow({ row, onRefresh }) {
       }}>
         <code style={{ ...COL.code, fontSize: 13, fontWeight: 700, color: '#111827' }}>{row.dev_code}</code>
 
-        <span style={{ ...COL.name, fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {row.dev_name
+        <span style={{ ...COL.marksName, fontSize: 12, color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {row.marks_dev_name || <span style={{ color: '#d1d5db' }}>—</span>}
+        </span>
+
+        <span style={{ ...COL.appName, fontSize: 12, color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {row.app_dev_name
             ? <>
-                {row.dev_name}
+                {row.app_dev_name}
                 {row.promotable > 0 && (
                   <span style={{ marginLeft: 6, fontSize: 10, color: '#7c3aed', fontWeight: 600 }}>
                     {row.promotable} promotable
@@ -520,7 +525,8 @@ export default function MarksView() {
   const sorted = [...filtered].sort((a, b) => {
     let av, bv
     if      (sortCol === 'code')     { av = a.dev_code  ?? ''; bv = b.dev_code  ?? '' }
-    else if (sortCol === 'name')     { av = a.dev_name  ?? ''; bv = b.dev_name  ?? '' }
+    else if (sortCol === 'name')     { av = a.marks_dev_name ?? ''; bv = b.marks_dev_name ?? '' }
+    else if (sortCol === 'appName')  { av = a.app_dev_name  ?? ''; bv = b.app_dev_name  ?? '' }
     else if (sortCol === 'marks')    { av = a.total_marks;     bv = b.total_marks     }
     else if (sortCol === 'imported') { av = a.imported;        bv = b.imported        }
     else if (sortCol === 'new')      { av = a.unimported;      bv = b.unimported      }
@@ -589,7 +595,8 @@ export default function MarksView() {
             marginBottom: 2, gap: 8,
           }}>
             <SortHdr col="code"     label="Code"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.code} />
-            <SortHdr col="name"     label="Name"      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.name} />
+            <SortHdr col="name"     label="MARKS Name" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.marksName} />
+            <SortHdr col="appName"  label="App Development" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.appName} />
             <SortHdr col="marks"    label="In MARKS"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.marks} />
             <SortHdr col="imported" label="Imported"  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.imported} />
             <SortHdr col="new"      label="New"       sortCol={sortCol} sortDir={sortDir} onSort={handleSort} style={COL.newLots} />
