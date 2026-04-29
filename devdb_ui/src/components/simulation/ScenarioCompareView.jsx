@@ -41,17 +41,38 @@ export function ScenarioCompareView({ baseRows, scenarios, onClose }) {
   const base = (baseRows || []).filter(inRange)
   const filteredScenarios = scenarioList.map(s => ({ ...s, rows: s.rows.filter(inRange) }))
 
+  // Aggregate per-dev rows into per-month totals for inventory metrics
+  const aggregateByMonth = (rows) => {
+    const byMonth = {}
+    for (const r of rows) {
+      const m = r.calendar_month
+      if (!m) continue
+      if (!byMonth[m]) byMonth[m] = { calendar_month: m, d_end: 0, h_end: 0, u_end: 0, uc_end: 0, c_end: 0, str_plan: 0, cmp_plan: 0, cls_plan: 0 }
+      byMonth[m].d_end += r.d_end || 0
+      byMonth[m].h_end += r.h_end || 0
+      byMonth[m].u_end += r.u_end || 0
+      byMonth[m].uc_end += r.uc_end || 0
+      byMonth[m].c_end += r.c_end || 0
+      byMonth[m].str_plan += r.str_plan || 0
+      byMonth[m].cmp_plan += r.cmp_plan || 0
+      byMonth[m].cls_plan += r.cls_plan || 0
+    }
+    return Object.values(byMonth).sort((a, b) => a.calendar_month.localeCompare(b.calendar_month))
+  }
+
   // Metrics
   const sumField = (rows, f) => rows.reduce((s, r) => s + (r[f] || 0), 0)
   const selloutMonth = (rows) => {
-    for (let i = rows.length - 1; i >= 0; i--) if (totalInv(rows[i]) > 0) return rows[i].calendar_month
+    const agg = aggregateByMonth(rows)
+    for (let i = agg.length - 1; i >= 0; i--) if (totalInv(agg[i]) > 0) return agg[i].calendar_month
     return null
   }
   const zeroMonths = (rows) => {
+    const agg = aggregateByMonth(rows)
     const sell = selloutMonth(rows)
-    const first = rows.find(r => totalInv(r) > 0)?.calendar_month
+    const first = agg.find(r => totalInv(r) > 0)?.calendar_month
     if (!first || !sell) return 0
-    return rows.filter(r => r.calendar_month >= first && r.calendar_month <= sell && totalInv(r) === 0).length
+    return agg.filter(r => r.calendar_month >= first && r.calendar_month <= sell && totalInv(r) === 0).length
   }
 
   const annualRollup = (rows) => {
@@ -175,11 +196,11 @@ export function ScenarioCompareView({ baseRows, scenarios, onClose }) {
             {/* Peak Inventory */}
             <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
               <td style={{ padding: '6px 12px', fontWeight: 500 }}>Peak Inventory</td>
-              <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6b7280' }}>{Math.max(0, ...base.map(totalInv))}</td>
+              <td style={{ padding: '6px 8px', textAlign: 'right', color: '#6b7280' }}>{Math.max(0, ...aggregateByMonth(base).map(totalInv))}</td>
               {filteredScenarios.map(s => (
-                <td key={s.id} style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>{Math.max(0, ...s.rows.map(totalInv))}</td>
+                <td key={s.id} style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600 }}>{Math.max(0, ...aggregateByMonth(s.rows).map(totalInv))}</td>
               ))}
-              {filteredScenarios.length === 1 && <DeltaCell base={Math.max(0, ...base.map(totalInv))} scenario={Math.max(0, ...filteredScenarios[0].rows.map(totalInv))} />}
+              {filteredScenarios.length === 1 && <DeltaCell base={Math.max(0, ...aggregateByMonth(base).map(totalInv))} scenario={Math.max(0, ...aggregateByMonth(filteredScenarios[0].rows).map(totalInv))} />}
             </tr>
 
             {/* Sellout */}
