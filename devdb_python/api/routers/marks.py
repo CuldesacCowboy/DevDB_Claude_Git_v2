@@ -113,15 +113,13 @@ def get_marks_summary(conn=Depends(get_db_conn)):
             {_PIVOT_CTE}
             SELECT
                 mlr.developmentcode,
-                dd.development_name   AS marks_dev_name,
-                d.dev_name            AS app_dev_name,
+                d.dev_name,
                 d.dev_id              AS modern_dev_id,
                 COUNT(*)                          AS total_marks,
                 COUNT(sl_real.lot_id)             AS imported,
                 COUNT(*) - COUNT(sl_real.lot_id)  AS unimported,
                 COUNT(sl_pre.lot_id)              AS promotable
             FROM devdb.marks_lot_registry mlr
-            LEFT JOIN devdb.dim_development dd ON dd.dev_code = mlr.developmentcode
             LEFT JOIN devdb.developments d ON d.marks_code = mlr.developmentcode
             LEFT JOIN devdb.sim_lots sl_real
                 ON sl_real.lot_number = mlr.lot_number
@@ -129,20 +127,18 @@ def get_marks_summary(conn=Depends(get_db_conn)):
             LEFT JOIN devdb.sim_lots sl_pre
                 ON sl_pre.lot_number = mlr.lot_number
                AND sl_pre.lot_source = 'pre'
-            GROUP BY mlr.developmentcode, dd.development_name, d.dev_name, d.dev_id
+            GROUP BY mlr.developmentcode, d.dev_name, d.dev_id
             ORDER BY unimported DESC, mlr.developmentcode
         """)
         return [
             {
-                "dev_code":       r["developmentcode"],
-                "marks_dev_name": r["marks_dev_name"],
-                "app_dev_name":   r["app_dev_name"],
-                "dev_name":       r["app_dev_name"],
-                "modern_dev_id":  r["modern_dev_id"],
-                "total_marks":    int(r["total_marks"]),
-                "imported":       int(r["imported"]),
-                "unimported":     int(r["unimported"]),
-                "promotable":     int(r["promotable"]),
+                "dev_code":      r["developmentcode"],
+                "dev_name":      r["dev_name"],
+                "modern_dev_id": r["modern_dev_id"],
+                "total_marks":   int(r["total_marks"]),
+                "imported":      int(r["imported"]),
+                "unimported":    int(r["unimported"]),
+                "promotable":    int(r["promotable"]),
             }
             for r in cur.fetchall()
         ]
