@@ -265,6 +265,7 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
             ),
             phase_units AS (
                 SELECT spps.phase_id,
+                    COALESCE(SUM(spps.projected_count), 0)::int AS projected_count,
                     GREATEST(
                         COALESCE(SUM(spps.projected_count), 0)::int
                             - COALESCE(
@@ -275,6 +276,13 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
                 FROM sim_phase_product_splits spps
                 WHERE spps.phase_id IN (SELECT phase_id FROM all_phases)
                 GROUP BY spps.phase_id
+            ),
+            phase_lot_counts AS (
+                SELECT phase_id, COUNT(*)::int AS total_lots
+                FROM v_sim_ledger_combined
+                WHERE phase_id IN (SELECT phase_id FROM all_phases)
+                  AND excluded IS NOT TRUE
+                GROUP BY phase_id
             ),
             inventory AS (
                 SELECT dev_id, calendar_month,
@@ -297,10 +305,16 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
                 pre.d_end  AS d_pre,
                 pre.h_end  AS h_pre,
                 pre.u_end  AS u_pre,
-                post.d_end AS d_post
+                post.d_end AS d_post,
+                COALESCE(pu.projected_count, 0)::int AS projected_count,
+                COALESCE(plc.total_lots, 0)::int AS total_lots,
+                CASE WHEN COALESCE(pu.projected_count, 0) = 0 THEN NULL
+                     ELSE ROUND(COALESCE(plc.total_lots, 0)::numeric / pu.projected_count * 100, 1)
+                END AS utilization_pct
             FROM all_phases ap
-            LEFT JOIN event_link el  ON el.phase_id = ap.phase_id
-            LEFT JOIN phase_units pu ON pu.phase_id = ap.phase_id
+            LEFT JOIN event_link el   ON el.phase_id = ap.phase_id
+            LEFT JOIN phase_units pu  ON pu.phase_id = ap.phase_id
+            LEFT JOIN phase_lot_counts plc ON plc.phase_id = ap.phase_id
             LEFT JOIN inventory pre
                 ON  pre.dev_id = ap.dev_id
                 AND pre.calendar_month = (DATE_TRUNC('month', el.delivery_date) - INTERVAL '1 month')::date
@@ -339,6 +353,9 @@ def get_delivery_schedule(ent_group_id: int, conn=Depends(get_db_conn)):
                 "h_pre":              r["h_pre"],
                 "u_pre":              r["u_pre"],
                 "d_post":             r["d_post"],
+                "projected_count":    r["projected_count"],
+                "total_lots":         r["total_lots"],
+                "utilization_pct":    float(r["utilization_pct"]) if r["utilization_pct"] is not None else None,
             }
             for r in cur.fetchall()
         ]

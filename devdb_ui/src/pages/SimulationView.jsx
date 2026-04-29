@@ -485,7 +485,6 @@ const loadLedger = useCallback((id) => {
           ['delivery',    'Delivery Schedule'],
           ['rules',       'Rules Validator'],
           ['scenarios',   'Scenarios'],
-          ['utilization', 'Phase Utilization'],
           ['overrides',   null],
         ].map(([v, label]) => {
           const isOverrides = v === 'overrides'
@@ -760,14 +759,6 @@ const loadLedger = useCallback((id) => {
             scenarios={scenarioResults.scenarios || {}}
             onClose={() => { setView('scenarios'); setScenarioResults(null); setCompareScenarioId(null) }}
           />
-        </div>
-      )}
-
-      {/* ── Phase Utilization ── */}
-      {view === 'utilization' && (
-        <div style={{ height: '100%', overflowY: 'auto' }}>
-          {loading && <div style={{ color: '#6b7280', fontSize: 12 }}>Loading…</div>}
-          {!loading && <UtilizationPanel phases={filteredUtilization} />}
         </div>
       )}
 

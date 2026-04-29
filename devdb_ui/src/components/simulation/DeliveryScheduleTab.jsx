@@ -146,6 +146,7 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
               <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db', color: '#6b7280', fontSize: 10 }}
                   colSpan={3}>Prior to delivery</th>
               <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db', color: '#6b7280', fontSize: 10 }}>After</th>
+              <th style={{ ...stickyTh('right'), borderLeft: '2px solid #d1d5db' }}>Util %</th>
             </tr>
             <tr style={{ background: '#f9fafb' }}>
               <th style={{ ...stickyTh('left'), top: 24 }} />
@@ -161,6 +162,8 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
               <th style={{ ...stickyTh(), top: 24 }}>H</th>
               <th style={{ ...stickyTh(), top: 24 }}>U</th>
               <th style={{ ...stickyTh(), borderLeft: '2px solid #d1d5db', top: 24 }}>D</th>
+              <th style={{ ...stickyTh('right'), borderLeft: '2px solid #d1d5db', top: 24 }}
+                  title="Phase utilization: (real + sim lots) / projected capacity">{`\u00A0`}</th>
             </tr>
           </thead>
           <tbody>
@@ -250,6 +253,28 @@ export function DeliveryScheduleTab({ rows, loading, dirty, onPatchPhase }) {
                   <td style={tdS()}>{r.u_pre != null ? r.u_pre : <span style={{ color: '#e5e7eb' }}>—</span>}</td>
                   <td style={tdS('right', { borderLeft: '2px solid #d1d5db' })}>
                     {r.d_post != null ? r.d_post : <span style={{ color: '#e5e7eb' }}>—</span>}
+                  </td>
+                  <td style={tdS('right', { borderLeft: '2px solid #d1d5db', minWidth: 70 })}>
+                    {r.utilization_pct != null ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                        <div style={{
+                          width: 36, height: 8, background: '#f3f4f6', borderRadius: 4,
+                          overflow: 'hidden', flexShrink: 0,
+                        }}>
+                          <div style={{
+                            width: `${Math.min(r.utilization_pct, 100)}%`, height: '100%',
+                            borderRadius: 4,
+                            background: r.utilization_pct >= 100 ? '#22c55e'
+                              : r.utilization_pct >= 80 ? '#3b82f6'
+                              : r.utilization_pct >= 50 ? '#f59e0b' : '#ef4444',
+                          }} />
+                        </div>
+                        <span style={{
+                          fontSize: 11, fontWeight: 500, minWidth: 28, textAlign: 'right',
+                          color: r.utilization_pct >= 100 ? '#16a34a' : '#6b7280',
+                        }}>{r.utilization_pct}%</span>
+                      </div>
+                    ) : <span style={{ color: '#e5e7eb' }}>—</span>}
                   </td>
                 </tr>
               )
