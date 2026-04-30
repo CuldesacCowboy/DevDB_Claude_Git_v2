@@ -6,7 +6,11 @@ Load when working on: session tooling, bat/ps1 scripts, CLAUDE.md, skill files, 
 
 ### CLAUDE.md
 - Owns: Primary session bootstrap — architecture rules, decision log, build status. Reference docs extracted to .claude/docs/
-- Last commit: 2026-04-03
+- Last commit: 2026-04-30
+
+### .claude/docs/financial-integration-roadmap.md
+- Owns: DevDB × FinancialTracker cash flow integration plan — 7 phases, entity mapping, data contracts, synthetic ledger entry architecture
+- Last commit: 2026-04-30
 
 ### .claude/docs/file-manifest-backend.md
 - Owns: File manifest for devdb_python/api/ (routers, models, services)

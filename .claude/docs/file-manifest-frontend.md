@@ -12,18 +12,18 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-03-26
 
 ### devdb_ui/src/App.jsx
-- Owns: React Router shell with routes for LotPhaseView, SitePlanView, SimulationView; shared selectedGroupId state lifted here; showTestCommunities state (localStorage devdb_show_test_communities) lifted here; TEST button in nav bar — exclusive toggle (test mode = only is_test communities, normal = only non-test)
-- Imports: react-router-dom (BrowserRouter, Routes, Route, NavLink), LotPhaseView, SitePlanView, SimulationView
+- Owns: React Router shell; /configure redirects to /setup (ConfigView removed); shared selectedGroupId + showTestCommunities state; TEST button in nav bar
+- Imports: react-router-dom (BrowserRouter, Routes, Route, NavLink, Navigate), all page components except ConfigView
 - Imported by: main.jsx
 - Tables: none
-- Last commit: 2026-04-04
+- Last commit: 2026-04-30
 
 ### devdb_ui/src/pages/SimulationView.jsx
 - Owns: Simulation run trigger, 6-tab view (Monthly Ledger, Lot List, Delivery Schedule, Rules Validator, Phase Utilization, Plan/Overrides); weekly period mode with lazy loading; DeliveryConfigSection: MonthGrid component (1×12 clickable month buttons), Select All, Clear, Apply Standard Window, Edit Standard Window (inline amber editor, localStorage devdb_delivery_standard_months); feed_starts_mode checkbox (amber) — aggressive batching toggle that bypasses tier gate in P-0000; showTestCommunities prop filters community picker. selectedGroupId lifted to App.jsx. Pipeline chart: sawtooth stacked area with D and H layers, delivery pin markers, rich tooltips, gridlines. Scheduling date hints on ledger dates and phase delivery date. Phase badges: fixed columns for vertical alignment. Lot ledger (LotLedger component): OverrideDateCell on pipeline date columns; OverridesPanel tab; SyncReconciliationModal post-run; building group visualization — Bldg column (B1/B2/… teal labels), alternating teal/green row tint per group, 2px teal top separator between groups; bgLabelMap computed per phase from building_group_id; CSV export includes Bldg column. Spec/build: specFilter dropdown ('all'|'spec'|'build'|'undet') on lot ledger; Spec column header (teal) with S/B/— cell rendering; STR(S) teal dashed line and STR(B) gray dashed line on velocity panel; stacked STR(S)+STR(B) bars on closings panel; utilization panel shows "12S 28B 5?" breakdown when any spec lots exist. County/SD filter dropdowns on monthly ledger (countyFilter, sdFilter state; countyOptions/sdOptions memos derived from byDev; filteredByDev memo; dropdowns only shown when >1 unique value). LocationSection in community settings modal (PATCH /entitlement-groups/{id}). Community picker shows [status] suffix appended to name when status is set.
 - Imports: react (useState, useEffect, useCallback, useMemo), recharts (AreaChart, BarChart, etc.), statusConfig (STATUS_CFG, STATUS_COLOR, StatusBadge), config (API_BASE), hooks/useOverrides, components/overrides/OverrideDateCell, OverridesPanel, SyncReconciliationModal, SimSettings (LocationSection)
 - Imported by: App.jsx
 - Tables: none (API calls via /api/simulations/run, /api/ledger, /api/entitlement-groups, /api/developments/{id}/sim-params, /api/overrides/*, /api/ref/counties, /api/ref/school-districts, /api/admin/phase/{id})
-- Last commit: 2026-04-23
+- Last commit: 2026-04-30
 
 ### devdb_ui/src/pages/LotPhaseView.jsx
 - Owns: Main lot-phase view orchestrator; tab shell (Developments / Legal Instruments); community picker filtered by showTestCommunities prop (is_test exclusive). selectedGroupId lifted to App.jsx.
@@ -33,11 +33,11 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Last commit: 2026-04-04
 
 ### devdb_ui/src/pages/SetupView.jsx
-- Owns: Setup tree page — Community → Development → Instrument → Phase hierarchy; sortable community list; sticky sort header + summary row; D/I/P/L subtotal columns at each level; hover-only add buttons on tree rows; ExpandAllContext + LotRefreshContext providers; CommunityRow, DevRow, InstrumentRow components; delegates phase detail to PhaseRow; DeliveryEventsSection removed (delivery events never surfaced to user); instrument type badge in InstrumentRow is a click-to-edit select (Plat / Site Condo / Traditional Condo / Metes & Bounds Splits / Other — PATCH /instruments/{id}/type on change); wider container (maxWidth 1020px), indigo left rail on instrument rows (faint indigo background), gray left rail on dev rows, community cards with more internal padding; community row shows colored status badge (pill, STATUS_STYLE_MAP, read-only display from eg list)
-- Imports: react (useState, useEffect, useContext, useRef, createContext), API_BASE from config, setupShared (all shared atoms), PhaseRow
+- Owns: Unified setup page — merged SetupView + ConfigView. Mode bar: Structure | Communities | Developments | Instruments | Phases. Structure mode = tree (Community → Dev → Instrument → Phase); config modes = lazy-loaded CommunityTab/DevTab/InstrumentTab/PhaseTab from components/config/. configJump deep-link from AuditView/SimulationView. Mode persisted to localStorage (devdb_setup_mode). Config save handlers ported from ConfigView (patchComm, patchDev, saveSpecRate, saveProductSplit, saveBuilderSplit, toggleLock, saveGlobal).
+- Imports: react, API_BASE, setupShared, PhaseRow, CommunityTab, DevTab, InstrumentTab, PhaseTab from config/
 - Imported by: App.jsx (via /setup route)
-- Tables: none (API calls via /admin/setup-tree, /phases, /instruments, /developments, /entitlement-groups, PATCH /instruments/{id}/type)
-- Last commit: 2026-04-22
+- Tables: none (API calls via /admin/*, /phases, /instruments, /developments, /entitlement-groups)
+- Last commit: 2026-04-30
 
 ### devdb_ui/src/components/setup/setupShared.jsx
 - Owns: All shared hooks, utilities, and UI atoms for the Setup tree; exports LotRefreshContext, ExpandAllContext, useLocalOpen, SUB (column widths), SUB_LABELS, phaseTotal, fmtRelative, SubCell, SortHeader, formatLotNum, lotSeqStr, formatLotNumPadded, ChevronIcon, InlineEdit, EditableCount, AddForm, useAddForm, ROW (padding 5px), AddButton; ROW padding increased 3→5px; formatLotNum/formatLotNumPadded updated to XX NNN format (space-separated, 3-char space-padded number, non-breaking spaces)
@@ -471,7 +471,7 @@ Load when working on: React components, pages, hooks, utilities, or the Vite bui
 - Imports: react (useState, useEffect, useMemo), config (API_BASE)
 - Imported by: App.jsx (via /audit route)
 - Tables: none (API calls via /api/*)
-- Last commit: 2026-04-14
+- Last commit: 2026-04-30
 
 ### devdb_ui/src/pages/MarksView.jsx
 - Owns: MARKS actuals view; lot number displays use fmtLot (XX NNN format)
