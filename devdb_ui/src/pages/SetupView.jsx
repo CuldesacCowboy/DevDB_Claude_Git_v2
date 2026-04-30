@@ -503,7 +503,16 @@ function CommunityRow({ comm, devs, instruments, phases, lotTypes,
 
 // ─── SetupView ────────────────────────────────────────────────────────────────
 
+const MODES = [
+  { key: 'structure',   label: 'Structure' },
+  { key: 'community',   label: 'Communities' },
+  { key: 'dev',         label: 'Developments' },
+  { key: 'instrument',  label: 'Instruments' },
+  { key: 'phase',       label: 'Phases' },
+]
+
 export default function SetupView({ showTestCommunities }) {
+  const [mode, setMode] = useState(() => localStorage.getItem('devdb_setup_mode') || 'structure')
   const [communities, setCommunities] = useState([])
   const [developments, setDevelopments] = useState([])
   const [instruments, setInstruments] = useState([])
@@ -514,6 +523,11 @@ export default function SetupView({ showTestCommunities }) {
   const [refreshTick, setRefreshTick] = useState(0)
   const [commSort, setCommSort] = useState({ key: null, dir: 1 })
   const [expandCtx, setExpandCtx] = useState({ tick: 0, value: null })
+
+  function switchMode(m) {
+    setMode(m)
+    localStorage.setItem('devdb_setup_mode', m)
+  }
 
   const addComm = useAddForm(async (vals) => {
     const res = await fetch(`${API_BASE}/entitlement-groups`, {
@@ -685,19 +699,21 @@ export default function SetupView({ showTestCommunities }) {
 
       {/* ── Locked header ── */}
       <div style={{ flexShrink: 0, padding: '24px 32px 0', maxWidth: 1020, boxSizing: 'border-box', background: '#fff' }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8, gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#111827' }}>Setup</h1>
-          <button
-            onClick={() => addComm.setOpen(o => !o)}
-            style={{
-              fontSize: 12, color: '#2563eb', background: '#eff6ff',
-              border: '1px solid #bfdbfe', borderRadius: 4,
-              padding: '3px 10px', cursor: 'pointer',
-            }}>
-            + New community
-          </button>
+          {mode === 'structure' && (
+            <button
+              onClick={() => addComm.setOpen(o => !o)}
+              style={{
+                fontSize: 12, color: '#2563eb', background: '#eff6ff',
+                border: '1px solid #bfdbfe', borderRadius: 4,
+                padding: '3px 10px', cursor: 'pointer',
+              }}>
+              + New community
+            </button>
+          )}
           <span style={{ flex: 1 }} />
-          {[['Expand all', true], ['Collapse all', false]].map(([label, val]) => (
+          {mode === 'structure' && [['Expand all', true], ['Collapse all', false]].map(([label, val]) => (
             <button key={label}
               onClick={() => setExpandCtx(prev => ({ tick: prev.tick + 1, value: val }))}
               style={{
@@ -710,7 +726,22 @@ export default function SetupView({ showTestCommunities }) {
           ))}
         </div>
 
-        {addComm.open && (
+        {/* Mode bar */}
+        <div style={{ display: 'flex', gap: 0, marginBottom: 12, borderBottom: '2px solid #e5e7eb' }}>
+          {MODES.map(m => (
+            <button key={m.key} onClick={() => switchMode(m.key)} style={{
+              padding: '6px 16px', fontSize: 12, fontWeight: mode === m.key ? 700 : 400,
+              color: mode === m.key ? '#1e40af' : '#6b7280',
+              background: mode === m.key ? '#eff6ff' : 'transparent',
+              border: 'none', borderBottom: mode === m.key ? '2px solid #2563eb' : '2px solid transparent',
+              marginBottom: -2, cursor: 'pointer',
+            }}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {mode === 'structure' && addComm.open && (
           <div style={{ marginBottom: 10 }}>
             <AddForm
               fields={[{ name: 'comm_name', label: 'Community name', required: true, width: 240 }]}
@@ -722,7 +753,7 @@ export default function SetupView({ showTestCommunities }) {
           </div>
         )}
 
-        {visibleCommunities.length > 0 && (() => {
+        {mode === 'structure' && visibleCommunities.length > 0 && (() => {
           const totals = Object.values(commStats).reduce(
             (acc, s) => ({ D: acc.D + s.D, I: acc.I + s.I, P: acc.P + s.P, L: acc.L + s.L }),
             { D: 0, I: 0, P: 0, L: 0 }
@@ -757,34 +788,45 @@ export default function SetupView({ showTestCommunities }) {
         })()}
       </div>
 
-      {/* ── Scrollable community rows ── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 32px 24px', maxWidth: 1020, boxSizing: 'border-box' }}>
-        {visibleCommunities.length === 0 && (
-          <div style={{ fontSize: 13, color: '#9ca3af', paddingTop: 8 }}>No communities yet.</div>
-        )}
+      {/* ── Scrollable community rows (Structure mode) ── */}
+      {mode === 'structure' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 32px 24px', maxWidth: 1020, boxSizing: 'border-box' }}>
+          {visibleCommunities.length === 0 && (
+            <div style={{ fontSize: 13, color: '#9ca3af', paddingTop: 8 }}>No communities yet.</div>
+          )}
 
-        {sortedCommunities.map(comm => (
-          <CommunityRow
-            key={comm.ent_group_id}
-            comm={comm}
-            devs={developments.filter(d => d.community_id === comm.ent_group_id)}
-            instruments={instruments}
-            phases={phases}
-            lotTypes={lotTypes}
-            onAddDev={handleAddDev}
-            onAddInstrument={handleAddInstrument}
-            onAddPhase={handleAddPhase}
-            onRenameComm={name => handleRenameComm(comm.ent_group_id, name)}
-            onRenameDev={handleRenameDev}
-            onRenameInstr={handleRenameInstr}
-            onChangeInstrType={handleChangeInstrType}
-            onRenamePhase={handleRenamePhase}
-            onDeleteComm={() => handleDeleteComm(comm.ent_group_id)}
-            onDeleteDev={handleDeleteDev}
-            onRefresh={() => load(true)}
-          />
-        ))}
-      </div>
+          {sortedCommunities.map(comm => (
+            <CommunityRow
+              key={comm.ent_group_id}
+              comm={comm}
+              devs={developments.filter(d => d.community_id === comm.ent_group_id)}
+              instruments={instruments}
+              phases={phases}
+              lotTypes={lotTypes}
+              onAddDev={handleAddDev}
+              onAddInstrument={handleAddInstrument}
+              onAddPhase={handleAddPhase}
+              onRenameComm={name => handleRenameComm(comm.ent_group_id, name)}
+              onRenameDev={handleRenameDev}
+              onRenameInstr={handleRenameInstr}
+              onChangeInstrType={handleChangeInstrType}
+              onRenamePhase={handleRenamePhase}
+              onDeleteComm={() => handleDeleteComm(comm.ent_group_id)}
+              onDeleteDev={handleDeleteDev}
+              onRefresh={() => load(true)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Config tab placeholder ── */}
+      {mode !== 'structure' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 32px' }}>
+          <div style={{ fontSize: 13, color: '#9ca3af' }}>
+            {MODES.find(m => m.key === mode)?.label} config — loading...
+          </div>
+        </div>
+      )}
 
     </div>
     </ExpandAllContext.Provider>
