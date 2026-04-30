@@ -121,8 +121,12 @@ def get_marks_summary(conn=Depends(get_db_conn)):
                 COUNT(*) - COUNT(sl_real.lot_id)  AS unimported,
                 COUNT(sl_pre.lot_id)              AS promotable
             FROM devdb.marks_lot_registry mlr
-            LEFT JOIN devdb_ext.devmaster dm
-                ON dm.developmentcode = mlr.developmentcode AND dm.companycode = '001'
+            LEFT JOIN LATERAL (
+                SELECT description FROM devdb_ext.devmaster dm2
+                WHERE dm2.developmentcode = mlr.developmentcode
+                ORDER BY CASE WHEN dm2.companycode = '001' THEN 0 ELSE 1 END
+                LIMIT 1
+            ) dm ON TRUE
             LEFT JOIN devdb.developments d ON d.marks_code = mlr.developmentcode
             LEFT JOIN devdb.sim_lots sl_real
                 ON sl_real.lot_number = mlr.lot_number
