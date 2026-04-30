@@ -330,20 +330,21 @@ def import_marks_lots(body: ImportRequest, conn=Depends(get_db_conn)):
         pairs = [(lot.dev_code, lot.housenumber) for lot in body.lots]
 
         # Fetch resolved dates for all requested lots in one query using unnest
-        dev_codes   = [lot.dev_code   for lot in body.lots]
-        housenumbers = [lot.housenumber for lot in body.lots]
+        dev_codes    = [lot.dev_code for lot in body.lots]
+        housenumbers = [str(lot.housenumber).zfill(8) for lot in body.lots]
         cur.execute(f"""
             {_PIVOT_CTE}
             SELECT p.developmentcode, p.housenumber,
                    p.date_td, p.date_td_hold, p.date_str, p.date_frm, p.date_cmp, p.date_cls
             FROM pivoted p
             WHERE (p.developmentcode, p.housenumber) IN (
-                SELECT * FROM unnest(%s::text[], %s::int[])
+                SELECT * FROM unnest(%s::text[], %s::text[])
             )
         """, (dev_codes, housenumbers))
         dates_by_key = {}
         for r in cur.fetchall():
-            dates_by_key[(r["developmentcode"], r["housenumber"])] = r
+            # Key by (dev_code, int housenumber) to match body.lots
+            dates_by_key[(r["developmentcode"], int(r["housenumber"]))] = r
 
         # Resolve dev_id: use provided value or look up from lot's dev_code
         def get_dev_id(dev_code):
