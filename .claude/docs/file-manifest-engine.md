@@ -21,11 +21,11 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-15
 
 ### devdb_python/engine/coordinator.py
-- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); convergence check compares sorted list of effective delivery dates; no domain logic — all logic lives in pipeline modules; passes resolved_events directly to lot_date_propagator; returns (iterations, missing_params_devs, residual_gaps); injects _scheduling_horizon_days into build_lag_curves dict (alongside _td_to_str_lag, _default_cmp, _default_cls) so tda_preclear can floor HC hold dates without a new signature param; passes build_lag_curves and rng to d_bldr_date_projector; execution order defined by STARTS_SEQUENCE/SUPPLY_SEQUENCE metadata lists
+- Owns: Convergence coordinator — runs starts pipeline then supply pipeline per ent_group; loops until convergence (max 10); ProjectionContext dataclass threads projection_id through pipeline; creates sim_projections row (base or scenario) before loop; HC demand fix: hc_bldr_date_projector runs before kernel, _build_sim_demand shifts demand start to earliest sim supply + deducts HC starts at month level; HC lots excluded from kernel snapshot; scenarios use full convergence loop with dev_param_overrides (not simplified pipeline); execution order defined by STARTS_SEQUENCE/SUPPLY_SEQUENCE metadata lists
 - Imports: engine modules (lot_loader through ledger_aggregator, hc_bldr_date_projector, d_bldr_date_projector), locked_event_rebuilder through sync_flag_writer, config_loader, kernel.plan, kernel.FrozenInput, psycopg2.extras, dateutil.relativedelta
-- Imported by: routers/simulations.py, tests/test_coordinator.py
-- Tables: reads/writes via all pipeline modules; sim_dev_params, sim_lot_date_overrides, sim_lot_date_violations, sim_instrument_builder_splits (coordinator itself does no direct sim_lots writes)
-- Last commit: 2026-04-24
+- Imported by: routers/simulations.py, services/scenario_runner.py, tests/test_coordinator.py
+- Tables: reads/writes via all pipeline modules; sim_projections (INSERT/UPDATE), sim_dev_params, sim_lot_date_overrides, sim_lot_date_violations, sim_instrument_builder_splits
+- Last commit: 2026-04-30
 
 ### devdb_python/engine/locked_event_rebuilder.py
 - Owns: Pre-supply-pipeline module — deletes all delivery events whose date_dev_actual IS NOT NULL and rebuilds them from sim_dev_phases.date_dev_actual; groups phases by date and INSERTs one event per date; returns count of new events created; locked_event_rebuilder(conn, ent_group_id) signature
@@ -158,16 +158,16 @@ Load when working on: simulation engine modules, convergence coordinator, planni
 - Last commit: 2026-04-24
 
 ### devdb_python/engine/persistence_writer.py
-- Owns: atomic DELETE+INSERT of sim lots; assigns lot_id via MAX(lot_id)+offset per D-086; _LOCKED_COLS frozenset defaults NOT NULL boolean columns (locked flags + excluded) to False for sim lots; Step 3 re-stamps date_ent from sim_dev_phases onto newly-inserted sim lots (INSERT writes date_ent=None; phase-level value restored here per migration 023)
+- Owns: atomic DELETE+INSERT of projection lots; writes exclusively to sim_projection_lots (never sim_lots); requires ProjectionContext with valid projection_id; Step 3 re-stamps date_ent from sim_dev_phases onto newly-inserted projection lots
 - Imported by: coordinator.py
-- Tables: sim_lots (DELETE sim rows, INSERT new sim rows, UPDATE date_ent), sim_dev_phases (SELECT date_ent)
-- Last commit: 2026-04-24
+- Tables: sim_projection_lots (DELETE + INSERT for dev_id/projection_id), sim_dev_phases (SELECT date_ent)
+- Last commit: 2026-04-30
 
 ### devdb_python/engine/ledger_aggregator.py
-- Owns: creates/replaces v_sim_ledger_monthly view; COUNT-based pipeline stage counts; sawtooth stacked area shape with D and H layers; WHERE excluded IS NOT TRUE filter
-- Imported by: coordinator.py
-- Tables: v_sim_ledger_monthly (CREATE OR REPLACE VIEW over sim_lots)
-- Last commit: 2026-04-24
+- Owns: creates v_sim_ledger_combined (UNION real/pre from sim_lots + sim from sim_projection_lots via current base projection), v_sim_ledger_monthly (reads from combined view), month_spine; compute_scenario_ledger() for scenario temp-table aggregation
+- Imported by: coordinator.py, services/scenario_runner.py
+- Tables: v_sim_ledger_combined, v_sim_ledger_monthly, month_spine (CREATE OR REPLACE VIEW); sim_projection_lots (SELECT via view)
+- Last commit: 2026-04-30
 
 ### devdb_python/engine/placeholder_rebuilder.py
 - Owns: drains D-status lot balance using COALESCE(date_td, date_td_projected) so that lots with only a projected takedown date are correctly counted as leaving the D bucket; pre-computes drain dates in a CTE for cleaner query plan; called between placeholder_rebuilder (P-0000) and actual_date_applicator in supply pipeline
