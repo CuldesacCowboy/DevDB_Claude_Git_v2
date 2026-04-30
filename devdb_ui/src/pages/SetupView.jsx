@@ -2,9 +2,13 @@
 // Hierarchical setup tree: Community → Development → Instrument → Phase → Lot Types
 // Heavy sub-components live in src/components/setup/.
 
-import { useState, useEffect, useContext } from 'react'
+import { useState, useEffect, useContext, useCallback } from 'react'
 import { API_BASE } from '../config'
 import { stripPrefix } from '../components/simulation/simShared'
+import { CommunityTab } from '../components/config/CommunityTab'
+import { DevTab } from '../components/config/DevTab'
+import { InstrumentTab } from '../components/config/InstrumentTab'
+import { PhaseTab } from '../components/config/PhaseTab'
 import {
   LotRefreshContext, ExpandAllContext,
   useLocalOpen, SUB, SUB_LABELS, phaseTotal, phaseHasLots,
@@ -524,10 +528,52 @@ export default function SetupView({ showTestCommunities }) {
   const [commSort, setCommSort] = useState({ key: null, dir: 1 })
   const [expandCtx, setExpandCtx] = useState({ tick: 0, value: null })
 
+  // ── Config tab state (lazy-loaded on first config tab switch) ──
+  const [configLoaded, setConfigLoaded] = useState(false)
+  const [phaseData,    setPhaseData]    = useState(null)
+  const [commData,     setCommData]     = useState(null)
+  const [devData,      setDevData]      = useState(null)
+  const [globalMonths, setGlobalMonths] = useState(null)
+  const [configJump]   = useState(() => {
+    try {
+      const j = JSON.parse(localStorage.getItem('devdb_config_jump') || 'null')
+      localStorage.removeItem('devdb_config_jump')
+      return j
+    } catch { return null }
+  })
+
   function switchMode(m) {
     setMode(m)
     localStorage.setItem('devdb_setup_mode', m)
   }
+
+  // Lazy-load config data on first switch to a config tab
+  const loadConfig = useCallback(() => {
+    if (configLoaded) return
+    Promise.all([
+      fetch(`${API_BASE}/admin/phase-config`).then(r => r.json()),
+      fetch(`${API_BASE}/admin/community-config`).then(r => r.json()),
+      fetch(`${API_BASE}/admin/dev-config`).then(r => r.json()),
+      fetch(`${API_BASE}/global-settings`).then(r => r.json()),
+    ]).then(([pd, cd, dd, gs]) => {
+      setPhaseData(pd); setCommData(cd); setDevData(dd)
+      setGlobalMonths(gs?.delivery_months ? [...gs.delivery_months] : null)
+      setConfigLoaded(true)
+    })
+  }, [configLoaded])
+
+  useEffect(() => {
+    if (mode !== 'structure') loadConfig()
+  }, [mode, loadConfig])
+
+  // Handle configJump from AuditView/SimulationView
+  useEffect(() => {
+    if (configJump?.tab) {
+      const modeMap = { community: 'community', dev: 'dev', instrument: 'instrument', phase: 'phase' }
+      const m = modeMap[configJump.tab]
+      if (m) switchMode(m)
+    }
+  }, []) // eslint-disable-line
 
   const addComm = useAddForm(async (vals) => {
     const res = await fetch(`${API_BASE}/entitlement-groups`, {
@@ -649,6 +695,119 @@ export default function SetupView({ showTestCommunities }) {
 
   async function handleDeleteDev(devId) {
     load(true)
+  }
+
+  // ── Config tab save handlers (ported from ConfigView) ──────────────────────
+
+  async function patchComm(entGroupId, kind, patch) {
+    if (kind === 'ledger') {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/ledger-config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const updated = await res.json()
+      setCommData(prev => prev.map(r => r.ent_group_id === entGroupId
+        ? { ...r, date_paper: updated.date_paper, date_ent: updated.date_ent } : r))
+    } else if (kind === 'location') {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      setCommData(prev => prev.map(r => r.ent_group_id === entGroupId
+        ? { ...r, county_id: patch.county_id ?? r.county_id, school_district_id: patch.school_district_id ?? r.school_district_id } : r))
+      const full = await fetch(`${API_BASE}/admin/audit-data`).then(r => r.json())
+      setCommData(full.communities)
+    } else {
+      const res = await fetch(`${API_BASE}/entitlement-groups/${entGroupId}/delivery-config`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+      })
+      if (!res.ok) throw new Error(await res.text())
+      const updated = await res.json()
+      setCommData(prev => prev.map(r => r.ent_group_id === entGroupId
+        ? { ...r, delivery_months: updated.delivery_months != null ? [...updated.delivery_months] : null,
+            max_deliveries_per_year: updated.max_deliveries_per_year } : r))
+    }
+  }
+
+  async function saveGlobal(months) {
+    const res = await fetch(`${API_BASE}/global-settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delivery_months: months }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const updated = await res.json()
+    setGlobalMonths(updated?.delivery_months ? [...updated.delivery_months] : null)
+  }
+
+  async function patchDev(devId, patch) {
+    const res = await fetch(`${API_BASE}/developments/${devId}/sim-params`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const updated = await res.json()
+    setDevData(prev => prev.map(r => r.dev_id === devId
+      ? { ...r, annual_starts_target: updated.annual_starts_target, max_starts_per_month: updated.max_starts_per_month } : r))
+  }
+
+  async function saveSpecRate(instrumentId, rate) {
+    const res = await fetch(`${API_BASE}/instruments/${instrumentId}/spec-rate`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec_rate: rate }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    setPhaseData(prev => ({ ...prev, rows: prev.rows.map(r => r.instrument_id === instrumentId ? { ...r, spec_rate: rate } : r) }))
+  }
+
+  function patchPhaseRow(phaseId, patch) {
+    setPhaseData(prev => ({ ...prev, rows: prev.rows.map(r => r.phase_id === phaseId ? { ...r, ...patch } : r) }))
+  }
+
+  async function cfgPatchPhase(phaseId, field, value) {
+    const res = await fetch(`${API_BASE}/admin/phase/${phaseId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: value }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    patchPhaseRow(phaseId, await res.json())
+  }
+
+  async function toggleLock(row, shouldLock) {
+    const date_dev_actual = shouldLock ? row.date_dev_projected : null
+    const res = await fetch(`${API_BASE}/admin/phase/${row.phase_id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date_dev_actual }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    patchPhaseRow(row.phase_id, await res.json())
+  }
+
+  async function saveProductSplit(phaseId, lotTypeId, count) {
+    const res = await fetch(`${API_BASE}/admin/product-split/${phaseId}/${lotTypeId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projected_count: count ?? 0 }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const row = phaseData?.rows.find(r => r.phase_id === phaseId)
+    patchPhaseRow(phaseId, { product_splits: { ...(row?.product_splits ?? {}), [lotTypeId]: count ?? 0 } })
+  }
+
+  async function saveBuilderSplit(instrumentId, builderId, share) {
+    const res = await fetch(`${API_BASE}/admin/builder-split/${instrumentId}/${builderId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ share }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const affectedRows = phaseData?.rows.filter(r => r.instrument_id === instrumentId) ?? []
+    for (const row of affectedRows) {
+      const newSplits = { ...(row?.builder_splits ?? {}) }
+      if (share == null) delete newSplits[builderId]; else newSplits[builderId] = share
+      patchPhaseRow(row.phase_id, { builder_splits: newSplits })
+    }
+  }
+
+  function reloadConfig() {
+    setConfigLoaded(false)
+    loadConfig()
   }
 
   async function handleAddPhase(instrumentId, name) {
@@ -819,12 +978,33 @@ export default function SetupView({ showTestCommunities }) {
         </div>
       )}
 
-      {/* ── Config tab placeholder ── */}
+      {/* ── Config tabs ── */}
       {mode !== 'structure' && (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 32px' }}>
-          <div style={{ fontSize: 13, color: '#9ca3af' }}>
-            {MODES.find(m => m.key === mode)?.label} config — loading...
-          </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px' }}>
+          {!configLoaded && <div style={{ fontSize: 13, color: '#9ca3af', padding: '16px 0' }}>Loading config…</div>}
+
+          {mode === 'community' && commData && (
+            <CommunityTab rows={commData} showTest={showTestCommunities} onPatchComm={patchComm}
+              globalMonths={globalMonths} onSaveGlobal={saveGlobal} />
+          )}
+          {mode === 'dev' && devData && (
+            <DevTab rows={devData} showTest={showTestCommunities} onPatchDev={patchDev} />
+          )}
+          {mode === 'instrument' && phaseData && (
+            <InstrumentTab phaseRows={phaseData.rows} showTest={showTestCommunities}
+              builders={phaseData.builders ?? []}
+              onSaveSpecRate={saveSpecRate} onSaveBuilderSplit={saveBuilderSplit}
+              initialFilterComm={configJump?.ent_group_id ? String(configJump.ent_group_id) : null} />
+          )}
+          {mode === 'phase' && phaseData && (
+            <PhaseTab
+              phaseData={phaseData} showTest={showTestCommunities}
+              onPatchPhase={cfgPatchPhase} onSaveProductSplit={saveProductSplit}
+              onToggleLock={toggleLock}
+              onLotsAdded={reloadConfig}
+              initialFilterComm={configJump?.ent_group_id ? String(configJump.ent_group_id) : null}
+            />
+          )}
         </div>
       )}
 
