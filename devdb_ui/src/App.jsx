@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import LotPhaseView from './pages/LotPhaseView'
 import SitePlanView from './pages/SitePlanView'
 import SimulationView from './pages/SimulationView'
-import ConfigView from './pages/ConfigView'
+// ConfigView removed — merged into SetupView (unified setup page)
 import SetupView from './pages/SetupView'
 import MarksView from './pages/MarksView'
 import PlanningView from './pages/PlanningView'
@@ -78,9 +78,8 @@ export default function App() {
         <NavLink to="/" end style={navLinkStyle}>Lot · Phase</NavLink>
         <NavLink to="/site-plan" style={navLinkStyle}>Site Plan</NavLink>
         <NavLink to="/simulation" style={navLinkStyle}>Simulation</NavLink>
-        <NavLink to="/configure" style={navLinkStyle}>Configure</NavLink>
-        <NavLink to="/audit" style={navLinkStyle}>Audit</NavLink>
         <NavLink to="/setup" style={navLinkStyle}>Setup</NavLink>
+        <NavLink to="/audit" style={navLinkStyle}>Audit</NavLink>
         <NavLink to="/planning" style={navLinkStyle}>Planning</NavLink>
         <NavLink to="/marks" style={navLinkStyle}>MARKS</NavLink>
         <NavLink to="/takedown" style={navLinkStyle}>Agreements</NavLink>
@@ -104,7 +103,7 @@ export default function App() {
           <Route path="/" element={<LotPhaseView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/site-plan" element={<SitePlanView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/simulation" element={<SimulationView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} globalSettingsOpen={globalSettingsOpen} onCloseGlobalSettings={() => setGlobalSettingsOpen(false)} />} />
-          <Route path="/configure" element={<ConfigView showTestCommunities={showTestCommunities} />} />
+          <Route path="/configure" element={<Navigate to="/setup" replace />} />
           <Route path="/setup" element={<SetupView showTestCommunities={showTestCommunities} />} />
           <Route path="/planning" element={<PlanningView selectedGroupId={selectedGroupId} setSelectedGroupId={setSelectedGroupId} showTestCommunities={showTestCommunities} />} />
           <Route path="/audit" element={<AuditView showTestCommunities={showTestCommunities} />} />

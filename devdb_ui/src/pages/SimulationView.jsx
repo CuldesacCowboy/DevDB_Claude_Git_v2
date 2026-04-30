@@ -721,7 +721,7 @@ const loadLedger = useCallback((id) => {
                 localStorage.setItem('devdb_config_jump', JSON.stringify({
                   tab: target.tab || 'community', ent_group_id: entGroupId,
                 }))
-                navigate('/configure')
+                navigate('/setup')
               }
               else if (target.to === 'setup') { navigate('/setup') }
             }}

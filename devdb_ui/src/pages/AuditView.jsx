@@ -129,7 +129,7 @@ function GoToConfigBtn({ tab, entGroupId, label = '→ Config' }) {
   const navigate = useNavigate()
   function go() {
     try { localStorage.setItem('devdb_config_jump', JSON.stringify({ tab, ent_group_id: entGroupId })) } catch {}
-    navigate('/configure')
+    navigate('/setup')
   }
   return (
     <button onClick={go} title={`Open Configure → ${tab} tab, filtered to this community`}
