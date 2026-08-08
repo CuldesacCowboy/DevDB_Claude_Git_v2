@@ -1,0 +1,628 @@
+<title>Room 4 — Overhead Classroom Map</title>
+<style>
+  :root{
+    --paper:#FAF7F0; --panel:#FFFFFF; --ink:#2B2E32; --muted:#6B6F76;
+    --line:#E2DDD2; --accent:#6FA832; --accent-soft:#EAF3DB; --teal:#128A80;
+    --maple:#EDD5A8; --maple-line:#C9A96B; --floor:#F3EFE6; --carpet:#43474F;
+    --board:#9C7A4F; --glass:#BFDCE8; --chair:#B9BDC4; --chair-line:#8B9097;
+    --danger:#C24C3D; --dot-o:#E8920C; --dot-p:#D9538F; --dot-b:#3D7DD6;
+    --dot-g:#3FA653; --dot-v:#8F5FC9; --shadow:0 1px 3px rgba(40,35,20,.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#202327; --panel:#2A2E33; --ink:#E8E5DE; --muted:#9BA0A8;
+      --line:#3C4147; --accent:#8CC63F; --accent-soft:#37421F; --teal:#3FB3A9;
+      --maple:#7C6540; --maple-line:#A98F5E; --floor:#2E3237; --carpet:#585E68;
+      --board:#8A6F45; --glass:#3E5C6B; --chair:#6E747D; --chair-line:#9BA0A8;
+      --danger:#E07060; --dot-o:#F0A32E; --dot-p:#E06CA4; --dot-b:#5D95E3;
+      --dot-g:#57BC6B; --dot-v:#A87BDB; --shadow:0 1px 3px rgba(0,0,0,.4);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#202327; --panel:#2A2E33; --ink:#E8E5DE; --muted:#9BA0A8;
+    --line:#3C4147; --accent:#8CC63F; --accent-soft:#37421F; --teal:#3FB3A9;
+    --maple:#7C6540; --maple-line:#A98F5E; --floor:#2E3237; --carpet:#585E68;
+    --board:#8A6F45; --glass:#3E5C6B; --chair:#6E747D; --chair-line:#9BA0A8;
+    --danger:#E07060; --dot-o:#F0A32E; --dot-p:#E06CA4; --dot-b:#5D95E3;
+    --dot-g:#57BC6B; --dot-v:#A87BDB; --shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font:15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  header{
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    padding:12px 20px; border-bottom:2px solid var(--line); background:var(--panel);
+  }
+  header h1{
+    font:800 19px/1.2 ui-rounded, "Segoe UI", system-ui, sans-serif;
+    margin:0; letter-spacing:.2px;
+  }
+  header .sub{color:var(--muted); font-size:12.5px}
+  nav{display:flex; gap:6px; margin-left:auto; flex-wrap:wrap}
+  nav button{
+    font:700 13px ui-rounded,"Segoe UI",system-ui,sans-serif;
+    padding:7px 14px; border-radius:999px; border:1.5px solid var(--line);
+    background:transparent; color:var(--ink); cursor:pointer;
+  }
+  nav button:hover{border-color:var(--accent)}
+  nav button.on{background:var(--accent); border-color:var(--accent); color:#fff}
+  :root[data-theme="dark"] nav button.on{color:#1c2410}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) nav button.on{color:#1c2410}
+  }
+  nav button:focus-visible, button:focus-visible{outline:2px solid var(--teal); outline-offset:2px}
+
+  .wrap{display:flex; gap:16px; padding:16px 20px; align-items:flex-start; flex-wrap:wrap}
+  aside{
+    flex:0 0 270px; min-width:250px; background:var(--panel); border:1.5px solid var(--line);
+    border-radius:12px; padding:14px 14px 16px; box-shadow:var(--shadow);
+  }
+  aside h2{
+    font:800 11.5px ui-rounded,"Segoe UI",system-ui,sans-serif;
+    text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin:14px 0 6px;
+  }
+  aside h2:first-child{margin-top:0}
+  aside p{font-size:13px; color:var(--muted); margin:6px 0}
+  textarea{
+    width:100%; min-height:110px; resize:vertical; border:1.5px solid var(--line);
+    border-radius:8px; background:var(--paper); color:var(--ink);
+    font:13px/1.5 "Segoe UI",system-ui,sans-serif; padding:8px;
+  }
+  .btnrow{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
+  .btn{
+    font:700 12.5px ui-rounded,"Segoe UI",system-ui,sans-serif;
+    padding:6px 12px; border-radius:8px; border:1.5px solid var(--line);
+    background:var(--paper); color:var(--ink); cursor:pointer;
+  }
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+  :root[data-theme="dark"] .btn.primary{color:#1c2410}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .btn.primary{color:#1c2410}
+  }
+  .btn.warn{color:var(--danger); border-color:var(--danger); background:transparent}
+  label.chk{display:flex; gap:8px; align-items:center; font-size:13.5px; margin:6px 0; cursor:pointer}
+  input[type=checkbox]{accent-color:var(--accent); width:16px; height:16px}
+
+  #chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+  .chip{
+    font:700 12px ui-rounded,"Segoe UI",system-ui,sans-serif;
+    padding:4px 10px; border-radius:999px; border:1.5px solid var(--teal);
+    color:var(--teal); background:transparent; cursor:pointer;
+  }
+  .chip.sel{background:var(--teal); color:#fff}
+  .chip.placed{opacity:.38; text-decoration:line-through}
+  .hint{font-size:12px; color:var(--muted); margin-top:8px}
+
+  .stage{flex:1 1 560px; min-width:340px}
+  .mapcard{
+    background:var(--panel); border:1.5px solid var(--line); border-radius:12px;
+    padding:10px; box-shadow:var(--shadow); overflow-x:auto;
+  }
+  svg{display:block; width:100%; height:auto; min-width:520px}
+
+  svg text{font-family:"Segoe UI",system-ui,sans-serif; fill:var(--ink)}
+  .lbl{font-size:11.5px; fill:var(--muted)}
+  .lbl.small{font-size:10px}
+  .wall{fill:none; stroke:var(--ink); stroke-width:5}
+  .glassline{stroke:var(--glass); stroke-width:7}
+  .furn{fill:var(--maple); stroke:var(--maple-line); stroke-width:1.5}
+  .boardf{fill:var(--board); stroke:none}
+  .screenf{fill:var(--panel); stroke:var(--muted); stroke-width:1.5}
+  .darkf{fill:var(--chair); stroke:var(--chair-line); stroke-width:1.5}
+  .zone{rx:16; stroke-width:1.5; stroke-dasharray:5 4; fill-opacity:.14; stroke-opacity:.7}
+  .zlbl{font:800 12.5px ui-rounded,"Segoe UI",system-ui,sans-serif}
+  .seat{cursor:default}
+  .assignlbl{font:700 9.5px "Segoe UI",system-ui,sans-serif; paint-order:stroke; stroke:var(--panel); stroke-width:3px}
+  .callout circle{fill:var(--danger); stroke:var(--panel); stroke-width:2}
+  .callout text{fill:#fff; font:800 12px ui-rounded,"Segoe UI",system-ui,sans-serif; text-anchor:middle}
+  .station circle.ring{fill:none; stroke:var(--teal); stroke-width:3; stroke-dasharray:7 5}
+  .station circle.badge{fill:var(--teal)}
+  .station text{fill:#fff; font:800 12px ui-rounded,"Segoe UI",system-ui,sans-serif; text-anchor:middle}
+  body.arranging .mov{cursor:grab; outline:none}
+  body.arranging .mov.dragging{cursor:grabbing}
+  body.arranging .mov > .movhalo{stroke:var(--teal); stroke-width:2; stroke-dasharray:4 4; fill:none; opacity:.9}
+  .mov > .movhalo{opacity:0}
+
+  body[data-mode="map"] .only-seating, body[data-mode="map"] .only-centers, body[data-mode="map"] .only-sub{display:none}
+  body[data-mode="seating"] .only-map, body[data-mode="seating"] .only-centers, body[data-mode="seating"] .only-sub{display:none}
+  body[data-mode="centers"] .only-map, body[data-mode="centers"] .only-seating, body[data-mode="centers"] .only-sub{display:none}
+  body[data-mode="sub"] .only-map, body[data-mode="sub"] .only-seating, body[data-mode="sub"] .only-centers{display:none}
+  body:not([data-mode="sub"]) #subLayer{display:none}
+  body:not([data-mode="centers"]) #centersLayer{display:none}
+  body[data-mode="seating"] .seat{cursor:pointer}
+  body[data-mode="seating"] .seat:hover{stroke:var(--teal); stroke-width:3}
+
+  #schedule{margin-top:14px}
+  #schedule table{
+    border-collapse:collapse; width:100%; background:var(--panel);
+    border:1.5px solid var(--line); border-radius:10px; overflow:hidden;
+    font-variant-numeric:tabular-nums;
+  }
+  #schedule th,#schedule td{border:1px solid var(--line); padding:7px 10px; font-size:13.5px; text-align:left}
+  #schedule th{
+    background:var(--accent-soft); font:800 12px ui-rounded,"Segoe UI",system-ui,sans-serif;
+    text-transform:uppercase; letter-spacing:.05em;
+  }
+  .legend{margin:10px 0 0; padding:0 0 0 2px; list-style:none; font-size:13px}
+  .legend li{display:flex; gap:8px; margin:5px 0; align-items:baseline}
+  .legend .n{
+    flex:0 0 20px; height:20px; border-radius:50%; background:var(--danger); color:#fff;
+    font:800 11.5px/20px ui-rounded,system-ui,sans-serif; text-align:center;
+  }
+  footer{padding:6px 20px 20px; color:var(--muted); font-size:12px}
+
+  @media print{
+    :root{--paper:#fff; --panel:#fff; --ink:#111; --muted:#444; --line:#bbb; --floor:#f6f6f6; --shadow:none}
+    header nav, aside .btnrow, aside textarea, .noprint{display:none !important}
+    .wrap{display:block; padding:0}
+    aside{border:none; padding:0 0 10px}
+    .mapcard{border:none; padding:0}
+    body{font-size:12px}
+  }
+</style>
+<body data-mode="map">
+<header>
+  <div>
+    <h1>Room 4 — Kindergarten Overhead Map</h1>
+    <div class="sub">Built from photos · Aug 2026 · schematic, not surveyed — use Arrange mode to fine-tune</div>
+  </div>
+  <nav>
+    <button id="tab-map" class="on">Room map</button>
+    <button id="tab-seating">Seating chart</button>
+    <button id="tab-centers">Center rotations</button>
+    <button id="tab-sub">Sub guide</button>
+  </nav>
+</header>
+
+<div class="wrap">
+<aside>
+  <div class="only-map">
+    <h2>Layers</h2>
+    <label class="chk"><input type="checkbox" id="ck-zones" checked> Zone overlay</label>
+    <label class="chk"><input type="checkbox" id="ck-labels" checked> Furniture labels</label>
+    <h2>Fix my mistakes</h2>
+    <label class="chk"><input type="checkbox" id="ck-arrange"> <b>Arrange furniture</b> (drag to move)</label>
+    <p>Turn this on and drag any dashed-outline item — tables, carpet, teacher table, chair, carts — to where it really sits. Your layout saves on this device.</p>
+    <div class="btnrow"><button class="btn warn" id="resetLayout">Reset to original layout</button></div>
+    <h2>Orientation</h2>
+    <p>Top wall = projection screen. Left = windows &amp; birthday board. Bottom = whiteboard, alphabet cards, rocking chair. Right = teacher counter, sink, and main door (A); the shared storage room (month crates + reading-group tracker) and the restroom are through that wall.</p>
+  </div>
+
+  <div class="only-seating">
+    <h2>Class roster</h2>
+    <p>One name per line, then load.</p>
+    <textarea id="roster" placeholder="Ava&#10;Ben&#10;Charlotte&#10;Dakota&#10;Emma&#10;…"></textarea>
+    <div class="btnrow">
+      <button class="btn primary" id="loadRoster">Load roster</button>
+      <button class="btn" id="autoAssign">Auto-assign carpet</button>
+    </div>
+    <div id="chips"></div>
+    <p class="hint">Tap a name, then tap a carpet dot or chair to place it. Tap a placed seat to clear it. Saved on this device automatically.</p>
+    <div class="btnrow">
+      <button class="btn" onclick="window.print()">Print chart</button>
+      <button class="btn warn" id="clearSeats">Clear all seats</button>
+    </div>
+  </div>
+
+  <div class="only-centers">
+    <h2>Groups</h2>
+    <p>One group per line — <b>Group name: members</b></p>
+    <textarea id="groups" placeholder="Red: Ava, Ben, Cora&#10;Blue: Dax, Emma&#10;Green: Finn, Gia&#10;Yellow: Hank, Ivy"></textarea>
+    <div class="btnrow">
+      <button class="btn primary" id="makeSchedule">Build rotation</button>
+      <button class="btn" onclick="window.print()">Print</button>
+    </div>
+    <h2>Stations on map</h2>
+    <ol class="legend" id="stationLegend"></ol>
+  </div>
+
+  <div class="only-sub">
+    <h2>Substitute quick-orient</h2>
+    <ol class="legend">
+      <li><span class="n">1</span> Main door (marked “A”) → vestibule; student cubbies just outside</li>
+      <li><span class="n">2</span> Restroom (door “B”) right across the vestibule — kinders go often!</li>
+      <li><span class="n">3</span> Number calendar + “Notes / dismissal changes” chart on the door — <b>check every morning</b></li>
+      <li><span class="n">4</span> Sink &amp; handwashing, paper towels above</li>
+      <li><span class="n">5</span> Teacher (half-moon) table — small-group materials staged here</li>
+      <li><span class="n">6</span> Teacher counter: clipboards, Drop Box, day-of-week bins (today's copies)</li>
+      <li><span class="n">7</span> Device cart — students know the routine</li>
+      <li><span class="n">8</span> Carpet: every child has an assigned letter dot</li>
+      <li><span class="n">9</span> Shared storage room: month crates + reading-group tracker on cabinet doors</li>
+      <li><span class="n">10</span> Emergency exit: line up at carpet edge, out door A, meet at flag pole</li>
+    </ol>
+    <h2>My notes for subs</h2>
+    <textarea id="subNotes" placeholder="Schedule, allergies (no names needed), helpers, calm-down routine…"></textarea>
+    <div class="btnrow"><button class="btn" onclick="window.print()">Print sub sheet</button></div>
+  </div>
+</aside>
+
+<div class="stage">
+<div class="mapcard">
+<svg id="map" viewBox="0 0 1045 830" role="img" aria-label="Overhead map of the classroom">
+  <!-- floor + tile strip along entry wall -->
+  <rect x="60" y="60" width="920" height="700" fill="var(--floor)"/>
+  <rect x="880" y="60" width="100" height="700" fill="var(--paper)" opacity=".55"/>
+
+  <!-- beyond the east wall: storage room (top) and vestibule/hallway (bottom) -->
+  <rect x="985" y="60" width="52" height="270" fill="var(--maple)" opacity=".25"/>
+  <text x="1011" y="200" class="lbl" transform="rotate(90 1011 200)" text-anchor="middle">Storage room · month crates · group tracker</text>
+  <rect x="985" y="330" width="52" height="430" fill="var(--paper)" opacity=".7"/>
+  <text x="1011" y="430" class="lbl" transform="rotate(90 1011 430)">Hallway · cubbies outside door</text>
+  <rect x="987" y="470" width="48" height="72" fill="var(--floor)" stroke="var(--muted)" stroke-width="1.5" rx="4"/>
+  <text x="1011" y="500" class="lbl small" text-anchor="middle">WC</text>
+  <text x="1011" y="514" class="lbl small" text-anchor="middle">(B)</text>
+
+  <!-- walls -->
+  <rect x="60" y="60" width="920" height="700" class="wall"/>
+  <!-- doorway to storage room, NE on east wall -->
+  <line x1="980" y1="112" x2="980" y2="170" stroke="var(--floor)" stroke-width="7"/>
+  <text x="972" y="104" class="lbl small" text-anchor="end">Doorway → storage</text>
+  <!-- interior windows into storage room (over counter and sink) -->
+  <line x1="980" y1="185" x2="980" y2="255" class="glassline"/>
+  <line x1="980" y1="345" x2="980" y2="400" class="glassline"/>
+  <!-- main door A gap, SE on east wall -->
+  <line x1="980" y1="612" x2="980" y2="692" stroke="var(--floor)" stroke-width="7"/>
+  <path d="M 980 692 A 80 80 0 0 0 900 612" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <text x="898" y="708" class="lbl">Main door (A)</text>
+  <!-- adjoining-classroom door, SW on south wall -->
+  <line x1="100" y1="760" x2="162" y2="760" stroke="var(--floor)" stroke-width="7"/>
+  <text x="88" y="780" class="lbl small">Door · adjoining room (Welcome stickers)</text>
+
+  <g id="fixed">
+    <!-- north wall: screen wall -->
+    <rect x="128" y="64" width="110" height="12" class="boardf"/>
+    <rect x="252" y="64" width="96" height="10" fill="var(--glass)"/>
+    <rect x="366" y="62" width="270" height="16" class="screenf"/>
+    <rect x="652" y="64" width="86" height="12" class="boardf"/>
+    <circle cx="748" cy="72" r="5" fill="var(--danger)"/>
+    <!-- east wall, N→S: counter/nook, wardrobes, sink counter, cabinets -->
+    <rect x="912" y="178" width="64" height="86" class="furn" rx="3"/>
+    <rect x="912" y="270" width="64" height="62" class="furn" rx="3"/>
+    <rect x="912" y="336" width="64" height="176" class="furn" rx="3"/>
+    <circle cx="944" cy="420" r="13" fill="var(--glass)" stroke="var(--muted)" stroke-width="1.5"/>
+    <rect x="912" y="518" width="64" height="80" class="furn" rx="3"/>
+    <circle cx="884" cy="548" r="9" class="darkf"/>
+    <circle cx="884" cy="570" r="9" class="darkf"/>
+    <circle cx="884" cy="592" r="9" class="darkf"/>
+    <rect x="964" y="614" width="12" height="76" fill="var(--dot-b)" opacity=".8" rx="2"/>
+    <!-- west wall, N→S: window 1 (birthday), window 2 -->
+    <rect x="56" y="150" width="9" height="130" fill="var(--glass)"/>
+    <rect x="56" y="330" width="9" height="130" fill="var(--glass)"/>
+    <!-- south wall: whiteboard span + reading centers board -->
+    <rect x="180" y="746" width="440" height="10" class="screenf"/>
+    <rect x="636" y="746" width="104" height="10" class="boardf"/>
+    <!-- SW corner: grey lockers/HVAC -->
+    <rect x="66" y="700" width="30" height="54" class="darkf" rx="3"/>
+  </g>
+
+  <!-- movable furniture (drag in Arrange mode) -->
+  <g id="movLayer"></g>
+  <g id="labelsLayer">
+    <text x="501" y="96" class="lbl" text-anchor="middle">Projection screen</text>
+    <text x="183" y="92" class="lbl small" text-anchor="middle">Bulletin board</text>
+    <text x="300" y="90" class="lbl small" text-anchor="middle">Heart posters</text>
+    <text x="695" y="92" class="lbl small" text-anchor="middle">Learning objectives · flag · clock</text>
+    <text x="944" y="221" class="lbl small" transform="rotate(90 944 221)" text-anchor="middle">Counter · clipboards · drop box</text>
+    <text x="944" y="301" class="lbl small" transform="rotate(90 944 301)" text-anchor="middle">Wardrobes</text>
+    <text x="944" y="424" class="lbl small" transform="rotate(90 944 424)" text-anchor="middle">Sink &amp; counter</text>
+    <text x="944" y="558" class="lbl small" transform="rotate(90 944 558)" text-anchor="middle">Cabinets</text>
+    <text x="884" y="620" class="lbl small" text-anchor="middle">Trash</text>
+    <text x="948" y="606" class="lbl small" text-anchor="end">Calendar + dismissal notes on door</text>
+    <text x="47" y="215" class="lbl small" transform="rotate(-90 47 215)" text-anchor="middle">Window · birthday board</text>
+    <text x="47" y="395" class="lbl small" transform="rotate(-90 47 395)" text-anchor="middle">Window</text>
+    <text x="400" y="738" class="lbl small" text-anchor="middle">Whiteboard · alphabet cards + letter tape above</text>
+    <text x="688" y="738" class="lbl small" text-anchor="middle">Reading Centers</text>
+    <text x="81" y="694" class="lbl small">Lockers</text>
+  </g>
+
+  <g id="zonesLayer"></g>
+  <g id="centersLayer"></g>
+  <g id="subLayer">
+    <path d="M 450 610 L 450 660 L 936 660" fill="none" stroke="var(--danger)" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#arrow)"/>
+    <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--danger)"/></marker></defs>
+  </g>
+</svg>
+</div>
+<div id="schedule" class="only-centers"></div>
+</div>
+</div>
+<footer>Reconstructed from 14 photos, second pass. Fixed walls are locked; everything with a dashed outline in Arrange mode is yours to move.</footer>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const KEY = "kroom_state_v2";
+  let state = {assignments:{}, roster:[], notes:"", groups:"", rosterText:"", layout:{}};
+  try{ const s = localStorage.getItem(KEY); if(s) state = Object.assign(state, JSON.parse(s)); }catch(e){}
+  const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} };
+  const svg = $("map"), movLayer = $("movLayer");
+  const el = (tag, attrs) => { const n = document.createElementNS(SVGNS, tag);
+    for(const k in attrs) n.setAttribute(k, attrs[k]); return n; };
+
+  // ---------------- movable furniture ----------------
+  // Each item: id, halo bounds [x,y,w,h], draw(g) builds shapes, seats: [{id,x,y,r,kind,color,letter}]
+  const DOTCOLORS = ["var(--dot-o)","var(--dot-p)","var(--dot-b)","var(--dot-g)","var(--dot-v)"];
+  const ITEMS = [];
+
+  // Carpet with 20 letter dots (5 x 4), gathering area faces the whiteboard (south)
+  (function(){
+    const seats = []; let li = 0;
+    for(let row=0; row<4; row++) for(let col=0; col<5; col++){
+      seats.push({id:"c"+li, x:330+col*66, y:512+row*58, r:13, kind:"dot",
+        color:DOTCOLORS[li%5], letter:String.fromCharCode(65+li)}); li++; }
+    ITEMS.push({id:"carpet", halo:[286,462,412,272], seats,
+      draw(g){ g.appendChild(el("rect",{x:290,y:466,width:404,height:264,rx:14,fill:"var(--carpet)"}));
+        const t = el("text",{x:492,y:706,"text-anchor":"middle",class:"zlbl",fill:"var(--paper)",opacity:".85"});
+        t.textContent = "Gathering carpet"; g.appendChild(t); }});
+  })();
+
+  // Six trapezoid-ish tables in a chevron, 3 chairs each
+  const TPOS = [[318,142],[452,196],[318,254],[452,308],[592,142],[592,308]];
+  TPOS.forEach(([x,y],ti)=>{
+    const seats = [];
+    for(let c=0;c<3;c++) seats.push({id:"t"+ti+"_"+c, x:x+22+c*38, y:y+65, r:9, kind:"chair"});
+    ITEMS.push({id:"table"+ti, halo:[x-6,y-6,132,88], seats,
+      draw(g){ g.appendChild(el("rect",{x,y,width:120,height:52,rx:4,class:"furn"})); }});
+  });
+
+  // Word-work table (SE area near carpet edge), 2 chairs on north side
+  ITEMS.push({id:"wordwork", halo:[706,548,144,84],
+    seats:[{id:"w0",x:748,y:560,r:9,kind:"chair"},{id:"w1",x:806,y:560,r:9,kind:"chair"}],
+    draw(g){ g.appendChild(el("rect",{x:712,y:572,width:132,height:50,rx:4,class:"furn"}));
+      g.appendChild(el("rect",{x:722,y:580,width:52,height:34,rx:2,fill:"var(--ink)","opacity":".55"}));
+      g.appendChild(el("rect",{x:780,y:580,width:52,height:34,rx:2,fill:"var(--ink)","opacity":".55"}));
+      const t = el("text",{x:778,y:640,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Word-work table"; g.appendChild(t); }});
+
+  // Half-moon teacher table on the west side, wobble stools on the curve
+  (function(){
+    const cx=172, cy=430, seats=[];
+    [-55,-27,0,27,55].forEach((deg,i)=>{ const a=deg*Math.PI/180;
+      seats.push({id:"k"+i, x:cx+76*Math.cos(a), y:cy+76*Math.sin(a), r:10, kind:"stool"}); });
+    ITEMS.push({id:"kidney", halo:[104,352,182,158], seats,
+      draw(g){ g.appendChild(el("path",{d:"M "+cx+" "+(cy-56)+" a 56 56 0 0 1 0 112 z",class:"furn"}));
+        const t = el("text",{x:cx+6,y:cy-64,"text-anchor":"middle",class:"lbl small"});
+        t.textContent = "Teacher table"; g.appendChild(t); }});
+  })();
+
+  // Device cart, NW against window wall
+  ITEMS.push({id:"cart", halo:[62,86,66,70], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:66,y:90,width:56,height:60,rx:4,class:"darkf"}));
+      const t = el("text",{x:94,y:166,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Device cart"; g.appendChild(t); }});
+
+  // Green mailbox cubbies, mid-west wall
+  ITEMS.push({id:"mail", halo:[62,466,72,120], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:66,y:470,width:62,height:110,rx:3,
+        fill:"var(--accent-soft)",stroke:"var(--accent)","stroke-width":"1.5"}));
+      const t = el("text",{x:97,y:598,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Mailboxes"; g.appendChild(t); }});
+
+  // Book & toy shelves along south-west
+  ITEMS.push({id:"shelves", halo:[166,676,164,58], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:170,y:680,width:156,height:48,rx:3,class:"furn"}));
+      const t = el("text",{x:248,y:672,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Book & toy shelves"; g.appendChild(t); }});
+
+  // Rocking chair, SE corner by Reading Centers
+  ITEMS.push({id:"rock", halo:[772,672,64,64], seats:[],
+    draw(g){ g.appendChild(el("circle",{cx:804,cy:704,r:21,fill:"var(--dot-b)","opacity":".85"}));
+      const t = el("text",{x:804,y:668,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Rocking chair"; g.appendChild(t); }});
+
+  // Teacher cart/desk right of screen
+  ITEMS.push({id:"tcart", halo:[672,88,96,56], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:676,y:92,width:88,height:46,rx:4,class:"furn"}));
+      const t = el("text",{x:720,y:154,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Teacher cart"; g.appendChild(t); }});
+
+  // Book display bins near windows
+  ITEMS.push({id:"bins", halo:[62,296,56,40], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:66,y:300,width:46,height:30,rx:3,class:"furn"}));
+      const t = el("text",{x:90,y:344,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Book bins"; g.appendChild(t); }});
+
+  // render items
+  const seatIndex = {}; // seatId -> {seat, group}
+  ITEMS.forEach(item=>{
+    const g = el("g",{class:"mov","data-item":item.id});
+    g.appendChild(el("rect",{class:"movhalo",x:item.halo[0],y:item.halo[1],
+      width:item.halo[2],height:item.halo[3],rx:10}));
+    item.draw(g);
+    (item.seats||[]).forEach(s=>{
+      const c = el("circle",{cx:s.x,cy:s.y,r:s.r,class:"seat"});
+      c.dataset.seat = s.id;
+      if(s.kind==="dot") c.setAttribute("fill",s.color);
+      else if(s.kind==="stool") c.setAttribute("fill","var(--accent)");
+      else { c.setAttribute("fill","var(--chair)"); c.setAttribute("stroke","var(--chair-line)"); c.setAttribute("stroke-width","1.5"); }
+      g.appendChild(c);
+      if(s.kind==="dot"){
+        const t = el("text",{x:s.x,y:s.y+4,"text-anchor":"middle",
+          style:"font:800 10px ui-rounded,system-ui;fill:#fff;pointer-events:none"});
+        t.textContent = s.letter; g.appendChild(t);
+      }
+      seatIndex[s.id] = {seat:s, group:g};
+    });
+    const off = state.layout[item.id];
+    if(off) g.setAttribute("transform","translate("+off[0]+" "+off[1]+")");
+    movLayer.appendChild(g);
+  });
+
+  // ---------------- drag to arrange ----------------
+  let arranging = false, drag = null;
+  $("ck-arrange").addEventListener("change",e=>{
+    arranging = e.target.checked; document.body.classList.toggle("arranging",arranging); });
+  function svgPoint(evt){
+    const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+  movLayer.addEventListener("pointerdown",e=>{
+    if(!arranging) return;
+    const g = e.target.closest(".mov"); if(!g) return;
+    e.preventDefault(); g.classList.add("dragging");
+    const id = g.dataset.item, start = svgPoint(e), base = state.layout[id]||[0,0];
+    drag = {g,id,start,base};
+    g.setPointerCapture && movLayer.setPointerCapture(e.pointerId);
+  });
+  movLayer.addEventListener("pointermove",e=>{
+    if(!drag) return;
+    const p = svgPoint(e);
+    const dx = drag.base[0]+p.x-drag.start.x, dy = drag.base[1]+p.y-drag.start.y;
+    drag.g.setAttribute("transform","translate("+dx+" "+dy+")");
+    drag.cur = [dx,dy];
+  });
+  const endDrag = ()=>{ if(!drag) return;
+    drag.g.classList.remove("dragging");
+    if(drag.cur){ state.layout[drag.id]=drag.cur; save(); }
+    drag = null; };
+  movLayer.addEventListener("pointerup",endDrag);
+  movLayer.addEventListener("pointercancel",endDrag);
+  $("resetLayout").addEventListener("click",()=>{
+    state.layout = {}; save();
+    movLayer.querySelectorAll(".mov").forEach(g=>g.removeAttribute("transform"));
+  });
+
+  // ---------------- zones ----------------
+  const ZONES = [
+    [296,108,436,336,"var(--dot-b)","Flexible work tables",520,128],
+    [282,456,424,286,"var(--dot-o)","Whole-group carpet",0,0],
+    [96,344,200,176,"var(--teal)","Small group",0,0],
+    [852,608,126,144,"var(--dot-p)","Arrival / dismissal",858,752],
+    [896,330,84,190,"var(--dot-v)","Wet zone · sink",0,0],
+    [896,108,84,216,"var(--dot-g)","Teacher counter & storage access",640,120],
+    [742,652,140,100,"var(--dot-o)","Read-aloud corner",0,0],
+    [60,60,110,120,"var(--dot-g)","Devices",174,80],
+    [60,456,110,140,"var(--accent)","Mailboxes",0,0]
+  ];
+  const zl = $("zonesLayer");
+  ZONES.forEach(([x,y,w,h,col,name,lx,ly])=>{
+    zl.appendChild(el("rect",{x,y,width:w,height:h,class:"zone",fill:col,stroke:col}));
+    const t = el("text",{x:lx||x+10,y:ly||y+20,class:"zlbl",fill:col});
+    t.textContent = name; zl.appendChild(t);
+  });
+
+  // ---------------- centers stations ----------------
+  const STATIONS = [
+    ["Teacher table (skills group)",172,430,72],
+    ["Library · read to self",248,700,58],
+    ["Word work",778,596,64],
+    ["Devices",94,120,46],
+    ["Art & writing tables",470,228,112],
+    ["Carpet games & math tubs",492,596,92]
+  ];
+  const cl = $("centersLayer");
+  STATIONS.forEach(([name,x,y,r],i)=>{
+    const g = el("g",{class:"station"});
+    g.appendChild(el("circle",{cx:x,cy:y,r,class:"ring"}));
+    g.appendChild(el("circle",{cx:x-r*0.72,cy:y-r*0.72,r:12,class:"badge"}));
+    const t = el("text",{x:x-r*0.72,y:y-r*0.72+4}); t.textContent = i+1; g.appendChild(t);
+    cl.appendChild(g);
+    const li2 = document.createElement("li");
+    li2.innerHTML = '<span class="n" style="background:var(--teal)">'+(i+1)+'</span> '+name;
+    $("stationLegend").appendChild(li2);
+  });
+
+  // ---------------- sub callouts ----------------
+  const CALLOUTS = [[952,650],[1008,470],[944,600],[944,420],[172,430],[944,220],[94,120],[492,596],[1008,120],[700,660]];
+  const sl = $("subLayer");
+  CALLOUTS.forEach(([x,y],i)=>{
+    const g = el("g",{class:"callout"});
+    g.appendChild(el("circle",{cx:x,cy:y,r:12}));
+    const t = el("text",{x,y:y+4}); t.textContent = i+1; g.appendChild(t);
+    sl.appendChild(g);
+  });
+
+  // ---------------- modes ----------------
+  const MODES = ["map","seating","centers","sub"];
+  MODES.forEach(m=>{
+    $("tab-"+m).addEventListener("click",()=>{
+      document.body.dataset.mode = m;
+      MODES.forEach(x=>$("tab-"+x).classList.toggle("on", x===m));
+      if(m!=="map" && arranging){ $("ck-arrange").checked=false; arranging=false; document.body.classList.remove("arranging"); }
+    });
+  });
+  $("ck-zones").addEventListener("change",e=>{ zl.style.display = e.target.checked?"":"none"; });
+  $("ck-labels").addEventListener("change",e=>{ $("labelsLayer").style.display = e.target.checked?"":"none";
+    movLayer.querySelectorAll("text").forEach(t=>{ if(!t.classList.contains("assignlbl") && t.getAttribute("style")===null) t.style.display = e.target.checked?"":"none"; }); });
+
+  // ---------------- seating ----------------
+  let selected = null;
+  function renderChips(){
+    const box = $("chips"); box.innerHTML = "";
+    const placed = new Set(Object.values(state.assignments));
+    state.roster.forEach(name=>{
+      const b = document.createElement("button");
+      b.className = "chip" + (placed.has(name)?" placed":"") + (selected===name?" sel":"");
+      b.textContent = name;
+      b.addEventListener("click",()=>{ selected = (selected===name)?null:name; renderChips(); });
+      box.appendChild(b);
+    });
+  }
+  function renderAssignments(){
+    movLayer.querySelectorAll(".assignlbl").forEach(n=>n.remove());
+    Object.entries(state.assignments).forEach(([sid,name])=>{
+      const rec = seatIndex[sid]; if(!rec) return;
+      const t = el("text",{x:rec.seat.x,y:rec.seat.y-rec.seat.r-4,
+        "text-anchor":"middle",class:"assignlbl"});
+      t.textContent = name.split(" ")[0].slice(0,9);
+      rec.group.appendChild(t);
+    });
+  }
+  movLayer.addEventListener("click",e=>{
+    if(document.body.dataset.mode!=="seating" || arranging) return;
+    const sid = e.target.dataset && e.target.dataset.seat; if(!sid) return;
+    if(state.assignments[sid]){ delete state.assignments[sid]; }
+    else if(selected){
+      Object.keys(state.assignments).forEach(k=>{ if(state.assignments[k]===selected) delete state.assignments[k]; });
+      state.assignments[sid] = selected; selected = null;
+    }
+    save(); renderChips(); renderAssignments();
+  });
+  $("loadRoster").addEventListener("click",()=>{
+    state.rosterText = $("roster").value;
+    state.roster = state.rosterText.split("\n").map(s=>s.trim()).filter(Boolean);
+    save(); renderChips();
+  });
+  $("autoAssign").addEventListener("click",()=>{
+    state.assignments = {};
+    const dots = Object.keys(seatIndex).filter(id=>id[0]==="c")
+      .sort((a,b)=>+a.slice(1)-+b.slice(1));
+    state.roster.forEach((name,i)=>{ if(dots[i]) state.assignments[dots[i]] = name; });
+    save(); renderChips(); renderAssignments();
+  });
+  $("clearSeats").addEventListener("click",()=>{ state.assignments={}; save(); renderChips(); renderAssignments(); });
+
+  // ---------------- centers rotation ----------------
+  $("makeSchedule").addEventListener("click",()=>{
+    state.groups = $("groups").value; save();
+    const groups = state.groups.split("\n").map(s=>s.trim()).filter(Boolean)
+      .map(line=>{ const i=line.indexOf(":"); return i<0?{name:line,members:""}:{name:line.slice(0,i).trim(),members:line.slice(i+1).trim()}; });
+    const out = $("schedule");
+    if(!groups.length){ out.innerHTML = "<p class='hint'>Add at least one group.</p>"; return; }
+    const n = Math.min(groups.length, STATIONS.length);
+    let html = "<table><tr><th>Group</th>";
+    for(let r=0;r<n;r++) html += "<th>Round "+(r+1)+"</th>";
+    html += "</tr>";
+    groups.forEach((g,gi)=>{
+      html += "<tr><td><b>"+g.name+"</b>"+(g.members?"<br><span class='hint'>"+g.members+"</span>":"")+"</td>";
+      for(let r=0;r<n;r++){ const s=(gi+r)%n; html += "<td>"+(s+1)+" · "+STATIONS[s][0]+"</td>"; }
+      html += "</tr>";
+    });
+    html += "</table><p class='hint'>Each round, every group moves to the next-numbered station on the map. Rotate on your signal (10–15 min works well for kinders).</p>";
+    out.innerHTML = html;
+  });
+
+  // ---------------- sub notes ----------------
+  $("subNotes").addEventListener("input",e=>{ state.notes = e.target.value; save(); });
+
+  // restore
+  if(state.rosterText) $("roster").value = state.rosterText;
+  if(state.groups) $("groups").value = state.groups;
+  if(state.notes) $("subNotes").value = state.notes;
+  renderChips(); renderAssignments();
+})();
+</script>
+</body>
