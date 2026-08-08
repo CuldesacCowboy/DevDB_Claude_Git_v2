@@ -23,11 +23,13 @@ Open it in any browser (double-click the file, no server needed). Four modes:
   book bins, device cart, half-moon teacher table with wobble stools.
 - **Back wall:** long whiteboard with alphabet card strip and letter tape line, "Reading
   Centers" board with pocket chart, book/toy shelves, rocking chair, door to adjoining room.
-- **Entry wall:** main door (A) to hallway (student cubbies outside, restroom B across the
-  vestibule), number-calendar pocket chart + dismissal-changes board by the door, trash
-  cluster, sink counter, tall cabinets (month-labeled activity crates; cabinet doors double
-  as the reading-group tracker with colored construction-paper cards), and a prep nook with
-  interior window (clipboards, Drop Box, day-of-week bins).
+- **Entry wall (north to south):** teacher counter (clipboards, Drop Box, day-of-week bins)
+  with an interior window into the shared storage room, a doorway into that storage room
+  (month-labeled activity crates live there, and its cabinet doors double as the
+  reading-group tracker with colored construction-paper cards), wardrobe cabinets, sink
+  counter with a second interior window, more cabinets, the trash cluster, and the main door
+  (A) at the south end — number-calendar pocket chart + dismissal-changes board on the door,
+  restroom (B) across the vestibule, student cubbies in the hallway.
 - **Center:** large carpet with colored assigned letter spots facing the whiteboard; zigzag
   cluster of trapezoid tables; word-work table with black pocket organizers.
 

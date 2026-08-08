@@ -106,9 +106,8 @@
   .lbl{font-size:11.5px; fill:var(--muted)}
   .lbl.small{font-size:10px}
   .wall{fill:none; stroke:var(--ink); stroke-width:5}
-  .innerwall{stroke:var(--ink); stroke-width:4}
-  .glassline{stroke:var(--glass); stroke-width:6}
-  .furn{fill:var(--maple); stroke:var(--maple-line); stroke-width:1.5; rx:3}
+  .glassline{stroke:var(--glass); stroke-width:7}
+  .furn{fill:var(--maple); stroke:var(--maple-line); stroke-width:1.5}
   .boardf{fill:var(--board); stroke:none}
   .screenf{fill:var(--panel); stroke:var(--muted); stroke-width:1.5}
   .darkf{fill:var(--chair); stroke:var(--chair-line); stroke-width:1.5}
@@ -121,6 +120,10 @@
   .station circle.ring{fill:none; stroke:var(--teal); stroke-width:3; stroke-dasharray:7 5}
   .station circle.badge{fill:var(--teal)}
   .station text{fill:#fff; font:800 12px ui-rounded,"Segoe UI",system-ui,sans-serif; text-anchor:middle}
+  body.arranging .mov{cursor:grab; outline:none}
+  body.arranging .mov.dragging{cursor:grabbing}
+  body.arranging .mov > .movhalo{stroke:var(--teal); stroke-width:2; stroke-dasharray:4 4; fill:none; opacity:.9}
+  .mov > .movhalo{opacity:0}
 
   body[data-mode="map"] .only-seating, body[data-mode="map"] .only-centers, body[data-mode="map"] .only-sub{display:none}
   body[data-mode="seating"] .only-map, body[data-mode="seating"] .only-centers, body[data-mode="seating"] .only-sub{display:none}
@@ -163,7 +166,7 @@
 <header>
   <div>
     <h1>Room 4 — Kindergarten Overhead Map</h1>
-    <div class="sub">Built from photos · Aug 2026 · not to exact scale (room ≈ 30′ × 24′)</div>
+    <div class="sub">Built from photos · Aug 2026 · schematic, not surveyed — use Arrange mode to fine-tune</div>
   </div>
   <nav>
     <button id="tab-map" class="on">Room map</button>
@@ -179,9 +182,12 @@
     <h2>Layers</h2>
     <label class="chk"><input type="checkbox" id="ck-zones" checked> Zone overlay</label>
     <label class="chk"><input type="checkbox" id="ck-labels" checked> Furniture labels</label>
-    <h2>About this map</h2>
-    <p>Top wall = projection screen. Left = windows. Bottom = whiteboard &amp; alphabet. Right = sink, storage, and the main door out to the hallway and restroom.</p>
-    <p>Colored dots on the carpet are the assigned letter spots; grey circles are chairs; green circles are wobble stools at the teacher table.</p>
+    <h2>Fix my mistakes</h2>
+    <label class="chk"><input type="checkbox" id="ck-arrange"> <b>Arrange furniture</b> (drag to move)</label>
+    <p>Turn this on and drag any dashed-outline item — tables, carpet, teacher table, chair, carts — to where it really sits. Your layout saves on this device.</p>
+    <div class="btnrow"><button class="btn warn" id="resetLayout">Reset to original layout</button></div>
+    <h2>Orientation</h2>
+    <p>Top wall = projection screen. Left = windows &amp; birthday board. Bottom = whiteboard, alphabet cards, rocking chair. Right = teacher counter, sink, and main door (A); the shared storage room (month crates + reading-group tracker) and the restroom are through that wall.</p>
   </div>
 
   <div class="only-seating">
@@ -215,16 +221,16 @@
   <div class="only-sub">
     <h2>Substitute quick-orient</h2>
     <ol class="legend">
-      <li><span class="n">1</span> Main door (marked “A”) → hallway, student cubbies just outside</li>
-      <li><span class="n">2</span> Restroom (door “B”) across the vestibule — kinders go often!</li>
-      <li><span class="n">3</span> Number calendar + “Notes / dismissal changes” chart — <b>check every morning</b></li>
+      <li><span class="n">1</span> Main door (marked “A”) → vestibule; student cubbies just outside</li>
+      <li><span class="n">2</span> Restroom (door “B”) right across the vestibule — kinders go often!</li>
+      <li><span class="n">3</span> Number calendar + “Notes / dismissal changes” chart on the door — <b>check every morning</b></li>
       <li><span class="n">4</span> Sink &amp; handwashing, paper towels above</li>
-      <li><span class="n">5</span> Teacher table — small-group materials staged here</li>
-      <li><span class="n">6</span> Prep nook: clipboards, Drop Box, day-of-week bins (today's copies)</li>
+      <li><span class="n">5</span> Teacher (half-moon) table — small-group materials staged here</li>
+      <li><span class="n">6</span> Teacher counter: clipboards, Drop Box, day-of-week bins (today's copies)</li>
       <li><span class="n">7</span> Device cart — students know the routine</li>
       <li><span class="n">8</span> Carpet: every child has an assigned letter dot</li>
-      <li><span class="n">9</span> Tall cabinets: monthly activity crates + reading-group tracker on doors</li>
-      <li><span class="n">10</span> Emergency exit: line up on carpet edge, out door A, meet at flag pole</li>
+      <li><span class="n">9</span> Shared storage room: month crates + reading-group tracker on cabinet doors</li>
+      <li><span class="n">10</span> Emergency exit: line up at carpet edge, out door A, meet at flag pole</li>
     </ol>
     <h2>My notes for subs</h2>
     <textarea id="subNotes" placeholder="Schedule, allergies (no names needed), helpers, calm-down routine…"></textarea>
@@ -234,106 +240,87 @@
 
 <div class="stage">
 <div class="mapcard">
-<svg viewBox="0 0 1045 830" role="img" aria-label="Overhead map of the classroom">
-  <!-- floor -->
+<svg id="map" viewBox="0 0 1045 830" role="img" aria-label="Overhead map of the classroom">
+  <!-- floor + tile strip along entry wall -->
   <rect x="60" y="60" width="920" height="700" fill="var(--floor)"/>
-  <!-- hallway strip -->
-  <rect x="985" y="60" width="52" height="700" fill="var(--paper)" opacity=".7"/>
-  <text x="1011" y="330" class="lbl" transform="rotate(90 1011 330)">Hallway · cubbies · drinking fountain</text>
+  <rect x="880" y="60" width="100" height="700" fill="var(--paper)" opacity=".55"/>
+
+  <!-- beyond the east wall: storage room (top) and vestibule/hallway (bottom) -->
+  <rect x="985" y="60" width="52" height="270" fill="var(--maple)" opacity=".25"/>
+  <text x="1011" y="200" class="lbl" transform="rotate(90 1011 200)" text-anchor="middle">Storage room · month crates · group tracker</text>
+  <rect x="985" y="330" width="52" height="430" fill="var(--paper)" opacity=".7"/>
+  <text x="1011" y="430" class="lbl" transform="rotate(90 1011 430)">Hallway · cubbies outside door</text>
   <rect x="987" y="470" width="48" height="72" fill="var(--floor)" stroke="var(--muted)" stroke-width="1.5" rx="4"/>
   <text x="1011" y="500" class="lbl small" text-anchor="middle">WC</text>
   <text x="1011" y="514" class="lbl small" text-anchor="middle">(B)</text>
 
   <!-- walls -->
   <rect x="60" y="60" width="920" height="700" class="wall"/>
-  <!-- door A gap on right wall -->
+  <!-- doorway to storage room, NE on east wall -->
+  <line x1="980" y1="112" x2="980" y2="170" stroke="var(--floor)" stroke-width="7"/>
+  <text x="972" y="104" class="lbl small" text-anchor="end">Doorway → storage</text>
+  <!-- interior windows into storage room (over counter and sink) -->
+  <line x1="980" y1="185" x2="980" y2="255" class="glassline"/>
+  <line x1="980" y1="345" x2="980" y2="400" class="glassline"/>
+  <!-- main door A gap, SE on east wall -->
   <line x1="980" y1="612" x2="980" y2="692" stroke="var(--floor)" stroke-width="7"/>
   <path d="M 980 692 A 80 80 0 0 0 900 612" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
-  <text x="905" y="708" class="lbl">Main door (A)</text>
-  <!-- adjoining door gap on bottom wall (left) -->
+  <text x="898" y="708" class="lbl">Main door (A)</text>
+  <!-- adjoining-classroom door, SW on south wall -->
   <line x1="100" y1="760" x2="162" y2="760" stroke="var(--floor)" stroke-width="7"/>
-  <text x="88" y="780" class="lbl small">Door · adjoining room</text>
+  <text x="88" y="780" class="lbl small">Door · adjoining room (Welcome stickers)</text>
 
-  <!-- prep nook top-right -->
-  <line x1="762" y1="60" x2="762" y2="175" class="innerwall"/>
-  <line x1="762" y1="175" x2="900" y2="175" class="innerwall"/>
-  <line x1="900" y1="175" x2="978" y2="175" stroke="var(--muted)" stroke-width="2" stroke-dasharray="3 4"/>
-  <line x1="762" y1="90" x2="762" y2="150" class="glassline"/>
-  <g id="furn">
-    <rect x="772" y="66" width="200" height="34" class="furn"/>
-    <rect x="905" y="112" width="66" height="52" class="darkf" rx="3"/>
-    <!-- front wall -->
-    <rect x="130" y="64" width="112" height="12" class="boardf"/>
-    <rect x="256" y="64" width="94" height="10" fill="var(--glass)"/>
-    <rect x="368" y="62" width="272" height="16" class="screenf"/>
-    <rect x="656" y="64" width="86" height="12" class="boardf"/>
-    <circle cx="752" cy="72" r="5" fill="var(--danger)"/>
-    <rect x="662" y="92" width="84" height="42" class="furn"/>
-    <!-- left wall -->
-    <rect x="66" y="72" width="62" height="112" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5" rx="3"/>
-    <rect x="56" y="212" width="9" height="122" fill="var(--glass)"/>
-    <rect x="56" y="382" width="9" height="122" fill="var(--glass)"/>
-    <rect x="66" y="342" width="46" height="30" class="furn"/>
-    <rect x="66" y="514" width="58" height="70" class="darkf" rx="4"/>
-    <path d="M 168 552 a 58 58 0 0 1 0 116 z" class="furn"/>
-    <!-- bottom wall -->
-    <rect x="298" y="746" width="464" height="10" class="screenf"/>
-    <rect x="168" y="746" width="112" height="10" class="boardf"/>
-    <rect x="70" y="682" width="122" height="46" class="furn"/>
-    <circle cx="852" cy="700" r="21" fill="var(--dot-b)" opacity=".85"/>
-    <!-- right wall -->
-    <rect x="918" y="182" width="58" height="142" class="furn"/>
-    <rect x="918" y="332" width="58" height="180" class="furn"/>
-    <circle cx="947" cy="382" r="13" fill="var(--glass)" stroke="var(--muted)" stroke-width="1.5"/>
-    <circle cx="888" cy="540" r="9" class="darkf"/>
-    <circle cx="888" cy="562" r="9" class="darkf"/>
-    <circle cx="888" cy="584" r="9" class="darkf"/>
-    <rect x="964" y="556" width="12" height="50" fill="var(--dot-b)" opacity=".8" rx="2"/>
-    <!-- carpet -->
-    <rect x="298" y="468" width="472" height="262" rx="14" fill="var(--carpet)"/>
-    <!-- tables drawn in JS along with chairs -->
-    <rect x="688" y="404" width="132" height="50" class="furn"/>
-    <rect x="700" y="412" width="50" height="34" fill="var(--ink)" opacity=".55" rx="2"/>
-    <rect x="756" y="412" width="50" height="34" fill="var(--ink)" opacity=".55" rx="2"/>
+  <g id="fixed">
+    <!-- north wall: screen wall -->
+    <rect x="128" y="64" width="110" height="12" class="boardf"/>
+    <rect x="252" y="64" width="96" height="10" fill="var(--glass)"/>
+    <rect x="366" y="62" width="270" height="16" class="screenf"/>
+    <rect x="652" y="64" width="86" height="12" class="boardf"/>
+    <circle cx="748" cy="72" r="5" fill="var(--danger)"/>
+    <!-- east wall, N→S: counter/nook, wardrobes, sink counter, cabinets -->
+    <rect x="912" y="178" width="64" height="86" class="furn" rx="3"/>
+    <rect x="912" y="270" width="64" height="62" class="furn" rx="3"/>
+    <rect x="912" y="336" width="64" height="176" class="furn" rx="3"/>
+    <circle cx="944" cy="420" r="13" fill="var(--glass)" stroke="var(--muted)" stroke-width="1.5"/>
+    <rect x="912" y="518" width="64" height="80" class="furn" rx="3"/>
+    <circle cx="884" cy="548" r="9" class="darkf"/>
+    <circle cx="884" cy="570" r="9" class="darkf"/>
+    <circle cx="884" cy="592" r="9" class="darkf"/>
+    <rect x="964" y="614" width="12" height="76" fill="var(--dot-b)" opacity=".8" rx="2"/>
+    <!-- west wall, N→S: window 1 (birthday), window 2 -->
+    <rect x="56" y="150" width="9" height="130" fill="var(--glass)"/>
+    <rect x="56" y="330" width="9" height="130" fill="var(--glass)"/>
+    <!-- south wall: whiteboard span + reading centers board -->
+    <rect x="180" y="746" width="440" height="10" class="screenf"/>
+    <rect x="636" y="746" width="104" height="10" class="boardf"/>
+    <!-- SW corner: grey lockers/HVAC -->
+    <rect x="66" y="700" width="30" height="54" class="darkf" rx="3"/>
   </g>
 
-  <g id="tablesLayer"></g>
-  <g id="seatsLayer"></g>
-  <g id="assignLayer"></g>
-
+  <!-- movable furniture (drag in Arrange mode) -->
+  <g id="movLayer"></g>
   <g id="labelsLayer">
-    <text x="504" y="96" class="lbl" text-anchor="middle">Projection screen</text>
-    <text x="186" y="92" class="lbl small" text-anchor="middle">Bulletin board</text>
-    <text x="303" y="90" class="lbl small" text-anchor="middle">Heart posters</text>
-    <text x="699" y="92" class="lbl small" text-anchor="middle">Learning objectives</text>
-    <text x="704" y="150" class="lbl small" text-anchor="middle">Teacher cart</text>
-    <text x="872" y="126" class="lbl small">Prep nook · clipboards</text>
-    <text x="872" y="140" class="lbl small">drop box · daily bins</text>
-    <text x="768" y="122" class="lbl small" transform="rotate(90 768 122)">Interior window</text>
-    <text x="97" y="200" class="lbl small" text-anchor="middle">Mailboxes</text>
-    <text x="47" y="273" class="lbl small" transform="rotate(-90 47 273)" text-anchor="middle">Window</text>
-    <text x="47" y="443" class="lbl small" transform="rotate(-90 47 443)" text-anchor="middle">Window · birthday board</text>
-    <text x="89" y="360" class="lbl small">Book bins</text>
-    <text x="95" y="604" class="lbl small" text-anchor="middle">Device cart</text>
-    <text x="185" y="545" class="lbl small" text-anchor="middle">Teacher table</text>
-    <text x="530" y="740" class="lbl small" text-anchor="middle" fill="var(--paper)">Whiteboard · alphabet cards above · letter tape line</text>
-    <text x="224" y="775" class="lbl small" text-anchor="middle">Reading Centers board</text>
-    <text x="131" y="672" class="lbl small" text-anchor="middle">Book &amp; toy shelves</text>
-    <text x="852" y="735" class="lbl small" text-anchor="middle">Rocking chair</text>
-    <text x="947" y="253" class="lbl small" transform="rotate(90 947 253)" text-anchor="middle">Tall cabinets · month crates</text>
-    <text x="947" y="422" class="lbl small" transform="rotate(90 947 422)" text-anchor="middle">Sink &amp; counter</text>
-    <text x="888" y="612" class="lbl small" text-anchor="middle">Trash</text>
-    <text x="954" y="548" class="lbl small" text-anchor="end">Calendar + dismissal notes</text>
-    <text x="534" y="605" class="zlbl" text-anchor="middle" fill="var(--paper)" opacity=".85">Gathering carpet — letter spots</text>
-    <text x="754" y="398" class="lbl small" text-anchor="middle">Word-work table</text>
+    <text x="501" y="96" class="lbl" text-anchor="middle">Projection screen</text>
+    <text x="183" y="92" class="lbl small" text-anchor="middle">Bulletin board</text>
+    <text x="300" y="90" class="lbl small" text-anchor="middle">Heart posters</text>
+    <text x="695" y="92" class="lbl small" text-anchor="middle">Learning objectives · flag · clock</text>
+    <text x="944" y="221" class="lbl small" transform="rotate(90 944 221)" text-anchor="middle">Counter · clipboards · drop box</text>
+    <text x="944" y="301" class="lbl small" transform="rotate(90 944 301)" text-anchor="middle">Wardrobes</text>
+    <text x="944" y="424" class="lbl small" transform="rotate(90 944 424)" text-anchor="middle">Sink &amp; counter</text>
+    <text x="944" y="558" class="lbl small" transform="rotate(90 944 558)" text-anchor="middle">Cabinets</text>
+    <text x="884" y="620" class="lbl small" text-anchor="middle">Trash</text>
+    <text x="948" y="606" class="lbl small" text-anchor="end">Calendar + dismissal notes on door</text>
+    <text x="47" y="215" class="lbl small" transform="rotate(-90 47 215)" text-anchor="middle">Window · birthday board</text>
+    <text x="47" y="395" class="lbl small" transform="rotate(-90 47 395)" text-anchor="middle">Window</text>
+    <text x="400" y="738" class="lbl small" text-anchor="middle">Whiteboard · alphabet cards + letter tape above</text>
+    <text x="688" y="738" class="lbl small" text-anchor="middle">Reading Centers</text>
+    <text x="81" y="694" class="lbl small">Lockers</text>
   </g>
 
   <g id="zonesLayer"></g>
-
   <g id="centersLayer"></g>
-
   <g id="subLayer">
-    <path d="M 534 600 L 534 652 L 940 652" fill="none" stroke="var(--danger)" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#arrow)"/>
+    <path d="M 450 610 L 450 660 L 936 660" fill="none" stroke="var(--danger)" stroke-width="3" stroke-dasharray="8 6" marker-end="url(#arrow)"/>
     <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="var(--danger)"/></marker></defs>
   </g>
 </svg>
@@ -341,135 +328,227 @@
 <div id="schedule" class="only-centers"></div>
 </div>
 </div>
-<footer>Reconstructed from 14 photos. Positions are approximate — drag-a-tape-measure accuracy not included, but every zone, door, and cabinet is where it lives in real life.</footer>
+<footer>Reconstructed from 14 photos, second pass. Fixed walls are locked; everything with a dashed outline in Arrange mode is yours to move.</footer>
 
 <script>
 (function(){
   const $ = id => document.getElementById(id);
   const SVGNS = "http://www.w3.org/2000/svg";
-  const KEY = "kroom_state_v1";
-  let state = {assignments:{}, roster:[], notes:"", groups:"", rosterText:""};
+  const KEY = "kroom_state_v2";
+  let state = {assignments:{}, roster:[], notes:"", groups:"", rosterText:"", layout:{}};
   try{ const s = localStorage.getItem(KEY); if(s) state = Object.assign(state, JSON.parse(s)); }catch(e){}
   const save = () => { try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} };
+  const svg = $("map"), movLayer = $("movLayer");
+  const el = (tag, attrs) => { const n = document.createElementNS(SVGNS, tag);
+    for(const k in attrs) n.setAttribute(k, attrs[k]); return n; };
 
-  // ---------- furniture: tables + all seats ----------
-  const TABLES = [[330,140],[470,196],[330,252],[470,308],[610,140],[610,308]];
-  const TW=120, TH=52;
-  const tl = $("tablesLayer");
-  TABLES.forEach(([x,y])=>{
-    const r = document.createElementNS(SVGNS,"rect");
-    r.setAttribute("x",x); r.setAttribute("y",y); r.setAttribute("width",TW); r.setAttribute("height",TH);
-    r.setAttribute("class","furn"); r.setAttribute("rx",4); tl.appendChild(r);
-  });
-
+  // ---------------- movable furniture ----------------
+  // Each item: id, halo bounds [x,y,w,h], draw(g) builds shapes, seats: [{id,x,y,r,kind,color,letter}]
   const DOTCOLORS = ["var(--dot-o)","var(--dot-p)","var(--dot-b)","var(--dot-g)","var(--dot-v)"];
-  const SEATS = [];
-  // 24 carpet letter dots (6 x 4)
-  let li = 0;
-  for(let row=0; row<4; row++) for(let col=0; col<6; col++){
-    SEATS.push({id:"c"+li, x:340+col*78, y:512+row*60, r:13, kind:"dot",
-      color:DOTCOLORS[li%5], letter:String.fromCharCode(65+li)});
-    li++;
+  const ITEMS = [];
+
+  // Carpet with 20 letter dots (5 x 4), gathering area faces the whiteboard (south)
+  (function(){
+    const seats = []; let li = 0;
+    for(let row=0; row<4; row++) for(let col=0; col<5; col++){
+      seats.push({id:"c"+li, x:330+col*66, y:512+row*58, r:13, kind:"dot",
+        color:DOTCOLORS[li%5], letter:String.fromCharCode(65+li)}); li++; }
+    ITEMS.push({id:"carpet", halo:[286,462,412,272], seats,
+      draw(g){ g.appendChild(el("rect",{x:290,y:466,width:404,height:264,rx:14,fill:"var(--carpet)"}));
+        const t = el("text",{x:492,y:706,"text-anchor":"middle",class:"zlbl",fill:"var(--paper)",opacity:".85"});
+        t.textContent = "Gathering carpet"; g.appendChild(t); }});
+  })();
+
+  // Six trapezoid-ish tables in a chevron, 3 chairs each
+  const TPOS = [[318,142],[452,196],[318,254],[452,308],[592,142],[592,308]];
+  TPOS.forEach(([x,y],ti)=>{
+    const seats = [];
+    for(let c=0;c<3;c++) seats.push({id:"t"+ti+"_"+c, x:x+22+c*38, y:y+65, r:9, kind:"chair"});
+    ITEMS.push({id:"table"+ti, halo:[x-6,y-6,132,88], seats,
+      draw(g){ g.appendChild(el("rect",{x,y,width:120,height:52,rx:4,class:"furn"})); }});
+  });
+
+  // Word-work table (SE area near carpet edge), 2 chairs on north side
+  ITEMS.push({id:"wordwork", halo:[706,548,144,84],
+    seats:[{id:"w0",x:748,y:560,r:9,kind:"chair"},{id:"w1",x:806,y:560,r:9,kind:"chair"}],
+    draw(g){ g.appendChild(el("rect",{x:712,y:572,width:132,height:50,rx:4,class:"furn"}));
+      g.appendChild(el("rect",{x:722,y:580,width:52,height:34,rx:2,fill:"var(--ink)","opacity":".55"}));
+      g.appendChild(el("rect",{x:780,y:580,width:52,height:34,rx:2,fill:"var(--ink)","opacity":".55"}));
+      const t = el("text",{x:778,y:640,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Word-work table"; g.appendChild(t); }});
+
+  // Half-moon teacher table on the west side, wobble stools on the curve
+  (function(){
+    const cx=172, cy=430, seats=[];
+    [-55,-27,0,27,55].forEach((deg,i)=>{ const a=deg*Math.PI/180;
+      seats.push({id:"k"+i, x:cx+76*Math.cos(a), y:cy+76*Math.sin(a), r:10, kind:"stool"}); });
+    ITEMS.push({id:"kidney", halo:[104,352,182,158], seats,
+      draw(g){ g.appendChild(el("path",{d:"M "+cx+" "+(cy-56)+" a 56 56 0 0 1 0 112 z",class:"furn"}));
+        const t = el("text",{x:cx+6,y:cy-64,"text-anchor":"middle",class:"lbl small"});
+        t.textContent = "Teacher table"; g.appendChild(t); }});
+  })();
+
+  // Device cart, NW against window wall
+  ITEMS.push({id:"cart", halo:[62,86,66,70], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:66,y:90,width:56,height:60,rx:4,class:"darkf"}));
+      const t = el("text",{x:94,y:166,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Device cart"; g.appendChild(t); }});
+
+  // Green mailbox cubbies, mid-west wall
+  ITEMS.push({id:"mail", halo:[62,466,72,120], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:66,y:470,width:62,height:110,rx:3,
+        fill:"var(--accent-soft)",stroke:"var(--accent)","stroke-width":"1.5"}));
+      const t = el("text",{x:97,y:598,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Mailboxes"; g.appendChild(t); }});
+
+  // Book & toy shelves along south-west
+  ITEMS.push({id:"shelves", halo:[166,676,164,58], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:170,y:680,width:156,height:48,rx:3,class:"furn"}));
+      const t = el("text",{x:248,y:672,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Book & toy shelves"; g.appendChild(t); }});
+
+  // Rocking chair, SE corner by Reading Centers
+  ITEMS.push({id:"rock", halo:[772,672,64,64], seats:[],
+    draw(g){ g.appendChild(el("circle",{cx:804,cy:704,r:21,fill:"var(--dot-b)","opacity":".85"}));
+      const t = el("text",{x:804,y:668,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Rocking chair"; g.appendChild(t); }});
+
+  // Teacher cart/desk right of screen
+  ITEMS.push({id:"tcart", halo:[672,88,96,56], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:676,y:92,width:88,height:46,rx:4,class:"furn"}));
+      const t = el("text",{x:720,y:154,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Teacher cart"; g.appendChild(t); }});
+
+  // Book display bins near windows
+  ITEMS.push({id:"bins", halo:[62,296,56,40], seats:[],
+    draw(g){ g.appendChild(el("rect",{x:66,y:300,width:46,height:30,rx:3,class:"furn"}));
+      const t = el("text",{x:90,y:344,"text-anchor":"middle",class:"lbl small"});
+      t.textContent = "Book bins"; g.appendChild(t); }});
+
+  // render items
+  const seatIndex = {}; // seatId -> {seat, group}
+  ITEMS.forEach(item=>{
+    const g = el("g",{class:"mov","data-item":item.id});
+    g.appendChild(el("rect",{class:"movhalo",x:item.halo[0],y:item.halo[1],
+      width:item.halo[2],height:item.halo[3],rx:10}));
+    item.draw(g);
+    (item.seats||[]).forEach(s=>{
+      const c = el("circle",{cx:s.x,cy:s.y,r:s.r,class:"seat"});
+      c.dataset.seat = s.id;
+      if(s.kind==="dot") c.setAttribute("fill",s.color);
+      else if(s.kind==="stool") c.setAttribute("fill","var(--accent)");
+      else { c.setAttribute("fill","var(--chair)"); c.setAttribute("stroke","var(--chair-line)"); c.setAttribute("stroke-width","1.5"); }
+      g.appendChild(c);
+      if(s.kind==="dot"){
+        const t = el("text",{x:s.x,y:s.y+4,"text-anchor":"middle",
+          style:"font:800 10px ui-rounded,system-ui;fill:#fff;pointer-events:none"});
+        t.textContent = s.letter; g.appendChild(t);
+      }
+      seatIndex[s.id] = {seat:s, group:g};
+    });
+    const off = state.layout[item.id];
+    if(off) g.setAttribute("transform","translate("+off[0]+" "+off[1]+")");
+    movLayer.appendChild(g);
+  });
+
+  // ---------------- drag to arrange ----------------
+  let arranging = false, drag = null;
+  $("ck-arrange").addEventListener("change",e=>{
+    arranging = e.target.checked; document.body.classList.toggle("arranging",arranging); });
+  function svgPoint(evt){
+    const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
   }
-  // 3 chairs on the south side of each table
-  TABLES.forEach(([x,y],ti)=>{ for(let c=0;c<3;c++)
-    SEATS.push({id:"t"+ti+"_"+c, x:x+22+c*38, y:y+TH+13, r:9, kind:"chair"}); });
-  // 2 chairs at word-work table
-  [0,1].forEach(c=>SEATS.push({id:"w"+c, x:716+c*56, y:468, r:9, kind:"chair"}));
-  // 5 wobble stools around teacher table
-  [-55,-27,0,27,55].forEach((deg,i)=>{
-    const a = deg*Math.PI/180;
-    SEATS.push({id:"k"+i, x:168+78*Math.cos(a), y:610+78*Math.sin(a), r:10, kind:"stool"});
+  movLayer.addEventListener("pointerdown",e=>{
+    if(!arranging) return;
+    const g = e.target.closest(".mov"); if(!g) return;
+    e.preventDefault(); g.classList.add("dragging");
+    const id = g.dataset.item, start = svgPoint(e), base = state.layout[id]||[0,0];
+    drag = {g,id,start,base};
+    g.setPointerCapture && movLayer.setPointerCapture(e.pointerId);
+  });
+  movLayer.addEventListener("pointermove",e=>{
+    if(!drag) return;
+    const p = svgPoint(e);
+    const dx = drag.base[0]+p.x-drag.start.x, dy = drag.base[1]+p.y-drag.start.y;
+    drag.g.setAttribute("transform","translate("+dx+" "+dy+")");
+    drag.cur = [dx,dy];
+  });
+  const endDrag = ()=>{ if(!drag) return;
+    drag.g.classList.remove("dragging");
+    if(drag.cur){ state.layout[drag.id]=drag.cur; save(); }
+    drag = null; };
+  movLayer.addEventListener("pointerup",endDrag);
+  movLayer.addEventListener("pointercancel",endDrag);
+  $("resetLayout").addEventListener("click",()=>{
+    state.layout = {}; save();
+    movLayer.querySelectorAll(".mov").forEach(g=>g.removeAttribute("transform"));
   });
 
-  const seatsLayer = $("seatsLayer");
-  SEATS.forEach(s=>{
-    const c = document.createElementNS(SVGNS,"circle");
-    c.setAttribute("cx",s.x); c.setAttribute("cy",s.y); c.setAttribute("r",s.r);
-    c.setAttribute("class","seat"); c.dataset.seat = s.id;
-    if(s.kind==="dot"){ c.setAttribute("fill",s.color); }
-    else if(s.kind==="stool"){ c.setAttribute("fill","var(--accent)"); }
-    else { c.setAttribute("fill","var(--chair)"); c.setAttribute("stroke","var(--chair-line)"); c.setAttribute("stroke-width","1.5"); }
-    seatsLayer.appendChild(c);
-    if(s.kind==="dot"){
-      const t = document.createElementNS(SVGNS,"text");
-      t.setAttribute("x",s.x); t.setAttribute("y",s.y+4); t.setAttribute("text-anchor","middle");
-      t.setAttribute("style","font:800 10px ui-rounded,system-ui;fill:#fff;pointer-events:none");
-      t.textContent = s.letter; seatsLayer.appendChild(t);
-    }
-  });
-
-  // ---------- zones ----------
+  // ---------------- zones ----------------
   const ZONES = [
-    [300,112,448,338,"var(--dot-b)","Flexible work tables",524,132],
-    [290,458,488,282,"var(--dot-o)","Whole-group carpet",0,0],
-    [104,516,206,180,"var(--teal)","Small group · teacher table",0,0],
-    [64,64,150,130,"var(--dot-g)","Arrival mailboxes",214,84],
-    [844,516,132,236,"var(--dot-p)","Arrival / dismissal",910,536],
-    [896,320,82,192,"var(--dot-v)","Wet zone · art & sink",0,0],
-    [766,62,212,258,"var(--dot-g)","Storage & prep",0,0],
-    [792,652,152,100,"var(--dot-o)","Read-aloud corner",0,0]
+    [296,108,436,336,"var(--dot-b)","Flexible work tables",520,128],
+    [282,456,424,286,"var(--dot-o)","Whole-group carpet",0,0],
+    [96,344,200,176,"var(--teal)","Small group",0,0],
+    [852,608,126,144,"var(--dot-p)","Arrival / dismissal",858,752],
+    [896,330,84,190,"var(--dot-v)","Wet zone · sink",0,0],
+    [896,108,84,216,"var(--dot-g)","Teacher counter & storage access",640,120],
+    [742,652,140,100,"var(--dot-o)","Read-aloud corner",0,0],
+    [60,60,110,120,"var(--dot-g)","Devices",174,80],
+    [60,456,110,140,"var(--accent)","Mailboxes",0,0]
   ];
   const zl = $("zonesLayer");
   ZONES.forEach(([x,y,w,h,col,name,lx,ly])=>{
-    const r = document.createElementNS(SVGNS,"rect");
-    r.setAttribute("x",x); r.setAttribute("y",y); r.setAttribute("width",w); r.setAttribute("height",h);
-    r.setAttribute("class","zone"); r.setAttribute("fill",col); r.setAttribute("stroke",col);
-    zl.appendChild(r);
-    const t = document.createElementNS(SVGNS,"text");
-    t.setAttribute("x", lx||x+10); t.setAttribute("y", ly||y+20);
-    t.setAttribute("class","zlbl"); t.setAttribute("fill",col);
+    zl.appendChild(el("rect",{x,y,width:w,height:h,class:"zone",fill:col,stroke:col}));
+    const t = el("text",{x:lx||x+10,y:ly||y+20,class:"zlbl",fill:col});
     t.textContent = name; zl.appendChild(t);
   });
 
-  // ---------- centers stations ----------
+  // ---------------- centers stations ----------------
   const STATIONS = [
-    ["Teacher table (skills group)",168,606,68],
-    ["Library · read to self",131,700,52],
-    ["Word work",754,430,58],
-    ["Devices",95,548,44],
-    ["Art & writing tables",530,230,110],
-    ["Carpet games & math tubs",534,600,95]
+    ["Teacher table (skills group)",172,430,72],
+    ["Library · read to self",248,700,58],
+    ["Word work",778,596,64],
+    ["Devices",94,120,46],
+    ["Art & writing tables",470,228,112],
+    ["Carpet games & math tubs",492,596,92]
   ];
   const cl = $("centersLayer");
   STATIONS.forEach(([name,x,y,r],i)=>{
-    const g = document.createElementNS(SVGNS,"g"); g.setAttribute("class","station");
-    const ring = document.createElementNS(SVGNS,"circle");
-    ring.setAttribute("cx",x); ring.setAttribute("cy",y); ring.setAttribute("r",r); ring.setAttribute("class","ring");
-    const b = document.createElementNS(SVGNS,"circle");
-    b.setAttribute("cx",x-r*0.72); b.setAttribute("cy",y-r*0.72); b.setAttribute("r",12); b.setAttribute("class","badge");
-    const t = document.createElementNS(SVGNS,"text");
-    t.setAttribute("x",x-r*0.72); t.setAttribute("y",y-r*0.72+4); t.textContent = i+1;
-    g.appendChild(ring); g.appendChild(b); g.appendChild(t); cl.appendChild(g);
+    const g = el("g",{class:"station"});
+    g.appendChild(el("circle",{cx:x,cy:y,r,class:"ring"}));
+    g.appendChild(el("circle",{cx:x-r*0.72,cy:y-r*0.72,r:12,class:"badge"}));
+    const t = el("text",{x:x-r*0.72,y:y-r*0.72+4}); t.textContent = i+1; g.appendChild(t);
+    cl.appendChild(g);
     const li2 = document.createElement("li");
     li2.innerHTML = '<span class="n" style="background:var(--teal)">'+(i+1)+'</span> '+name;
     $("stationLegend").appendChild(li2);
   });
 
-  // ---------- sub callouts ----------
-  const CALLOUTS = [[952,650],[1008,470],[948,580],[947,382],[190,590],[870,90],[95,545],[420,600],[947,250],[700,652]];
+  // ---------------- sub callouts ----------------
+  const CALLOUTS = [[952,650],[1008,470],[944,600],[944,420],[172,430],[944,220],[94,120],[492,596],[1008,120],[700,660]];
   const sl = $("subLayer");
   CALLOUTS.forEach(([x,y],i)=>{
-    const g = document.createElementNS(SVGNS,"g"); g.setAttribute("class","callout");
-    const c = document.createElementNS(SVGNS,"circle");
-    c.setAttribute("cx",x); c.setAttribute("cy",y); c.setAttribute("r",12);
-    const t = document.createElementNS(SVGNS,"text");
-    t.setAttribute("x",x); t.setAttribute("y",y+4); t.textContent = i+1;
-    g.appendChild(c); g.appendChild(t); sl.appendChild(g);
+    const g = el("g",{class:"callout"});
+    g.appendChild(el("circle",{cx:x,cy:y,r:12}));
+    const t = el("text",{x,y:y+4}); t.textContent = i+1; g.appendChild(t);
+    sl.appendChild(g);
   });
 
-  // ---------- modes ----------
+  // ---------------- modes ----------------
   const MODES = ["map","seating","centers","sub"];
   MODES.forEach(m=>{
     $("tab-"+m).addEventListener("click",()=>{
       document.body.dataset.mode = m;
       MODES.forEach(x=>$("tab-"+x).classList.toggle("on", x===m));
+      if(m!=="map" && arranging){ $("ck-arrange").checked=false; arranging=false; document.body.classList.remove("arranging"); }
     });
   });
   $("ck-zones").addEventListener("change",e=>{ zl.style.display = e.target.checked?"":"none"; });
-  $("ck-labels").addEventListener("change",e=>{ $("labelsLayer").style.display = e.target.checked?"":"none"; });
+  $("ck-labels").addEventListener("change",e=>{ $("labelsLayer").style.display = e.target.checked?"":"none";
+    movLayer.querySelectorAll("text").forEach(t=>{ if(!t.classList.contains("assignlbl") && t.getAttribute("style")===null) t.style.display = e.target.checked?"":"none"; }); });
 
-  // ---------- seating ----------
+  // ---------------- seating ----------------
   let selected = null;
   function renderChips(){
     const box = $("chips"); box.innerHTML = "";
@@ -483,18 +562,17 @@
     });
   }
   function renderAssignments(){
-    const al = $("assignLayer"); al.innerHTML = "";
+    movLayer.querySelectorAll(".assignlbl").forEach(n=>n.remove());
     Object.entries(state.assignments).forEach(([sid,name])=>{
-      const s = SEATS.find(x=>x.id===sid); if(!s) return;
-      const t = document.createElementNS(SVGNS,"text");
-      t.setAttribute("x",s.x); t.setAttribute("y",s.y - s.r - 4);
-      t.setAttribute("text-anchor","middle"); t.setAttribute("class","assignlbl");
+      const rec = seatIndex[sid]; if(!rec) return;
+      const t = el("text",{x:rec.seat.x,y:rec.seat.y-rec.seat.r-4,
+        "text-anchor":"middle",class:"assignlbl"});
       t.textContent = name.split(" ")[0].slice(0,9);
-      al.appendChild(t);
+      rec.group.appendChild(t);
     });
   }
-  seatsLayer.addEventListener("click",e=>{
-    if(document.body.dataset.mode!=="seating") return;
+  movLayer.addEventListener("click",e=>{
+    if(document.body.dataset.mode!=="seating" || arranging) return;
     const sid = e.target.dataset && e.target.dataset.seat; if(!sid) return;
     if(state.assignments[sid]){ delete state.assignments[sid]; }
     else if(selected){
@@ -510,13 +588,14 @@
   });
   $("autoAssign").addEventListener("click",()=>{
     state.assignments = {};
-    const dots = SEATS.filter(s=>s.kind==="dot");
-    state.roster.forEach((name,i)=>{ if(dots[i]) state.assignments[dots[i].id] = name; });
+    const dots = Object.keys(seatIndex).filter(id=>id[0]==="c")
+      .sort((a,b)=>+a.slice(1)-+b.slice(1));
+    state.roster.forEach((name,i)=>{ if(dots[i]) state.assignments[dots[i]] = name; });
     save(); renderChips(); renderAssignments();
   });
   $("clearSeats").addEventListener("click",()=>{ state.assignments={}; save(); renderChips(); renderAssignments(); });
 
-  // ---------- centers rotation ----------
+  // ---------------- centers rotation ----------------
   $("makeSchedule").addEventListener("click",()=>{
     state.groups = $("groups").value; save();
     const groups = state.groups.split("\n").map(s=>s.trim()).filter(Boolean)
@@ -536,7 +615,7 @@
     out.innerHTML = html;
   });
 
-  // ---------- sub notes ----------
+  // ---------------- sub notes ----------------
   $("subNotes").addEventListener("input",e=>{ state.notes = e.target.value; save(); });
 
   // restore
